@@ -340,6 +340,11 @@ export default function GlobalChat({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
     if (rawFile && socket) {
+      if (rawFile.size > 300 * 1024 * 1024) {
+        alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+        e.target.value = "";
+        return;
+      }
       setIsUploading(true);
       try {
         let fileToUpload = rawFile;
@@ -351,6 +356,15 @@ export default function GlobalChat({
         const formData = new FormData();
         formData.append("file", fileToUpload);
         const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
+        if (!res.ok) {
+          if (res.status === 413) {
+            alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            alert(errData.error || `Dosya yüklenemedi (${res.status})`);
+          }
+          return;
+        }
         const data = await res.json();
         if (data.url) {
           socket.emit("send_global_message", {
@@ -362,8 +376,9 @@ export default function GlobalChat({
           });
           setReplyTo(null);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Upload error", err);
+        alert(err.message || "Dosya yüklenirken bir hata oluştu.");
       } finally {
         setIsUploading(false);
         e.target.value = "";

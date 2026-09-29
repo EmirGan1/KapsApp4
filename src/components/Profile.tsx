@@ -201,20 +201,36 @@ export default function Profile({
   };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 300 * 1024 * 1024) {
+      alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+      e.target.value = "";
+      return;
+    }
     setUploading(true);
     const formData = new FormData();
-    formData.append("file", e.target.files[0]);
+    formData.append("file", file);
 
     try {
       const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
+      if (!res.ok) {
+        if (res.status === 413) {
+          alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          alert(errData.error || `Profil resmi yüklenemedi (${res.status})`);
+        }
+        return;
+      }
       const data = await res.json();
-      if (res.ok && socket) {
+      if (res.ok && socket && data.url) {
         socket.emit("update_avatar", data.url);
         onAvatarUpdated(data.url);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("Avatar upload error:", err);
+      alert(err.message || "Profil resmi yüklenirken bir hata oluştu.");
     } finally {
       setUploading(false);
       e.target.value = "";

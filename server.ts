@@ -87,7 +87,11 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ 
   storage,
-  limits: { fileSize: 300 * 1024 * 1024 } // 300MB limit for videos, high-res photos and documents
+  limits: { 
+    fileSize: 300 * 1024 * 1024, // 300MB limit for high-res video, large archives and photos
+    fieldSize: 300 * 1024 * 1024, // 300MB field size limit
+    files: 50 // Multi-upload up to 50 files
+  }
 });
 
 // Helper to safely delete uploaded media from disk and Turso cloud database
@@ -1160,6 +1164,9 @@ async function startServer() {
     upload.single("file")(req, res, async (err: any) => {
       if (err) {
         console.error("Upload single error:", err);
+        if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {
+          return res.status(413).json({ error: "Dosya boyutu çok büyük (Maksimum 300MB)." });
+        }
         return res.status(400).json({ error: err.message || "Dosya yüklenirken hata oluştu." });
       }
       if (!req.file) return res.status(400).json({ error: "Dosya bulunamadı veya yüklenemedi." });
@@ -1209,6 +1216,9 @@ async function startServer() {
     upload.array("files", 50)(req, res, async (err: any) => {
       if (err) {
         console.error("Upload multiple error:", err);
+        if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {
+          return res.status(413).json({ error: "Dosya boyutu çok büyük (Maksimum 300MB)." });
+        }
         return res.status(400).json({ error: err.message || "Dosyalar yüklenirken hata oluştu." });
       }
       try {
@@ -1279,59 +1289,68 @@ async function startServer() {
     }
   });
 
-  app.post(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], upload.single("file"), async (req, res) => {
-    try {
-      const token = req.headers.authorization?.replace("Bearer ", "");
-      if (!token) return res.status(401).json({ error: "Giriş yapmalısınız." });
-      const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE token = ?", args: [token] });
-      if (userRes.rows.length === 0) return res.status(401).json({ error: "Geçersiz oturum." });
-      const authUser = userRes.rows[0];
-
-      if (!req.file) return res.status(400).json({ error: "Dosya seçilmedi." });
-      const folderId = req.params.courseId;
-      const filename = req.file.filename;
-      const originalName = req.file.originalname;
-      const mimetype = req.file.mimetype;
-      const size = req.file.size;
-      const filePath = req.file.path;
-      const url = `/uploads/${filename}`;
-
-      try {
-        if (size <= 25 * 1024 * 1024) {
-          const base64 = fs.readFileSync(filePath).toString("base64");
-          await client.execute({
-            sql: "INSERT OR REPLACE INTO uploaded_files (filename, original_name, mimetype, size, data, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            args: [filename, originalName, mimetype, size, base64, new Date().toISOString()]
-          });
+  app.post(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], (req, res) => {
+    upload.single("file")(req, res, async (err: any) => {
+      if (err) {
+        console.error("Course file upload error:", err);
+        if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {
+          return res.status(413).json({ error: "Dosya boyutu çok büyük (Maksimum 300MB)." });
         }
-      } catch (err) {}
+        return res.status(400).json({ error: err.message || "Dosya yüklenemedi." });
+      }
+      try {
+        const token = req.headers.authorization?.replace("Bearer ", "");
+        if (!token) return res.status(401).json({ error: "Giriş yapmalısınız." });
+        const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE token = ?", args: [token] });
+        if (userRes.rows.length === 0) return res.status(401).json({ error: "Geçersiz oturum." });
+        const authUser = userRes.rows[0];
 
-      const insRes = await client.execute({
-        sql: `INSERT INTO subject_files (folder_id, course_id, filename, original_name, mimetype, size, url, uploaded_by, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [folderId, folderId, filename, originalName, mimetype, size, url, authUser.id, new Date().toISOString()]
-      });
+        if (!req.file) return res.status(400).json({ error: "Dosya seçilmedi." });
+        const folderId = req.params.courseId;
+        const filename = req.file.filename;
+        const originalName = req.file.originalname;
+        const mimetype = req.file.mimetype;
+        const size = req.file.size;
+        const filePath = req.file.path;
+        const url = `/uploads/${filename}`;
 
-      const newFile = {
-        id: Number(insRes.lastInsertRowid),
-        folder_id: folderId,
-        filename,
-        original_name: originalName,
-        mimetype,
-        size,
-        url,
-        uploaded_by: authUser.id,
-        uploader_name: authUser.username,
-        created_at: new Date().toISOString()
-      };
+        try {
+          if (size <= 25 * 1024 * 1024) {
+            const base64 = fs.readFileSync(filePath).toString("base64");
+            await client.execute({
+              sql: "INSERT OR REPLACE INTO uploaded_files (filename, original_name, mimetype, size, data, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+              args: [filename, originalName, mimetype, size, base64, new Date().toISOString()]
+            });
+          }
+        } catch (err) {}
 
-      io.emit("subjects_updated");
-      io.emit("folder_files_updated", { folderId });
-      res.json({ success: true, file: newFile });
-    } catch (err: any) {
-      console.error("Course file upload error:", err);
-      res.status(500).json({ error: "Ders dosyası yüklenemedi." });
-    }
+        const insRes = await client.execute({
+          sql: `INSERT INTO subject_files (folder_id, course_id, filename, original_name, mimetype, size, url, uploaded_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [folderId, folderId, filename, originalName, mimetype, size, url, authUser.id, new Date().toISOString()]
+        });
+
+        const newFile = {
+          id: Number(insRes.lastInsertRowid),
+          folder_id: folderId,
+          filename,
+          original_name: originalName,
+          mimetype,
+          size,
+          url,
+          uploaded_by: authUser.id,
+          uploader_name: authUser.username,
+          created_at: new Date().toISOString()
+        };
+
+        io.emit("subjects_updated");
+        io.emit("folder_files_updated", { folderId });
+        res.json({ success: true, file: newFile });
+      } catch (err: any) {
+        console.error("Course file upload error:", err);
+        res.status(500).json({ error: "Ders dosyası yüklenemedi." });
+      }
+    });
   });
 
   app.delete(["/api/courses/files/:fileId", "/api/subjects/files/:fileId"], async (req, res) => {

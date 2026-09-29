@@ -513,6 +513,11 @@ export default function Chats({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
     if (!rawFile || !activeChat || !socket) return;
+    if (rawFile.size > 300 * 1024 * 1024) {
+      alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+      e.target.value = '';
+      return;
+    }
     setIsUploading(true);
     try {
       let fileToUpload = rawFile;
@@ -523,6 +528,15 @@ export default function Chats({
       const formData = new FormData();
       formData.append("file", fileToUpload);
       const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
+      if (!res.ok) {
+        if (res.status === 413) {
+          alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          alert(errData.error || `Dosya yüklenemedi (${res.status})`);
+        }
+        return;
+      }
       const data = await res.json();
       if (res.ok && data.url) {
         const payload = {
@@ -539,8 +553,9 @@ export default function Chats({
         }
         setReplyTo(null);
       }
-    } catch (err) { 
+    } catch (err: any) { 
       console.error("File upload error:", err); 
+      alert(err.message || "Dosya yüklenirken bir hata oluştu.");
     } finally {
       setIsUploading(false);
       e.target.value = '';

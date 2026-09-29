@@ -375,6 +375,8 @@ export default function Feed({
             } catch {
               resolve(xhr.responseText);
             }
+          } else if (xhr.status === 413) {
+            reject(new Error("Dosya boyutu çok büyük (Maksimum 300MB)."));
           } else {
             try {
               const err = JSON.parse(xhr.responseText);
@@ -524,6 +526,11 @@ export default function Feed({
   const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
     if (!rawFile || !socket) return;
+    if (rawFile.size > 300 * 1024 * 1024) {
+      alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+      e.target.value = "";
+      return;
+    }
     try {
       let fileToUpload = rawFile;
       if (rawFile.type.startsWith("image/")) {
@@ -533,12 +540,22 @@ export default function Feed({
       const formData = new FormData();
       formData.append("file", fileToUpload);
       const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
+      if (!res.ok) {
+        if (res.status === 413) {
+          alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          alert(errData.error || `Hikaye yüklenemedi (${res.status})`);
+        }
+        return;
+      }
       const data = await res.json();
       if (data.url) {
         socket.emit("create_story", data.url);
       }
     } catch (err) {
       console.error("Story upload error:", err);
+      alert("Hikaye yüklenirken bir hata oluştu.");
     } finally {
       e.target.value = "";
     }

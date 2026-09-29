@@ -99,6 +99,12 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
+    if (selectedFile.size > 300 * 1024 * 1024) {
+      alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setIsUploading(true);
     const formData = new FormData();
     formData.append("file", selectedFile);
@@ -112,8 +118,11 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
       });
 
       if (!res.ok) {
+        if (res.status === 413) {
+          throw new Error("Dosya boyutu çok büyük (Maksimum 300MB).");
+        }
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Dosya yüklenemedi.");
+        throw new Error(err.error || `Dosya yüklenemedi (${res.status}).`);
       }
 
       const data = await res.json();
