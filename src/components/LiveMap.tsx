@@ -26,17 +26,18 @@ export interface UserLiveLocation {
 }
 
 export const isValidCoordinate = (lat: any, lng: any): boolean => {
+  if (lat === null || lat === undefined || lng === null || lng === undefined) return false;
+  const numLat = Number(lat);
+  const numLng = Number(lng);
   return (
-    typeof lat === "number" &&
-    typeof lng === "number" &&
-    !isNaN(lat) &&
-    !isNaN(lng) &&
-    isFinite(lat) &&
-    isFinite(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180
+    !isNaN(numLat) &&
+    !isNaN(numLng) &&
+    isFinite(numLat) &&
+    isFinite(numLng) &&
+    numLat >= -90 &&
+    numLat <= 90 &&
+    numLng >= -180 &&
+    numLng <= 180
   );
 };
 
@@ -148,7 +149,12 @@ export default function LiveMap({
   const [myCoords, setMyCoords] = useState<{ lat: number; lng: number } | null>(() => {
     try {
       const saved = localStorage.getItem("last_known_coords");
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && isValidCoordinate(parsed.lat, parsed.lng)) {
+          return { lat: Number(parsed.lat), lng: Number(parsed.lng) };
+        }
+      }
     } catch (e) {}
     return null;
   });
@@ -367,6 +373,36 @@ export default function LiveMap({
     }
   }, []);
 
+  // Safe helper to smoothly center map, gracefully handling hidden containers (size 0x0)
+  const safeFlyTo = useCallback((targetLat: any, targetLng: any, zoom = 15) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const numLat = Number(targetLat);
+    const numLng = Number(targetLng);
+    if (!isValidCoordinate(numLat, numLng)) return;
+
+    try {
+      map.invalidateSize();
+      const size = map.getSize();
+      // Leaflet's flyTo divides by container size; if 0x0 (hidden/inactive tab), flyTo produces NaN!
+      if (size && size.x > 50 && size.y > 50) {
+        map.flyTo([numLat, numLng], zoom, {
+          animate: true,
+          duration: 1.2
+        });
+      } else {
+        // Fallback to instant setView which does not do interpolation animations
+        map.setView([numLat, numLng], zoom);
+      }
+    } catch {
+      try {
+        map.setView([numLat, numLng], zoom);
+      } catch (fallbackErr) {
+        console.warn("safeFlyTo fallback error ignored:", fallbackErr);
+      }
+    }
+  }, []);
+
   // High-accuracy Automated Geolocation fetch with 50-150m privacy margin of error
   const fetchAndSendPosition = useCallback((shouldFlyTo: boolean = false) => {
     if (!navigator.geolocation) {
@@ -397,27 +433,24 @@ export default function LiveMap({
         const fuzzedLat = latitude + offset.deltaLat;
         const fuzzedLng = longitude + offset.deltaLng;
 
-        const coords = { lat: fuzzedLat, lng: fuzzedLng };
-        setMyCoords(coords);
-        try {
-          localStorage.setItem("last_known_coords", JSON.stringify(coords));
-        } catch (e) {}
+        if (isValidCoordinate(fuzzedLat, fuzzedLng)) {
+          const coords = { lat: fuzzedLat, lng: fuzzedLng };
+          setMyCoords(coords);
+          try {
+            localStorage.setItem("last_known_coords", JSON.stringify(coords));
+          } catch (e) {}
+        }
 
         setIsSharing(true);
         setIsLocating(false);
         setGeoError(null);
 
-        const map = mapInstanceRef.current;
-        if (shouldFlyTo && map) {
-          map.flyTo([fuzzedLat, fuzzedLng], 15, {
-            animate: true,
-            duration: 1.2
-          });
-          map.invalidateSize();
+        if (shouldFlyTo && isActive) {
+          safeFlyTo(fuzzedLat, fuzzedLng, 15);
         }
 
         const s = socketRef.current;
-        if (s) {
+        if (s && isValidCoordinate(fuzzedLat, fuzzedLng)) {
           s.emit("update_user_location", { lat: fuzzedLat, lng: fuzzedLng });
           s.emit("share_location", { lat: fuzzedLat, lng: fuzzedLng });
         }
@@ -494,8 +527,12 @@ export default function LiveMap({
     if (mapInstanceRef.current) return;
 
     const savedCoords = myCoordsRef.current;
-    const initialLat = savedCoords && isValidCoordinate(savedCoords.lat, savedCoords.lng) ? savedCoords.lat : 41.0082;
-    const initialLng = savedCoords && isValidCoordinate(savedCoords.lat, savedCoords.lng) ? savedCoords.lng : 28.9784;
+    let initialLat = 41.0082;
+    let initialLng = 28.9784;
+    if (savedCoords && isValidCoordinate(savedCoords.lat, savedCoords.lng)) {
+      initialLat = Number(savedCoords.lat);
+      initialLng = Number(savedCoords.lng);
+    }
     const defaultCenter: [number, number] = [initialLat, initialLng];
     
     const map = L.map(mapContainerRef.current, {
@@ -545,10 +582,14 @@ export default function LiveMap({
         intervalIdRef.current = null;
       }
       markersRef.current.forEach((marker) => {
-        map.removeLayer(marker);
+        try {
+          map.removeLayer(marker);
+        } catch {}
       });
       markersRef.current.clear();
-      map.remove();
+      try {
+        map.remove();
+      } catch {}
       mapInstanceRef.current = null;
     };
   }, []); // Run ONCE on mount
@@ -560,16 +601,19 @@ export default function LiveMap({
     if (!map) return;
 
     map.invalidateSize();
-    const t1 = setTimeout(() => map.invalidateSize(), 50);
-    const t2 = setTimeout(() => map.invalidateSize(), 200);
-    const t3 = setTimeout(() => map.invalidateSize(), 500);
+    const t1 = setTimeout(() => {
+      map.invalidateSize();
+      if (myCoordsRef.current && isValidCoordinate(myCoordsRef.current.lat, myCoordsRef.current.lng)) {
+        safeFlyTo(myCoordsRef.current.lat, myCoordsRef.current.lng, 14);
+      }
+    }, 100);
+    const t2 = setTimeout(() => map.invalidateSize(), 300);
 
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
-      clearTimeout(t3);
     };
-  }, [isActive, myCoords, isSharing, showUsersPanel]);
+  }, [isActive, safeFlyTo]);
 
   // Socket.io Real-time Location synchronization
   useEffect(() => {
@@ -577,7 +621,14 @@ export default function LiveMap({
 
     const handleUpdateUserLocations = (locations: UserLiveLocation[]) => {
       if (Array.isArray(locations)) {
-        setUsersLocations(locations);
+        const sanitized = locations
+          .filter((loc) => loc && isValidCoordinate(loc.lat, loc.lng))
+          .map((loc) => ({
+            ...loc,
+            lat: Number(loc.lat),
+            lng: Number(loc.lng)
+          }));
+        setUsersLocations(sanitized);
       }
     };
 
@@ -599,23 +650,25 @@ export default function LiveMap({
         const isLive = data.isLocationActive !== undefined ? data.isLocationActive : data.isLive;
         if (index >= 0) {
           const updated = [...prev];
+          const hasValidNewLat = typeof data.lat === "number" && !isNaN(data.lat) && isFinite(data.lat);
+          const hasValidNewLng = typeof data.lng === "number" && !isNaN(data.lng) && isFinite(data.lng);
           updated[index] = {
             ...updated[index],
             isLocationActive: isLive,
             lastSeen: data.lastSeen || updated[index].lastSeen,
             status: data.status || (isLive ? "Aktif Çevrimiçi" : "Konum Kapalı"),
-            lat: data.lat ?? updated[index].lat,
-            lng: data.lng ?? updated[index].lng
+            lat: hasValidNewLat ? data.lat! : updated[index].lat,
+            lng: hasValidNewLng ? data.lng! : updated[index].lng
           };
           return updated;
-        } else if (typeof data.lat === "number" && typeof data.lng === "number" && isValidCoordinate(data.lat, data.lng)) {
+        } else if (isValidCoordinate(data.lat, data.lng)) {
           return [...prev, {
             userId: data.userId,
             username: data.username || "Kullanıcı",
             avatar: data.avatar || null,
             color: data.color || "#3b82f6",
-            lat: data.lat,
-            lng: data.lng,
+            lat: Number(data.lat),
+            lng: Number(data.lng),
             status: data.status || (isLive ? "Aktif Çevrimiçi" : "Konum Kapalı"),
             isLocationActive: isLive,
             lastSeen: data.lastSeen || Date.now()
@@ -654,8 +707,8 @@ export default function LiveMap({
         username,
         avatar,
         color: color || "#3b82f6",
-        lat: myCoords.lat,
-        lng: myCoords.lng,
+        lat: Number(myCoords.lat),
+        lng: Number(myCoords.lng),
         status: isSharing ? "Haritada Aktif (Siz)" : "Konum Kapalı (Siz)",
         isLocationActive: isSharing,
         lastSeen: selfIndex >= 0 && !isSharing ? (combinedList[selfIndex].lastSeen || Date.now()) : Date.now()
@@ -669,7 +722,9 @@ export default function LiveMap({
     }
 
     combinedList.forEach((user) => {
-      if (!isValidCoordinate(user.lat, user.lng)) return;
+      const safeLat = Number(user.lat);
+      const safeLng = Number(user.lng);
+      if (!isValidCoordinate(safeLat, safeLng)) return;
       activeUserIds.add(user.userId);
       const isMe = user.userId === currentUserId;
 
@@ -678,29 +733,39 @@ export default function LiveMap({
       const popupContent = createPopupContent(user, isMe);
 
       if (existingMarker) {
-        existingMarker.setLatLng([user.lat, user.lng]);
-        existingMarker.setIcon(icon);
-        existingMarker.setPopupContent(popupContent);
+        try {
+          existingMarker.setLatLng([safeLat, safeLng]);
+          existingMarker.setIcon(icon);
+          existingMarker.setPopupContent(popupContent);
+        } catch (err) {
+          console.warn("Marker setLatLng failed:", err);
+        }
       } else {
-        const marker = L.marker([user.lat, user.lng], { 
-          icon,
-          draggable: false // Strict constraint: all markers fixed & non-draggable
-        })
-          .addTo(map)
-          .bindPopup(popupContent, {
-            className: "custom-leaflet-popup",
-            closeButton: false,
-            offset: [0, -8]
-          });
+        try {
+          const marker = L.marker([safeLat, safeLng], { 
+            icon,
+            draggable: false // Strict constraint: all markers fixed & non-draggable
+          })
+            .addTo(map)
+            .bindPopup(popupContent, {
+              className: "custom-leaflet-popup",
+              closeButton: false,
+              offset: [0, -8]
+            });
 
-        markersRef.current.set(user.userId, marker);
+          markersRef.current.set(user.userId, marker);
+        } catch (err) {
+          console.warn("Marker creation failed:", err);
+        }
       }
     });
 
     // Clean up markers for users that no longer exist in state or DB
     markersRef.current.forEach((marker, uid) => {
       if (!activeUserIds.has(uid)) {
-        map.removeLayer(marker);
+        try {
+          map.removeLayer(marker);
+        } catch {}
         markersRef.current.delete(uid);
       }
     });
@@ -708,12 +773,8 @@ export default function LiveMap({
 
   // Center on user's own location
   const handleCenterOnMe = () => {
-    if (myCoords && isValidCoordinate(myCoords.lat, myCoords.lng) && mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo([myCoords.lat, myCoords.lng], 15, {
-        animate: true,
-        duration: 1.2
-      });
-      mapInstanceRef.current.invalidateSize();
+    if (myCoords && isValidCoordinate(myCoords.lat, myCoords.lng)) {
+      safeFlyTo(myCoords.lat, myCoords.lng, 15);
     } else {
       fetchAndSendPosition(true);
     }
@@ -721,15 +782,13 @@ export default function LiveMap({
 
   // Focus on specific user
   const handleFocusUser = (u: UserLiveLocation) => {
-    if (mapInstanceRef.current && isValidCoordinate(u.lat, u.lng)) {
-      mapInstanceRef.current.flyTo([u.lat, u.lng], 15, {
-        animate: true,
-        duration: 1.2
-      });
-      mapInstanceRef.current.invalidateSize();
+    if (isValidCoordinate(u.lat, u.lng)) {
+      safeFlyTo(u.lat, u.lng, 15);
       const marker = markersRef.current.get(u.userId);
       if (marker) {
-        marker.openPopup();
+        try {
+          marker.openPopup();
+        } catch {}
       }
       setShowUsersPanel(false);
     }

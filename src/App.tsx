@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { App as CapApp } from "@capacitor/app";
-import { MessageSquare, LayoutGrid, Users, UserCircle2, Globe, Bell, Folder, Moon, Sun, Gamepad2, Radio, MapPin, Megaphone, Crown, CalendarDays } from "lucide-react";
+import { MessageSquare, LayoutGrid, Users, UserCircle2, Globe, Bell, Folder, Moon, Sun, Gamepad2, Radio, MapPin, Megaphone, Crown, CalendarDays, CloudSun } from "lucide-react";
 import Auth from "./components/Auth";
 import Feed from "./components/Feed";
 import Chats from "./components/Chats";
@@ -12,6 +12,7 @@ import Notifications from "./components/Notifications";
 import Games from "./components/Games";
 import VoiceChat from "./components/VoiceChat";
 import LiveMap from "./components/LiveMap";
+import WeatherDashboard from "./components/WeatherDashboard";
 import Announcements, { AnnouncementItem } from "./components/Announcements";
 import AnnouncementModal from "./components/AnnouncementModal";
 import ToastContainer, { ToastItem } from "./components/ToastContainer";
@@ -26,6 +27,7 @@ import VoiceCallInviteModal, { VoiceCallInvite } from "./components/VoiceCallInv
 import { getSocketUrl, getApiUrl } from "./utils/api";
 import { getCachedHardwareFingerprint, getHardwareFingerprint } from "./utils/deviceFingerprint";
 import { isVisibleToUser } from "./types";
+import { getCachedWeather, fetchWeatherForecast, DEFAULT_ISTANBUL_LOCATION, getWeatherMeta, WeatherData } from "./utils/weatherService";
 
 const SUBJECTS = ["Turkish", "Mathematics", "Physics", "Digital Society", "English", "Chemistry", "Biology", "TITC"];
 
@@ -52,7 +54,7 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState<number[]>([]);
   const [currentUserId, setCurrentUserId] = useState<number>(Number(localStorage.getItem("lan_user_id")) || 0);
   
-  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin">("chats");
+  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather">("chats");
   const [activeSubject, setActiveSubject] = useState<string | null>(null);
   const [viewingUserId, setViewingUserId] = useState<number>(currentUserId);
   const [targetChatUserId, setTargetChatUserId] = useState<number | null>(null);
@@ -93,6 +95,42 @@ export default function App() {
 
   // Incoming Voice Room Invite State (VoiceCallInviteModal)
   const [voiceInvite, setVoiceInvite] = useState<VoiceCallInvite | null>(null);
+
+  // Live Weather Mini Badge State for Sidebar & Mobile Nav
+  const [miniWeatherBadge, setMiniWeatherBadge] = useState<{ emoji: string; temp: number } | null>(() => {
+    const cached = getCachedWeather();
+    if (cached) {
+      const meta = getWeatherMeta(cached.current.weatherCode, cached.current.isDay);
+      return { emoji: meta.emoji, temp: cached.current.temperature };
+    }
+    return null;
+  });
+
+  // Fetch or listen for weather badge updates
+  useEffect(() => {
+    const handleWeatherUpdated = (e: any) => {
+      const w: WeatherData = e.detail;
+      if (w?.current) {
+        const meta = getWeatherMeta(w.current.weatherCode, w.current.isDay);
+        setMiniWeatherBadge({ emoji: meta.emoji, temp: w.current.temperature });
+      }
+    };
+    window.addEventListener("kaps:weather_updated", handleWeatherUpdated);
+
+    // Initial silent badge fetch if not cached
+    if (!miniWeatherBadge) {
+      fetchWeatherForecast(DEFAULT_ISTANBUL_LOCATION.latitude, DEFAULT_ISTANBUL_LOCATION.longitude, DEFAULT_ISTANBUL_LOCATION.name)
+        .then((data) => {
+          const meta = getWeatherMeta(data.current.weatherCode, data.current.isDay);
+          setMiniWeatherBadge({ emoji: meta.emoji, temp: data.current.temperature });
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      window.removeEventListener("kaps:weather_updated", handleWeatherUpdated);
+    };
+  }, []);
 
   const handleAcceptVoiceInvite = (invite: VoiceCallInvite) => {
     if (socket) {
@@ -582,7 +620,7 @@ export default function App() {
     window.location.reload();
   };
 
-  const handleTabChange = (tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin") => {
+  const handleTabChange = (tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather") => {
     setActiveTab(tab);
     if (tab === "announcements") {
       setHasUnreadAnnouncement(false);
@@ -835,6 +873,20 @@ export default function App() {
               onClick={() => handleTabChange('announcements')} 
             />
             <NavItem 
+              icon={<CloudSun className="text-sky-500" />} 
+              label="Hava Durumu" 
+              active={activeTab === 'weather'} 
+              extraBadge={
+                miniWeatherBadge ? (
+                  <span className="px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/80 text-[11px] font-mono font-bold shadow-xs flex items-center gap-1">
+                    <span>{miniWeatherBadge.emoji}</span>
+                    <span>{miniWeatherBadge.temp}°C</span>
+                  </span>
+                ) : null
+              }
+              onClick={() => handleTabChange('weather')} 
+            />
+            <NavItem 
               icon={<CalendarDays className="text-blue-500 dark:text-blue-400" />} 
               label="Ajanda" 
               active={activeTab === 'agenda'} 
@@ -995,6 +1047,14 @@ export default function App() {
           />
         )}
         
+        {/* Weather Dashboard Tab */}
+        {activeTab === 'weather' && (
+          <WeatherDashboard 
+            darkMode={darkMode}
+            onBackToMain={() => handleTabChange('chats')} 
+          />
+        )}
+
         {/* Persistently mounted LiveMap tab to prevent re-initialization and gray tiles when switching tabs */}
         <div className={`flex-1 flex-col relative w-full h-full ${activeTab === 'map' ? 'flex' : 'hidden'}`}>
           <LiveMap 
@@ -1039,6 +1099,12 @@ export default function App() {
           <MobileNavItem icon={<Globe size={22} />} active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
           <MobileNavItem icon={<MessageSquare size={22} />} active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
           <MobileNavItem icon={<LayoutGrid size={22} />} active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
+          <MobileNavItem 
+            icon={<CloudSun size={22} className="text-sky-500" />} 
+            active={activeTab === 'weather'} 
+            extraBadge={miniWeatherBadge ? `${miniWeatherBadge.temp}°` : undefined} 
+            onClick={() => handleTabChange('weather')} 
+          />
           <MobileNavItem icon={<Folder size={22} className="text-blue-500" />} active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
           <MobileNavItem icon={<MapPin size={22} className="text-emerald-500" />} active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
           <MobileNavItem icon={<Radio size={22} />} active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
@@ -1062,13 +1128,29 @@ export default function App() {
   );
 }
 
-function NavItem({ icon, label, active, badge, dotBadge, onClick }: { icon: React.ReactNode, label: string, active: boolean, badge?: number, dotBadge?: boolean, onClick: () => void }) {
+function NavItem({ 
+  icon, 
+  label, 
+  active, 
+  badge, 
+  dotBadge, 
+  extraBadge, 
+  onClick 
+}: { 
+  icon: React.ReactNode; 
+  label: string; 
+  active: boolean; 
+  badge?: number; 
+  dotBadge?: boolean; 
+  extraBadge?: React.ReactNode; 
+  onClick: () => void; 
+}) {
   return (
     <button 
       onClick={onClick}
       className={`w-full flex items-center justify-between p-3 lg:px-4 rounded-xl transition-all relative cursor-pointer ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <div className={`relative ${active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-500'}`}>
           {icon}
           {badge && badge > 0 && <div className="lg:hidden absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white dark:border-slate-900"></div>}
@@ -1076,7 +1158,11 @@ function NavItem({ icon, label, active, badge, dotBadge, onClick }: { icon: Reac
         </div>
         <span className="hidden lg:block">{label}</span>
       </div>
-      {badge && badge > 0 ? (
+      {extraBadge ? (
+        <div className="hidden lg:flex items-center">
+          {extraBadge}
+        </div>
+      ) : badge && badge > 0 ? (
          <span className="hidden lg:flex px-1.5 min-w-[20px] h-5 bg-red-500 text-white text-[10px] items-center justify-center rounded-full font-bold shadow-sm">
            {badge > 99 ? '99+' : badge}
          </span>
@@ -1087,7 +1173,21 @@ function NavItem({ icon, label, active, badge, dotBadge, onClick }: { icon: Reac
   );
 }
 
-function MobileNavItem({ icon, active, badge, dotBadge, onClick }: { icon: React.ReactNode, active: boolean, badge?: number, dotBadge?: boolean, onClick: () => void }) {
+function MobileNavItem({ 
+  icon, 
+  active, 
+  badge, 
+  dotBadge, 
+  extraBadge, 
+  onClick 
+}: { 
+  icon: React.ReactNode; 
+  active: boolean; 
+  badge?: number; 
+  dotBadge?: boolean; 
+  extraBadge?: string; 
+  onClick: () => void; 
+}) {
   return (
     <button 
       onClick={onClick}
@@ -1100,6 +1200,10 @@ function MobileNavItem({ icon, active, badge, dotBadge, onClick }: { icon: React
         </span>
       ) : dotBadge ? (
         <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse shadow-sm shadow-red-500/50"></span>
+      ) : extraBadge ? (
+        <span className="absolute -top-0.5 right-0 px-1 min-w-[14px] h-3.5 bg-sky-500 text-white text-[8px] font-black flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none shadow-xs">
+          {extraBadge}
+        </span>
       ) : null}
     </button>
   );

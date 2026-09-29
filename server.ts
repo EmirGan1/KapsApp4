@@ -3690,6 +3690,8 @@ async function startServer() {
 
   const saveLastLocationToDb = (loc: UserLiveLocation) => {
     if (!loc || !loc.userId || typeof loc.lat !== "number" || typeof loc.lng !== "number") return;
+    if (isNaN(loc.lat) || isNaN(loc.lng) || !isFinite(loc.lat) || !isFinite(loc.lng)) return;
+    if (loc.lat < -90 || loc.lat > 90 || loc.lng < -180 || loc.lng > 180) return;
     client.execute({
       sql: `INSERT INTO last_known_locations (userId, username, avatar, color, lat, lng, status, lastSeen)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -3729,14 +3731,27 @@ async function startServer() {
       });
       for (const row of res.rows) {
         const uid = Number(row.userId);
-        if (uid && !userLiveLocations.has(uid)) {
+        const lat = Number(row.lat);
+        const lng = Number(row.lng);
+        if (
+          uid &&
+          !userLiveLocations.has(uid) &&
+          !isNaN(lat) &&
+          !isNaN(lng) &&
+          isFinite(lat) &&
+          isFinite(lng) &&
+          lat >= -90 &&
+          lat <= 90 &&
+          lng >= -180 &&
+          lng <= 180
+        ) {
           userLiveLocations.set(uid, {
             userId: uid,
             username: String(row.username || "Kullanıcı"),
             avatar: row.avatar ? String(row.avatar) : null,
             color: String(row.color || "#3b82f6"),
-            lat: Number(row.lat),
-            lng: Number(row.lng),
+            lat,
+            lng,
             status: String(row.status || "Konum Kapalı"),
             updatedAt: Number(row.lastSeen || Date.now()),
             isLocationActive: false, // Cold start loaded pins are passive/last-seen
@@ -3744,7 +3759,7 @@ async function startServer() {
           });
         }
       }
-      console.log(`Veritabanından ${res.rows.length} adet son bilinen konum (tüm geçmiş kullanıcılar) yüklendi.`);
+      console.log(`Veritabanından ${userLiveLocations.size} adet geçerli son bilinen konum (tüm geçmiş kullanıcılar) yüklendi.`);
     } catch (err) {
       console.error("Error loading last_known_locations from DB:", err);
     }
