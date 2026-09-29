@@ -582,14 +582,6 @@ export default function App() {
     window.location.reload();
   };
 
-  if (isDeviceBanned) {
-    return <DeviceBanScreen reason={deviceBanReason} onRetry={() => window.location.reload()} />;
-  }
-
-  if (!token) {
-    return <Auth onAuthSuccess={handleAuthSuccess} />;
-  }
-
   const handleTabChange = (tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin") => {
     setActiveTab(tab);
     if (tab === "announcements") {
@@ -630,6 +622,19 @@ export default function App() {
     let capListener: any = null;
 
     const handleHardwareBack = () => {
+      // 0. If user is in ban screen or not authenticated (Auth screen)
+      if (isDeviceBanned || !token) {
+        const now = Date.now();
+        if (now - lastBackPressRef.current < 2000) {
+          try {
+            CapApp.exitApp();
+          } catch (e) {}
+        } else {
+          lastBackPressRef.current = now;
+        }
+        return;
+      }
+
       // 1. Dispatch custom event for child components & active modals (e.g. Chat active thread, Game rooms, KVKK, Chip manager, etc.)
       const backEvt = new CustomEvent("kaps:hardware_back", {
         cancelable: true,
@@ -710,9 +715,17 @@ export default function App() {
       }
       window.removeEventListener("popstate", onPopState);
     };
-  }, [activeAnnouncementModal, activeSubject, activeTab, currentUserId, viewingUserId]);
+  }, [activeAnnouncementModal, activeSubject, activeTab, currentUserId, viewingUserId, isDeviceBanned, token]);
 
   const isEmirgan = (username || "").trim().toLowerCase() === "emirgan";
+
+  if (isDeviceBanned) {
+    return <DeviceBanScreen reason={deviceBanReason} onRetry={() => window.location.reload()} />;
+  }
+
+  if (!token) {
+    return <Auth onAuthSuccess={handleAuthSuccess} />;
+  }
 
   return (
     <CallProvider

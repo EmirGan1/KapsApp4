@@ -11,6 +11,7 @@ import UnoGame from './UnoGame';
 import DrawGuessGame from './DrawGuessGame';
 import BlackjackGame from './BlackjackGame';
 import BatakGame from './BatakGame';
+import TexasHoldemPokerGame from './TexasHoldemPokerGame';
 import CardTableLobbyModal, { CardTableInfo, CreateTableOptions } from './CardTableLobbyModal';
 import AdminChipManagerModal from './AdminChipManagerModal';
 import KvkkModal from './KvkkModal';
@@ -37,6 +38,7 @@ interface LeaderboardUser {
   uno_wins?: number;
   blackjack_wins?: number;
   batak_wins?: number;
+  poker_wins?: number;
   chips?: number;
 }
 
@@ -72,9 +74,10 @@ export default function Games({
   const [lobbyInitialTab, setLobbyInitialTab] = useState<'create' | 'browse'>('create');
   const [playMenuGame, setPlayMenuGame] = useState<'blackjack' | 'batak' | 'poker' | null>(null);
   const [blackjackTableOptions, setBlackjackTableOptions] = useState<CreateTableOptions | null>(null);
+  const [pokerTableOptions, setPokerTableOptions] = useState<CreateTableOptions | null>(null);
 
   // Leaderboard state
-  const [leaderboardTab, setLeaderboardTab] = useState<'chips' | 'okey' | 'uno' | 'blackjack' | 'batak'>('chips');
+  const [leaderboardTab, setLeaderboardTab] = useState<'chips' | 'okey' | 'uno' | 'blackjack' | 'batak' | 'poker'>('chips');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardUser[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState<boolean>(false);
   const [showAdminChipsModal, setShowAdminChipsModal] = useState<boolean>(false);
@@ -83,7 +86,7 @@ export default function Games({
   const isEmirgan = username?.toLowerCase().trim() === 'emirgan';
 
   // Fetch leaderboard data
-  const fetchLeaderboard = (tab: 'chips' | 'okey' | 'uno' | 'blackjack' | 'batak') => {
+  const fetchLeaderboard = (tab: 'chips' | 'okey' | 'uno' | 'blackjack' | 'batak' | 'poker') => {
     setLoadingLeaderboard(true);
     if (socket && socket.connected) {
       socket.emit("get_leaderboard", { type: tab }, (rows: LeaderboardUser[]) => {
@@ -278,8 +281,28 @@ export default function Games({
     );
   }
 
-  // Route: Blackjack 21 & Poker
-  if (selectedGame === 'blackjack' || selectedGame === 'poker') {
+  // Route: Texas Hold'em Poker
+  if (selectedGame === 'poker') {
+    return (
+      <TexasHoldemPokerGame
+        socket={socket}
+        currentUserId={currentUserId}
+        username={username}
+        avatar={avatar}
+        color={color || '#3b82f6'}
+        tableId={selectedGameTableId}
+        tableOptions={pokerTableOptions}
+        onBackToHub={() => {
+          setSelectedGame('hub');
+          setSelectedGameTableId(null);
+          setPokerTableOptions(null);
+        }}
+      />
+    );
+  }
+
+  // Route: Blackjack 21
+  if (selectedGame === 'blackjack') {
     return (
       <BlackjackGame
         socket={socket}
@@ -642,7 +665,7 @@ export default function Games({
                           socket.emit('join_table', { tableId: t.id, gameType: t.gameType });
                         }
                         const targetRoute: SelectedGameType = 
-                          t.gameType === 'poker' ? 'blackjack' :
+                          t.gameType === 'poker' ? 'poker' :
                           t.gameType === 'okey101' ? 'okey101' :
                           t.gameType === 'okey' ? 'okey' :
                           t.gameType === 'uno' ? 'uno' :
@@ -780,7 +803,8 @@ export default function Games({
                   { id: 'okey', label: '🀄 Okey' },
                   { id: 'uno', label: '🎴 UNO' },
                   { id: 'blackjack', label: '🃏 21' },
-                  { id: 'batak', label: '♠️ Batak' }
+                  { id: 'poker', label: '♠️ Poker' },
+                  { id: 'batak', label: '♣️ Batak' }
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -832,6 +856,7 @@ export default function Games({
                     leaderboardTab === 'uno' ? (userRow.uno_wins || 0) :
                     leaderboardTab === 'blackjack' ? (userRow.blackjack_wins || 0) :
                     leaderboardTab === 'batak' ? (userRow.batak_wins || 0) :
+                    leaderboardTab === 'poker' ? (userRow.poker_wins || 0) :
                     (userRow.okey_wins || 0);
 
                   return (
@@ -1037,17 +1062,31 @@ export default function Games({
           currentUsername={username}
           activeTables={activeTables}
           onCreateTable={(opts) => {
-            setBlackjackTableOptions(opts);
-            setSelectedGame(lobbyModalGame === 'poker' ? 'blackjack' : lobbyModalGame);
+            if (lobbyModalGame === 'poker') {
+              setPokerTableOptions(opts);
+              setSelectedGame('poker');
+            } else if (lobbyModalGame === 'batak') {
+              setSelectedGame('batak');
+            } else {
+              setBlackjackTableOptions(opts);
+              setSelectedGame('blackjack');
+            }
             setLobbyModalGame(null);
           }}
           onJoinTable={(tableId) => {
-            setBlackjackTableOptions(null);
             setSelectedGameTableId(tableId);
             if (socket && socket.connected && lobbyModalGame) {
               socket.emit('join_table', { tableId, gameType: lobbyModalGame });
             }
-            setSelectedGame(lobbyModalGame === 'poker' ? 'blackjack' : lobbyModalGame);
+            if (lobbyModalGame === 'poker') {
+              setPokerTableOptions(null);
+              setSelectedGame('poker');
+            } else if (lobbyModalGame === 'batak') {
+              setSelectedGame('batak');
+            } else {
+              setBlackjackTableOptions(null);
+              setSelectedGame('blackjack');
+            }
             setLobbyModalGame(null);
           }}
         />

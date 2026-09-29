@@ -165,6 +165,9 @@ async function initDb() {
     await client.execute(`ALTER TABLE users ADD COLUMN batak_wins INTEGER DEFAULT 0`);
   } catch (e) {}
   try {
+    await client.execute(`ALTER TABLE users ADD COLUMN poker_wins INTEGER DEFAULT 0`);
+  } catch (e) {}
+  try {
     await client.execute(`ALTER TABLE users ADD COLUMN chips INTEGER DEFAULT 1000`);
   } catch (e) {}
   await client.execute(`CREATE TABLE IF NOT EXISTS friends (
@@ -1991,6 +1994,7 @@ async function startServer() {
           type === "uno" ? "uno_wins" : 
           type === "blackjack" ? "blackjack_wins" : 
           type === "batak" ? "batak_wins" : 
+          type === "poker" ? "poker_wins" : 
           "okey_wins";
 
         result = await client.execute({
@@ -1999,7 +2003,8 @@ async function startServer() {
                        COALESCE(okey_wins, 0) AS okey_wins, 
                        COALESCE(uno_wins, 0) AS uno_wins, 
                        COALESCE(blackjack_wins, 0) AS blackjack_wins, 
-                       COALESCE(batak_wins, 0) AS batak_wins 
+                       COALESCE(batak_wins, 0) AS batak_wins,
+                       COALESCE(poker_wins, 0) AS poker_wins
                 FROM users ORDER BY COALESCE(${orderCol}, 0) DESC, id ASC LIMIT 10`,
           args: []
         });
@@ -2052,6 +2057,53 @@ async function startServer() {
       }
 
       res.json({ success: true, chips: newChips });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // User Game Chips Delta Update via HTTP (Fallback & direct sync)
+  app.post("/api/chips/update", async (req, res) => {
+    try {
+      const authUser = await authenticateToken(req);
+      if (!authUser) {
+        return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
+      }
+      const { delta, gameType } = req.body;
+      const numDelta = parseInt(String(delta), 10) || 0;
+      if (numDelta === 0) {
+        return res.json({ success: true });
+      }
+
+      const uId = Number(authUser.id);
+      const userRes = await client.execute({ sql: "SELECT id, chips FROM users WHERE id = ?", args: [uId] });
+      if (userRes.rows.length === 0) return res.status(404).json({ error: "Kullanıcı bulunamadı." });
+
+      const currentChips = Number(userRes.rows[0].chips ?? 1000);
+      const newChips = Math.max(0, currentChips + numDelta);
+
+      let winColUpdate = "";
+      if (numDelta > 0) {
+        if (gameType === "blackjack") winColUpdate = ", blackjack_wins = COALESCE(blackjack_wins, 0) + 1";
+        else if (gameType === "batak") winColUpdate = ", batak_wins = COALESCE(batak_wins, 0) + 1";
+        else if (gameType === "poker") winColUpdate = ", poker_wins = COALESCE(poker_wins, 0) + 1";
+        else if (gameType === "uno") winColUpdate = ", uno_wins = COALESCE(uno_wins, 0) + 1";
+        else if (gameType === "okey") winColUpdate = ", okey_wins = COALESCE(okey_wins, 0) + 1";
+      }
+
+      await client.execute({ 
+        sql: `UPDATE users SET chips = ? ${winColUpdate} WHERE id = ?`, 
+        args: [newChips, uId] 
+      });
+      invalidateUserCache(uId);
+
+      const sockId = onlineUsers.get(uId);
+      if (sockId) {
+        io.to(sockId).emit("chips_updated", { userId: uId, chips: newChips });
+      }
+      io.emit("leaderboard_updated");
+
+      res.json({ success: true, newChips });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6482,6 +6534,7 @@ async function startServer() {
         if (numDelta > 0) {
           if (gameType === "blackjack") winColUpdate = ", blackjack_wins = COALESCE(blackjack_wins, 0) + 1";
           else if (gameType === "batak") winColUpdate = ", batak_wins = COALESCE(batak_wins, 0) + 1";
+          else if (gameType === "poker") winColUpdate = ", poker_wins = COALESCE(poker_wins, 0) + 1";
           else if (gameType === "uno") winColUpdate = ", uno_wins = COALESCE(uno_wins, 0) + 1";
           else if (gameType === "okey") winColUpdate = ", okey_wins = COALESCE(okey_wins, 0) + 1";
         }
