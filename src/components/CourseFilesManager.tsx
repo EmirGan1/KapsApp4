@@ -104,6 +104,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     console.log(`[Upload Debug] Ders dosyası adı: ${selectedFile.name}, Ham Boyut (Bytes): ${selectedFile.size}, MB Karşılığı: ${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`);
 
     if (selectedFile.size > MAX_FILE_SIZE) {
+      console.error('[HATA NEREDE - CourseFilesManager.tsx:handleFileUpload] Dosya engellendi! Dosya:', selectedFile.name, 'Boyut (Bytes):', selectedFile.size, 'Limit:', MAX_FILE_SIZE);
       const fileSizeInMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
       alert(`"${selectedFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -124,6 +125,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
       if (!res.ok) {
         if (res.status === 413) {
+          console.error('[HATA NEREDE - CourseFilesManager.tsx:handleFileUpload] Sunucu/Nginx HTTP 413 döndürdü.');
           throw new Error("Dosya boyutu çok büyük (Maksimum 300MB).");
         }
         const err = await res.json().catch(() => ({}));

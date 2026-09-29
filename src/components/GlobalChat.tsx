@@ -345,6 +345,7 @@ export default function GlobalChat({
       console.log(`[Upload Debug] Genel sohbet dosya adı: ${rawFile.name}, Ham Boyut (Bytes): ${rawFile.size}, MB Karşılığı: ${(rawFile.size / (1024 * 1024)).toFixed(2)} MB`);
       
       if (rawFile.size > MAX_FILE_SIZE) {
+        console.error('[HATA NEREDE - GlobalChat.tsx:handleFileUpload] Dosya engellendi! Dosya:', rawFile.name, 'Boyut (Bytes):', rawFile.size, 'Limit:', MAX_FILE_SIZE);
         const fileSizeInMB = (rawFile.size / (1024 * 1024)).toFixed(2);
         alert(`"${rawFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
         e.target.value = "";
@@ -363,6 +364,7 @@ export default function GlobalChat({
         const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
         if (!res.ok) {
           if (res.status === 413) {
+            console.error('[HATA NEREDE - GlobalChat.tsx:handleFileUpload] Sunucu/Nginx HTTP 413 döndürdü.');
             alert("Dosya boyutu çok büyük (Maksimum 300MB).");
           } else {
             const errData = await res.json().catch(() => ({}));

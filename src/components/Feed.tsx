@@ -294,6 +294,7 @@ export default function Feed({
       console.log(`[Upload Debug] Dosya adı: ${file.name}, Ham Boyut (Bytes): ${file.size}, MB Karşılığı: ${(file.size / (1024 * 1024)).toFixed(2)} MB`);
       
       if (file.size > MAX_FILE_SIZE) {
+        console.error('[HATA NEREDE] Dosya engellendi! Dosya:', file.name, 'Boyut (Bytes):', file.size, 'Limit:', MAX_FILE_SIZE);
         const fileSizeInMB = (file.size / (1024 * 1024)).toFixed(2);
         alert(`"${file.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
         continue;
@@ -381,6 +382,7 @@ export default function Feed({
               resolve(xhr.responseText);
             }
           } else if (xhr.status === 413) {
+            console.error('[HATA NEREDE - Feed.tsx:uploadWithProgress] Sunucu veya Nginx HTTP 413 (Payload Too Large) döndürdü! İstek boyutu sunucu proxy sınırına takıldı.');
             reject(new Error("Dosya boyutu çok büyük (Maksimum 300MB)."));
           } else {
             try {
@@ -533,6 +535,7 @@ export default function Feed({
     if (!rawFile || !socket) return;
     console.log(`[Upload Debug] Hikaye dosya adı: ${rawFile.name}, Ham Boyut (Bytes): ${rawFile.size}, MB Karşılığı: ${(rawFile.size / (1024 * 1024)).toFixed(2)} MB`);
     if (rawFile.size > MAX_FILE_SIZE) {
+      console.error('[HATA NEREDE - Feed.tsx:handleStoryUpload] Hikaye dosyası engellendi! Dosya:', rawFile.name, 'Boyut (Bytes):', rawFile.size, 'Limit:', MAX_FILE_SIZE);
       const fileSizeInMB = (rawFile.size / (1024 * 1024)).toFixed(2);
       alert(`"${rawFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
       e.target.value = "";
@@ -549,6 +552,7 @@ export default function Feed({
       const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
       if (!res.ok) {
         if (res.status === 413) {
+          console.error('[HATA NEREDE - Feed.tsx:handleStoryUpload] Sunucu/Nginx HTTP 413 döndürdü.');
           alert("Dosya boyutu çok büyük (Maksimum 300MB).");
         } else {
           const errData = await res.json().catch(() => ({}));
