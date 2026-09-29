@@ -11,9 +11,7 @@ const isHttp = typeof window !== "undefined" && window.location.protocol.startsW
 
 // Frontend API Absolute Base URL Guarantee (Capacitor / Android WebView / Web)
 export const API_BASE_URL = (
-  (import.meta.env.VITE_BACKEND_URL as string | undefined) ||
-  (import.meta.env.VITE_API_URL as string | undefined) ||
-  (isNativeApp ? "https://kapsapp.online" : (isHttp ? window.location.origin : ""))
+  isNativeApp ? "https://kapsapp.online" : (isHttp ? window.location.origin : "")
 ).replace(/\/$/, "");
 
 export const BASE_URL = API_BASE_URL;

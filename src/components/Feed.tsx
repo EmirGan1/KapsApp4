@@ -281,8 +281,6 @@ export default function Feed({
     }
   }, [posts, comments, activeCommentsPostId]);
 
-  const MAX_FILE_SIZE = 300 * 1024 * 1024; // 314,572,800 Bytes (300 MB)
-
   const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFiles = e.target.files;
     if (!rawFiles || rawFiles.length === 0) return;
@@ -291,13 +289,14 @@ export default function Feed({
     const newItems: SelectedMediaItem[] = [];
 
     for (const file of fileList) {
-      const safeSize = file.size || 0;
-      console.log(`[Upload Debug] Dosya adı: ${file.name}, Tip: ${file.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
+      // 1. Dosyanın Megabayt (MB) cinsinden gerçek değerini hesapla:
+      const fileSizeInMB = (file.size || 0) / (1024 * 1024);
+      console.log(`[Upload Debug] Dosya adı: ${file.name}, Tip: ${file.type}, Ham Boyut (Bytes): ${file.size || 0}, MB Karşılığı: ${fileSizeInMB.toFixed(2)} MB`);
       
-      if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
-        console.error('[HATA NEREDE] Dosya engellendi! Dosya:', file.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
-        const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
-        alert(`"${file.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
+      // 2. Kontrolü SADECE MB üzerinden ve 300 sınırıyla yap:
+      if (fileSizeInMB > 300) {
+        console.error('[HATA NEREDE] Dosya engellendi! Dosya:', file.name, 'MB:', fileSizeInMB.toFixed(2));
+        alert(`Dosya boyutu çok büyük (Maksimum 300MB). Seçilen Dosya: ${file.name}\nTip: ${file.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB`);
         continue;
       }
 
@@ -546,12 +545,11 @@ export default function Feed({
   const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
     if (!rawFile || !socket) return;
-    const safeSize = rawFile.size || 0;
-    console.log(`[Upload Debug] Hikaye dosya adı: ${rawFile.name}, Tip: ${rawFile.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
-    if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
-      console.error('[HATA NEREDE - Feed.tsx:handleStoryUpload] Hikaye dosyası engellendi! Dosya:', rawFile.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
-      const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
-      alert(`"${rawFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
+    const fileSizeInMB = (rawFile.size || 0) / (1024 * 1024);
+    console.log(`[Upload Debug] Hikaye dosya adı: ${rawFile.name}, Tip: ${rawFile.type}, Ham Boyut (Bytes): ${rawFile.size || 0}, MB Karşılığı: ${fileSizeInMB.toFixed(2)} MB`);
+    if (fileSizeInMB > 300) {
+      console.error('[HATA NEREDE - Feed.tsx:handleStoryUpload] Hikaye dosyası engellendi! Dosya:', rawFile.name, 'MB:', fileSizeInMB.toFixed(2));
+      alert(`Dosya boyutu çok büyük (Maksimum 300MB). Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB`);
       e.target.value = "";
       return;
     }
@@ -570,7 +568,7 @@ export default function Feed({
           alert("Dosya boyutu çok büyük (Maksimum 300MB).");
         } else {
           const errData = await res.json().catch(() => ({}));
-          alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${(safeSize / (1024 * 1024)).toFixed(2)} MB\nHata: ${errData.error || `Yüklenemedi (${res.status})`}`);
+          alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB\nHata: ${errData.error || `Yüklenemedi (${res.status})`}`);
         }
         return;
       }

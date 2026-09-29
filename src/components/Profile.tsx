@@ -201,19 +201,18 @@ export default function Profile({
     }
   };
 
-  const MAX_FILE_SIZE = 300 * 1024 * 1024; // 314,572,800 Bytes (300 MB)
-
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const safeSize = file.size || 0;
-    console.log(`[Upload Debug] Profil resmi adı: ${file.name}, Tip: ${file.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
+    // 1. Önce dosyanın megabayt (MB) cinsinden gerçek değerini hesapla:
+    const fileSizeInMB = (file.size || 0) / (1024 * 1024);
+    console.log(`[Upload Debug] Profil resmi adı: ${file.name}, Tip: ${file.type}, Ham Boyut (Bytes): ${file.size || 0}, MB Karşılığı: ${fileSizeInMB.toFixed(2)} MB`);
 
-    if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
-      console.error('[HATA NEREDE - Profile.tsx:handleAvatarChange] Profil resmi engellendi! Dosya:', file.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
-      const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
-      alert(`"${file.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
+    // 2. Kontrolü SADECE MB üzerinden ve 300 sınırıyla yap:
+    if (fileSizeInMB > 300) {
+      console.error('[HATA NEREDE - Profile.tsx:handleAvatarChange] Profil resmi engellendi! Dosya:', file.name, 'MB:', fileSizeInMB.toFixed(2));
+      alert(`Dosya boyutu çok büyük (Maksimum 300MB). Seçilen Dosya: ${file.name}\nTip: ${file.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB`);
       e.target.value = "";
       return;
     }
@@ -235,7 +234,7 @@ export default function Profile({
           alert("Dosya boyutu çok büyük (Maksimum 300MB).");
         } else {
           const errData = await res.json().catch(() => ({}));
-          alert(`Seçilen Dosya: ${file.name}\nTip: ${file.type || 'Bilinmiyor'}\nBoyut: ${(safeSize / (1024 * 1024)).toFixed(2)} MB\nHata: ${errData.error || `Profil resmi yüklenemedi (${res.status})`}`);
+          alert(`Seçilen Dosya: ${file.name}\nTip: ${file.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB\nHata: ${errData.error || `Profil resmi yüklenemedi (${res.status})`}`);
         }
         return;
       }

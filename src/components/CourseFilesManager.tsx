@@ -95,19 +95,18 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     }
   }, [courseId, socket]);
 
-  const MAX_FILE_SIZE = 300 * 1024 * 1024; // 314,572,800 Bytes (300 MB)
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    const safeSize = selectedFile.size || 0;
-    console.log(`[Upload Debug] Ders dosyası adı: ${selectedFile.name}, Tip: ${selectedFile.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
+    // 1. Önce dosyanın megabayt (MB) cinsinden gerçek değerini hesapla:
+    const fileSizeInMB = (selectedFile.size || 0) / (1024 * 1024);
+    console.log(`[Upload Debug] Ders dosyası adı: ${selectedFile.name}, Tip: ${selectedFile.type}, Ham Boyut (Bytes): ${selectedFile.size || 0}, MB Karşılığı: ${fileSizeInMB.toFixed(2)} MB`);
 
-    if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
-      console.error('[HATA NEREDE - CourseFilesManager.tsx:handleFileUpload] Dosya engellendi! Dosya:', selectedFile.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
-      const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
-      alert(`"${selectedFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
+    // 2. Kontrolü SADECE MB üzerinden ve 300 sınırıyla yap:
+    if (fileSizeInMB > 300) {
+      console.error('[HATA NEREDE - CourseFilesManager.tsx:handleFileUpload] Dosya engellendi! Dosya:', selectedFile.name, 'MB:', fileSizeInMB.toFixed(2));
+      alert(`Dosya boyutu çok büyük (Maksimum 300MB). Seçilen Dosya: ${selectedFile.name}\nTip: ${selectedFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB`);
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -130,7 +129,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
           throw new Error("Dosya boyutu çok büyük (Maksimum 300MB).");
         }
         const err = await res.json().catch(() => ({}));
-        throw new Error(`Seçilen Dosya: ${selectedFile.name}\nTip: ${selectedFile.type || 'Bilinmiyor'}\nBoyut: ${(safeSize / (1024 * 1024)).toFixed(2)} MB\nHata: ${err.error || `Dosya yüklenemedi (${res.status}).`}`);
+        throw new Error(`Seçilen Dosya: ${selectedFile.name}\nTip: ${selectedFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB\nHata: ${err.error || `Dosya yüklenemedi (${res.status}).`}`);
       }
 
       const data = await res.json();

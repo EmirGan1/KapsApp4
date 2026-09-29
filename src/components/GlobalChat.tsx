@@ -337,18 +337,17 @@ export default function GlobalChat({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
   };
 
-  const MAX_FILE_SIZE = 300 * 1024 * 1024; // 314,572,800 Bytes (300 MB)
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
     if (rawFile && socket) {
-      const safeSize = rawFile.size || 0;
-      console.log(`[Upload Debug] Genel sohbet dosya adı: ${rawFile.name}, Tip: ${rawFile.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
+      // 1. Önce dosyanın megabayt (MB) cinsinden gerçek değerini hesapla:
+      const fileSizeInMB = (rawFile.size || 0) / (1024 * 1024);
+      console.log(`[Upload Debug] Genel sohbet dosya adı: ${rawFile.name}, Tip: ${rawFile.type}, Ham Boyut (Bytes): ${rawFile.size || 0}, MB Karşılığı: ${fileSizeInMB.toFixed(2)} MB`);
       
-      if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
-        console.error('[HATA NEREDE - GlobalChat.tsx:handleFileUpload] Dosya engellendi! Dosya:', rawFile.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
-        const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
-        alert(`"${rawFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
+      // 2. Kontrolü SADECE MB üzerinden ve 300 sınırıyla yap:
+      if (fileSizeInMB > 300) {
+        console.error('[HATA NEREDE - GlobalChat.tsx:handleFileUpload] Dosya engellendi! Dosya:', rawFile.name, 'MB:', fileSizeInMB.toFixed(2));
+        alert(`Dosya boyutu çok büyük (Maksimum 300MB). Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB`);
         e.target.value = "";
         return;
       }
@@ -369,7 +368,7 @@ export default function GlobalChat({
             alert("Dosya boyutu çok büyük (Maksimum 300MB).");
           } else {
             const errData = await res.json().catch(() => ({}));
-            alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${(safeSize / (1024 * 1024)).toFixed(2)} MB\nHata: ${errData.error || `Dosya yüklenemedi (${res.status})`}`);
+            alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB\nHata: ${errData.error || `Dosya yüklenemedi (${res.status})`}`);
           }
           return;
         }
