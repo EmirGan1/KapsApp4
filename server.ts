@@ -75,10 +75,17 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     let ext = path.extname(file.originalname);
     if (!ext) {
-      if (file.mimetype.startsWith('video/')) ext = '.mp4';
-      else if (file.mimetype.startsWith('image/')) ext = '.jpg';
-      else if (file.mimetype.startsWith('audio/')) ext = '.mp3';
-      else if (file.mimetype === 'application/pdf') ext = '.pdf';
+      const mime = (file.mimetype || '').toLowerCase();
+      if (mime.startsWith('video/') || mime === 'video/quicktime') ext = '.mp4';
+      else if (mime.startsWith('image/')) {
+        if (mime.includes('heic')) ext = '.heic';
+        else if (mime.includes('heif')) ext = '.heif';
+        else if (mime.includes('webp')) ext = '.webp';
+        else if (mime.includes('png')) ext = '.png';
+        else ext = '.jpg';
+      }
+      else if (mime.startsWith('audio/')) ext = '.mp3';
+      else if (mime === 'application/pdf') ext = '.pdf';
       else ext = '.bin';
     }
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);

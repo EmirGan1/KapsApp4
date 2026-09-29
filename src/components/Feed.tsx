@@ -291,22 +291,31 @@ export default function Feed({
     const newItems: SelectedMediaItem[] = [];
 
     for (const file of fileList) {
-      console.log(`[Upload Debug] Dosya adı: ${file.name}, Ham Boyut (Bytes): ${file.size}, MB Karşılığı: ${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+      const safeSize = file.size || 0;
+      console.log(`[Upload Debug] Dosya adı: ${file.name}, Tip: ${file.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
       
-      if (file.size > MAX_FILE_SIZE) {
-        console.error('[HATA NEREDE] Dosya engellendi! Dosya:', file.name, 'Boyut (Bytes):', file.size, 'Limit:', MAX_FILE_SIZE);
-        const fileSizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+      if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
+        console.error('[HATA NEREDE] Dosya engellendi! Dosya:', file.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
+        const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
         alert(`"${file.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
         continue;
       }
 
-      const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov|mkv|avi|m4v|3gp|wmv|flv|ts|mts)$/i.test(file.name);
-      const isImage = file.type.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|svg|heic|heif|bmp|avif)$/i.test(file.name);
+      const mime = (file.type || '').toLowerCase();
+      const isVideo = mime.startsWith("video/") || mime === "video/quicktime" || /\.(mp4|webm|mov|mkv|avi|m4v|3gp|wmv|flv|ts|mts)$/i.test(file.name || "");
+      const isImage = mime.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|svg|heic|heif|bmp|avif)$/i.test(file.name || "");
+
+      let preview = "";
+      try {
+        preview = URL.createObjectURL(file);
+      } catch {
+        preview = "";
+      }
 
       if (isVideo) {
         newItems.push({
           file,
-          preview: URL.createObjectURL(file),
+          preview,
           type: "video",
           name: file.name
         });
@@ -314,15 +323,15 @@ export default function Feed({
         try {
           const compressed = await compressImage(file, { maxWidth: 1920, maxHeight: 1080, quality: 0.85 });
           newItems.push({
-            file: compressed.file,
-            preview: URL.createObjectURL(compressed.file),
+            file: compressed.file || file,
+            preview: compressed.previewUrl || preview,
             type: "image",
             name: file.name
           });
         } catch {
           newItems.push({
             file,
-            preview: URL.createObjectURL(file),
+            preview,
             type: "image",
             name: file.name
           });
@@ -330,7 +339,7 @@ export default function Feed({
       } else {
         newItems.push({
           file,
-          preview: URL.createObjectURL(file),
+          preview,
           type: "file",
           name: file.name
         });
@@ -426,7 +435,11 @@ export default function Feed({
         }
       } catch (err: any) {
         console.error("Media upload error:", err);
-        alert(err.message || "Dosyalar yüklenirken bir hata oluştu.");
+        const firstFile = selectedMediaList[0]?.file;
+        const debugInfo = firstFile
+          ? `\nSeçilen Dosya: ${firstFile.name}\nTip: ${firstFile.type || "Bilinmiyor"}\nBoyut: ${((firstFile.size || 0) / (1024 * 1024)).toFixed(2)} MB`
+          : "";
+        alert(`${err.message || "Dosyalar yüklenirken bir hata oluştu."}${debugInfo}`);
         setIsSubmitting(false);
         setUploadProgress(null);
         return;
@@ -533,19 +546,20 @@ export default function Feed({
   const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
     if (!rawFile || !socket) return;
-    console.log(`[Upload Debug] Hikaye dosya adı: ${rawFile.name}, Ham Boyut (Bytes): ${rawFile.size}, MB Karşılığı: ${(rawFile.size / (1024 * 1024)).toFixed(2)} MB`);
-    if (rawFile.size > MAX_FILE_SIZE) {
-      console.error('[HATA NEREDE - Feed.tsx:handleStoryUpload] Hikaye dosyası engellendi! Dosya:', rawFile.name, 'Boyut (Bytes):', rawFile.size, 'Limit:', MAX_FILE_SIZE);
-      const fileSizeInMB = (rawFile.size / (1024 * 1024)).toFixed(2);
+    const safeSize = rawFile.size || 0;
+    console.log(`[Upload Debug] Hikaye dosya adı: ${rawFile.name}, Tip: ${rawFile.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
+    if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
+      console.error('[HATA NEREDE - Feed.tsx:handleStoryUpload] Hikaye dosyası engellendi! Dosya:', rawFile.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
+      const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
       alert(`"${rawFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
       e.target.value = "";
       return;
     }
     try {
       let fileToUpload = rawFile;
-      if (rawFile.type.startsWith("image/")) {
+      if (rawFile.type && rawFile.type.startsWith("image/")) {
         const compressed = await compressImage(rawFile, { maxWidth: 1920, maxHeight: 1080, quality: 0.85 });
-        fileToUpload = compressed.file;
+        fileToUpload = compressed.file || rawFile;
       }
       const formData = new FormData();
       formData.append("file", fileToUpload);
@@ -556,7 +570,7 @@ export default function Feed({
           alert("Dosya boyutu çok büyük (Maksimum 300MB).");
         } else {
           const errData = await res.json().catch(() => ({}));
-          alert(errData.error || `Hikaye yüklenemedi (${res.status})`);
+          alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${(safeSize / (1024 * 1024)).toFixed(2)} MB\nHata: ${errData.error || `Yüklenemedi (${res.status})`}`);
         }
         return;
       }

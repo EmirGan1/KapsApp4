@@ -516,11 +516,12 @@ export default function Chats({
     const rawFile = e.target.files?.[0];
     if (!rawFile || !activeChat || !socket) return;
     
-    console.log(`[Upload Debug] Dosya adı: ${rawFile.name}, Ham Boyut (Bytes): ${rawFile.size}, MB Karşılığı: ${(rawFile.size / (1024 * 1024)).toFixed(2)} MB`);
+    const safeSize = rawFile.size || 0;
+    console.log(`[Upload Debug] Dosya adı: ${rawFile.name}, Tip: ${rawFile.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
     
-    if (rawFile.size > MAX_FILE_SIZE) {
-      console.error('[HATA NEREDE - Chats.tsx:handleFileUpload] Dosya engellendi! Dosya:', rawFile.name, 'Boyut (Bytes):', rawFile.size, 'Limit:', MAX_FILE_SIZE);
-      const fileSizeInMB = (rawFile.size / (1024 * 1024)).toFixed(2);
+    if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
+      console.error('[HATA NEREDE - Chats.tsx:handleFileUpload] Dosya engellendi! Dosya:', rawFile.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
+      const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
       alert(`"${rawFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
       e.target.value = '';
       return;
@@ -528,9 +529,9 @@ export default function Chats({
     setIsUploading(true);
     try {
       let fileToUpload = rawFile;
-      if (rawFile.type.startsWith("image/")) {
+      if (rawFile.type && rawFile.type.startsWith("image/")) {
         const compressed = await compressImage(rawFile, { maxWidth: 1920, maxHeight: 1080, quality: 0.85 });
-        fileToUpload = compressed.file;
+        fileToUpload = compressed.file || rawFile;
       }
       const formData = new FormData();
       formData.append("file", fileToUpload);
@@ -541,7 +542,7 @@ export default function Chats({
           alert("Dosya boyutu çok büyük (Maksimum 300MB).");
         } else {
           const errData = await res.json().catch(() => ({}));
-          alert(errData.error || `Dosya yüklenemedi (${res.status})`);
+          alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${(safeSize / (1024 * 1024)).toFixed(2)} MB\nHata: ${errData.error || `Dosya yüklenemedi (${res.status})`}`);
         }
         return;
       }

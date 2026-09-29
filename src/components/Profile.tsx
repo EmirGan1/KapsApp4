@@ -13,6 +13,7 @@ import RoleBadges from "./RoleBadges";
 import EditRolesModal from "./EditRolesModal";
 import { MediaModalData } from "../types";
 import { getApiUrl } from "../utils/api";
+import { compressImage } from "../utils/imageCompressor";
 
 export default function Profile({
   socket,
@@ -206,20 +207,27 @@ export default function Profile({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    console.log(`[Upload Debug] Profil resmi adı: ${file.name}, Ham Boyut (Bytes): ${file.size}, MB Karşılığı: ${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+    const safeSize = file.size || 0;
+    console.log(`[Upload Debug] Profil resmi adı: ${file.name}, Tip: ${file.type}, Ham Boyut (Bytes): ${safeSize}, MB Karşılığı: ${(safeSize / (1024 * 1024)).toFixed(2)} MB`);
 
-    if (file.size > MAX_FILE_SIZE) {
-      console.error('[HATA NEREDE - Profile.tsx:handleAvatarChange] Profil resmi engellendi! Dosya:', file.name, 'Boyut (Bytes):', file.size, 'Limit:', MAX_FILE_SIZE);
-      const fileSizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+    if (safeSize > 0 && safeSize > MAX_FILE_SIZE) {
+      console.error('[HATA NEREDE - Profile.tsx:handleAvatarChange] Profil resmi engellendi! Dosya:', file.name, 'Boyut (Bytes):', safeSize, 'Limit:', MAX_FILE_SIZE);
+      const fileSizeInMB = (safeSize / (1024 * 1024)).toFixed(2);
       alert(`"${file.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
       e.target.value = "";
       return;
     }
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
 
     try {
+      let fileToUpload = file;
+      if (file.type && file.type.startsWith("image/")) {
+        const compressed = await compressImage(file, { maxWidth: 1024, maxHeight: 1024, quality: 0.85 });
+        fileToUpload = compressed.file || file;
+      }
+      const formData = new FormData();
+      formData.append("file", fileToUpload);
+
       const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
       if (!res.ok) {
         if (res.status === 413) {
@@ -227,7 +235,7 @@ export default function Profile({
           alert("Dosya boyutu çok büyük (Maksimum 300MB).");
         } else {
           const errData = await res.json().catch(() => ({}));
-          alert(errData.error || `Profil resmi yüklenemedi (${res.status})`);
+          alert(`Seçilen Dosya: ${file.name}\nTip: ${file.type || 'Bilinmiyor'}\nBoyut: ${(safeSize / (1024 * 1024)).toFixed(2)} MB\nHata: ${errData.error || `Profil resmi yüklenemedi (${res.status})`}`);
         }
         return;
       }
