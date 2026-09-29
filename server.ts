@@ -1179,6 +1179,8 @@ async function startServer() {
         const filePath = req.file.path;
         const url = `/uploads/${filename}`;
 
+        console.log(`[Server Upload Debug] Dosya yüklendi: ${originalName}, Boyut (Bytes): ${size}, MB: ${(size / (1024 * 1024)).toFixed(2)} MB, Tür: ${mimetype}`);
+
         // Persistent backup to Turso cloud database (so Render container restarts don't wipe files)
         if (size <= 25 * 1024 * 1024) {
           try {
@@ -1235,6 +1237,8 @@ async function startServer() {
             const size = file.size;
             const filePath = file.path;
             const url = `/uploads/${filename}`;
+
+            console.log(`[Server Upload Debug - Multi] Dosya: ${originalName}, Boyut: ${size} Bytes (${(size / (1024 * 1024)).toFixed(2)} MB)`);
 
             if (size <= 25 * 1024 * 1024) {
               try {
@@ -1313,6 +1317,8 @@ async function startServer() {
         const size = req.file.size;
         const filePath = req.file.path;
         const url = `/uploads/${filename}`;
+
+        console.log(`[Server Upload Debug - Course File] Dosya: ${originalName}, Boyut: ${size} Bytes (${(size / (1024 * 1024)).toFixed(2)} MB), Klasör: ${folderId}`);
 
         try {
           if (size <= 25 * 1024 * 1024) {

@@ -95,12 +95,17 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     }
   }, [courseId, socket]);
 
+  const MAX_FILE_SIZE = 300 * 1024 * 1024; // 314,572,800 Bytes (300 MB)
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    if (selectedFile.size > 300 * 1024 * 1024) {
-      alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+    console.log(`[Upload Debug] Ders dosyası adı: ${selectedFile.name}, Ham Boyut (Bytes): ${selectedFile.size}, MB Karşılığı: ${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`);
+
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      const fileSizeInMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
+      alert(`"${selectedFile.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }

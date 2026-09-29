@@ -200,11 +200,17 @@ export default function Profile({
     }
   };
 
+  const MAX_FILE_SIZE = 300 * 1024 * 1024; // 314,572,800 Bytes (300 MB)
+
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 300 * 1024 * 1024) {
-      alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+
+    console.log(`[Upload Debug] Profil resmi adı: ${file.name}, Ham Boyut (Bytes): ${file.size}, MB Karşılığı: ${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+
+    if (file.size > MAX_FILE_SIZE) {
+      const fileSizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+      alert(`"${file.name}" boyutu çok büyük (${fileSizeInMB} MB). Maksimum limit: 300 MB.`);
       e.target.value = "";
       return;
     }
