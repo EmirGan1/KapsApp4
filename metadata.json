@@ -1,0 +1,6 @@
+{
+  "name": "KapsApp",
+  "description": "KapsApp; gerçek zamanlı sesli sohbet kanalları, gizlilik korumalı canlı harita takibi, interaktif ders klasörleri/paylaşımı ile Batak, Blackjack 21, Okey, UNO ve Gartic sosyal oyunlarını tek bir çatı altında birleştiren yeni nesil sosyal iletişim ve eğitim platformudur.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
