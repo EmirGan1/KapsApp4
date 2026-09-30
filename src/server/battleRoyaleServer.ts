@@ -477,19 +477,29 @@ export class BattleRoyaleManager {
           sql: "SELECT id, chips FROM users WHERE id = ?",
           args: [p.userId]
         });
-        const currentChips = Number(uRes.rows[0]?.chips ?? 1000);
+        let currentChips = Number(uRes.rows[0]?.chips ?? 0);
         if (currentChips < room.buyIn) {
-          return {
-            success: false,
-            error: `${p.username} yeterli bakiyeye sahip değil! Gereken: ${room.buyIn} Coin`
-          };
+          // If user has 0 chips, give them 1000 free test chips
+          if (currentChips === 0) {
+            await this.db.execute({
+              sql: "UPDATE users SET chips = 1000 WHERE id = ?",
+              args: [p.userId]
+            });
+            currentChips = 1000;
+            this.io.emit('chips_updated', { userId: p.userId, chips: 1000 });
+          } else {
+            return {
+              success: false,
+              error: `${p.username} yeterli bakiyeye sahip değil! Gereken: ${room.buyIn} Coin (Mevcut: ${currentChips})`
+            };
+          }
         }
       }
 
       // Deduct buy-in from all real players
       for (const p of humanPlayers) {
         await this.db.execute({
-          sql: "UPDATE users SET chips = chips - ? WHERE id = ?",
+          sql: "UPDATE users SET chips = MAX(0, chips - ?) WHERE id = ?",
           args: [room.buyIn, p.userId]
         });
         const updated = await this.db.execute({
@@ -505,6 +515,10 @@ export class BattleRoyaleManager {
       room.pot = 0;
     }
 
+    // Clear any previous timers
+    if (room.timerInterval) clearInterval(room.timerInterval);
+    if (room.tickInterval) clearInterval(room.tickInterval);
+
     // Transition to countdown
     room.status = 'countdown';
     room.countdown = 3;
@@ -516,6 +530,7 @@ export class BattleRoyaleManager {
         this.io.to(roomId).emit('royale:countdown', { countdown: room.countdown, pot: room.pot });
       } else {
         clearInterval(room.timerInterval);
+        room.timerInterval = null;
         this.launchMatch(room);
       }
     }, 1000);
@@ -526,6 +541,8 @@ export class BattleRoyaleManager {
 
   // Launch Match arena setup
   private launchMatch(room: RoyaleRoom) {
+    if (room.tickInterval) clearInterval(room.tickInterval);
+
     room.status = 'playing';
     room.startedAt = Date.now();
     room.lastZoneDamageTime = Date.now();
@@ -556,19 +573,23 @@ export class BattleRoyaleManager {
     };
 
     // Position players around the safe circle
-    const count = room.players.length;
-    const spawnRadius = 600;
+    const count = Math.max(1, room.players.length);
+    const spawnRadius = 550;
     const center = MAP_SIZE / 2;
 
     room.players.forEach((p, idx) => {
       const angle = (idx / count) * Math.PI * 2;
-      p.x = center + Math.cos(angle) * spawnRadius;
-      p.y = center + Math.sin(angle) * spawnRadius;
+      const px = center + Math.cos(angle) * spawnRadius;
+      const py = center + Math.sin(angle) * spawnRadius;
+      p.x = Number.isFinite(px) ? Math.round(px) : center;
+      p.y = Number.isFinite(py) ? Math.round(py) : center;
       p.vx = 0;
       p.vy = 0;
-      p.angle = angle + Math.PI;
+      p.angle = Number.isFinite(angle) ? angle + Math.PI : 0;
       p.hp = 100;
+      p.maxHp = 100;
       p.shield = p.isBot ? 25 : 0;
+      p.maxShield = 100;
       p.isAlive = true;
       p.kills = 0;
       p.spectating = false;
@@ -584,7 +605,9 @@ export class BattleRoyaleManager {
       this.tickRoom(room);
     }, 1000 / TICK_RATE);
 
-    this.io.to(room.id).emit('royale:game_started', this.getPublicGameState(room));
+    const initialGameState = this.getPublicGameState(room);
+    this.io.to(room.id).emit('royale:game_started', initialGameState);
+    this.io.to(room.id).emit('royale:game_state', initialGameState);
     this.broadcastRoomsList();
   }
 
@@ -1189,22 +1212,26 @@ export class BattleRoyaleManager {
 
     const now = Date.now();
 
-    // Movement speed clamped
-    const maxSpeed = 4.6;
+    // Movement speed: 5.2 pixels per tick
+    const maxSpeed = 5.2;
     if (typeof input.vx === 'number' && typeof input.vy === 'number') {
       const len = Math.hypot(input.vx, input.vy);
-      if (len > 0) {
-        const factor = Math.min(1, maxSpeed / len);
-        player.vx = input.vx * factor;
-        player.vy = input.vy * factor;
+      if (len > 0.05) {
+        player.vx = (input.vx / len) * maxSpeed;
+        player.vy = (input.vy / len) * maxSpeed;
       } else {
         player.vx = 0;
         player.vy = 0;
       }
+    } else {
+      player.vx = 0;
+      player.vy = 0;
     }
+    if (!Number.isFinite(player.vx)) player.vx = 0;
+    if (!Number.isFinite(player.vy)) player.vy = 0;
 
     // Aim Angle
-    if (typeof input.angle === 'number') {
+    if (typeof input.angle === 'number' && Number.isFinite(input.angle)) {
       player.angle = input.angle;
     }
 
@@ -1218,8 +1245,8 @@ export class BattleRoyaleManager {
       this.startReload(player, now);
     }
 
-    // Switch weapon
-    if (input.switchWeapon) {
+    // Switch Weapon
+    if (typeof input.switchWeapon === 'string') {
       this.switchWeapon(player, input.switchWeapon);
     }
   }
@@ -1380,11 +1407,11 @@ export class BattleRoyaleManager {
         color: p.color,
         isBot: p.isBot,
         isHost: p.isHost,
-        x: Math.round(p.x * 10) / 10,
-        y: Math.round(p.y * 10) / 10,
-        vx: p.vx,
-        vy: p.vy,
-        angle: p.angle,
+        x: Number.isFinite(p.x) ? Math.round(p.x * 10) / 10 : MAP_SIZE / 2,
+        y: Number.isFinite(p.y) ? Math.round(p.y * 10) / 10 : MAP_SIZE / 2,
+        vx: Number.isFinite(p.vx) ? p.vx : 0,
+        vy: Number.isFinite(p.vy) ? p.vy : 0,
+        angle: Number.isFinite(p.angle) ? p.angle : 0,
         hp: p.hp,
         maxHp: p.maxHp,
         shield: p.shield,

@@ -5877,6 +5877,22 @@ async function startServer() {
           break;
         }
       }
+
+      // 3. Check Battle Royale active rooms
+      for (const [rId, r] of battleRoyaleManager.rooms.entries()) {
+        const p = r.players.find((player: any) => !player.isBot && player.userId === user.id);
+        if (p) {
+          socket.data.currentRoyaleRoom = rId;
+          socket.join(rId);
+          if (r.status === 'playing') {
+            socket.emit("royale:game_started", battleRoyaleManager.getPublicGameState(r));
+            socket.emit("royale:game_state", battleRoyaleManager.getPublicGameState(r));
+          } else {
+            socket.emit("royale:room_state", battleRoyaleManager.getPublicRoomState(r));
+          }
+          break;
+        }
+      }
     };
 
     reattachUserGames();

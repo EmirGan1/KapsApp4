@@ -86,6 +86,35 @@ interface GameState {
   winner: { id: string; userId: number; username: string; kills: number } | null;
 }
 
+export const PLAYER_PALETTE = [
+  '#3b82f6', // Neon Blue (Self)
+  '#ef4444', // Crimson Red
+  '#10b981', // Emerald Green
+  '#f59e0b', // Amber / Gold
+  '#8b5cf6', // Violet Purple
+  '#ec4899', // Hot Pink
+  '#06b6d4', // Bright Cyan
+  '#84cc16', // Lime Green
+  '#f97316', // Vivid Orange
+  '#e11d48'  // Rose
+];
+
+export function getPlayerColor(p: PlayerState, currentUserId: number): string {
+  if (p.isBot) return '#d97706'; // Metallic amber for bots
+  if (p.userId === currentUserId) return '#3b82f6'; // Bright blue for local player
+  if (p.color) {
+    if (p.color.startsWith('#')) return p.color;
+    if (p.color.includes('purple')) return '#a855f7';
+    if (p.color.includes('green')) return '#10b981';
+    if (p.color.includes('red')) return '#ef4444';
+    if (p.color.includes('yellow')) return '#eab308';
+    if (p.color.includes('indigo')) return '#6366f1';
+    if (p.color.includes('pink')) return '#ec4899';
+    if (p.color.includes('cyan')) return '#06b6d4';
+  }
+  return PLAYER_PALETTE[Math.abs(p.userId) % PLAYER_PALETTE.length];
+}
+
 export default function MiniBattleRoyale({
   socket,
   currentUserId,
@@ -97,6 +126,20 @@ export default function MiniBattleRoyale({
 }: MiniBattleRoyaleProps) {
   // Navigation / View State
   const [view, setView] = useState<'rooms' | 'lobby' | 'game'>('rooms');
+  const viewRef = useRef<'rooms' | 'lobby' | 'game'>('rooms');
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  const [, setHudTick] = useState<number>(0);
+  useEffect(() => {
+    if (view !== 'game') return;
+    const interval = setInterval(() => {
+      setHudTick(prev => (prev + 1) % 10000);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [view]);
+
   const [rooms, setRooms] = useState<RoomItem[]>([]);
   const [currentRoom, setCurrentRoom] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -185,6 +228,9 @@ export default function MiniBattleRoyale({
 
     const onGameState = (state: GameState) => {
       gameStateRef.current = state;
+      if (state && state.status === 'playing' && viewRef.current !== 'game') {
+        setView('game');
+      }
     };
 
     const onZoneWarning = ({ message }: { message: string }) => {
@@ -194,6 +240,7 @@ export default function MiniBattleRoyale({
 
     const onGameOver = ({ winner, pot, state }: any) => {
       if (state) gameStateRef.current = state;
+      setHudTick(prev => (prev + 1) % 10000);
     };
 
     const onChipsUpdated = (data: { userId: number; chips: number }) => {
@@ -341,11 +388,30 @@ export default function MiniBattleRoyale({
       let angle = myPlayer.angle;
       let shooting = false;
 
-      // 1. Keyboard & Mouse Mode (or hybrid on tablet)
-      if (keysPressed.current['KeyW'] || keysPressed.current['ArrowUp']) vy -= 1;
-      if (keysPressed.current['KeyS'] || keysPressed.current['ArrowDown']) vy += 1;
-      if (keysPressed.current['KeyA'] || keysPressed.current['ArrowLeft']) vx -= 1;
-      if (keysPressed.current['KeyD'] || keysPressed.current['ArrowRight']) vx += 1;
+      // 1. Keyboard & Mouse Mode (WASD, Arrow Keys, and Case-Insensitive)
+      if (
+        keysPressed.current['KeyW'] || keysPressed.current['ArrowUp'] ||
+        keysPressed.current['W'] || keysPressed.current['w']
+      ) vy -= 1;
+      if (
+        keysPressed.current['KeyS'] || keysPressed.current['ArrowDown'] ||
+        keysPressed.current['S'] || keysPressed.current['s']
+      ) vy += 1;
+      if (
+        keysPressed.current['KeyA'] || keysPressed.current['ArrowLeft'] ||
+        keysPressed.current['A'] || keysPressed.current['a']
+      ) vx -= 1;
+      if (
+        keysPressed.current['KeyD'] || keysPressed.current['ArrowRight'] ||
+        keysPressed.current['D'] || keysPressed.current['d']
+      ) vx += 1;
+
+      // Normalize movement direction vector so speed is uniform
+      const len = Math.hypot(vx, vy);
+      if (len > 0) {
+        vx = vx / len;
+        vy = vy / len;
+      }
 
       // Compute angle from canvas center in Desktop mode
       if (canvasRef.current && (controlMode === 'desktop' || isMouseDown.current)) {
@@ -354,7 +420,9 @@ export default function MiniBattleRoyale({
         const centerY = rect.height / 2;
         const dx = mousePos.current.x - centerX;
         const dy = mousePos.current.y - centerY;
-        angle = Math.atan2(dy, dx);
+        if (mousePos.current.x !== 0 || mousePos.current.y !== 0) {
+          angle = Math.atan2(dy, dx);
+        }
       }
 
       if (isMouseDown.current) shooting = true;
@@ -401,22 +469,32 @@ export default function MiniBattleRoyale({
 
     const onKeyDown = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = true;
+      if (e.key) {
+        keysPressed.current[e.key] = true;
+        keysPressed.current[e.key.toUpperCase()] = true;
+        keysPressed.current[e.key.toLowerCase()] = true;
+      }
 
-      if (e.code === 'KeyR') {
+      if (e.code === 'KeyR' || e.key === 'r' || e.key === 'R') {
         socket?.emit('royale:input', { reload: true });
-      } else if (e.code === 'Digit1') {
+      } else if (e.code === 'Digit1' || e.key === '1') {
         socket?.emit('royale:input', { switchWeapon: 'pistol' });
-      } else if (e.code === 'Digit2') {
+      } else if (e.code === 'Digit2' || e.key === '2') {
         socket?.emit('royale:input', { switchWeapon: 'shotgun' });
-      } else if (e.code === 'Digit3') {
+      } else if (e.code === 'Digit3' || e.key === '3') {
         socket?.emit('royale:input', { switchWeapon: 'rifle' });
-      } else if (e.code === 'Digit4') {
+      } else if (e.code === 'Digit4' || e.key === '4') {
         socket?.emit('royale:input', { switchWeapon: 'sniper' });
       }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = false;
+      if (e.key) {
+        keysPressed.current[e.key] = false;
+        keysPressed.current[e.key.toUpperCase()] = false;
+        keysPressed.current[e.key.toLowerCase()] = false;
+      }
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -503,328 +581,444 @@ export default function MiniBattleRoyale({
       if (!running) return;
 
       const state = gameStateRef.current;
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
+      const rect = canvas.getBoundingClientRect();
+      const parentRect = canvas.parentElement?.getBoundingClientRect();
+      const rawW = rect.width || parentRect?.width || window.innerWidth || 1280;
+      const rawH = rect.height || parentRect?.height || (window.innerHeight - 64) || 720;
+      const width = Math.max(320, Math.floor(rawW));
+      const height = Math.max(240, Math.floor(rawH));
 
       // Handle Retina DPI scaling
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-        canvas.width = width * dpr;
-        canvas.height = height * dpr;
+      const targetCanvasW = Math.floor(width * dpr);
+      const targetCanvasH = Math.floor(height * dpr);
+      if (canvas.width !== targetCanvasW || canvas.height !== targetCanvasH) {
+        canvas.width = targetCanvasW;
+        canvas.height = targetCanvasH;
       }
 
       ctx.save();
       ctx.scale(dpr, dpr);
 
-      // Clear Canvas
-      ctx.fillStyle = '#1e293b';
+      // Deep space void background outside the map
+      ctx.fillStyle = '#090d16';
       ctx.fillRect(0, 0, width, height);
 
-      if (state) {
-        // Find focused player (self, or spectate target)
-        const myPlayer = state.players.find(p => !p.isBot && p.userId === currentUserId);
+      // Find focused player (self, or spectate target)
+      let focusedPlayer: PlayerState | undefined;
+      if (state && Array.isArray(state.players)) {
+        focusedPlayer = state.players.find(p => !p.isBot && p.userId === currentUserId);
         const alivePlayers = state.players.filter(p => p.isAlive);
-
-        let focusedPlayer = myPlayer;
-        if (!myPlayer || !myPlayer.isAlive) {
+        if (!focusedPlayer || !focusedPlayer.isAlive) {
           focusedPlayer = alivePlayers[spectateTargetIndex % Math.max(1, alivePlayers.length)] || state.players[0];
         }
+      }
 
-        const camX = focusedPlayer ? focusedPlayer.x : MAP_SIZE / 2;
-        const camY = focusedPlayer ? focusedPlayer.y : MAP_SIZE / 2;
+      let camX = MAP_SIZE / 2;
+      let camY = MAP_SIZE / 2;
+      if (focusedPlayer && Number.isFinite(focusedPlayer.x) && Number.isFinite(focusedPlayer.y)) {
+        camX = focusedPlayer.x;
+        camY = focusedPlayer.y;
+      }
+      if (!Number.isFinite(camX)) camX = MAP_SIZE / 2;
+      if (!Number.isFinite(camY)) camY = MAP_SIZE / 2;
 
-        // Normalized FOV calculation (1280x720 base viewport)
-        const baseViewW = 1280;
-        const baseViewH = 720;
-        const scale = Math.max(width / baseViewW, height / baseViewH);
+      // Normalized FOV calculation (1280x720 base viewport)
+      const baseViewW = 1280;
+      const baseViewH = 720;
+      let scale = Math.max(width / baseViewW, height / baseViewH);
+      if (!Number.isFinite(scale) || scale <= 0) scale = 1;
 
+      ctx.save();
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-camX, -camY);
+
+      // ==========================================
+      // 1. VIBRANT BATTLE ROYALE ARENA GROUND
+      // ==========================================
+      // Rich grass base
+      ctx.fillStyle = '#1e3f20';
+      ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+      // Checkered lush grass tiles (120x120)
+      const tileSize = 120;
+      for (let tx = 0; tx < MAP_SIZE; tx += tileSize) {
+        for (let ty = 0; ty < MAP_SIZE; ty += tileSize) {
+          if ((Math.floor(tx / tileSize) + Math.floor(ty / tileSize)) % 2 === 0) {
+            ctx.fillStyle = '#244b26';
+            ctx.fillRect(tx, ty, tileSize, tileSize);
+          }
+        }
+      }
+
+      // Tactical grid lines
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+      ctx.lineWidth = 1.5;
+      for (let gx = 0; gx <= MAP_SIZE; gx += tileSize) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, MAP_SIZE);
+        ctx.stroke();
+      }
+      for (let gy = 0; gy <= MAP_SIZE; gy += tileSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(MAP_SIZE, gy);
+        ctx.stroke();
+      }
+
+      // Arena Outer Danger Perimeter (Thick hazard barrier)
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 12;
+      ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([24, 16]);
+      ctx.strokeRect(6, 6, MAP_SIZE - 12, MAP_SIZE - 12);
+      ctx.setLineDash([]);
+
+      if (!state) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 30px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 8;
+        ctx.fillText('⚡ Arena Hazırlanıyor... Sunucu Senkronizasyonu Bekleniyor', MAP_SIZE / 2, MAP_SIZE / 2);
+        ctx.restore();
+        ctx.restore();
+        animFrameRef.current = requestAnimationFrame(render);
+        return;
+      }
+
+      // 2. Draw Storm Zone
+      const z = state.zone;
+      if (z && Number.isFinite(z.currentRadius) && z.currentRadius > 0) {
         ctx.save();
-        ctx.translate(width / 2, height / 2);
-        ctx.scale(scale, scale);
-        ctx.translate(-camX, -camY);
+        // Toxic gas exterior with pulsing purple haze
+        ctx.fillStyle = 'rgba(147, 51, 234, 0.30)';
+        ctx.beginPath();
+        ctx.rect(0, 0, MAP_SIZE, MAP_SIZE);
+        ctx.arc(z.currentX, z.currentY, Math.max(0, z.currentRadius), 0, Math.PI * 2, true);
+        ctx.fill();
 
-        // 1. Draw Map Ground & Grid
-        ctx.fillStyle = '#22c55e10';
-        ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
-
-        ctx.strokeStyle = '#33415525';
-        ctx.lineWidth = 1;
-        const gridSize = 100;
-        for (let gx = 0; gx <= MAP_SIZE; gx += gridSize) {
-          ctx.beginPath();
-          ctx.moveTo(gx, 0);
-          ctx.lineTo(gx, MAP_SIZE);
-          ctx.stroke();
-        }
-        for (let gy = 0; gy <= MAP_SIZE; gy += gridSize) {
-          ctx.beginPath();
-          ctx.moveTo(0, gy);
-          ctx.lineTo(MAP_SIZE, gy);
-          ctx.stroke();
-        }
-
-        // Map Boundaries
-        ctx.strokeStyle = '#ef4444';
+        // Current Zone Boundary with electrical pulse
+        ctx.strokeStyle = '#c084fc';
         ctx.lineWidth = 6;
-        ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
+        ctx.shadowColor = '#c084fc';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(z.currentX, z.currentY, Math.max(0, z.currentRadius), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
 
-        // 2. Draw Storm Zone
-        const z = state.zone;
-        if (z) {
-          // Dark toxic gas exterior
-          ctx.save();
-          ctx.fillStyle = 'rgba(168, 85, 247, 0.22)';
-          ctx.beginPath();
-          ctx.rect(0, 0, MAP_SIZE, MAP_SIZE);
-          ctx.arc(z.currentX, z.currentY, z.currentRadius, 0, Math.PI * 2, true);
-          ctx.fill();
-
-          // Current Zone Boundary
-          ctx.strokeStyle = '#c084fc';
-          ctx.lineWidth = 5;
-          ctx.beginPath();
-          ctx.arc(z.currentX, z.currentY, z.currentRadius, 0, Math.PI * 2);
-          ctx.stroke();
-
-          // Target Next Safe Zone (White Dashed line)
+        // Target Next Safe Zone (White Dashed line)
+        if (z.targetRadius && z.targetRadius < z.currentRadius) {
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2.5;
-          ctx.setLineDash([12, 8]);
+          ctx.lineWidth = 3;
+          ctx.setLineDash([16, 10]);
           ctx.beginPath();
-          ctx.arc(z.targetX, z.targetY, z.targetRadius, 0, Math.PI * 2);
+          ctx.arc(z.targetX, z.targetY, Math.max(0, z.targetRadius), 0, Math.PI * 2);
           ctx.stroke();
           ctx.setLineDash([]);
+        }
+        ctx.restore();
+      }
+
+      // 3. Draw Loot Items on Ground
+      state.loot?.forEach(item => {
+        ctx.save();
+        ctx.translate(item.x, item.y);
+
+        // Glowing aura on ground
+        ctx.beginPath();
+        ctx.arc(0, 0, 20, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+
+        if (item.type === 'medkit') {
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.roundRect(-12, -12, 24, 24, 4);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(-8, -2.5, 16, 5);
+          ctx.fillRect(-2.5, -8, 5, 16);
+        } else if (item.type === 'shield') {
+          ctx.fillStyle = '#06b6d4';
+          ctx.beginPath();
+          ctx.moveTo(0, -14);
+          ctx.lineTo(12, -5);
+          ctx.lineTo(9, 11);
+          ctx.lineTo(0, 16);
+          ctx.lineTo(-9, 11);
+          ctx.lineTo(-12, -5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else if (item.type === 'ammo') {
+          ctx.fillStyle = '#eab308';
+          ctx.fillRect(-10, -7, 20, 14);
+          ctx.strokeStyle = '#713f12';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(-10, -7, 20, 14);
+          ctx.fillStyle = '#713f12';
+          ctx.font = 'bold 8px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('AMMO', 0, 3);
+        } else if (item.type.startsWith('weapon_')) {
+          const wName = item.type.replace('weapon_', '');
+          const wColor = wName === 'sniper' ? '#ec4899' : wName === 'rifle' ? '#38bdf8' : wName === 'shotgun' ? '#f97316' : '#eab308';
+          ctx.fillStyle = wColor;
+          ctx.beginPath();
+          ctx.roundRect(-20, -8, 40, 16, 4);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(wName.toUpperCase(), 0, 4);
+        }
+        ctx.restore();
+      });
+
+      // 4. Draw Wooden Crates
+      state.crates?.forEach(c => {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+
+        // Wood texture
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(-22, -22, 44, 44);
+        ctx.strokeStyle = '#d97706';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(-20, -20, 40, 40);
+
+        // Cross braces
+        ctx.strokeStyle = '#451a03';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(-18, -18);
+        ctx.lineTo(18, 18);
+        ctx.moveTo(18, -18);
+        ctx.lineTo(-18, 18);
+        ctx.stroke();
+
+        // Health bar if damaged
+        if (c.hp < c.maxHp) {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(-20, -30, 40, 5);
+          ctx.fillStyle = '#22c55e';
+          ctx.fillRect(-20, -30, (c.hp / c.maxHp) * 40, 5);
+          ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-20, -30, 40, 5);
+        }
+        ctx.restore();
+      });
+
+      // 5. Draw Solid Rocks
+      state.obstacles?.forEach(obs => {
+        if (obs.type === 'rock') {
+          ctx.save();
+          ctx.fillStyle = '#334155';
+          ctx.beginPath();
+          ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 3D stone rim highlight
+          ctx.strokeStyle = '#64748b';
+          ctx.lineWidth = 5;
+          ctx.stroke();
+
+          // Specular shine
+          ctx.fillStyle = '#94a3b8';
+          ctx.beginPath();
+          ctx.arc(obs.x - obs.radius * 0.3, obs.y - obs.radius * 0.3, obs.radius * 0.25, 0, Math.PI * 2);
+          ctx.fill();
           ctx.restore();
         }
+      });
 
-        // 3. Draw Loot Items on Ground
-        state.loot.forEach(item => {
-          ctx.save();
-          ctx.translate(item.x, item.y);
+      // 6. Draw Bullets with glowing tracer trail
+      state.bullets?.forEach(b => {
+        ctx.save();
+        ctx.fillStyle = b.color || '#fbbf24';
+        ctx.shadowColor = b.color || '#fbbf24';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius || 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
 
-          // Subtle glowing shadow
+      // 7. Draw Players (Surviv.io Style with Unique Colors & Badges)
+      state.players?.forEach(p => {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+
+        if (!p.isAlive) {
+          // Tombstone / Grave Marker
+          ctx.fillStyle = '#475569';
           ctx.beginPath();
-          ctx.arc(0, 0, 18, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.roundRect(-16, -20, 32, 40, [16, 16, 2, 2]);
           ctx.fill();
-
-          if (item.type === 'medkit') {
-            ctx.fillStyle = '#ef4444';
-            ctx.fillRect(-10, -10, 20, 20);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(-7, -2.5, 14, 5);
-            ctx.fillRect(-2.5, -7, 5, 14);
-          } else if (item.type === 'shield') {
-            ctx.fillStyle = '#06b6d4';
-            ctx.beginPath();
-            ctx.moveTo(0, -12);
-            ctx.lineTo(10, -4);
-            ctx.lineTo(8, 10);
-            ctx.lineTo(0, 14);
-            ctx.lineTo(-8, 10);
-            ctx.lineTo(-10, -4);
-            ctx.closePath();
-            ctx.fill();
-          } else if (item.type === 'ammo') {
-            ctx.fillStyle = '#eab308';
-            ctx.fillRect(-8, -6, 16, 12);
-            ctx.fillStyle = '#713f12';
-            ctx.font = 'bold 7px sans-serif';
-            ctx.fillText('AMMO', -7, 3);
-          } else if (item.type.startsWith('weapon_')) {
-            const wName = item.type.replace('weapon_', '');
-            ctx.fillStyle = wName === 'sniper' ? '#ec4899' : wName === 'rifle' ? '#38bdf8' : '#f97316';
-            ctx.beginPath();
-            ctx.roundRect(-16, -6, 32, 12, 3);
-            ctx.fill();
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 8px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(wName.toUpperCase(), 0, 3);
-          }
-          ctx.restore();
-        });
-
-        // 4. Draw Crates
-        state.crates.forEach(c => {
-          ctx.save();
-          ctx.translate(c.x, c.y);
-
-          // Wooden crate box
-          ctx.fillStyle = '#78350f';
-          ctx.fillRect(-20, -20, 40, 40);
-          ctx.strokeStyle = '#b45309';
-          ctx.lineWidth = 3;
-          ctx.strokeRect(-18, -18, 36, 36);
-
-          // Crate cross brace
-          ctx.beginPath();
-          ctx.moveTo(-18, -18);
-          ctx.lineTo(18, 18);
-          ctx.moveTo(18, -18);
-          ctx.lineTo(-18, 18);
+          ctx.strokeStyle = '#1e293b';
+          ctx.lineWidth = 2.5;
           ctx.stroke();
 
-          // Health bar if damaged
-          if (c.hp < c.maxHp) {
-            ctx.fillStyle = '#0f172a';
-            ctx.fillRect(-18, -27, 36, 4);
-            ctx.fillStyle = '#22c55e';
-            ctx.fillRect(-18, -27, (c.hp / c.maxHp) * 36, 4);
-          }
-          ctx.restore();
-        });
-
-        // 5. Draw Solid Rocks
-        state.obstacles.forEach(obs => {
-          if (obs.type === 'rock') {
-            ctx.save();
-            ctx.fillStyle = '#475569';
-            ctx.beginPath();
-            ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // 3D stone rim
-            ctx.strokeStyle = '#64748b';
-            ctx.lineWidth = 4;
-            ctx.stroke();
-            ctx.restore();
-          }
-        });
-
-        // 6. Draw Bullets with tracer trail
-        state.bullets.forEach(b => {
-          ctx.save();
-          ctx.fillStyle = b.color || '#fbbf24';
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, b.radius || 3.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        });
-
-        // 7. Draw Players (Surviv.io Style)
-        state.players.forEach(p => {
-          ctx.save();
-          ctx.translate(p.x, p.y);
-
-          if (!p.isAlive) {
-            // Tombstone / Grave Marker
-            ctx.fillStyle = '#64748b';
-            ctx.beginPath();
-            ctx.roundRect(-14, -18, 28, 36, [14, 14, 2, 2]);
-            ctx.fill();
-            ctx.strokeStyle = '#334155';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('✝', 0, -2);
-
-            ctx.font = 'bold 8px sans-serif';
-            ctx.fillText(p.username, 0, 10);
-            ctx.restore();
-            return;
-          }
-
-          // Check if player is hidden in bush
-          let insideBush = false;
-          for (const obs of state.obstacles) {
-            if (obs.type === 'bush' && Math.hypot(p.x - obs.x, p.y - obs.y) < obs.radius) {
-              insideBush = true;
-              break;
-            }
-          }
-
-          if (insideBush) {
-            ctx.globalAlpha = p.userId === currentUserId ? 0.5 : 0.2;
-          }
-
-          // Hands & Weapon rotated by player angle
-          ctx.save();
-          ctx.rotate(p.angle);
-
-          // Weapon Barrel
-          const wColor = p.activeWeapon === 'sniper' ? '#ec4899' : p.activeWeapon === 'rifle' ? '#38bdf8' : p.activeWeapon === 'shotgun' ? '#f97316' : '#64748b';
-          const wLength = p.activeWeapon === 'sniper' ? 36 : p.activeWeapon === 'rifle' ? 28 : 22;
-
-          ctx.fillStyle = wColor;
-          ctx.fillRect(10, -3.5, wLength, 7);
-
-          // Hands
-          ctx.fillStyle = '#fde047';
-          ctx.beginPath();
-          ctx.arc(16, -11, 6, 0, Math.PI * 2);
-          ctx.arc(16, 11, 6, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-
-          // Circular Body
-          ctx.fillStyle = p.isBot ? '#d97706' : p.userId === currentUserId ? '#3b82f6' : '#10b981';
-          ctx.beginPath();
-          ctx.arc(0, 0, 24, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#0f172a';
-          ctx.lineWidth = 3.5;
-          ctx.stroke();
-
-          // Eyes or Center Dot
           ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(Math.cos(p.angle) * 10, Math.sin(p.angle) * 10, 5, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Health & Shield Bars Overhead
-          ctx.restore(); // un-rotated coords
-
-          // Username badge
-          ctx.save();
-          ctx.translate(p.x, p.y);
-          ctx.font = 'bold 11px sans-serif';
+          ctx.font = 'bold 14px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillStyle = '#ffffff';
-          ctx.shadowColor = '#000000';
-          ctx.shadowBlur = 4;
-          ctx.fillText(p.username, 0, -34);
+          ctx.fillText('✝', 0, -2);
 
-          // Shield Bar
-          if (p.shield > 0) {
-            ctx.fillStyle = '#0f172a';
-            ctx.fillRect(-22, -48, 44, 4);
-            ctx.fillStyle = '#06b6d4';
-            ctx.fillRect(-22, -48, (p.shield / p.maxShield) * 44, 4);
-          }
-
-          // Health Bar
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(-22, -42, 44, 5);
-          ctx.fillStyle = p.hp > 50 ? '#22c55e' : p.hp > 25 ? '#eab308' : '#ef4444';
-          ctx.fillRect(-22, -42, (p.hp / p.maxHp) * 44, 5);
+          ctx.font = 'bold 9px sans-serif';
+          ctx.fillText(p.username, 0, 12);
           ctx.restore();
-        });
+          return;
+        }
 
-        // 8. Draw Bushes on top (foliage covering players inside)
-        state.obstacles.forEach(obs => {
-          if (obs.type === 'bush') {
-            ctx.save();
-            ctx.fillStyle = '#15803d';
-            ctx.beginPath();
-            ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Inner leaf clusters
-            ctx.fillStyle = '#16a34a';
-            ctx.beginPath();
-            ctx.arc(obs.x - obs.radius * 0.25, obs.y - obs.radius * 0.2, obs.radius * 0.6, 0, Math.PI * 2);
-            ctx.arc(obs.x + obs.radius * 0.25, obs.y + obs.radius * 0.15, obs.radius * 0.55, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
+        // Check if hidden in bush
+        let insideBush = false;
+        for (const obs of state.obstacles || []) {
+          if (obs.type === 'bush' && Math.hypot(p.x - obs.x, p.y - obs.y) < obs.radius) {
+            insideBush = true;
+            break;
           }
-        });
+        }
+        if (insideBush) {
+          ctx.globalAlpha = p.userId === currentUserId ? 0.6 : 0.2;
+        }
 
-        ctx.restore(); // camera translate restore
-      }
+        // Hands & Weapon rotated by player angle
+        ctx.save();
+        ctx.rotate(p.angle);
+
+        const wColor = p.activeWeapon === 'sniper' ? '#ec4899' : p.activeWeapon === 'rifle' ? '#38bdf8' : p.activeWeapon === 'shotgun' ? '#f97316' : '#eab308';
+        const wLength = p.activeWeapon === 'sniper' ? 38 : p.activeWeapon === 'rifle' ? 30 : p.activeWeapon === 'shotgun' ? 24 : 20;
+
+        // Weapon Barrel
+        ctx.fillStyle = wColor;
+        ctx.fillRect(8, -3.5, wLength, 7);
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(8, -3.5, wLength, 7);
+
+        // Dual Hands
+        ctx.fillStyle = '#fde047';
+        ctx.strokeStyle = '#713f12';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(15, -11, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(15, 11, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore(); // restore rotation
+
+        // Character Body (Color-Coded by Player)
+        const pColor = getPlayerColor(p, currentUserId);
+        ctx.fillStyle = pColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, 24, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Dark tactical outline
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+
+        // If self: glowing cyan outer pulse ring
+        if (p.userId === currentUserId) {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(0, 0, 28, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Inner vest/tactical circle
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+        ctx.beginPath();
+        ctx.arc(0, 0, 16, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Directional eye/visor dot
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(Math.cos(p.angle) * 12, Math.sin(p.angle) * 12, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Overhead Name & Badges
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+        ctx.shadowBlur = 4;
+
+        const isSelf = p.userId === currentUserId;
+        const label = isSelf ? `[SEN] ${p.username}` : p.isBot ? `[BOT] ${p.username}` : p.username;
+        ctx.fillStyle = isSelf ? '#38bdf8' : p.isBot ? '#fbbf24' : '#ffffff';
+        ctx.fillText(label, 0, -38);
+        ctx.shadowBlur = 0;
+
+        // Overhead Shield Bar
+        const barW = 46;
+        const barH = 5;
+        if (p.shield > 0) {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(-barW / 2, -52, barW, 4);
+          ctx.fillStyle = '#06b6d4';
+          const shieldW = Math.max(0, Math.min(barW, (p.shield / (p.maxShield || 100)) * barW));
+          ctx.fillRect(-barW / 2, -52, shieldW, 4);
+        }
+
+        // Overhead Health Bar
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(-barW / 2, -46, barW, barH);
+        const hpRatio = Math.max(0, Math.min(1, p.hp / (p.maxHp || 100)));
+        ctx.fillStyle = hpRatio > 0.5 ? '#22c55e' : hpRatio > 0.25 ? '#eab308' : '#ef4444';
+        ctx.fillRect(-barW / 2, -46, hpRatio * barW, barH);
+
+        // Outline for health bar
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-barW / 2, -46, barW, barH);
+
+        ctx.restore();
+      });
+
+      // 8. Draw Bushes on top (foliage covering players inside)
+      state.obstacles?.forEach(obs => {
+        if (obs.type === 'bush') {
+          ctx.save();
+          ctx.fillStyle = '#15803d';
+          ctx.beginPath();
+          ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Inner leaf clusters
+          ctx.fillStyle = '#16a34a';
+          ctx.beginPath();
+          ctx.arc(obs.x - obs.radius * 0.25, obs.y - obs.radius * 0.2, obs.radius * 0.6, 0, Math.PI * 2);
+          ctx.arc(obs.x + obs.radius * 0.25, obs.y + obs.radius * 0.15, obs.radius * 0.55, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+
+      ctx.restore(); // camera translate restore
+      ctx.restore(); // dpr scale restore
 
       animFrameRef.current = requestAnimationFrame(render);
     };
