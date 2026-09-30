@@ -309,6 +309,7 @@ async function initDb() {
   try { await client.execute("ALTER TABLE users ADD COLUMN approved_by TEXT"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN approved_at DATETIME"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN roles TEXT DEFAULT '[\"titc\",\"eng_b_hl\"]'"); } catch(e){}
+  try { await client.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'"); } catch(e){}
   
   // 1. emirgan kullanıcısını kesin olarak approved ve admin yap
   try { await client.execute("UPDATE users SET status = 'approved', is_admin = 1 WHERE LOWER(username) = 'emirgan'"); } catch(e){}
@@ -1674,7 +1675,7 @@ async function startServer() {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
       if (!token) return res.status(401).json({ error: "Giriş yapmalısınız." });
-      const userRes = await client.execute({ sql: "SELECT id, username, is_admin, role FROM users WHERE token = ?", args: [token] });
+      const userRes = await client.execute({ sql: "SELECT id, username, is_admin, roles FROM users WHERE token = ?", args: [token] });
       if (userRes.rows.length === 0) return res.status(401).json({ error: "Geçersiz oturum." });
       const authUser = userRes.rows[0];
 
@@ -1793,7 +1794,7 @@ async function startServer() {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
       if (!token) return res.status(401).json({ error: "Unauthorized" });
-      const userRes = await client.execute({ sql: "SELECT id, username, is_admin, role FROM users WHERE token = ?", args: [token] });
+      const userRes = await client.execute({ sql: "SELECT id, username, is_admin, roles FROM users WHERE token = ?", args: [token] });
       if (userRes.rows.length === 0) return res.status(401).json({ error: "Unauthorized" });
       const authUser = userRes.rows[0];
       
