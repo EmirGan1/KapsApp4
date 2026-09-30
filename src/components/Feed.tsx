@@ -896,6 +896,13 @@ export default function Feed({
               rows={2}
               value={newPostCaption}
               onChange={(e) => setNewPostCaption(e.target.value)}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData('text/plain');
+                if (text) {
+                  e.preventDefault();
+                  document.execCommand('insertText', false, text);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
