@@ -20,7 +20,12 @@ import {
   Filter,
   Eye,
   Users,
-  Target
+  Target,
+  Flame,
+  Award,
+  ArrowRight,
+  Star,
+  Timer
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import { AgendaEvent, isVisibleToUser, parseTargetRoles } from "../types";
@@ -67,14 +72,18 @@ export default function Agenda({
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>("all");
+  const [onlyMyExams, setOnlyMyExams] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(false);
 
   // Selected Day for Desktop Modal & Mobile Bottom Drawer
   const [selectedDayDate, setSelectedDayDate] = useState<string | null>(null);
   const [isDayDrawerOpen, setIsDayDrawerOpen] = useState(false);
 
-  // Dedicated Food Menu Modal / Bottom Drawer State
+  // Dedicated Food Menu Modal State
   const [selectedFoodEvent, setSelectedFoodEvent] = useState<AgendaEvent | null>(null);
+
+  // Dedicated Exam Detail Modal State
+  const [selectedExamEvent, setSelectedExamEvent] = useState<AgendaEvent | null>(null);
 
   // Admin Event Form Modal State
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -82,7 +91,7 @@ export default function Agenda({
   const [formTitle, setFormTitle] = useState("");
   const [formDate, setFormDate] = useState("");
   const [formTime, setFormTime] = useState("");
-  const [formType, setFormType] = useState<"food" | "homework" | "exam" | "event" | "study">("food");
+  const [formType, setFormType] = useState<"food" | "homework" | "exam" | "event" | "study">("exam");
   const [formDescription, setFormDescription] = useState("");
   const [formTargetRoles, setFormTargetRoles] = useState<string[]>([]);
   const [formSubmitting, setFormSubmitting] = useState(false);
@@ -90,18 +99,59 @@ export default function Agenda({
   // Hover Tooltip state (Desktop)
   const [hoveredEvent, setHoveredEvent] = useState<{ event: AgendaEvent; x: number; y: number } | null>(null);
 
+  // Live Countdown to Pre-Mock 3 (First Exam: 12 October 2026 08:50)
+  const [countdown, setCountdown] = useState<{ days: number; hours: number; minutes: number; seconds: number; isPassed: boolean }>({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    isPassed: false
+  });
+
+  useEffect(() => {
+    const targetDate = new Date("2026-10-12T08:50:00+03:00").getTime();
+
+    const updateCountdown = () => {
+      const now = Date.now();
+      const diff = targetDate - now;
+
+      if (diff <= 0) {
+        setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0, isPassed: true });
+      } else {
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setCountdown({ days, hours, minutes, seconds, isPassed: false });
+      }
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Helper to check if current user is enrolled in an exam's target roles
+  const isEnrolledInEvent = (ev: AgendaEvent): boolean => {
+    const targetRoles = parseTargetRoles((ev as any).targetRoles || (ev as any).target_roles);
+    if (targetRoles.length === 0 || targetRoles.includes("all")) return true;
+    const normalizedUserRoles = effectiveRoles.map(r => r.toLowerCase().trim());
+    return targetRoles.some(tr => normalizedUserRoles.includes(tr.toLowerCase().trim()));
+  };
+
   // Close modals on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (selectedFoodEvent) setSelectedFoodEvent(null);
+        if (selectedExamEvent) setSelectedExamEvent(null);
+        else if (selectedFoodEvent) setSelectedFoodEvent(null);
         else if (isFormModalOpen) setIsFormModalOpen(false);
         else if (isDayDrawerOpen) setIsDayDrawerOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedFoodEvent, isFormModalOpen, isDayDrawerOpen]);
+  }, [selectedExamEvent, selectedFoodEvent, isFormModalOpen, isDayDrawerOpen]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth(); // 0-indexed
@@ -175,9 +225,8 @@ export default function Agenda({
     const lastDayOfMonth = new Date(year, month + 1, 0);
 
     const totalDays = lastDayOfMonth.getDate();
-    // In JS getDay() returns 0 for Sunday, 1 for Monday...
     let startDayOfWeek = firstDayOfMonth.getDay() - 1;
-    if (startDayOfWeek === -1) startDayOfWeek = 6; // Sunday becomes index 6
+    if (startDayOfWeek === -1) startDayOfWeek = 6;
 
     const prevMonthLastDay = new Date(year, month, 0).getDate();
 
@@ -232,13 +281,17 @@ export default function Agenda({
     return days;
   }, [year, month]);
 
-  // Group events by date string (filtered by user course roles visibility)
+  // Group events by date string (filtered by user course roles & user selections)
   const eventsByDate = useMemo(() => {
     const map: Record<string, AgendaEvent[]> = {};
     events.forEach((ev) => {
       // Role visibility check: hidden if not visible to this user
       if (!isVisibleToUser((ev as any).targetRoles || (ev as any).target_roles, effectiveRoles, isEmirgan)) {
         return;
+      }
+      // "Sadece Benim Sınavlarım" filter toggle
+      if (onlyMyExams && ev.event_type === "exam") {
+        if (!isEnrolledInEvent(ev)) return;
       }
       if (selectedTypeFilter !== "all" && ev.event_type !== selectedTypeFilter) {
         return;
@@ -247,7 +300,7 @@ export default function Agenda({
       map[ev.event_date].push(ev);
     });
     return map;
-  }, [events, selectedTypeFilter, effectiveRoles, isEmirgan]);
+  }, [events, selectedTypeFilter, onlyMyExams, effectiveRoles, isEmirgan]);
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(year, month - 1, 1));
@@ -264,6 +317,14 @@ export default function Agenda({
     setIsDayDrawerOpen(true);
   };
 
+  const handleJumpToPreMock = () => {
+    // Jump to October 2026
+    setCurrentDate(new Date(2026, 9, 1)); // 9 = October
+    setSelectedDayDate("2026-10-12");
+    setSelectedTypeFilter("all");
+    setIsDayDrawerOpen(true);
+  };
+
   const handleDayClick = (dateStr: string) => {
     setSelectedDayDate(dateStr);
     setIsDayDrawerOpen(true);
@@ -274,7 +335,7 @@ export default function Agenda({
     setFormTitle("");
     setFormDate(dateStr || selectedDayDate || new Date().toISOString().split("T")[0]);
     setFormTime("");
-    setFormType("food");
+    setFormType("exam");
     setFormDescription("");
     setFormTargetRoles([]);
     setIsFormModalOpen(true);
@@ -337,7 +398,6 @@ export default function Agenda({
     const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
 
     if (editingEvent) {
-      // Update
       if (socket && socket.connected) {
         socket.emit("update_agenda_event", { id: editingEvent.id, ...payload }, (res: any) => {
           setFormSubmitting(false);
@@ -358,18 +418,20 @@ export default function Agenda({
             },
             body: JSON.stringify(payload)
           });
+          const data = await res.json();
           setFormSubmitting(false);
-          if (res.ok) {
+          if (data?.error) {
+            alert(data.error);
+          } else {
             setIsFormModalOpen(false);
             loadEvents();
           }
-        } catch (err: any) {
-          alert(err.message || "Güncelleme başarısız.");
+        } catch (err) {
+          console.error("Update error:", err);
           setFormSubmitting(false);
         }
       }
     } else {
-      // Create
       if (socket && socket.connected) {
         socket.emit("create_agenda_event", payload, (res: any) => {
           setFormSubmitting(false);
@@ -390,21 +452,36 @@ export default function Agenda({
             },
             body: JSON.stringify(payload)
           });
+          const data = await res.json();
           setFormSubmitting(false);
-          if (res.ok) {
+          if (data?.error) {
+            alert(data.error);
+          } else {
             setIsFormModalOpen(false);
             loadEvents();
           }
-        } catch (err: any) {
-          alert(err.message || "Etkinlik eklenemedi.");
+        } catch (err) {
+          console.error("Create error:", err);
           setFormSubmitting(false);
         }
       }
     }
   };
 
-  const getEventTypeStyles = (type: AgendaEvent["event_type"]) => {
+  const getEventTypeStyles = (type: AgendaEvent["event_type"], isMyExam: boolean = false) => {
     switch (type) {
+      case "exam":
+        return {
+          badge: isMyExam 
+            ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-400 font-black ring-1 ring-amber-400/50" 
+            : "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300/50 font-bold",
+          pill: isMyExam
+            ? "bg-amber-500/15 text-amber-900 dark:text-amber-200 border-amber-400 dark:border-amber-500/60 hover:bg-amber-500/25 shadow-xs ring-1 ring-amber-400/30"
+            : "bg-rose-50 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60",
+          dot: isMyExam ? "bg-amber-400 ring-2 ring-amber-300" : "bg-rose-500",
+          label: isMyExam ? "⭐ Sınavım" : "Sınav / Pre-Mock",
+          icon: <GraduationCap size={13} className={`shrink-0 ${isMyExam ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`} />
+        };
       case "food":
         return {
           badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300/50",
@@ -429,14 +506,6 @@ export default function Agenda({
           label: "Ödev / Proje",
           icon: <BookOpen size={13} className="shrink-0 text-blue-600 dark:text-blue-400" />
         };
-      case "exam":
-        return {
-          badge: "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300/50",
-          pill: "bg-rose-50 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60",
-          dot: "bg-rose-500",
-          label: "Sınav / Önemli",
-          icon: <GraduationCap size={13} className="shrink-0 text-rose-600 dark:text-rose-400" />
-        };
       default:
         return {
           badge: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300/50",
@@ -453,7 +522,74 @@ export default function Agenda({
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200">
       
-      {/* Top Header & Calendar Controls */}
+      {/* 1. TOP PRE-MOCK 3 COUNTDOWN BANNER WIDGET */}
+      <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-indigo-950 border-b border-rose-500/30 text-white px-4 sm:px-6 py-2.5 shadow-md shrink-0 relative overflow-hidden">
+        <div className="absolute -right-8 -bottom-8 opacity-10 text-white pointer-events-none">
+          <GraduationCap size={120} />
+        </div>
+
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-500 to-amber-400 text-slate-950 flex items-center justify-center font-black text-sm shadow-md shrink-0">
+              ⏳
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/30 text-rose-300 border border-rose-500/40">
+                  IB DP 2027 Pre-Mock 3
+                </span>
+                <span className="text-xs text-slate-300 font-medium hidden md:inline">
+                  Resmi Deneme Sınavları (12 - 23 Ekim 2026)
+                </span>
+              </div>
+              <p className="text-xs font-bold text-white mt-0.5 flex items-center gap-1.5">
+                <span>İlk Sınav: 12 Ekim 2026 Pazartesi 08:50</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Live Countdown Timer Badges */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {!countdown.isPassed ? (
+              <div className="flex items-center gap-1.5 font-mono text-xs font-black">
+                <div className="px-2 py-1 rounded-lg bg-black/40 border border-rose-500/30 text-rose-300 flex flex-col items-center">
+                  <span className="text-sm leading-tight text-white">{countdown.days}</span>
+                  <span className="text-[9px] uppercase font-sans text-rose-400">Gün</span>
+                </div>
+                <span className="text-rose-400 font-bold">:</span>
+                <div className="px-2 py-1 rounded-lg bg-black/40 border border-rose-500/30 text-rose-300 flex flex-col items-center">
+                  <span className="text-sm leading-tight text-white">{String(countdown.hours).padStart(2, '0')}</span>
+                  <span className="text-[9px] uppercase font-sans text-rose-400">Saat</span>
+                </div>
+                <span className="text-rose-400 font-bold">:</span>
+                <div className="px-2 py-1 rounded-lg bg-black/40 border border-rose-500/30 text-rose-300 flex flex-col items-center">
+                  <span className="text-sm leading-tight text-white">{String(countdown.minutes).padStart(2, '0')}</span>
+                  <span className="text-[9px] uppercase font-sans text-rose-400">Dk</span>
+                </div>
+                <span className="text-rose-400 font-bold hidden xs:inline">:</span>
+                <div className="px-2 py-1 rounded-lg bg-black/40 border border-rose-500/30 text-rose-300 flex-col items-center hidden xs:flex">
+                  <span className="text-sm leading-tight text-amber-400">{String(countdown.seconds).padStart(2, '0')}</span>
+                  <span className="text-[9px] uppercase font-sans text-amber-400">Sn</span>
+                </div>
+              </div>
+            ) : (
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
+                Sınav Dönemi Aktif / Tamamlandı
+              </span>
+            )}
+
+            <button
+              onClick={handleJumpToPreMock}
+              className="ml-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1 active:scale-95 whitespace-nowrap"
+            >
+              <span>Ekim 2026'ya Git</span>
+              <ArrowRight size={13} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Top Header & Calendar Controls */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 shadow-xs shrink-0 z-10 transition-colors duration-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           
@@ -476,7 +612,7 @@ export default function Agenda({
                 </button>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Okul Ajandası, Yemek Menüsü ve Etkinlik Takvimi
+                Okul Ajandası, Pre-Mock 3 Sınav Takvimi ve Yemek Menüsü
               </p>
             </div>
           </div>
@@ -517,37 +653,53 @@ export default function Agenda({
           </div>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 overflow-x-auto no-scrollbar">
-          <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 mr-1 shrink-0 flex items-center gap-1">
-            <Filter size={12} />
-            Filtre:
-          </span>
-          {[
-            { id: "all", label: "Tümü" },
-            { id: "food", label: "🍲 Yemek Menüsü", dot: "bg-emerald-500" },
-            { id: "study", label: "📚 Etütler", dot: "bg-indigo-500" },
-            { id: "homework", label: "📝 Ödev / Proje", dot: "bg-blue-500" },
-            { id: "exam", label: "🎓 Sınav / Önemli", dot: "bg-rose-500" },
-            { id: "event", label: "🎯 Etkinlik", dot: "bg-amber-500" },
-          ].map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setSelectedTypeFilter(f.id)}
-              className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                selectedTypeFilter === f.id
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              {f.dot && <span className={`w-2 h-2 rounded-full ${f.dot}`} />}
-              <span>{f.label}</span>
-            </button>
-          ))}
+        {/* Filter Pills & User Role Exam Toggle */}
+        <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex-wrap">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 mr-1 shrink-0 flex items-center gap-1">
+              <Filter size={12} />
+              Filtre:
+            </span>
+            {[
+              { id: "all", label: "Tümü" },
+              { id: "exam", label: "🎓 Pre-Mock 3 Sınavları", dot: "bg-rose-500" },
+              { id: "food", label: "🍲 Yemek Menüsü", dot: "bg-emerald-500" },
+              { id: "study", label: "📚 Etütler", dot: "bg-indigo-500" },
+              { id: "homework", label: "📝 Ödev / Proje", dot: "bg-blue-500" },
+              { id: "event", label: "🎯 Etkinlik", dot: "bg-amber-500" },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setSelectedTypeFilter(f.id)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedTypeFilter === f.id
+                    ? "bg-blue-600 text-white shadow-xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                }`}
+              >
+                {f.dot && <span className={`w-2 h-2 rounded-full ${f.dot}`} />}
+                <span>{f.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* User's Own Enrolled Courses Toggle */}
+          <button
+            onClick={() => setOnlyMyExams(prev => !prev)}
+            className={`px-3.5 py-1 rounded-full text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border shrink-0 ${
+              onlyMyExams
+                ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200"
+            }`}
+            title="Sadece kayıtlı olduğunuz IB derslerinin sınavlarını görüntüler"
+          >
+            <Star size={13} className={onlyMyExams ? "fill-slate-950 text-slate-950" : "text-amber-500"} />
+            <span>Sadece Aldığım Derslerin Sınavları</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Calendar View Area */}
+      {/* 3. Main Calendar View Area */}
       <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-4 md:p-6 touch-pan-y overscroll-y-contain">
         <div className="max-w-7xl mx-auto bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col transition-colors duration-200">
           
@@ -612,7 +764,6 @@ export default function Agenda({
 
                   {/* Desktop Event Pills */}
                   <div className={`hidden sm:flex flex-col gap-1 overflow-hidden my-auto ${dayItem.dateStr < new Date().toISOString().split("T")[0] ? "opacity-40 grayscale-[40%] hover:opacity-100 transition-opacity" : ""}`}>
-                    {/* Compact Food Badge (Requirement 2) */}
                     {(() => {
                       const foodEvent = dayEvents.find((e) => e.event_type === "food");
                       const otherEvents = dayEvents.filter((e) => e.event_type !== "food");
@@ -639,7 +790,9 @@ export default function Agenda({
                           )}
 
                           {otherEvents.slice(0, foodEvent ? 2 : 3).map((ev) => {
-                            const st = getEventTypeStyles(ev.event_type);
+                            const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
+                            const st = getEventTypeStyles(ev.event_type, isMyExam);
+
                             return (
                               <div
                                 key={ev.id}
@@ -654,8 +807,12 @@ export default function Agenda({
                                 onMouseLeave={() => setHoveredEvent(null)}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setSelectedDayDate(dayItem.dateStr);
-                                  setIsDayDrawerOpen(true);
+                                  if (ev.event_type === "exam") {
+                                    setSelectedExamEvent(ev);
+                                  } else {
+                                    setSelectedDayDate(dayItem.dateStr);
+                                    setIsDayDrawerOpen(true);
+                                  }
                                 }}
                                 className={`px-1.5 py-0.5 rounded-md border text-[11px] font-semibold truncate flex items-center gap-1 transition-all ${st.pill}`}
                               >
@@ -663,7 +820,7 @@ export default function Agenda({
                                 <span className="truncate">{ev.title}</span>
                                 {ev.event_time && (
                                   <span className="text-[10px] opacity-75 ml-auto shrink-0 font-mono">
-                                    {ev.event_time}
+                                    {ev.event_time.split(" - ")[0]}
                                   </span>
                                 )}
                               </div>
@@ -701,7 +858,8 @@ export default function Agenda({
                             </span>
                           )}
                           {otherEvents.slice(0, foodEvent ? 3 : 4).map((ev) => {
-                            const st = getEventTypeStyles(ev.event_type);
+                            const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
+                            const st = getEventTypeStyles(ev.event_type, isMyExam);
                             return (
                               <span
                                 key={ev.id}
@@ -736,32 +894,171 @@ export default function Agenda({
             pointerEvents: "none",
             zIndex: 50,
           }}
-          className="bg-slate-900/95 dark:bg-slate-800/95 text-white p-3 rounded-xl shadow-2xl backdrop-blur-md border border-slate-700/60 max-w-xs animate-in fade-in zoom-in-95 duration-150"
+          className="bg-slate-900/95 dark:bg-slate-800/95 text-white p-3.5 rounded-2xl shadow-2xl backdrop-blur-md border border-slate-700/60 max-w-xs animate-in fade-in zoom-in-95 duration-150"
         >
-          <div className="flex items-center gap-1.5 text-xs font-bold mb-1 text-blue-400">
-            {getEventTypeStyles(hoveredEvent.event.event_type).icon}
-            <span>{getEventTypeStyles(hoveredEvent.event.event_type).label}</span>
+          <div className="flex items-center gap-1.5 text-xs font-bold mb-1 text-rose-400">
+            {getEventTypeStyles(hoveredEvent.event.event_type, isEnrolledInEvent(hoveredEvent.event)).icon}
+            <span>{getEventTypeStyles(hoveredEvent.event.event_type, isEnrolledInEvent(hoveredEvent.event)).label}</span>
             {hoveredEvent.event.event_time && (
               <span className="text-slate-300 font-mono text-[11px] ml-auto">
                 🕒 {hoveredEvent.event.event_time}
               </span>
             )}
           </div>
-          <h4 className="font-bold text-sm text-white mb-1">
+          <h4 className="font-bold text-sm text-white mb-1.5">
             {hoveredEvent.event.title}
           </h4>
           <div className="my-1">
             <TargetRoleBadge targetRolesRaw={(hoveredEvent.event as any).targetRoles || (hoveredEvent.event as any).target_roles} size="sm" />
           </div>
           {hoveredEvent.event.description && (
-            <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed line-clamp-4">
+            <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed line-clamp-4 mt-1">
               {hoveredEvent.event.description}
             </p>
           )}
         </div>
       )}
 
-      {/* Dedicated Food Menu Modal / Bottom Drawer (Requirement 3) */}
+      {/* 4. DEDICATED EXAM DETAIL POPUP MODAL (Pre-Mock 3 Card) */}
+      {selectedExamEvent && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setSelectedExamEvent(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-rose-500/30 overflow-hidden flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Gradient Header */}
+            <div className="p-5 bg-gradient-to-r from-rose-600 via-rose-700 to-amber-600 text-white flex items-start justify-between relative overflow-hidden shrink-0">
+              <div className="absolute -right-6 -bottom-6 text-white/10 pointer-events-none select-none">
+                <GraduationCap size={130} />
+              </div>
+
+              <div className="flex items-center gap-3.5 z-10">
+                <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md text-white flex items-center justify-center text-2xl shadow-inner shrink-0 border border-white/20">
+                  🎓
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 text-white backdrop-blur-md border border-white/20">
+                      Pre-Mock 3 Sınavı
+                    </span>
+                    {isEnrolledInEvent(selectedExamEvent) && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950 flex items-center gap-1 shadow-xs">
+                        <Star size={10} className="fill-slate-950" />
+                        Dersinize Ait
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white mt-1 leading-tight tracking-tight">
+                    {selectedExamEvent.title}
+                  </h3>
+                  <p className="text-xs text-rose-100/90 font-medium">
+                    IB DP 2027 Resmi Deneme Sınav Takvimi
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedExamEvent(null)}
+                className="z-10 p-2 rounded-xl text-white/80 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Exam Details Body */}
+            <div className="p-5 overflow-y-auto space-y-4 bg-slate-50/60 dark:bg-slate-900/60 flex-1 text-xs sm:text-sm">
+              
+              {/* Date & Time Info Box */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                    <CalendarDays size={12} /> Sınav Tarihi
+                  </span>
+                  <p className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">
+                    {new Date(selectedExamEvent.event_date).toLocaleDateString("tr-TR", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric"
+                    })}
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                    <Clock size={12} /> Sınav Saati
+                  </span>
+                  <p className="font-mono font-bold text-rose-600 dark:text-rose-400 text-xs sm:text-sm">
+                    {selectedExamEvent.event_time || "08:50"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Roles / Subject Badges */}
+              <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  İlgili Ders ve Seviyeler
+                </span>
+                <TargetRoleBadge targetRolesRaw={(selectedExamEvent as any).targetRoles || (selectedExamEvent as any).target_roles} size="md" />
+              </div>
+
+              {/* Description & Paper Guidelines */}
+              {selectedExamEvent.description && (
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Sınav Yönergeleri & Detaylar
+                  </span>
+                  <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                    {selectedExamEvent.description}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between">
+              {isEmirgan ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const ev = selectedExamEvent;
+                      setSelectedExamEvent(null);
+                      handleOpenEditForm(ev);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Edit3 size={14} /> Düzenle
+                  </button>
+                  <button
+                    onClick={() => {
+                      const id = selectedExamEvent.id;
+                      setSelectedExamEvent(null);
+                      handleDeleteEvent(id);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 size={14} /> Sil
+                  </button>
+                </div>
+              ) : <div />}
+
+              <button
+                type="button"
+                onClick={() => setSelectedExamEvent(null)}
+                className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 transition-all cursor-pointer"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Dedicated Food Menu Modal / Bottom Drawer */}
       {selectedFoodEvent && (
         <div 
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-xs transition-opacity duration-200"
@@ -773,7 +1070,6 @@ export default function Agenda({
           >
             {/* Emerald Gradient Header */}
             <div className="p-5 bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white flex items-start justify-between relative overflow-hidden shrink-0">
-              {/* Decorative culinary background pattern */}
               <div className="absolute -right-6 -bottom-6 text-white/10 pointer-events-none select-none">
                 <Utensils size={120} />
               </div>
@@ -842,81 +1138,52 @@ export default function Agenda({
                   );
                 }
 
-                // Helper to give dish-specific icons & colors
-                const getDishCategory = (dishName: string, index: number) => {
-                  const lower = dishName.toLowerCase();
-                  if (lower.includes("çorba") || lower.includes("corba")) {
-                    return { icon: "🍲", tag: "Çorba", color: "from-amber-500/10 to-orange-500/5 text-amber-700 dark:text-amber-300 border-amber-500/20" };
-                  }
-                  if (lower.includes("köfte") || lower.includes("şinitzel") || lower.includes("tavuk") || lower.includes("kebap") || lower.includes("fileto") || lower.includes("kuru fasulye") || lower.includes("musakka") || lower.includes("dolma") || lower.includes("bezelye") || lower.includes("mercimek yemeği") || lower.includes("graten") || lower.includes("hünkar") || lower.includes("balık")) {
-                    return { icon: "🍖", tag: "Ana Yemek", color: "from-rose-500/10 to-red-500/5 text-rose-700 dark:text-rose-300 border-rose-500/20" };
-                  }
-                  if (lower.includes("pilav") || lower.includes("makarna") || lower.includes("püre") || lower.includes("erişte") || lower.includes("kuskus") || lower.includes("spagetti")) {
-                    return { icon: "🍚", tag: "Garnitür / Pilav", color: "from-blue-500/10 to-indigo-500/5 text-blue-700 dark:text-blue-300 border-blue-500/20" };
-                  }
-                  if (lower.includes("salata") || lower.includes("ayran") || lower.includes("yoğurt") || lower.includes("cacık") || lower.includes("turşu") || lower.includes("tatlı") || lower.includes("helva") || lower.includes("puding") || lower.includes("sütlaç") || lower.includes("meyve") || lower.includes("komposto") || lower.includes("trileçe")) {
-                    return { icon: "🥗", tag: "Salata / Tatlı / İçecek", color: "from-emerald-500/10 to-teal-500/5 text-emerald-700 dark:text-emerald-300 border-emerald-500/20" };
-                  }
-                  const defaultIcons = ["🍲", "🍖", "🍚", "🥗", "🍎"];
-                  return { icon: defaultIcons[index % defaultIcons.length], tag: `Kalem #${index + 1}`, color: "from-slate-500/10 to-slate-500/5 text-slate-700 dark:text-slate-300 border-slate-500/20" };
-                };
-
-                return lines.map((dish, idx) => {
-                  const cat = getDishCategory(dish, idx);
-                  return (
-                    <div
-                      key={idx}
-                      className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 p-3.5 shadow-2xs hover:shadow-xs transition-all flex items-center gap-3.5 group"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700/70 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
-                        {cat.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cat.color}`}>
-                            {cat.tag}
-                          </span>
+                return (
+                  <div className="space-y-2">
+                    {lines.map((line, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xs"
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-sm shrink-0">
+                          {idx + 1}
                         </div>
-                        <p className="font-bold text-slate-900 dark:text-slate-100 text-sm sm:text-[15px] mt-0.5 truncate sm:whitespace-normal">
-                          {dish}
-                        </p>
+                        <span className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">
+                          {line}
+                        </span>
                       </div>
-                    </div>
-                  );
-                });
+                    ))}
+                  </div>
+                );
               })()}
             </div>
 
-            {/* Footer with actions */}
-            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                {isEmirgan && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const ev = selectedFoodEvent;
-                        setSelectedFoodEvent(null);
-                        handleOpenEditForm(ev);
-                      }}
-                      className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Edit3 size={14} /> Düzenle
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const id = selectedFoodEvent.id;
-                        setSelectedFoodEvent(null);
-                        handleDeleteEvent(id);
-                      }}
-                      className="px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Trash2 size={14} /> Sil
-                    </button>
-                  </>
-                )}
-              </div>
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between">
+              {isEmirgan ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const ev = selectedFoodEvent;
+                      setSelectedFoodEvent(null);
+                      handleOpenEditForm(ev);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Edit3 size={14} /> Düzenle
+                  </button>
+                  <button
+                    onClick={() => {
+                      const id = selectedFoodEvent.id;
+                      setSelectedFoodEvent(null);
+                      handleDeleteEvent(id);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 size={14} /> Sil
+                  </button>
+                </div>
+              ) : <div />}
 
               <button
                 type="button"
@@ -930,7 +1197,7 @@ export default function Agenda({
         </div>
       )}
 
-      {/* Detail Modal / Mobile Bottom Drawer */}
+      {/* 6. Day Events Drawer / Detail Modal */}
       {isDayDrawerOpen && selectedDayDate && (
         <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity duration-200">
           <div
@@ -953,7 +1220,7 @@ export default function Agenda({
                     })}
                   </h3>
                   <p className="text-xs text-slate-400 dark:text-slate-500">
-                    {selectedDayEvents.length} kayıtlı etkinlik & menü
+                    {selectedDayEvents.length} kayıtlı etkinlik, sınav & menü
                   </p>
                 </div>
               </div>
@@ -987,19 +1254,32 @@ export default function Agenda({
                 <div className="py-12 text-center">
                   <CalendarDays size={40} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
                   <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">
-                    Bu güne ait etkinlik veya menü bulunamadı
+                    Bu güne ait etkinlik veya sınav bulunamadı
                   </h4>
                   <p className="text-xs text-slate-400 mt-1">
-                    {isEmirgan ? "Yukarıdaki '+' butonuna tıklayarak yeni etkinlik veya yemek menüsü ekleyebilirsiniz." : "Bu tarih için planlanan bir etkinlik bulunmuyor."}
+                    {isEmirgan ? "Yukarıdaki '+' butonuna tıklayarak yeni etkinlik ekleyebilirsiniz." : "Bu tarih için planlanan bir etkinlik bulunmuyor."}
                   </p>
                 </div>
               ) : (
                 selectedDayEvents.map((ev) => {
-                  const st = getEventTypeStyles(ev.event_type);
+                  const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
+                  const st = getEventTypeStyles(ev.event_type, isMyExam);
+
                   return (
                     <div
                       key={ev.id}
-                      className="bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-4 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden group"
+                      onClick={() => {
+                        if (ev.event_type === "exam") {
+                          setSelectedExamEvent(ev);
+                        } else if (ev.event_type === "food") {
+                          setSelectedFoodEvent(ev);
+                        }
+                      }}
+                      className={`bg-white dark:bg-slate-800/80 rounded-2xl border p-4 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden group cursor-pointer ${
+                        isMyExam 
+                          ? "border-amber-400/80 bg-amber-500/5 dark:bg-amber-500/10" 
+                          : "border-slate-200/80 dark:border-slate-700/80"
+                      }`}
                     >
                       {/* Left color bar */}
                       <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${st.dot}`} />
@@ -1021,7 +1301,7 @@ export default function Agenda({
 
                         {/* Admin Action Buttons */}
                         {isEmirgan && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
                               onClick={() => handleOpenEditForm(ev)}
@@ -1049,17 +1329,17 @@ export default function Agenda({
                       {ev.description && (
                         <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap pl-1.5 bg-slate-50/70 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80">
                           {ev.description}
-                          {ev.event_type === "food" && (
+                          {ev.event_type === "exam" && (
                             <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex justify-end">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setIsDayDrawerOpen(false);
-                                  setSelectedFoodEvent(ev);
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedExamEvent(ev);
                                 }}
-                                className="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 transition-colors cursor-pointer flex items-center gap-1.5"
+                                className="px-3 py-1 rounded-lg text-xs font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 transition-colors cursor-pointer flex items-center gap-1.5"
                               >
-                                <span>🍽️ Özel Menü Kartını Aç</span>
+                                <span>🎓 Sınav Kartını İncele</span>
                               </button>
                             </div>
                           )}
@@ -1085,7 +1365,7 @@ export default function Agenda({
         </div>
       )}
 
-      {/* Admin Create / Edit Modal Form */}
+      {/* 7. Admin Create / Edit Modal Form */}
       {isFormModalOpen && isEmirgan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
           <div
@@ -1099,7 +1379,7 @@ export default function Agenda({
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">
-                    {editingEvent ? "Etkinliği Düzenle" : "Yeni Etkinlik / Menü Ekle"}
+                    {editingEvent ? "Etkinliği Düzenle" : "Yeni Etkinlik / Sınav / Menü Ekle"}
                   </h3>
                   <p className="text-xs text-slate-400">
                     Sadece 'emirgan' yöneticisi tarafından düzenlenebilir
@@ -1118,12 +1398,12 @@ export default function Agenda({
             <form onSubmit={handleFormSubmit} className="p-5 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Etkinlik Başlığı *
+                  Etkinlik / Sınav Başlığı *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Örn: Günün Öğle Yemeği Menüsü / Matematik Sınavı"
+                  placeholder="Örn: Sınav: Chemistry Paper 1 / Günün Öğle Yemeği Menüsü"
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm outline-none focus:ring-2 focus:ring-blue-500"
@@ -1146,10 +1426,11 @@ export default function Agenda({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Saat (İsteğe Bağlı)
+                    Saat / Aralık (İsteğe Bağlı)
                   </label>
                   <input
-                    type="time"
+                    type="text"
+                    placeholder="Örn: 08:50 - 10:20"
                     value={formTime}
                     onChange={(e) => setFormTime(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm outline-none focus:ring-2 focus:ring-blue-500"
@@ -1163,10 +1444,10 @@ export default function Agenda({
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {[
+                    { type: "exam", label: "🎓 Sınav", color: "border-rose-500 text-rose-600 bg-rose-50 dark:bg-rose-950/40" },
                     { type: "food", label: "🍲 Yemek", color: "border-emerald-500 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40" },
                     { type: "study", label: "📚 Etüt", color: "border-indigo-500 text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40" },
                     { type: "homework", label: "📝 Ödev", color: "border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-950/40" },
-                    { type: "exam", label: "🎓 Sınav", color: "border-rose-500 text-rose-600 bg-rose-50 dark:bg-rose-950/40" },
                     { type: "event", label: "🎯 Etkinlik", color: "border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-950/40" },
                   ].map((item) => (
                     <button
@@ -1187,11 +1468,11 @@ export default function Agenda({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Açıklama / Menü Kalemleri / Detaylar
+                  Açıklama / Sınav Kuralları / Detaylar
                 </label>
                 <textarea
                   rows={4}
-                  placeholder="Yemek menüsü kalemleri, ödev detayları veya etkinlik açıklaması..."
+                  placeholder="Sınav süresi, soru sayısı, paper bilgisi veya menü kalemleri..."
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none leading-relaxed"

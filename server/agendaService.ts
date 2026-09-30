@@ -434,8 +434,237 @@ export async function seedOctoberLunchMenu(client: Client) {
     }
     // 3. Seed FMV Ayazağa 12-IB Academic Support (Etüt) Events (Sept 2026 - Jan 2027)
     await seedAcademicSupportEvents(client);
+    // 4. Seed IB DP 2027 May Candidates Pre-Mock 3 Examination Schedule (12 - 23 October 2026)
+    await seedPreMockExams(client);
   } catch (err) {
     console.error("[Agenda] Error seeding lunch menu:", err);
+  }
+}
+
+/**
+ * IB DP 2027 MAY EXAMINATION CANDIDATES PRE-MOCK 3 EXAMINATION SCHEDULE
+ * 12 Ekim 2026 - 23 Ekim 2026 (Hafta 1 & Hafta 2)
+ */
+export const IB_DP_2027_PRE_MOCK_3_EXAM_SCHEDULE = [
+  // --- HAFTA 1 (WEEK 1) ---
+  // 12.10.2026 Pazartesi (Monday)
+  {
+    event_date: "2026-10-12",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Chemistry Paper 1 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["chemistry_sl", "chemistry_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Chemistry (Kimya)\n• Sınav: Paper 1\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (120 dk - Bitiş: 10:50)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-12",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Digital Society Paper 1 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["digital_society_sl", "digital_society_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Digital Society (Dijital Toplum)\n• Sınav: Paper 1\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (135 dk - Bitiş: 11:05)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-12",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Psychology Paper 1 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["psychology_sl", "psychology_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Psychology (Psikoloji)\n• Sınav: Paper 1\n• Seviye & Süre: SL & HL (90 dk - Bitiş: 10:20)\n• Başlama Saati: 08:50"
+  },
+
+  // 13.10.2026 Salı (Tuesday)
+  {
+    event_date: "2026-10-13",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Chemistry Paper 2 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["chemistry_sl", "chemistry_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Chemistry (Kimya)\n• Sınav: Paper 2\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (150 dk - Bitiş: 11:20)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-13",
+    event_time: "08:50 - 10:05",
+    title: "Sınav: Digital Society Paper 2 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["digital_society_sl", "digital_society_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Digital Society (Dijital Toplum)\n• Sınav: Paper 2\n• Seviye & Süre: SL & HL (75 dk - Bitiş: 10:05)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-13",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Psychology Paper 2 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["psychology_sl", "psychology_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Psychology (Psikoloji)\n• Sınav: Paper 2\n• Seviye & Süre: SL & HL (90 dk - Bitiş: 10:20)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-13",
+    event_time: "13:35 - 14:50",
+    title: "Sınav: Digital Society Paper 3 (HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["digital_society_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı (Öğleden Sonra)\n• Ders: Digital Society (Dijital Toplum)\n• Sınav: Paper 3\n• Seviye & Süre: HL (75 dk - Bitiş: 14:50)\n• Başlama Saati: 13:35"
+  },
+  {
+    event_date: "2026-10-13",
+    event_time: "13:35 - 15:20",
+    title: "Sınav: Psychology Paper 3 (HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["psychology_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı (Öğleden Sonra)\n• Ders: Psychology (Psikoloji)\n• Sınav: Paper 3\n• Seviye & Süre: HL (105 dk - Bitiş: 15:20)\n• Başlama Saati: 13:35"
+  },
+
+  // 15.10.2026 Perşembe (Thursday)
+  {
+    event_date: "2026-10-15",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Mathematics Paper 1 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["math_sl", "math_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Mathematics (Matematik AA / AI)\n• Sınav: Paper 1\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (130 dk - Bitiş: 11:00)\n• Başlama Saati: 08:50"
+  },
+
+  // 16.10.2026 Cuma (Friday)
+  {
+    event_date: "2026-10-16",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Mathematics Paper 2 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["math_sl", "math_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Mathematics (Matematik AA / AI)\n• Sınav: Paper 2\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (120 dk - Bitiş: 10:50)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-16",
+    event_time: "13:35 - 14:50",
+    title: "Sınav: Mathematics Paper 3 (HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["math_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı (Öğleden Sonra)\n• Ders: Mathematics (Matematik HL)\n• Sınav: Paper 3\n• Seviye & Süre: HL (75 dk - Bitiş: 14:50)\n• Başlama Saati: 13:35"
+  },
+
+  // --- HAFTA 2 (WEEK 2) ---
+  // 19.10.2026 Pazartesi (Monday)
+  {
+    event_date: "2026-10-19",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Physics Paper 1 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["physics_sl", "physics_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Physics (Fizik)\n• Sınav: Paper 1\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (120 dk - Bitiş: 10:50)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-19",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Biology Paper 1 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["biology_sl", "biology_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Biology (Biyoloji)\n• Sınav: Paper 1\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (120 dk - Bitiş: 10:50)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-19",
+    event_time: "13:35 - 15:05",
+    title: "Sınav: English B Paper 1",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["eng_b_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı (Öğleden Sonra)\n• Ders: English B\n• Sınav: Paper 1 (Writing)\n• Seviye & Süre: HL (90 dk - Bitiş: 15:05)\n• Başlama Saati: 13:35"
+  },
+
+  // 20.10.2026 Salı (Tuesday)
+  {
+    event_date: "2026-10-20",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Physics Paper 2 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["physics_sl", "physics_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Physics (Fizik)\n• Sınav: Paper 2\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (150 dk - Bitiş: 11:20)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-20",
+    event_time: "08:50 - 10:20",
+    title: "Sınav: Biology Paper 2 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["biology_sl", "biology_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Biology (Biyoloji)\n• Sınav: Paper 2\n• Seviye & Süre: SL (90 dk - Bitiş: 10:20) | HL (150 dk - Bitiş: 11:20)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-20",
+    event_time: "13:35 - 14:35",
+    title: "Sınav: English B Paper 2 Reading (HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["eng_b_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı (Öğleden Sonra)\n• Ders: English B\n• Sınav: Paper 2 (Reading Comprehension)\n• Seviye & Süre: HL (60 dk - Bitiş: 14:35)\n• Başlama Saati: 13:35"
+  },
+  {
+    event_date: "2026-10-20",
+    event_time: "14:35 - 15:35",
+    title: "Sınav: English B Paper 2 Listening (HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["eng_b_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı (Öğleden Sonra)\n• Ders: English B\n• Sınav: Paper 2 (Listening Comprehension)\n• Seviye & Süre: HL (60 dk - Bitiş: 15:35)\n• Başlama Saati: 14:35"
+  },
+
+  // 22.10.2026 Perşembe (Thursday)
+  {
+    event_date: "2026-10-22",
+    event_time: "08:50 - 10:05",
+    title: "Sınav: Turkish A: Literature Paper 1 (SL/HL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["turkish_sl", "turkish_hl"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: Turkish A: Literature (Türk Edebiyatı)\n• Sınav: Paper 1\n• Seviye & Süre: SL (75 dk - Bitiş: 10:05) | HL (135 dk - Bitiş: 11:05)\n• Başlama Saati: 08:50"
+  },
+  {
+    event_date: "2026-10-22",
+    event_time: "13:35 - 15:05",
+    title: "Sınav: TITC Paper 2 (SL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["titc"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı (Öğleden Sonra)\n• Ders: T.C. İnkılap Tarihi ve Atatürkçülük (TITC)\n• Sınav: Paper 2\n• Seviye & Süre: SL (90 dk - Bitiş: 15:05)\n• Başlama Saati: 13:35"
+  },
+
+  // 23.10.2026 Cuma (Friday)
+  {
+    event_date: "2026-10-23",
+    event_time: "08:50 - 09:50",
+    title: "Sınav: TITC Paper 1 (SL)",
+    event_type: "exam" as const,
+    target_roles: JSON.stringify(["titc"]),
+    description: "📝 IB DP Pre-Mock 3 Deneme Sınavı\n• Ders: T.C. İnkılap Tarihi ve Atatürkçülük (TITC)\n• Sınav: Paper 1\n• Seviye & Süre: SL (60 dk - Bitiş: 09:50)\n• Başlama Saati: 08:50"
+  }
+];
+
+/**
+ * Seeds the official IB DP 2027 Pre-Mock 3 Examination Schedule into agenda_events table
+ */
+export async function seedPreMockExams(client: Client) {
+  try {
+    console.log("[Agenda] Seeding IB DP 2027 Pre-Mock 3 Examination Schedule (12 - 23 October 2026)...");
+    for (const item of IB_DP_2027_PRE_MOCK_3_EXAM_SCHEDULE) {
+      // Check for exact matching record (title and date)
+      const existing = await client.execute({
+        sql: "SELECT id FROM agenda_events WHERE event_date = ? AND title = ?",
+        args: [item.event_date, item.title]
+      });
+
+      if (existing.rows.length === 0) {
+        await client.execute({
+          sql: `INSERT INTO agenda_events (title, event_date, event_time, event_type, description, target_roles, created_by)
+                VALUES (?, ?, ?, 'exam', ?, ?, 'emirgan')`,
+          args: [item.title, item.event_date, item.event_time, item.description, item.target_roles]
+        });
+      } else {
+        // Ensure target_roles and description are up to date
+        await client.execute({
+          sql: `UPDATE agenda_events 
+                SET event_time = ?, event_type = 'exam', description = ?, target_roles = ? 
+                WHERE id = ?`,
+          args: [item.event_time, item.description, item.target_roles, existing.rows[0].id]
+        });
+      }
+    }
+    console.log("[Agenda] IB DP 2027 Pre-Mock 3 Examination Schedule seeded successfully.");
+  } catch (err) {
+    console.error("[Agenda] Error seeding Pre-Mock exams:", err);
   }
 }
 

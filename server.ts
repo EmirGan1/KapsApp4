@@ -56,6 +56,7 @@ import {
 import {
   initAgendaTable,
   seedOctoberLunchMenu,
+  seedPreMockExams,
   startAgendaCronJobs
 } from "./server/agendaService.ts";
 import { BattleRoyaleManager } from "./src/server/battleRoyaleServer.ts";
