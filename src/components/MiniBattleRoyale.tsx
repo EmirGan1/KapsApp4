@@ -8,7 +8,17 @@ import {
   Sparkles, RotateCcw, Award, ChevronRight, Eye
 } from 'lucide-react';
 import Avatar from './Avatar';
-import { WEAPON_CONFIGS, MAP_SIZE } from '../server/battleRoyaleServer';
+import { 
+  WEAPON_CONFIGS, 
+  MAP_SIZE, 
+  MAP_BUILDINGS, 
+  MAP_BRIDGES, 
+  RIVER_POINTS, 
+  RIVER_WIDTH,
+  RoyaleBuilding,
+  RoyaleBarrel,
+  RoyaleExplosionEffect
+} from '../server/battleRoyaleServer';
 
 interface MiniBattleRoyaleProps {
   socket: Socket | null;
@@ -94,7 +104,10 @@ interface GameState {
     maxHp: number;
     tier: 'normal' | 'rare';
     lootType: string;
+    isMilitary?: boolean;
   }>;
+  barrels?: RoyaleBarrel[];
+  explosions?: RoyaleExplosionEffect[];
   loot: Array<{
     id: string;
     type: string;
@@ -215,14 +228,19 @@ export default function MiniBattleRoyale({
   const gameStateRef = useRef<GameState | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  // Input Tracking
+  // Input Tracking & Arrow Aiming
   const keysPressed = useRef<Record<string, boolean>>({});
   const mousePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isMouseDown = useRef<boolean>(false);
   const isSpaceDown = useRef<boolean>(false);
+  const [arrowAutoFire, setArrowAutoFire] = useState<boolean>(true);
+  const virtualAimAngle = useRef<number>(0);
+  const virtualCrosshairOffset = useRef<{ x: number; y: number }>({ x: 150, y: 0 });
   const [showControlsModal, setShowControlsModal] = useState<boolean>(false);
 
-  // Virtual Touch Joysticks
+  // Virtual Touch Joysticks with Multi-touch Identifier Tracking
+  const moveTouchIdRef = useRef<number | null>(null);
+  const aimTouchIdRef = useRef<number | null>(null);
   const touchMoveOrigin = useRef<{ x: number; y: number } | null>(null);
   const touchMoveCurrent = useRef<{ x: number; y: number } | null>(null);
   const touchAimOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -435,7 +453,7 @@ export default function MiniBattleRoyale({
     }
   };
 
-  // 30 FPS Client Input Loop (WASD Move + Arrow Keys 8-way Aim & Auto-Shoot + Mouse + Tablet)
+  // 30 FPS Client Input Loop (WASD Move + Smooth 360° Arrow Virtual Crosshair + Multi-Touch Aim + Mouse)
   useEffect(() => {
     if (view !== 'game' || !socket) return;
 
@@ -448,22 +466,14 @@ export default function MiniBattleRoyale({
 
       let vx = 0;
       let vy = 0;
-      let angle = myPlayer.angle;
+      let angle = virtualAimAngle.current || myPlayer.angle;
       let shooting = false;
 
       // 1. WASD Movement (Sol El)
-      if (
-        keysPressed.current['KeyW'] || keysPressed.current['W'] || keysPressed.current['w']
-      ) vy -= 1;
-      if (
-        keysPressed.current['KeyS'] || keysPressed.current['S'] || keysPressed.current['s']
-      ) vy += 1;
-      if (
-        keysPressed.current['KeyA'] || keysPressed.current['A'] || keysPressed.current['a']
-      ) vx -= 1;
-      if (
-        keysPressed.current['KeyD'] || keysPressed.current['D'] || keysPressed.current['d']
-      ) vx += 1;
+      if (keysPressed.current['KeyW'] || keysPressed.current['W'] || keysPressed.current['w']) vy -= 1;
+      if (keysPressed.current['KeyS'] || keysPressed.current['S'] || keysPressed.current['s']) vy += 1;
+      if (keysPressed.current['KeyA'] || keysPressed.current['A'] || keysPressed.current['a']) vx -= 1;
+      if (keysPressed.current['KeyD'] || keysPressed.current['D'] || keysPressed.current['d']) vx += 1;
 
       // Normalize movement direction vector
       const len = Math.hypot(vx, vy);
@@ -472,7 +482,7 @@ export default function MiniBattleRoyale({
         vy = vy / len;
       }
 
-      // 2. Arrow Keys: 8-Directional Aim & Auto-Shoot (Sağ El)
+      // 2. Smooth 360° Mouse-Like Arrow Keys Aiming & Turret Rotation
       let aimX = 0;
       let aimY = 0;
       if (keysPressed.current['ArrowUp']) aimY -= 1;
@@ -483,11 +493,27 @@ export default function MiniBattleRoyale({
       const isArrowAiming = aimX !== 0 || aimY !== 0;
 
       if (isArrowAiming) {
-        // Precise 8-way aim angle calculation
-        angle = Math.atan2(aimY, aimX);
-        shooting = true; // Auto-fire when holding any arrow key
+        // Continuous 360° vector steering
+        const targetTargetAngle = Math.atan2(aimY, aimX);
+        let diff = targetTargetAngle - virtualAimAngle.current;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+
+        // Smoothly interpolate angle towards arrow direction (0.15 rad / frame for super crisp responsiveness)
+        virtualAimAngle.current += diff * 0.28;
+        angle = virtualAimAngle.current;
+
+        // Update virtual crosshair offset for canvas laser sight
+        virtualCrosshairOffset.current = {
+          x: Math.cos(angle) * 160,
+          y: Math.sin(angle) * 160
+        };
+
+        if (arrowAutoFire) {
+          shooting = true;
+        }
       } else {
-        // If not using arrow keys, use Mouse Aim
+        // If not using arrow keys, check Mouse Aim
         if (canvasRef.current && (controlMode === 'desktop' || isMouseDown.current || isSpaceDown.current)) {
           const rect = canvasRef.current.getBoundingClientRect();
           const centerX = rect.width / 2;
@@ -496,6 +522,11 @@ export default function MiniBattleRoyale({
           const dy = mousePos.current.y - centerY;
           if (mousePos.current.x !== 0 || mousePos.current.y !== 0) {
             angle = Math.atan2(dy, dx);
+            virtualAimAngle.current = angle;
+            virtualCrosshairOffset.current = {
+              x: Math.cos(angle) * Math.min(260, Math.max(80, Math.hypot(dx, dy))),
+              y: Math.sin(angle) * Math.min(260, Math.max(80, Math.hypot(dx, dy)))
+            };
           }
         }
       }
@@ -505,14 +536,14 @@ export default function MiniBattleRoyale({
         shooting = true;
       }
 
-      // 3. Touch Mode Virtual Joystick overrides
+      // 3. Touch Mode Multi-Touch Virtual Joystick overrides
       if (touchMoveOrigin.current && touchMoveCurrent.current) {
         const tdx = touchMoveCurrent.current.x - touchMoveOrigin.current.x;
         const tdy = touchMoveCurrent.current.y - touchMoveOrigin.current.y;
         const dist = Math.hypot(tdx, tdy);
         if (dist > 8) {
-          vx = (tdx / dist);
-          vy = (tdy / dist);
+          vx = tdx / dist;
+          vy = tdy / dist;
         }
       }
 
@@ -520,12 +551,26 @@ export default function MiniBattleRoyale({
         const adx = touchAimCurrent.current.x - touchAimOrigin.current.x;
         const ady = touchAimCurrent.current.y - touchAimOrigin.current.y;
         const dist = Math.hypot(adx, ady);
-        if (dist > 12) {
+        const maxRadius = 55;
+        const ratio = dist / maxRadius;
+
+        // If dragged >15% radius, aim 360° with laser sight
+        if (ratio >= 0.15) {
           angle = Math.atan2(ady, adx);
-          shooting = true; // Auto-fire when dragging aim joystick
+          virtualAimAngle.current = angle;
+          virtualCrosshairOffset.current = {
+            x: Math.cos(angle) * 160,
+            y: Math.sin(angle) * 160
+          };
+        }
+
+        // If pulled >45% radius, auto-fire continuously
+        if (ratio > 0.45) {
+          shooting = true;
         }
       }
 
+      // Dedicated Touch Fire Button
       if (isTouchFiring.current) {
         shooting = true;
       }
@@ -550,7 +595,7 @@ export default function MiniBattleRoyale({
     }, 1000 / 30);
 
     return () => clearInterval(inputTimer);
-  }, [view, socket, currentUserId, controlMode]);
+  }, [view, socket, currentUserId, controlMode, arrowAutoFire]);
 
   // Desktop Controls Event Listeners (WASD, Arrows, Space, R, Q, E, F, 1-2, Scroll, Click)
   useEffect(() => {
@@ -658,42 +703,82 @@ export default function MiniBattleRoyale({
     };
   }, [view, socket]);
 
-  // Touch Virtual Joystick Handlers (Mobile & Tablet)
+  // Touch Virtual Joystick Handlers with Multi-Touch Identifier Tracking
   const handleTouchStartLeft = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    moveTouchIdRef.current = touch.identifier;
     touchMoveOrigin.current = { x: touch.clientX, y: touch.clientY };
     touchMoveCurrent.current = { x: touch.clientX, y: touch.clientY };
   };
 
-  const handleTouchMoveLeft = (e: React.TouchEvent) => {
-    if (!touchMoveOrigin.current) return;
-    const touch = e.touches[0];
-    touchMoveCurrent.current = { x: touch.clientX, y: touch.clientY };
-  };
-
-  const handleTouchEndLeft = () => {
-    touchMoveOrigin.current = null;
-    touchMoveCurrent.current = null;
-  };
-
   const handleTouchStartRight = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    aimTouchIdRef.current = touch.identifier;
     touchAimOrigin.current = { x: touch.clientX, y: touch.clientY };
     touchAimCurrent.current = { x: touch.clientX, y: touch.clientY };
-    isTouchFiring.current = true;
   };
 
-  const handleTouchMoveRight = (e: React.TouchEvent) => {
-    if (!touchAimOrigin.current) return;
-    const touch = e.touches[0];
-    touchAimCurrent.current = { x: touch.clientX, y: touch.clientY };
-  };
+  // Window-level touchmove and touchend to track fingers anywhere on screen
+  useEffect(() => {
+    if (view !== 'game') return;
 
-  const handleTouchEndRight = () => {
-    touchAimOrigin.current = null;
-    touchAimCurrent.current = null;
-    isTouchFiring.current = false;
-  };
+    const onWindowTouchMove = (e: TouchEvent) => {
+      const touches = Array.from(e.changedTouches);
+
+      // Move joystick touch
+      if (moveTouchIdRef.current !== null && touchMoveOrigin.current) {
+        const moveTouch = touches.find(t => t.identifier === moveTouchIdRef.current);
+        if (moveTouch) {
+          touchMoveCurrent.current = { x: moveTouch.clientX, y: moveTouch.clientY };
+        }
+      }
+
+      // Aim joystick touch
+      if (aimTouchIdRef.current !== null && touchAimOrigin.current) {
+        const aimTouch = touches.find(t => t.identifier === aimTouchIdRef.current);
+        if (aimTouch) {
+          touchAimCurrent.current = { x: aimTouch.clientX, y: aimTouch.clientY };
+        }
+      }
+    };
+
+    const onWindowTouchEnd = (e: TouchEvent) => {
+      const touches = Array.from(e.changedTouches);
+
+      if (moveTouchIdRef.current !== null) {
+        const moveEnded = touches.find(t => t.identifier === moveTouchIdRef.current);
+        if (moveEnded) {
+          moveTouchIdRef.current = null;
+          touchMoveOrigin.current = null;
+          touchMoveCurrent.current = null;
+        }
+      }
+
+      if (aimTouchIdRef.current !== null) {
+        const aimEnded = touches.find(t => t.identifier === aimTouchIdRef.current);
+        if (aimEnded) {
+          aimTouchIdRef.current = null;
+          touchAimOrigin.current = null;
+          touchAimCurrent.current = null;
+          isTouchFiring.current = false;
+        }
+      }
+    };
+
+    window.addEventListener('touchmove', onWindowTouchMove, { passive: false });
+    window.addEventListener('touchend', onWindowTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', onWindowTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchmove', onWindowTouchMove);
+      window.removeEventListener('touchend', onWindowTouchEnd);
+      window.removeEventListener('touchcancel', onWindowTouchEnd);
+    };
+  }, [view]);
 
   // 60 FPS HTML5 Canvas Render Loop
   useEffect(() => {
@@ -768,44 +853,191 @@ export default function MiniBattleRoyale({
       ctx.scale(scale, scale);
       ctx.translate(-camX, -camY);
 
-      // 1. ARENA GROUND & TACTICAL GRID
-      ctx.fillStyle = '#1e3f20';
+      // 1. ARENA GROUND & TACTICAL GRID (Viewport Culled)
+      ctx.fillStyle = '#1b3b1d';
       ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
-      const tileSize = 120;
-      for (let tx = 0; tx < MAP_SIZE; tx += tileSize) {
-        for (let ty = 0; ty < MAP_SIZE; ty += tileSize) {
+      const viewMargin = 220;
+      const cullMinX = camX - (width / scale) / 2 - viewMargin;
+      const cullMaxX = camX + (width / scale) / 2 + viewMargin;
+      const cullMinY = camY - (height / scale) / 2 - viewMargin;
+      const cullMaxY = camY + (height / scale) / 2 + viewMargin;
+
+      const inView = (x: number, y: number, r: number = 40) => {
+        return x + r >= cullMinX && x - r <= cullMaxX && y + r >= cullMinY && y - r <= cullMaxY;
+      };
+
+      const rectInView = (rx: number, ry: number, rw: number, rh: number) => {
+        return rx + rw >= cullMinX && rx <= cullMaxX && ry + rh >= cullMinY && ry <= cullMaxY;
+      };
+
+      const tileSize = 140;
+      const startTileX = Math.max(0, Math.floor(cullMinX / tileSize) * tileSize);
+      const endTileX = Math.min(MAP_SIZE, Math.ceil(cullMaxX / tileSize) * tileSize);
+      const startTileY = Math.max(0, Math.floor(cullMinY / tileSize) * tileSize);
+      const endTileY = Math.min(MAP_SIZE, Math.ceil(cullMaxY / tileSize) * tileSize);
+
+      for (let tx = startTileX; tx < endTileX; tx += tileSize) {
+        for (let ty = startTileY; ty < endTileY; ty += tileSize) {
           if ((Math.floor(tx / tileSize) + Math.floor(ty / tileSize)) % 2 === 0) {
-            ctx.fillStyle = '#244b26';
+            ctx.fillStyle = '#224a24';
             ctx.fillRect(tx, ty, tileSize, tileSize);
           }
         }
       }
 
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
       ctx.lineWidth = 1.5;
-      for (let gx = 0; gx <= MAP_SIZE; gx += tileSize) {
+      for (let gx = startTileX; gx <= endTileX; gx += tileSize) {
         ctx.beginPath();
-        ctx.moveTo(gx, 0);
-        ctx.lineTo(gx, MAP_SIZE);
+        ctx.moveTo(gx, startTileY);
+        ctx.lineTo(gx, endTileY);
         ctx.stroke();
       }
-      for (let gy = 0; gy <= MAP_SIZE; gy += tileSize) {
+      for (let gy = startTileY; gy <= endTileY; gy += tileSize) {
         ctx.beginPath();
-        ctx.moveTo(0, gy);
-        ctx.lineTo(MAP_SIZE, gy);
+        ctx.moveTo(startTileX, gy);
+        ctx.lineTo(endTileX, gy);
         ctx.stroke();
       }
 
+      // 2. DRAW RIVER & WATER RIPPLES
+      ctx.save();
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = RIVER_WIDTH;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(RIVER_POINTS[0].x, RIVER_POINTS[0].y);
+      for (let i = 1; i < RIVER_POINTS.length; i++) {
+        ctx.lineTo(RIVER_POINTS[i].x, RIVER_POINTS[i].y);
+      }
+      ctx.stroke();
+
+      // River Water Highlights & Ripples
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 6;
+      ctx.setLineDash([28, 20]);
+      ctx.lineDashOffset = -(Date.now() / 60) % 48;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // 3. DRAW BRIDGES
+      MAP_BRIDGES.forEach(bridge => {
+        if (!rectInView(bridge.x, bridge.y, bridge.w, bridge.h)) return;
+        ctx.save();
+        const isStone = bridge.type === 'stone';
+        ctx.fillStyle = isStone ? '#475569' : '#92400e';
+        ctx.fillRect(bridge.x, bridge.y, bridge.w, bridge.h);
+        ctx.strokeStyle = isStone ? '#64748b' : '#78350f';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(bridge.x, bridge.y, bridge.w, bridge.h);
+
+        // Bridge Planks / Railings
+        ctx.strokeStyle = isStone ? '#94a3b8' : '#b45309';
+        ctx.lineWidth = 2;
+        for (let by = bridge.y + 20; by < bridge.y + bridge.h; by += 28) {
+          ctx.beginPath();
+          ctx.moveTo(bridge.x, by);
+          ctx.lineTo(bridge.x + bridge.w, by);
+          ctx.stroke();
+        }
+        ctx.restore();
+      });
+
+      // 4. DRAW ENTERABLE BUILDINGS (Floors, Walls, and Smart Roof Fade)
+      MAP_BUILDINGS.forEach(bldg => {
+        if (!rectInView(bldg.x, bldg.y, bldg.w, bldg.h)) return;
+
+        const isInside = focusedPlayer
+          ? focusedPlayer.x >= bldg.x && focusedPlayer.x <= bldg.x + bldg.w && focusedPlayer.y >= bldg.y && focusedPlayer.y <= bldg.y + bldg.h
+          : false;
+
+        ctx.save();
+
+        // 4A. Building Interior Floor
+        if (bldg.floorType === 'wood') {
+          ctx.fillStyle = '#78350f';
+          ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
+          ctx.strokeStyle = '#92400e';
+          ctx.lineWidth = 1.5;
+          for (let fy = bldg.y + 20; fy < bldg.y + bldg.h; fy += 20) {
+            ctx.beginPath();
+            ctx.moveTo(bldg.x, fy);
+            ctx.lineTo(bldg.x + bldg.w, fy);
+            ctx.stroke();
+          }
+        } else if (bldg.floorType === 'concrete') {
+          ctx.fillStyle = '#334155';
+          ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
+          ctx.strokeStyle = '#475569';
+          ctx.lineWidth = 1.5;
+          for (let fx = bldg.x + 40; fx < bldg.x + bldg.w; fx += 40) {
+            ctx.beginPath();
+            ctx.moveTo(fx, bldg.y);
+            ctx.lineTo(fx, bldg.y + bldg.h);
+            ctx.stroke();
+          }
+        } else {
+          ctx.fillStyle = '#0f766e';
+          ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
+          ctx.strokeStyle = '#115e59';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(bldg.x, bldg.y, bldg.w, bldg.h);
+        }
+
+        // 4B. Building Solid Walls
+        ctx.fillStyle = '#0f172a';
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 2;
+        bldg.walls.forEach(w => {
+          ctx.fillRect(w.x, w.y, w.w, w.h);
+          ctx.strokeRect(w.x, w.y, w.w, w.h);
+        });
+
+        // 4C. Smart Roof Fade (Surviv.io Style)
+        if (!isInside) {
+          ctx.fillStyle = bldg.roofColor || '#713f12';
+          ctx.fillRect(bldg.x - 4, bldg.y - 4, bldg.w + 8, bldg.h + 8);
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 4;
+          ctx.strokeRect(bldg.x - 4, bldg.y - 4, bldg.w + 8, bldg.h + 8);
+
+          // Roof Ridge & Tiles
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(bldg.x, bldg.y + bldg.h / 2);
+          ctx.lineTo(bldg.x + bldg.w, bldg.y + bldg.h / 2);
+          ctx.stroke();
+
+          // Building Name Label on Roof
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(bldg.name, bldg.x + bldg.w / 2, bldg.y + bldg.h / 2 - 8);
+        } else {
+          // Subtle transparent dashed roof boundary when player is inside
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 6]);
+          ctx.strokeRect(bldg.x, bldg.y, bldg.w, bldg.h);
+          ctx.setLineDash([]);
+        }
+
+        ctx.restore();
+      });
+
       // Outer Perimeter Hazard Border
       ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 12;
+      ctx.lineWidth = 14;
       ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
 
       ctx.strokeStyle = '#f59e0b';
       ctx.lineWidth = 4;
-      ctx.setLineDash([24, 16]);
-      ctx.strokeRect(6, 6, MAP_SIZE - 12, MAP_SIZE - 12);
+      ctx.setLineDash([28, 18]);
+      ctx.strokeRect(8, 8, MAP_SIZE - 16, MAP_SIZE - 16);
       ctx.setLineDash([]);
 
       if (!state) {
@@ -815,7 +1047,7 @@ export default function MiniBattleRoyale({
         return;
       }
 
-      // 2. STORM ZONE (Battle Royale Mode Only)
+      // 5. STORM ZONE (Battle Royale Mode Only)
       if (state.mode === 'royale' && state.zone && state.zone.currentRadius > 0) {
         const z = state.zone;
         ctx.save();
@@ -826,9 +1058,9 @@ export default function MiniBattleRoyale({
         ctx.fill();
 
         ctx.strokeStyle = '#c084fc';
-        ctx.lineWidth = 6;
+        ctx.lineWidth = 7;
         ctx.shadowColor = '#c084fc';
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 14;
         ctx.beginPath();
         ctx.arc(z.currentX, z.currentY, Math.max(0, z.currentRadius), 0, Math.PI * 2);
         ctx.stroke();
@@ -846,12 +1078,12 @@ export default function MiniBattleRoyale({
         ctx.restore();
       }
 
-      // 3. DRAW LOOT ON GROUND
+      // 6. DRAW LOOT ON GROUND (Viewport Culled)
       state.loot?.forEach(item => {
+        if (!inView(item.x, item.y, 30)) return;
         ctx.save();
         ctx.translate(item.x, item.y);
 
-        // Ground Glow
         ctx.beginPath();
         ctx.arc(0, 0, 22, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
@@ -957,15 +1189,55 @@ export default function MiniBattleRoyale({
         ctx.restore();
       });
 
-      // 4. DRAW CRATES (Normal & Rare Golden Crates)
+      // 7. DRAW EXPLOSIVE TNT BARRELS
+      state.barrels?.forEach(barrel => {
+        if (!inView(barrel.x, barrel.y, barrel.radius + 10)) return;
+        ctx.save();
+        ctx.translate(barrel.x, barrel.y);
+
+        // Barrel Body
+        ctx.fillStyle = '#dc2626';
+        ctx.beginPath();
+        ctx.arc(0, 0, barrel.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#7f1d1d';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Warning Stripes
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, barrel.radius * 0.65, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // TNT Label
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('TNT', 0, 3.5);
+
+        if (barrel.hp < barrel.maxHp) {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(-18, -30, 36, 4);
+          ctx.fillStyle = '#ef4444';
+          ctx.fillRect(-18, -30, (barrel.hp / barrel.maxHp) * 36, 4);
+        }
+
+        ctx.restore();
+      });
+
+      // 8. DRAW CRATES (Normal, Rare & Military Crates)
       state.crates?.forEach(c => {
+        if (!inView(c.x, c.y, 35)) return;
         ctx.save();
         ctx.translate(c.x, c.y);
 
-        const isRare = c.tier === 'rare';
-        ctx.fillStyle = isRare ? '#7e22ce' : '#78350f';
+        const isRare = c.tier === 'rare' || c.isMilitary;
+        ctx.fillStyle = c.isMilitary ? '#047857' : isRare ? '#7e22ce' : '#78350f';
         ctx.fillRect(-22, -22, 44, 44);
-        ctx.strokeStyle = isRare ? '#eab308' : '#d97706';
+        ctx.strokeStyle = c.isMilitary ? '#34d399' : isRare ? '#eab308' : '#d97706';
         ctx.lineWidth = isRare ? 4 : 3;
         ctx.strokeRect(-20, -20, 40, 40);
 
@@ -982,7 +1254,7 @@ export default function MiniBattleRoyale({
           ctx.fillStyle = '#facc15';
           ctx.font = 'bold 14px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('★', 0, 5);
+          ctx.fillText(c.isMilitary ? '⚔' : '★', 0, 5);
         }
 
         if (c.hp < c.maxHp) {
@@ -997,9 +1269,9 @@ export default function MiniBattleRoyale({
         ctx.restore();
       });
 
-      // 5. DRAW SOLID ROCKS
+      // 9. DRAW SOLID ROCKS (Viewport Culled)
       state.obstacles?.forEach(obs => {
-        if (obs.type === 'rock') {
+        if (obs.type === 'rock' && inView(obs.x, obs.y, obs.radius)) {
           ctx.save();
           ctx.fillStyle = '#334155';
           ctx.beginPath();
@@ -1018,20 +1290,95 @@ export default function MiniBattleRoyale({
         }
       });
 
-      // 6. DRAW BULLETS & TRACERS
+      // 10. DRAW BULLETS & TRACERS
       state.bullets?.forEach(b => {
+        if (!inView(b.x, b.y, b.radius + 10)) return;
         ctx.save();
         ctx.fillStyle = b.color || '#fbbf24';
         ctx.shadowColor = b.color || '#fbbf24';
-        ctx.shadowBlur = b.isAoE ? 14 : 8;
+        ctx.shadowBlur = b.isAoE ? 16 : 8;
         ctx.beginPath();
         ctx.arc(b.x, b.y, b.radius || 4, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       });
 
-      // 7. DRAW PLAYERS
+      // 11. DRAW EXPLOSION EFFECTS
       const now = Date.now();
+      state.explosions?.forEach(exp => {
+        const age = now - exp.createdAt;
+        const progress = Math.min(1, age / 700);
+        const radius = exp.radius * progress;
+        const alpha = Math.max(0, 1 - progress);
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(239, 68, 68, ${alpha * 0.8})`;
+        ctx.lineWidth = 6 * (1 - progress);
+        ctx.beginPath();
+        ctx.arc(exp.x, exp.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = `rgba(245, 158, 11, ${alpha * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(exp.x, exp.y, radius * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // 12. DRAW LASER SIGHT & CYBER CROSSHAIR FOR LOCAL PLAYER
+      if (myPlayer && myPlayer.isAlive) {
+        ctx.save();
+        const laserAngle = virtualAimAngle.current || myPlayer.angle;
+        const laserLength = 550;
+        const startX = myPlayer.x + Math.cos(laserAngle) * 32;
+        const startY = myPlayer.y + Math.sin(laserAngle) * 32;
+        const targetX = startX + Math.cos(laserAngle) * laserLength;
+        const targetY = startY + Math.sin(laserAngle) * laserLength;
+
+        // Laser Sight Line
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Cyber Crosshair Marker
+        const chX = myPlayer.x + virtualCrosshairOffset.current.x;
+        const chY = myPlayer.y + virtualCrosshairOffset.current.y;
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#ef4444';
+        ctx.shadowBlur = 8;
+
+        // Crosshair Circle & Brackets
+        ctx.beginPath();
+        ctx.arc(chX, chY, 12, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(chX, chY, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(chX - 18, chY);
+        ctx.lineTo(chX - 8, chY);
+        ctx.moveTo(chX + 8, chY);
+        ctx.lineTo(chX + 18, chY);
+        ctx.moveTo(chX, chY - 18);
+        ctx.lineTo(chX, chY - 8);
+        ctx.moveTo(chX, chY + 8);
+        ctx.lineTo(chX, chY + 18);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.restore();
+      }
+
+      // 13. DRAW PLAYERS
       state.players?.forEach(p => {
         ctx.save();
         ctx.translate(p.x, p.y);
@@ -1960,6 +2307,20 @@ export default function MiniBattleRoyale({
             {/* Top Right: Live Scoreboard, Minimap & Control Buttons */}
             <div className="pointer-events-auto flex flex-col items-end gap-2">
               <div className="flex items-center gap-2">
+                {/* Arrow Keys Auto-Fire Toggle */}
+                <button
+                  onClick={() => setArrowAutoFire(prev => !prev)}
+                  className={`px-2.5 py-1.5 rounded-xl backdrop-blur-md text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                    arrowAutoFire
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-sm shadow-amber-500/20'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                  title="Ok tuşlarına basıldığında otomatik ateş etme seçeneği"
+                >
+                  <Crosshair size={13} className={arrowAutoFire ? 'text-amber-400' : 'text-slate-500'} />
+                  <span>🎯 Oto-Ateş: <strong className={arrowAutoFire ? 'text-amber-400' : 'text-slate-500'}>{arrowAutoFire ? 'AÇIK' : 'KAPALI'}</strong></span>
+                </button>
+
                 <button
                   onClick={() => setControlMode(prev => prev === 'touch' ? 'desktop' : 'touch')}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-800 text-[11px] font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
@@ -2018,11 +2379,37 @@ export default function MiniBattleRoyale({
               )}
 
               {/* Radar Minimap */}
-              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl relative overflow-hidden">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-2xl relative overflow-hidden">
+                {/* Minimap River */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-60">
+                  <path
+                    d={`M ${(RIVER_POINTS[0].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[0].y / MAP_SIZE) * 100}% L ${(RIVER_POINTS[1].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[1].y / MAP_SIZE) * 100}% L ${(RIVER_POINTS[2].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[2].y / MAP_SIZE) * 100}% L ${(RIVER_POINTS[3].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[3].y / MAP_SIZE) * 100}% L ${(RIVER_POINTS[4].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[4].y / MAP_SIZE) * 100}%`}
+                    stroke="#0284c7"
+                    strokeWidth="5"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                </svg>
+
+                {/* Minimap Buildings */}
+                {MAP_BUILDINGS.map(b => (
+                  <div
+                    key={b.id}
+                    className="absolute bg-amber-800/80 border border-amber-600/60 rounded-xs pointer-events-none"
+                    style={{
+                      left: `${(b.x / MAP_SIZE) * 100}%`,
+                      top: `${(b.y / MAP_SIZE) * 100}%`,
+                      width: `${Math.max(2, (b.w / MAP_SIZE) * 100)}%`,
+                      height: `${Math.max(2, (b.h / MAP_SIZE) * 100)}%`
+                    }}
+                  />
+                ))}
+
+                {/* Safe Zone Circles */}
                 {gameStateRef.current?.mode === 'royale' && gameStateRef.current?.zone && (
                   <>
                     <div
-                      className="absolute rounded-full border border-purple-400/80 pointer-events-none"
+                      className="absolute rounded-full border border-purple-400/90 pointer-events-none"
                       style={{
                         left: `${(gameStateRef.current.zone.currentX / MAP_SIZE) * 100}%`,
                         top: `${(gameStateRef.current.zone.currentY / MAP_SIZE) * 100}%`,
@@ -2032,7 +2419,7 @@ export default function MiniBattleRoyale({
                       }}
                     />
                     <div
-                      className="absolute rounded-full border border-dashed border-white/90 pointer-events-none"
+                      className="absolute rounded-full border border-dashed border-white pointer-events-none"
                       style={{
                         left: `${(gameStateRef.current.zone.targetX / MAP_SIZE) * 100}%`,
                         top: `${(gameStateRef.current.zone.targetY / MAP_SIZE) * 100}%`,
@@ -2044,9 +2431,10 @@ export default function MiniBattleRoyale({
                   </>
                 )}
 
+                {/* Local Player Marker */}
                 {myPlayer && (
                   <div
-                    className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-slate-950 absolute pointer-events-none z-10"
+                    className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-slate-950 absolute pointer-events-none z-10 shadow-sm shadow-emerald-400"
                     style={{
                       left: `${(myPlayer.x / MAP_SIZE) * 100}%`,
                       top: `${(myPlayer.y / MAP_SIZE) * 100}%`,
@@ -2155,8 +2543,6 @@ export default function MiniBattleRoyale({
               {/* Left Analog Joystick (Movement) */}
               <div
                 onTouchStart={handleTouchStartLeft}
-                onTouchMove={handleTouchMoveLeft}
-                onTouchEnd={handleTouchEndLeft}
                 className="absolute bottom-6 left-6 w-32 h-32 rounded-full border-2 border-slate-700/60 bg-slate-900/40 backdrop-blur-sm pointer-events-auto flex items-center justify-center z-20 touch-none"
               >
                 <div
@@ -2172,8 +2558,6 @@ export default function MiniBattleRoyale({
               {/* Right Analog Joystick (Aim & Shoot) */}
               <div
                 onTouchStart={handleTouchStartRight}
-                onTouchMove={handleTouchMoveRight}
-                onTouchEnd={handleTouchEndRight}
                 className="absolute bottom-6 right-6 w-32 h-32 rounded-full border-2 border-red-500/50 bg-red-950/20 backdrop-blur-sm pointer-events-auto flex items-center justify-center z-20 touch-none"
               >
                 <div
@@ -2188,17 +2572,29 @@ export default function MiniBattleRoyale({
                 </div>
               </div>
 
+              {/* Dedicated Independent Fire Button for Touch */}
+              <button
+                onTouchStart={() => { isTouchFiring.current = true; }}
+                onTouchEnd={() => { isTouchFiring.current = false; }}
+                className="absolute bottom-40 right-24 w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 to-orange-500 text-white font-black text-xl shadow-2xl flex items-center justify-center active:scale-90 border-2 border-orange-400 pointer-events-auto z-20 shadow-red-600/40"
+                title="Ateş Et (Fire)"
+              >
+                🔥
+              </button>
+
               {/* Touch Action Buttons: Reload & Pickup */}
-              <div className="absolute bottom-40 right-8 pointer-events-auto flex flex-col gap-2 z-20">
+              <div className="absolute bottom-40 right-6 pointer-events-auto flex flex-col gap-2 z-20">
                 <button
                   onTouchStart={() => socket?.emit('royale:input', { reload: true })}
                   className="w-12 h-12 rounded-2xl bg-amber-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-amber-400"
+                  title="Şarjör Doldur"
                 >
                   R
                 </button>
                 <button
                   onTouchStart={() => socket?.emit('royale:input', { pickup: true, swapWeapon: true })}
                   className="w-12 h-12 rounded-2xl bg-emerald-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-emerald-400"
+                  title="Eşya Al / Silah Takas Et"
                 >
                   E
                 </button>
@@ -2348,17 +2744,30 @@ export default function MiniBattleRoyale({
                 </div>
               </div>
 
-              {/* Arrow Keys Aiming & Auto Shoot */}
+              {/* Arrow Keys Aiming & Virtual Crosshair */}
               <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="space-y-0.5">
-                  <span className="font-bold text-amber-300 text-sm block">Sağ El: Ok Tuşlarıyla Nişan & Ateş</span>
-                  <p className="text-amber-200/80 text-[11px]">Ok tuşlarına basılı tutarak 8 yöne anında nişan alıp otomatik ateş edebilirsiniz (Tablet ve Klavye için idealdir)</p>
+                  <span className="font-bold text-amber-300 text-sm block">Sağ El: Ok Tuşlarıyla 360° Akıcı Nişan & Lazer</span>
+                  <p className="text-amber-200/80 text-[11px]">Ok tuşları mouse imleci gibi akıcı 360° sanal nişangahı ve kırmızı lazer hattını kontrol eder. Üst bardan Oto-Ateş açılıp kapatılabilir.</p>
                 </div>
                 <div className="flex items-center gap-1 self-start sm:self-auto">
                   <kbd className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-mono font-black shadow-sm text-xs">↑</kbd>
                   <kbd className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-mono font-black shadow-sm text-xs">↓</kbd>
                   <kbd className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-mono font-black shadow-sm text-xs">←</kbd>
                   <kbd className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-mono font-black shadow-sm text-xs">→</kbd>
+                </div>
+              </div>
+
+              {/* Space to Shoot */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">Ateş Etme (Boşluk / Sol Tık / 🔥)</span>
+                  <p className="text-slate-400 text-[11px]">Baktığınız yöne veya lazer nişangahına mermi fırlatır</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-amber-400 shadow-sm text-xs">Space (Boşluk)</kbd>
+                  <span className="text-slate-500 mx-1">/</span>
+                  <kbd className="px-2 py-1 rounded-lg bg-rose-950/80 border border-rose-800/80 font-mono font-black text-rose-300 shadow-sm text-xs">Sol Tık</kbd>
                 </div>
               </div>
 

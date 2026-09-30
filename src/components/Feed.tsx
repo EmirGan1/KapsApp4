@@ -1025,6 +1025,35 @@ export default function Feed({
         {/* Gallery View (When user selects Galeri mode inside folder) */}
         {activeSubject && folderViewMode === "gallery" ? (
           <div className="px-3 sm:px-0">
+            {mediaPosts.length > 0 && (
+              <div className="mb-4 flex justify-end">
+                <button
+                  onClick={async () => {
+                    const JSZip = (await import('jszip')).default;
+                    const { saveAs } = await import('file-saver');
+                    const zip = new JSZip();
+                    
+                    for (const post of mediaPosts) {
+                      if (!post.image) continue;
+                      try {
+                        const response = await fetch(post.image);
+                        const blob = await response.blob();
+                        const extension = post.image.split('.').pop()?.split('?')[0] || 'jpg';
+                        zip.file(`${post.username}_${post.id}.${extension}`, blob);
+                      } catch (e) {
+                        console.error('Error downloading file:', e);
+                      }
+                    }
+                    
+                    const content = await zip.generateAsync({ type: 'blob' });
+                    saveAs(content, 'galeri_medyalari.zip');
+                  }}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all"
+                >
+                  Tümünü İndir (.zip)
+                </button>
+              </div>
+            )}
             {mediaPosts.length === 0 ? (
               <div className="p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800">
                 <Film size={36} className="mx-auto text-slate-300 dark:text-slate-600 mb-2" />
