@@ -58,6 +58,7 @@ import {
   seedOctoberLunchMenu,
   startAgendaCronJobs
 } from "./server/agendaService.ts";
+import { BattleRoyaleManager } from "./src/server/battleRoyaleServer.ts";
 
 dotenv.config();
 
@@ -169,6 +170,9 @@ async function initDb() {
   } catch (e) {}
   try {
     await client.execute(`ALTER TABLE users ADD COLUMN chips INTEGER DEFAULT 1000`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN royale_wins INTEGER DEFAULT 0`);
   } catch (e) {}
   await client.execute(`CREATE TABLE IF NOT EXISTS friends (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2028,6 +2032,7 @@ async function startServer() {
           type === "blackjack" ? "blackjack_wins" : 
           type === "batak" ? "batak_wins" : 
           type === "poker" ? "poker_wins" : 
+          type === "royale" ? "royale_wins" : 
           "okey_wins";
 
         result = await client.execute({
@@ -2037,7 +2042,8 @@ async function startServer() {
                        COALESCE(uno_wins, 0) AS uno_wins, 
                        COALESCE(blackjack_wins, 0) AS blackjack_wins, 
                        COALESCE(batak_wins, 0) AS batak_wins,
-                       COALESCE(poker_wins, 0) AS poker_wins
+                       COALESCE(poker_wins, 0) AS poker_wins,
+                       COALESCE(royale_wins, 0) AS royale_wins
                 FROM users ORDER BY COALESCE(${orderCol}, 0) DESC, id ASC LIMIT 10`,
           args: []
         });
@@ -2244,6 +2250,7 @@ async function startServer() {
   const okey101Rooms = new Map<string, any>();
   const unoRooms = new Map<string, any>();
   const drawGuessRooms = new Map<string, any>();
+  const battleRoyaleManager = new BattleRoyaleManager(io, client);
   let closeAnyTableAndNotify: (tableId: string) => boolean;
   let refundBlackjackTableBets: (tableId: string, reason: string) => Promise<boolean>;
 
@@ -2394,6 +2401,15 @@ async function startServer() {
           createdAt: 'Bugün',
           updatedAt: Date.now()
         });
+        addedIds.add(tid);
+      }
+    }
+
+    // 7. Battle Royale tables
+    for (const brTable of battleRoyaleManager.getUnifiedTables()) {
+      const tid = String(brTable.id);
+      if (!addedIds.has(tid)) {
+        list.push(brTable as any);
         addedIds.add(tid);
       }
     }
@@ -5184,6 +5200,12 @@ async function startServer() {
       emitUnoRoomsList();
     }
 
+    // 5. Battle Royale
+    if (battleRoyaleManager.rooms.has(tid)) {
+      battleRoyaleManager.destroyRoom(tid);
+      io.to(tid).emit("table_closed", { tableId: tid, reason: "Masa Emirgan Yönetici tarafından kapatıldı.", redirectTo: "lobby" });
+    }
+
     broadcastActiveTables();
     io.emit("table_deleted", { tableId: tid });
     return true;
@@ -6932,7 +6954,7 @@ async function startServer() {
     });
 
     // Leaderboard Socket Event
-    socket.on("get_leaderboard", async (data: { type?: 'okey' | 'uno' | 'blackjack' | 'batak' | 'chips' } | undefined, cb: (rows: any[]) => void) => {
+    socket.on("get_leaderboard", async (data: { type?: 'okey' | 'uno' | 'blackjack' | 'batak' | 'poker' | 'royale' | 'chips' } | undefined, cb: (rows: any[]) => void) => {
       try {
         const gameType = data?.type || 'okey';
 
@@ -6948,6 +6970,8 @@ async function startServer() {
             gameType === 'uno' ? 'uno_wins' : 
             gameType === 'blackjack' ? 'blackjack_wins' : 
             gameType === 'batak' ? 'batak_wins' : 
+            (gameType as string) === 'poker' ? 'poker_wins' : 
+            (gameType as string) === 'royale' ? 'royale_wins' : 
             'okey_wins';
 
           result = await client.execute({
@@ -6956,7 +6980,9 @@ async function startServer() {
                          COALESCE(okey_wins, 0) AS okey_wins, 
                          COALESCE(uno_wins, 0) AS uno_wins, 
                          COALESCE(blackjack_wins, 0) AS blackjack_wins, 
-                         COALESCE(batak_wins, 0) AS batak_wins 
+                         COALESCE(batak_wins, 0) AS batak_wins,
+                         COALESCE(poker_wins, 0) AS poker_wins,
+                         COALESCE(royale_wins, 0) AS royale_wins 
                   FROM users ORDER BY COALESCE(${orderCol}, 0) DESC, id ASC LIMIT 10`,
             args: []
           });
@@ -7207,6 +7233,13 @@ async function startServer() {
         if (cb) cb({ success: true, roomId: tid });
         return;
       }
+      if (gameType === "royale" || gameType === "battleroyale" || battleRoyaleManager.rooms.has(tid)) {
+        socket.data.currentRoyaleRoom = tid;
+        socket.join(tid);
+        const room = battleRoyaleManager.rooms.get(tid);
+        if (cb) cb({ success: true, tableId: tid, room: room ? battleRoyaleManager.getPublicRoomState(room) : null });
+        return;
+      }
       if (cb) cb({ success: true });
     });
 
@@ -7371,6 +7404,99 @@ async function startServer() {
           updatedAt: Date.now()
         });
         broadcastActiveTables();
+      }
+    });
+
+    // Mini Battle Royale 2D Socket Handlers
+    socket.on("royale:get_rooms", (cb?: (rooms: any[]) => void) => {
+      const rooms = battleRoyaleManager.getRoomsList();
+      if (cb) cb(rooms);
+    });
+
+    socket.on("royale:create_room", async (data: { title?: string; capacity?: number; buyIn?: number }, cb?: (res: any) => void) => {
+      try {
+        const u = {
+          id: userIdNum,
+          username: user.username || "Oyuncu",
+          avatar: user.avatar || null,
+          color: user.color || "#3b82f6"
+        };
+        const room = battleRoyaleManager.createRoom(u, data || {});
+        socket.join(room.id);
+        socket.data.currentRoyaleRoom = room.id;
+        battleRoyaleManager.broadcastRoomsList();
+        broadcastActiveTables();
+        if (cb) cb({ success: true, room: battleRoyaleManager.getPublicRoomState(room) });
+      } catch (err: any) {
+        if (cb) cb({ error: err.message || "Oda oluşturulamadı." });
+      }
+    });
+
+    socket.on("royale:join_room", (data: { roomId: string }, cb?: (res: any) => void) => {
+      try {
+        const u = {
+          id: userIdNum,
+          username: user.username || "Oyuncu",
+          avatar: user.avatar || null,
+          color: user.color || "#3b82f6"
+        };
+        socket.join(data.roomId);
+        const res = battleRoyaleManager.joinRoom(data.roomId, u);
+        if (res.success && res.room) {
+          socket.data.currentRoyaleRoom = data.roomId;
+          broadcastActiveTables();
+          if (cb) cb({ success: true, room: battleRoyaleManager.getPublicRoomState(res.room) });
+        } else {
+          socket.leave(data.roomId);
+          if (cb) cb({ success: false, error: res.error || "Odaya katılınamadı." });
+        }
+      } catch (err: any) {
+        if (cb) cb({ error: err.message || "Odaya katılınamadı." });
+      }
+    });
+
+    socket.on("royale:leave_room", (cb?: (res: any) => void) => {
+      try {
+        const roomId = socket.data.currentRoyaleRoom;
+        if (roomId) {
+          battleRoyaleManager.leaveRoom(roomId, userIdNum);
+          socket.leave(roomId);
+          delete socket.data.currentRoyaleRoom;
+          broadcastActiveTables();
+        }
+        if (cb) cb({ success: true });
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
+    });
+
+    socket.on("royale:add_bot", (data: { roomId: string }, cb?: (res: any) => void) => {
+      const res = battleRoyaleManager.addBot(data.roomId, userIdNum);
+      broadcastActiveTables();
+      if (cb) cb(res);
+    });
+
+    socket.on("royale:remove_bot", (data: { roomId: string; botId?: string }, cb?: (res: any) => void) => {
+      const res = battleRoyaleManager.removeBot(data.roomId, userIdNum, data.botId);
+      broadcastActiveTables();
+      if (cb) cb(res);
+    });
+
+    socket.on("royale:toggle_ready", (data: { roomId: string }, cb?: (res: any) => void) => {
+      const res = battleRoyaleManager.toggleReady(data.roomId, userIdNum);
+      if (cb) cb(res);
+    });
+
+    socket.on("royale:start_game", async (data: { roomId: string }, cb?: (res: any) => void) => {
+      const res = await battleRoyaleManager.startGame(data.roomId, userIdNum);
+      broadcastActiveTables();
+      if (cb) cb(res);
+    });
+
+    socket.on("royale:input", (input: any) => {
+      const roomId = input?.roomId || socket.data.currentRoyaleRoom;
+      if (roomId) {
+        battleRoyaleManager.processPlayerInput(roomId, userIdNum, input);
       }
     });
 
@@ -11042,6 +11168,12 @@ async function startServer() {
           emitDrawGuessRoomsList();
         }
       }
+      const royaleRoomId = socket.data.currentRoyaleRoom;
+      if (royaleRoomId) {
+        battleRoyaleManager.leaveRoom(royaleRoomId, userIdNum);
+        broadcastActiveTables();
+      }
+
       const voiceRoomId = socket.data.currentVoiceRoom;
       if (voiceRoomId) {
         const vRoom = voiceRooms.get(voiceRoomId);

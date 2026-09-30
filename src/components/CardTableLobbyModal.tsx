@@ -4,7 +4,7 @@ import Avatar from './Avatar';
 
 export interface CardTableInfo {
   id: string;
-  gameType: 'blackjack' | 'batak' | 'poker' | 'okey' | 'okey101' | 'uno' | 'drawguess';
+  gameType: 'blackjack' | 'batak' | 'poker' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'royale' | 'battleroyale';
   title: string;
   hostId: number;
   hostName: string;

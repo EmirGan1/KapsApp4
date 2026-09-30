@@ -12,6 +12,7 @@ import DrawGuessGame from './DrawGuessGame';
 import BlackjackGame from './BlackjackGame';
 import BatakGame from './BatakGame';
 import TexasHoldemPokerGame from './TexasHoldemPokerGame';
+import MiniBattleRoyale from './MiniBattleRoyale';
 import CardTableLobbyModal, { CardTableInfo, CreateTableOptions } from './CardTableLobbyModal';
 import AdminChipManagerModal from './AdminChipManagerModal';
 import KvkkModal from './KvkkModal';
@@ -39,11 +40,12 @@ interface LeaderboardUser {
   blackjack_wins?: number;
   batak_wins?: number;
   poker_wins?: number;
+  royale_wins?: number;
   chips?: number;
 }
 
 type GameCategory = 'all' | 'cards' | 'arcade' | 'strategy' | 'active_lobbies';
-type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker';
+type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale';
 
 export default function Games({
   socket,
@@ -77,7 +79,7 @@ export default function Games({
   const [pokerTableOptions, setPokerTableOptions] = useState<CreateTableOptions | null>(null);
 
   // Leaderboard state
-  const [leaderboardTab, setLeaderboardTab] = useState<'chips' | 'okey' | 'uno' | 'blackjack' | 'batak' | 'poker'>('chips');
+  const [leaderboardTab, setLeaderboardTab] = useState<'chips' | 'okey' | 'uno' | 'blackjack' | 'batak' | 'poker' | 'royale'>('chips');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardUser[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState<boolean>(false);
   const [showAdminChipsModal, setShowAdminChipsModal] = useState<boolean>(false);
@@ -86,7 +88,7 @@ export default function Games({
   const isEmirgan = username?.toLowerCase().trim() === 'emirgan';
 
   // Fetch leaderboard data
-  const fetchLeaderboard = (tab: 'chips' | 'okey' | 'uno' | 'blackjack' | 'batak' | 'poker') => {
+  const fetchLeaderboard = (tab: 'chips' | 'okey' | 'uno' | 'blackjack' | 'batak' | 'poker' | 'royale') => {
     setLoadingLeaderboard(true);
     if (socket && socket.connected) {
       socket.emit("get_leaderboard", { type: tab }, (rows: LeaderboardUser[]) => {
@@ -339,6 +341,24 @@ export default function Games({
     );
   }
 
+  // Route: Mini Battle Royale (2D)
+  if (selectedGame === 'battleroyale') {
+    return (
+      <MiniBattleRoyale
+        socket={socket}
+        currentUserId={currentUserId}
+        username={username}
+        avatar={avatar}
+        color={color}
+        targetTableId={selectedGameTableId}
+        onBackToHub={() => {
+          setSelectedGame('hub');
+          setSelectedGameTableId(null);
+        }}
+      />
+    );
+  }
+
   // Games definition list
   const allGames = [
     {
@@ -529,6 +549,35 @@ export default function Games({
       ),
       actionPrimary: 'Çizim Lobisine Gir',
       onClick: () => setSelectedGame('drawguess')
+    },
+    {
+      id: 'battleroyale',
+      title: 'Mini Battle Royale (2D)',
+      subtitle: '2-4 Kişilik Kuşbakışı Çatışma • Daralan Güvenli Çember & Büyük Pot',
+      category: ['arcade'],
+      badge: '🔥 YENİ ARENA',
+      badgeColor: 'bg-gradient-to-r from-red-600 to-amber-500 text-white font-bold',
+      gradient: 'from-rose-600 via-orange-500 to-amber-600',
+      icon: '🎯',
+      capacity: '2-4 Kişi & Bot',
+      activeRooms: activeTables.filter(t => t.gameType === 'royale' || t.gameType === 'battleroyale').length,
+      features: [
+        'Kuşbakışı Gerçek Zamanlı Çok Oyunculu Çatışma (Surviv.io Stili)',
+        'Daralan Gaz Çemberi, Silah Sandıkları & Zırh/Can Eşyaları',
+        'Tablet ve Mobilde Sanal Joystick, PC ve Tablette Klavye & Fare Desteği'
+      ],
+      preview: (
+        <div className="flex items-center justify-center gap-2 py-1">
+          <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono font-bold border border-rose-500/30">🔫 Tabanca</span>
+          <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 text-[10px] font-mono font-bold border border-orange-500/30">💥 Pompalı</span>
+          <span className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 text-[10px] font-mono font-bold border border-sky-500/30">⚡ Tüfek</span>
+        </div>
+      ),
+      actionPrimary: 'Arenaya Gir',
+      onClick: () => {
+        setSelectedGameTableId(null);
+        setSelectedGame('battleroyale');
+      }
     }
   ];
 
@@ -633,6 +682,7 @@ export default function Games({
                   t.gameType === 'blackjack' ? { icon: '🃏', label: 'Blackjack 21', badge: 'bg-yellow-500/20 text-yellow-300' } :
                   t.gameType === 'batak' ? { icon: '♠️', label: 'Batak', badge: 'bg-teal-500/20 text-teal-300' } :
                   t.gameType === 'drawguess' ? { icon: '🎨', label: 'Çiz Bakalım', badge: 'bg-fuchsia-500/20 text-fuchsia-300' } :
+                  t.gameType === 'royale' || t.gameType === 'battleroyale' ? { icon: '🎯', label: 'Battle Royale', badge: 'bg-rose-500/20 text-rose-300' } :
                   { icon: '🎮', label: 'Oyun', badge: 'bg-blue-500/20 text-blue-300' };
 
                 return (
@@ -671,6 +721,7 @@ export default function Games({
                           t.gameType === 'uno' ? 'uno' :
                           t.gameType === 'batak' ? 'batak' :
                           t.gameType === 'drawguess' ? 'drawguess' :
+                          t.gameType === 'royale' || t.gameType === 'battleroyale' ? 'battleroyale' :
                           'blackjack';
                         setSelectedGame(targetRoute);
                       }}
@@ -804,7 +855,8 @@ export default function Games({
                   { id: 'uno', label: '🎴 UNO' },
                   { id: 'blackjack', label: '🃏 21' },
                   { id: 'poker', label: '♠️ Poker' },
-                  { id: 'batak', label: '♣️ Batak' }
+                  { id: 'batak', label: '♣️ Batak' },
+                  { id: 'royale', label: '🎯 Royale' }
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -857,6 +909,7 @@ export default function Games({
                     leaderboardTab === 'blackjack' ? (userRow.blackjack_wins || 0) :
                     leaderboardTab === 'batak' ? (userRow.batak_wins || 0) :
                     leaderboardTab === 'poker' ? (userRow.poker_wins || 0) :
+                    leaderboardTab === 'royale' ? (userRow.royale_wins || 0) :
                     (userRow.okey_wins || 0);
 
                   return (

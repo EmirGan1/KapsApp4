@@ -16,11 +16,13 @@ import {
   ChevronRight,
   TrendingUp,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  ListOrdered
 } from 'lucide-react';
 import Avatar from './Avatar';
 import IBGradingModal from './IBGradingModal';
 import ManagePoolModal from './ManagePoolModal';
+import FullLeaderboardModal from './FullLeaderboardModal';
 import {
   PredictedPoolUser,
   PredictedOverviewData,
@@ -58,6 +60,7 @@ export default function IBPredictedPage({
   // Modals state
   const [selectedUserForGrading, setSelectedUserForGrading] = useState<PredictedPoolUser | null>(null);
   const [showManagePoolModal, setShowManagePoolModal] = useState<boolean>(false);
+  const [showFullLeaderboardModal, setShowFullLeaderboardModal] = useState<boolean>(false);
 
   // Fetch overview data
   const fetchOverview = useCallback(async (silent = false) => {
@@ -272,18 +275,28 @@ export default function IBPredictedPage({
             {/* ====================================================================== */}
             {/* 3. TOP 3 PODIUM CARDS (PODYUM KARTLARI) */}
             {/* ====================================================================== */}
-            {top3Podium.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <TrophyIcon className="text-amber-500" />
-                    <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Zirvedeki Tahminler (Top 3 Podyum)
-                    </h2>
-                  </div>
-                  <span className="text-[11px] text-slate-400 font-medium">45 Puan Üzerinden</span>
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <TrophyIcon className="text-amber-500" />
+                  <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Zirvedeki Tahminler (Leaderboard)
+                  </h2>
                 </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowFullLeaderboardModal(true)}
+                    className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 active:scale-95 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                    title="Havuzdaki tüm sıralamayı görüntüle"
+                  >
+                    <ListOrdered size={14} />
+                    <span>Tümünü Gör →</span>
+                  </button>
+                  <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">45 Puan Üzerinden</span>
+                </div>
+              </div>
 
+              {top3Podium.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                   {/* #2 SILVER (2. Sıra) */}
                   {top3Podium[1] && (
@@ -316,8 +329,12 @@ export default function IBPredictedPage({
                     />
                   )}
                 </div>
-              </section>
-            )}
+              ) : (
+                <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-center text-xs text-slate-400">
+                  Adaylar puanlandıkça en yüksek ortalamaya sahip adaylar burada podyumda sergilenecektir.
+                </div>
+              )}
+            </section>
 
             {/* ====================================================================== */}
             {/* 4. FULL RANKED LEADERBOARD & MEMBER CARDS GRID */}
@@ -529,6 +546,7 @@ export default function IBPredictedPage({
         <IBGradingModal
           targetUser={selectedUserForGrading}
           currentUserId={currentUserId}
+          currentUsername={username}
           isEmirgan={isEmirgan}
           onClose={() => setSelectedUserForGrading(null)}
           onVoteSubmitted={() => {
@@ -546,6 +564,19 @@ export default function IBPredictedPage({
           currentPoolUsers={data?.poolUsers || []}
           onClose={() => setShowManagePoolModal(false)}
           onPoolChanged={() => fetchOverview(true)}
+        />
+      )}
+
+      {showFullLeaderboardModal && (
+        <FullLeaderboardModal
+          poolUsers={data?.poolUsers || []}
+          currentUserId={currentUserId}
+          currentUsername={username}
+          onClose={() => setShowFullLeaderboardModal(false)}
+          onSelectUser={(user) => {
+            setShowFullLeaderboardModal(false);
+            setSelectedUserForGrading(user);
+          }}
         />
       )}
     </div>

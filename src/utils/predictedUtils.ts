@@ -216,3 +216,135 @@ export function getScoreBadgeStyle(score: number | null): {
     progressColor: "bg-gradient-to-r from-indigo-400 to-purple-500",
   };
 }
+
+/**
+ * 7-point scale color mapper according to user brief:
+ * 6.00 – 7.00: Zümrüt Yeşili (from-emerald-500 to-green-400 / text-emerald-500) — Çok Yüksek
+ * 5.00 – 5.99: Gökyüzü Mavisi (from-sky-500 to-blue-500 / text-sky-500) — İyi
+ * 4.00 – 4.99: Kehribar Sarısı (from-amber-500 to-yellow-400 / text-amber-500) — Orta
+ * 1.00 – 3.99: Mercan Kırmızısı (from-rose-500 to-red-500 / text-rose-500) — Düşük
+ */
+export function getCourseScoreColor(score: number | null | undefined): {
+  label: string;
+  gradient: string;
+  textColor: string;
+  badgeBg: string;
+  badgeBorder: string;
+  percent: number;
+} {
+  if (score === null || score === undefined || isNaN(score) || score <= 0) {
+    return {
+      label: "Henüz Değerlendirilmedi",
+      gradient: "from-slate-300 to-slate-400 dark:from-slate-700 dark:to-slate-600",
+      textColor: "text-slate-400 dark:text-slate-500",
+      badgeBg: "bg-slate-100 dark:bg-slate-800",
+      badgeBorder: "border-slate-200 dark:border-slate-700",
+      percent: 0,
+    };
+  }
+
+  const percent = Math.min(100, Math.max(0, Math.round((score / 7) * 100)));
+
+  if (score >= 6.0) {
+    return {
+      label: "Çok Yüksek",
+      gradient: "from-emerald-500 to-green-400",
+      textColor: "text-emerald-600 dark:text-emerald-400",
+      badgeBg: "bg-emerald-50 dark:bg-emerald-950/40",
+      badgeBorder: "border-emerald-200 dark:border-emerald-800",
+      percent,
+    };
+  }
+  if (score >= 5.0) {
+    return {
+      label: "İyi",
+      gradient: "from-sky-500 to-blue-500",
+      textColor: "text-sky-600 dark:text-sky-400",
+      badgeBg: "bg-sky-50 dark:bg-sky-950/40",
+      badgeBorder: "border-sky-200 dark:border-sky-800",
+      percent,
+    };
+  }
+  if (score >= 4.0) {
+    return {
+      label: "Orta",
+      gradient: "from-amber-500 to-yellow-400",
+      textColor: "text-amber-600 dark:text-amber-400",
+      badgeBg: "bg-amber-50 dark:bg-amber-950/40",
+      badgeBorder: "border-amber-200 dark:border-amber-800",
+      percent,
+    };
+  }
+  return {
+    label: "Düşük",
+    gradient: "from-rose-500 to-red-500",
+    textColor: "text-rose-600 dark:text-rose-400",
+    badgeBg: "bg-rose-50 dark:bg-rose-950/40",
+    badgeBorder: "border-rose-200 dark:border-rose-800",
+    percent,
+  };
+}
+
+/**
+ * Core Bonus (+3 points) scale color mapper
+ */
+export function getCoreScoreColor(coreScore: number | null | undefined): {
+  label: string;
+  gradient: string;
+  textColor: string;
+  badgeBg: string;
+  badgeBorder: string;
+  percent: number;
+} {
+  if (coreScore === null || coreScore === undefined || isNaN(coreScore) || coreScore < 0) {
+    return {
+      label: "Henüz Değerlendirilmedi",
+      gradient: "from-slate-300 to-slate-400 dark:from-slate-700 dark:to-slate-600",
+      textColor: "text-slate-400 dark:text-slate-500",
+      badgeBg: "bg-slate-100 dark:bg-slate-800",
+      badgeBorder: "border-slate-200 dark:border-slate-700",
+      percent: 0,
+    };
+  }
+
+  const percent = Math.min(100, Math.max(0, Math.round((coreScore / 3) * 100)));
+
+  if (coreScore >= 2.5) {
+    return {
+      label: "Çok Yüksek",
+      gradient: "from-emerald-500 to-green-400",
+      textColor: "text-emerald-600 dark:text-emerald-400",
+      badgeBg: "bg-emerald-50 dark:bg-emerald-950/40",
+      badgeBorder: "border-emerald-200 dark:border-emerald-800",
+      percent,
+    };
+  }
+  if (coreScore >= 2.0) {
+    return {
+      label: "İyi",
+      gradient: "from-sky-500 to-blue-500",
+      textColor: "text-sky-600 dark:text-sky-400",
+      badgeBg: "bg-sky-50 dark:bg-sky-950/40",
+      badgeBorder: "border-sky-200 dark:border-sky-800",
+      percent,
+    };
+  }
+  if (coreScore >= 1.0) {
+    return {
+      label: "Orta",
+      gradient: "from-amber-500 to-yellow-400",
+      textColor: "text-amber-600 dark:text-amber-400",
+      badgeBg: "bg-amber-50 dark:bg-amber-950/40",
+      badgeBorder: "border-amber-200 dark:border-amber-800",
+      percent,
+    };
+  }
+  return {
+    label: "Düşük",
+    gradient: "from-rose-500 to-red-500",
+    textColor: "text-rose-600 dark:text-rose-400",
+    badgeBg: "bg-rose-50 dark:bg-rose-950/40",
+    badgeBorder: "border-rose-200 dark:border-rose-800",
+    percent,
+  };
+}
