@@ -329,6 +329,38 @@ async function initDb() {
     console.error("IB Course roles default seed error:", e);
   }
 
+  // IB Predicted Grade (Tahmini Diploma Puanı) System Tables & Migration
+  await client.execute(`CREATE TABLE IF NOT EXISTS predicted_pool (
+    user_id INTEGER PRIMARY KEY,
+    added_by TEXT DEFAULT 'emirgan',
+    created_at TEXT
+  )`);
+
+  await client.execute(`CREATE TABLE IF NOT EXISTS predicted_votes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    voter_id INTEGER NOT NULL,
+    target_user_id INTEGER NOT NULL,
+    course_scores_json TEXT NOT NULL,
+    tok_grade TEXT NOT NULL,
+    ee_grade TEXT NOT NULL,
+    core_points INTEGER NOT NULL,
+    total_score REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(voter_id, target_user_id)
+  )`);
+  try { await client.execute("ALTER TABLE users ADD COLUMN predicted_score REAL DEFAULT NULL"); } catch(e){}
+
+  // Auto-seed emirgan into the predicted pool on first run
+  try {
+    const emirganUser = await client.execute("SELECT id FROM users WHERE LOWER(username) = 'emirgan'");
+    if (emirganUser.rows.length > 0) {
+      await client.execute({
+        sql: "INSERT OR IGNORE INTO predicted_pool (user_id, added_by, created_at) VALUES (?, 'system', ?)",
+        args: [emirganUser.rows[0].id, new Date().toISOString()]
+      });
+    }
+  } catch (e) {}
+
   // Announcements (Duyurular) Table
   await client.execute(`CREATE TABLE IF NOT EXISTS announcements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3686,6 +3718,487 @@ async function startServer() {
     } catch (err: any) {
       console.error("DELETE /api/agenda error:", err);
       return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // IB PREDICTED GRADE (TAHMİNİ DİPLOMA PUANI) PEER GRADING ENGINE & API
+  // =========================================================================
+
+  // Helper to calculate normalized course scores and TOK/EE core bonus matrix
+  const calculateIBPointsHelper = (courseScores: { [courseId: string]: number }, tokGrade: string, eeGrade: string) => {
+    const scores = Object.values(courseScores).filter(s => typeof s === "number" && s >= 1 && s <= 7);
+    const n = scores.length;
+    let normalizedCourseScore = 0;
+    let courseScoreSum = 0;
+    let courseAverage = 0;
+
+    if (n === 0) {
+      normalizedCourseScore = 0;
+    } else if (n === 6) {
+      courseScoreSum = scores.reduce((a, b) => a + b, 0);
+      courseAverage = Math.round((courseScoreSum / 6) * 10) / 10;
+      normalizedCourseScore = courseScoreSum;
+    } else {
+      courseScoreSum = scores.reduce((a, b) => a + b, 0);
+      courseAverage = courseScoreSum / n;
+      // 6 courses base (42 points normalization)
+      normalizedCourseScore = Math.round(((courseScoreSum / n) * 6) * 10) / 10;
+    }
+
+    const tok = (tokGrade || "").trim().toUpperCase();
+    const ee = (eeGrade || "").trim().toUpperCase();
+
+    let corePoints = 0;
+    if (!tok || !ee || tok === "E" || ee === "E") {
+      corePoints = 0;
+    } else {
+      const pair = tok + ee;
+      // 3 Puan: A+A, A+B, B+A
+      if (pair === "AA" || pair === "AB" || pair === "BA") {
+        corePoints = 3;
+      }
+      // 2 Puan: A+C, C+A, B+B, B+C, C+B, A+D, D+A
+      else if (
+        pair === "AC" || pair === "CA" ||
+        pair === "BB" ||
+        pair === "BC" || pair === "CB" ||
+        pair === "AD" || pair === "DA"
+      ) {
+        corePoints = 2;
+      }
+      // 1 Puan: C+C, B+D, D+B
+      else if (pair === "CC" || pair === "BD" || pair === "DB") {
+        corePoints = 1;
+      }
+      // 0 Puan: C+D, D+C, D+D veya herhangi birinden E
+      else {
+        corePoints = 0;
+      }
+    }
+
+    const totalScore = Math.round((normalizedCourseScore + corePoints) * 10) / 10;
+    return {
+      courseScoreSum,
+      courseAverage: Math.round(courseAverage * 10) / 10,
+      normalizedCourseScore,
+      corePoints,
+      totalScore
+    };
+  };
+
+  // Helper to authenticate requester and check Predicted access (emirgan OR in pool)
+  const getPredictedAuth = async (req: express.Request) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ")
+      ? authHeader.substring(7)
+      : ((req.query.token as string) || (req.body?.token as string) || "");
+
+    const usernameHeader = ((req.headers["x-username"] as string) || (req.query.username as string) || "").trim().toLowerCase();
+
+    let authUser: any = null;
+    if (token) {
+      const userRes = await client.execute({ sql: "SELECT id, username, avatar, color, is_admin, roles FROM users WHERE token = ?", args: [token] });
+      if (userRes.rows.length > 0) authUser = userRes.rows[0];
+    }
+
+    if (!authUser && usernameHeader) {
+      const userRes = await client.execute({ sql: "SELECT id, username, avatar, color, is_admin, roles FROM users WHERE LOWER(username) = ? LIMIT 1", args: [usernameHeader] });
+      if (userRes.rows.length > 0) authUser = userRes.rows[0];
+    }
+
+    if (!authUser) return null;
+
+    const uname = String(authUser.username || "").trim().toLowerCase();
+    const isEmirgan = uname === "emirgan" || Number(authUser.is_admin) === 1;
+
+    let isInPool = false;
+    const poolRes = await client.execute({ sql: "SELECT user_id FROM predicted_pool WHERE user_id = ?", args: [authUser.id] });
+    if (poolRes.rows.length > 0) isInPool = true;
+
+    return {
+      user: authUser,
+      isEmirgan,
+      isInPool,
+      hasAccess: isEmirgan || isInPool
+    };
+  };
+
+  // Recalculates user's average predicted score and persists it in users table
+  const recalculateUserPredictedScore = async (targetUserId: number) => {
+    const votesRes = await client.execute({
+      sql: "SELECT total_score FROM predicted_votes WHERE target_user_id = ?",
+      args: [targetUserId]
+    });
+
+    if (votesRes.rows.length === 0) {
+      await client.execute({
+        sql: "UPDATE users SET predicted_score = NULL WHERE id = ?",
+        args: [targetUserId]
+      });
+      return null;
+    }
+
+    const totalSum = votesRes.rows.reduce((sum, r: any) => sum + Number(r.total_score || 0), 0);
+    const avg = Math.round((totalSum / votesRes.rows.length) * 10) / 10;
+
+    await client.execute({
+      sql: "UPDATE users SET predicted_score = ? WHERE id = ?",
+      args: [avg, targetUserId]
+    });
+
+    return avg;
+  };
+
+  // 1. Check current user's predicted access status (for sidebar visibility)
+  app.get("/api/predicted/my-status", async (req, res) => {
+    try {
+      const auth = await getPredictedAuth(req);
+      if (!auth) {
+        return res.json({ hasAccess: false, isEmirgan: false, isInPool: false });
+      }
+      return res.json({
+        hasAccess: auth.hasAccess,
+        isEmirgan: auth.isEmirgan,
+        isInPool: auth.isInPool,
+        userId: auth.user.id
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2. Overview: Leaderboard & Pool Members with aggregate stats
+  app.get("/api/predicted/overview", async (req, res) => {
+    try {
+      const auth = await getPredictedAuth(req);
+      if (!auth || !auth.hasAccess) {
+        return res.status(403).json({ error: "IB Predicted alanına erişim yetkiniz bulunmamaktadır." });
+      }
+
+      // 1. Get all pool members
+      const poolMembersRes = await client.execute({
+        sql: `SELECT p.user_id, u.id, u.username, u.avatar, u.color, u.roles, u.predicted_score
+              FROM predicted_pool p
+              JOIN users u ON u.id = p.user_id
+              ORDER BY p.rowid ASC`
+      });
+
+      // 2. Get all votes
+      const allVotesRes = await client.execute({
+        sql: `SELECT id, voter_id, target_user_id, course_scores_json, tok_grade, ee_grade, core_points, total_score, created_at
+              FROM predicted_votes`
+      });
+
+      const allVotes = allVotesRes.rows;
+      const myId = Number(auth.user.id);
+
+      // 3. Aggregate stats for each pool member
+      const poolUsers = poolMembersRes.rows.map((row: any) => {
+        const uid = Number(row.id || row.user_id);
+        const targetVotes = allVotes.filter((v: any) => Number(v.target_user_id) === uid);
+        const voteCount = targetVotes.length;
+
+        let averageScore: number | null = null;
+        let averageCore = 0;
+        const courseStats: { [courseId: string]: { sum: number; count: number; avg: number } } = {};
+
+        if (voteCount > 0) {
+          const sumScores = targetVotes.reduce((acc, v: any) => acc + Number(v.total_score || 0), 0);
+          averageScore = Math.round((sumScores / voteCount) * 10) / 10;
+          const sumCore = targetVotes.reduce((acc, v: any) => acc + Number(v.core_points || 0), 0);
+          averageCore = Math.round((sumCore / voteCount) * 10) / 10;
+
+          targetVotes.forEach((v: any) => {
+            try {
+              const cObj = typeof v.course_scores_json === 'string' ? JSON.parse(v.course_scores_json) : v.course_scores_json;
+              if (cObj && typeof cObj === 'object') {
+                Object.entries(cObj).forEach(([cId, score]) => {
+                  const sNum = Number(score);
+                  if (!isNaN(sNum) && sNum >= 1 && sNum <= 7) {
+                    if (!courseStats[cId]) courseStats[cId] = { sum: 0, count: 0, avg: 0 };
+                    courseStats[cId].sum += sNum;
+                    courseStats[cId].count += 1;
+                  }
+                });
+              }
+            } catch (e) {}
+          });
+
+          Object.keys(courseStats).forEach(cId => {
+            courseStats[cId].avg = Math.round((courseStats[cId].sum / courseStats[cId].count) * 10) / 10;
+          });
+        }
+
+        // Find highest rated subject
+        let highestSubject: { courseId: string; avg: number } | null = null;
+        Object.entries(courseStats).forEach(([cId, stats]) => {
+          if (!highestSubject || stats.avg > highestSubject.avg) {
+            highestSubject = { courseId: cId, avg: stats.avg };
+          }
+        });
+
+        // Check if requester voted for this user
+        const myVote = targetVotes.find((v: any) => Number(v.voter_id) === myId);
+
+        let parsedRoles: string[] = [];
+        try {
+          parsedRoles = typeof row.roles === "string" ? JSON.parse(row.roles) : (row.roles || []);
+        } catch {
+          parsedRoles = [];
+        }
+
+        return {
+          userId: uid,
+          username: row.username,
+          avatar: row.avatar,
+          color: row.color,
+          roles: parsedRoles,
+          predictedScore: averageScore,
+          voteCount,
+          averageCore,
+          courseStats,
+          highestSubject,
+          userVotedForTarget: !!myVote,
+          myVoteForTarget: myVote ? {
+            id: myVote.id,
+            totalScore: myVote.total_score,
+            corePoints: myVote.core_points,
+            tokGrade: myVote.tok_grade,
+            eeGrade: myVote.ee_grade,
+            courseScores: typeof myVote.course_scores_json === 'string' ? JSON.parse(myVote.course_scores_json) : myVote.course_scores_json,
+            createdAt: myVote.created_at
+          } : null
+        };
+      });
+
+      // Sort: Rated users first (by score DESC, then voteCount DESC, then name), then Unrated users
+      poolUsers.sort((a, b) => {
+        if (a.predictedScore !== null && b.predictedScore !== null) {
+          if (b.predictedScore !== a.predictedScore) return b.predictedScore - a.predictedScore;
+          return b.voteCount - a.voteCount;
+        }
+        if (a.predictedScore !== null) return -1;
+        if (b.predictedScore !== null) return 1;
+        return a.username.localeCompare(b.username);
+      });
+
+      // Assign rankings
+      let currentRank = 1;
+      const rankedUsers = poolUsers.map((u) => {
+        if (u.predictedScore !== null) {
+          return { ...u, rank: currentRank++ };
+        }
+        return { ...u, rank: null };
+      });
+
+      // Personal progress
+      const othersInPool = poolUsers.filter(u => u.userId !== myId);
+      const totalInPool = othersInPool.length;
+      const totalVotedByMe = othersInPool.filter(u => u.userVotedForTarget).length;
+      const remainingToVote = Math.max(0, totalInPool - totalVotedByMe);
+
+      return res.json({
+        poolUsers: rankedUsers,
+        myStats: {
+          totalInPool,
+          totalVotedByMe,
+          remainingToVote
+        },
+        isEmirgan: auth.isEmirgan,
+        myUserId: myId
+      });
+    } catch (err: any) {
+      console.error("GET /api/predicted/overview error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 3. Emirgan: Add user to Predicted pool
+  app.post("/api/predicted/pool", requireEmirganAdmin, async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: "Kullanıcı ID gereklidir." });
+      const uId = Number(userId);
+
+      const userExists = await client.execute({ sql: "SELECT id, username FROM users WHERE id = ?", args: [uId] });
+      if (userExists.rows.length === 0) return res.status(404).json({ error: "Kullanıcı bulunamadı." });
+
+      await client.execute({
+        sql: "INSERT OR IGNORE INTO predicted_pool (user_id, added_by, created_at) VALUES (?, 'emirgan', ?)",
+        args: [uId, new Date().toISOString()]
+      });
+
+      io.emit("predicted:pool_updated");
+      return res.json({ success: true, message: "Kullanıcı başarıyla Predicted havuzuna eklendi." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 4. Emirgan: Remove user from Predicted pool
+  app.delete("/api/predicted/pool/:userId", requireEmirganAdmin, async (req, res) => {
+    try {
+      const uId = Number(req.params.userId);
+      await client.execute({ sql: "DELETE FROM predicted_pool WHERE user_id = ?", args: [uId] });
+
+      io.emit("predicted:pool_updated");
+      return res.json({ success: true, message: "Kullanıcı Predicted havuzundan çıkarıldı." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 5. Emirgan: Search all platform users to add/remove in pool
+  app.get("/api/predicted/search-candidates", requireEmirganAdmin, async (req, res) => {
+    try {
+      const q = ((req.query.q as string) || "").trim().toLowerCase();
+      let sql = "SELECT id, username, avatar, color, roles FROM users WHERE isBanned = 0";
+      const args: any[] = [];
+      if (q) {
+        sql += " AND (LOWER(username) LIKE ? OR id = ?)";
+        args.push(`%${q}%`, isNaN(Number(q)) ? -1 : Number(q));
+      }
+      sql += " ORDER BY username ASC LIMIT 35";
+
+      const usersRes = await client.execute({ sql, args });
+      const poolRes = await client.execute("SELECT user_id FROM predicted_pool");
+      const poolSet = new Set(poolRes.rows.map((r: any) => Number(r.user_id)));
+
+      const mapped = usersRes.rows.map((row: any) => ({
+        id: Number(row.id),
+        username: row.username,
+        avatar: row.avatar,
+        color: row.color,
+        inPool: poolSet.has(Number(row.id))
+      }));
+
+      return res.json(mapped);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 6. Submit a Predicted Grade Vote (1 user = 1 vote per target)
+  app.post("/api/predicted/vote", async (req, res) => {
+    try {
+      const auth = await getPredictedAuth(req);
+      if (!auth || !auth.hasAccess) {
+        return res.status(403).json({ error: "Puanlama yetkiniz bulunmamaktadır." });
+      }
+
+      const voterId = Number(auth.user.id);
+      const { targetUserId, courseScores, tokGrade, eeGrade } = req.body;
+      const targetId = Number(targetUserId);
+
+      if (!targetId) return res.status(400).json({ error: "Hedef kullanıcı belirtilmedi." });
+
+      if (voterId === targetId) {
+        return res.status(400).json({ error: "Kendi profilinizi puanlayamazsınız." });
+      }
+
+      // Check if target user is in pool
+      const targetInPool = await client.execute({ sql: "SELECT user_id FROM predicted_pool WHERE user_id = ?", args: [targetId] });
+      if (targetInPool.rows.length === 0) {
+        return res.status(400).json({ error: "Hedef kullanıcı Predicted havuzunda yer almıyor." });
+      }
+
+      // Check single vote constraint (1 person = 1 vote)
+      const existingVote = await client.execute({
+        sql: "SELECT id FROM predicted_votes WHERE voter_id = ? AND target_user_id = ?",
+        args: [voterId, targetId]
+      });
+      if (existingVote.rows.length > 0) {
+        return res.status(400).json({ error: "Bu kullanıcıyı daha önce puanladınız. Her kullanıcıya yalnızca 1 kez tahmin girebilirsiniz." });
+      }
+
+      // Calculate official IB 45 points
+      const calculated = calculateIBPointsHelper(courseScores || {}, tokGrade, eeGrade);
+
+      await client.execute({
+        sql: `INSERT INTO predicted_votes (voter_id, target_user_id, course_scores_json, tok_grade, ee_grade, core_points, total_score, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          voterId,
+          targetId,
+          JSON.stringify(courseScores || {}),
+          (tokGrade || "B").toUpperCase(),
+          (eeGrade || "B").toUpperCase(),
+          calculated.corePoints,
+          calculated.totalScore,
+          new Date().toISOString()
+        ]
+      });
+
+      // Recalculate target user's predicted score in database
+      const newAvg = await recalculateUserPredictedScore(targetId);
+
+      io.emit("predicted:updated", { targetUserId: targetId, newAvg });
+      io.emit("predicted:vote_submitted", { voterId, targetUserId: targetId });
+
+      return res.json({
+        success: true,
+        totalScore: calculated.totalScore,
+        corePoints: calculated.corePoints,
+        normalizedCourseScore: calculated.normalizedCourseScore,
+        newAverageScore: newAvg
+      });
+    } catch (err: any) {
+      console.error("POST /api/predicted/vote error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 7. Emirgan Audit: View individual votes for a target user
+  app.get("/api/predicted/audit/:targetUserId", requireEmirganAdmin, async (req, res) => {
+    try {
+      const targetId = Number(req.params.targetUserId);
+      const votesRes = await client.execute({
+        sql: `SELECT v.id, v.voter_id, v.target_user_id, v.course_scores_json, v.tok_grade, v.ee_grade, v.core_points, v.total_score, v.created_at,
+                     u.username as voter_username, u.avatar as voter_avatar, u.color as voter_color
+              FROM predicted_votes v
+              JOIN users u ON u.id = v.voter_id
+              WHERE v.target_user_id = ?
+              ORDER BY v.created_at DESC`,
+        args: [targetId]
+      });
+
+      const mapped = votesRes.rows.map((row: any) => ({
+        id: Number(row.id),
+        voterId: Number(row.voter_id),
+        voterUsername: row.voter_username,
+        voterAvatar: row.voter_avatar,
+        voterColor: row.voter_color,
+        courseScores: typeof row.course_scores_json === 'string' ? JSON.parse(row.course_scores_json) : row.course_scores_json,
+        tokGrade: row.tok_grade,
+        eeGrade: row.ee_grade,
+        corePoints: Number(row.core_points),
+        totalScore: Number(row.total_score),
+        createdAt: row.created_at
+      }));
+
+      return res.json(mapped);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 8. Emirgan Audit: Delete a single vote and recalculate average
+  app.delete("/api/predicted/vote/:voteId", requireEmirganAdmin, async (req, res) => {
+    try {
+      const voteId = Number(req.params.voteId);
+      const voteRes = await client.execute({ sql: "SELECT target_user_id FROM predicted_votes WHERE id = ?", args: [voteId] });
+      if (voteRes.rows.length === 0) return res.status(404).json({ error: "Oy bulunamadı." });
+
+      const targetUserId = Number(voteRes.rows[0].target_user_id);
+      await client.execute({ sql: "DELETE FROM predicted_votes WHERE id = ?", args: [voteId] });
+
+      const newAvg = await recalculateUserPredictedScore(targetUserId);
+
+      io.emit("predicted:updated", { targetUserId, newAvg });
+      return res.json({ success: true, targetUserId, newAvg });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

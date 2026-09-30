@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { App as CapApp } from "@capacitor/app";
-import { MessageSquare, LayoutGrid, Users, UserCircle2, Globe, Bell, Folder, Moon, Sun, Gamepad2, Radio, MapPin, Megaphone, Crown, CalendarDays, CloudSun } from "lucide-react";
+import { MessageSquare, LayoutGrid, Users, UserCircle2, Globe, Bell, Folder, Moon, Sun, Gamepad2, Radio, MapPin, Megaphone, Crown, CalendarDays, CloudSun, GraduationCap } from "lucide-react";
 import Auth from "./components/Auth";
 import Feed from "./components/Feed";
 import Chats from "./components/Chats";
@@ -13,6 +13,7 @@ import Games from "./components/Games";
 import VoiceChat from "./components/VoiceChat";
 import LiveMap from "./components/LiveMap";
 import WeatherDashboard from "./components/WeatherDashboard";
+import IBPredictedPage from "./components/IBPredictedPage";
 import Announcements, { AnnouncementItem } from "./components/Announcements";
 import AnnouncementModal from "./components/AnnouncementModal";
 import ToastContainer, { ToastItem } from "./components/ToastContainer";
@@ -54,10 +55,16 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState<number[]>([]);
   const [currentUserId, setCurrentUserId] = useState<number>(Number(localStorage.getItem("lan_user_id")) || 0);
   
-  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather">("chats");
+  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted">("chats");
   const [activeSubject, setActiveSubject] = useState<string | null>(null);
   const [viewingUserId, setViewingUserId] = useState<number>(currentUserId);
   const [targetChatUserId, setTargetChatUserId] = useState<number | null>(null);
+  const isEmirgan = (username || "").trim().toLowerCase() === "emirgan";
+
+  // IB Predicted Access State (Emirgan or Authorized Pool Members only)
+  const [hasPredictedAccess, setHasPredictedAccess] = useState<boolean>(() => {
+    return (localStorage.getItem("lan_username") || "").trim().toLowerCase() === "emirgan";
+  });
   
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [unreadGlobalCount, setUnreadGlobalCount] = useState(0);
@@ -131,6 +138,44 @@ export default function App() {
       window.removeEventListener("kaps:weather_updated", handleWeatherUpdated);
     };
   }, []);
+
+  // Check IB Predicted Access status (Emirgan or Authorized Pool User)
+  useEffect(() => {
+    if (!token && (username || "").trim().toLowerCase() !== "emirgan") {
+      setHasPredictedAccess(false);
+      return;
+    }
+    const checkPredictedAccess = async () => {
+      try {
+        const isEmirganUser = (username || "").trim().toLowerCase() === "emirgan";
+        const res = await fetch("/api/predicted/my-status", {
+          headers: {
+            Authorization: `Bearer ${token || ''}`,
+            ...(isEmirganUser ? { 'x-username': 'emirgan' } : {})
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setHasPredictedAccess(!!data.hasAccess);
+        }
+      } catch (e) {
+        if ((username || "").trim().toLowerCase() === "emirgan") {
+          setHasPredictedAccess(true);
+        }
+      }
+    };
+    checkPredictedAccess();
+
+    if (socket) {
+      const handlePoolUpdated = () => {
+        checkPredictedAccess();
+      };
+      socket.on("predicted:pool_updated", handlePoolUpdated);
+      return () => {
+        socket.off("predicted:pool_updated", handlePoolUpdated);
+      };
+    }
+  }, [token, username, socket]);
 
   const handleAcceptVoiceInvite = (invite: VoiceCallInvite) => {
     if (socket) {
@@ -620,7 +665,10 @@ export default function App() {
     window.location.reload();
   };
 
-  const handleTabChange = (tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather") => {
+  const handleTabChange = (tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted") => {
+    if (tab === "predicted" && !isEmirgan && !hasPredictedAccess) {
+      return;
+    }
     setActiveTab(tab);
     if (tab === "announcements") {
       setHasUnreadAnnouncement(false);
@@ -652,6 +700,18 @@ export default function App() {
     setViewingUserId(userId);
     setActiveTab("profile");
   };
+
+  const handleOpenChat = (targetId: number) => {
+    setTargetChatUserId(targetId);
+    setActiveTab("chats");
+  };
+
+  // If user is currently on predicted page but loses access, redirect safely
+  useEffect(() => {
+    if (activeTab === "predicted" && !isEmirgan && !hasPredictedAccess) {
+      setActiveTab("chats");
+    }
+  }, [activeTab, isEmirgan, hasPredictedAccess]);
 
   // Android Hardware / Software Back Button Handler
   const lastBackPressRef = useRef<number>(0);
@@ -754,8 +814,6 @@ export default function App() {
       window.removeEventListener("popstate", onPopState);
     };
   }, [activeAnnouncementModal, activeSubject, activeTab, currentUserId, viewingUserId, isDeviceBanned, token]);
-
-  const isEmirgan = (username || "").trim().toLowerCase() === "emirgan";
 
   if (isDeviceBanned) {
     return <DeviceBanScreen reason={deviceBanReason} onRetry={() => window.location.reload()} />;
@@ -902,6 +960,14 @@ export default function App() {
             <NavItem icon={<Gamepad2 />} label="Oyunlar" active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
             <NavItem icon={<Bell />} label="Bildirimler" active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
             <NavItem icon={<UserCircle2 />} label="Profil" active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
+            {(isEmirgan || hasPredictedAccess) && (
+              <NavItem 
+                icon={<GraduationCap className="text-amber-500 dark:text-amber-400" />} 
+                label="IB Predicted" 
+                active={activeTab === 'predicted'} 
+                onClick={() => handleTabChange('predicted')} 
+              />
+            )}
           </nav>
           
           <div className="px-6 py-4 mt-4 hidden lg:block">
@@ -1055,6 +1121,20 @@ export default function App() {
           />
         )}
 
+        {/* IB Predicted Grade Tab */}
+        {activeTab === 'predicted' && (isEmirgan || hasPredictedAccess) && (
+          <IBPredictedPage 
+            currentUserId={currentUserId} 
+            username={username} 
+            avatar={avatar} 
+            color={color} 
+            darkMode={darkMode} 
+            socket={socket} 
+            onOpenChat={handleOpenChat} 
+            onUserClick={handleUserClick} 
+          />
+        )}
+
         {/* Persistently mounted LiveMap tab to prevent re-initialization and gray tiles when switching tabs */}
         <div className={`flex-1 flex-col relative w-full h-full ${activeTab === 'map' ? 'flex' : 'hidden'}`}>
           <LiveMap 
@@ -1112,6 +1192,13 @@ export default function App() {
           <MobileNavItem icon={<Users size={22} />} active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
           <MobileNavItem icon={<Bell size={22} />} active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
           <MobileNavItem icon={<UserCircle2 size={22} />} active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
+          {(isEmirgan || hasPredictedAccess) && (
+            <MobileNavItem 
+              icon={<GraduationCap size={22} className="text-amber-500" />} 
+              active={activeTab === 'predicted'} 
+              onClick={() => handleTabChange('predicted')} 
+            />
+          )}
         </nav>
       </div>
 
