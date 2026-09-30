@@ -174,6 +174,12 @@ async function initDb() {
   try {
     await client.execute(`ALTER TABLE users ADD COLUMN royale_wins INTEGER DEFAULT 0`);
   } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN royale_kills INTEGER DEFAULT 0`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN royale_matches INTEGER DEFAULT 0`);
+  } catch (e) {}
   await client.execute(`CREATE TABLE IF NOT EXISTS friends (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user1 INTEGER,
@@ -7507,6 +7513,17 @@ async function startServer() {
       const res = await battleRoyaleManager.startGame(data.roomId, userIdNum);
       broadcastActiveTables();
       if (cb) cb(res);
+    });
+
+    socket.on("royale:return_to_lobby", (data: { roomId: string }, cb?: (res: any) => void) => {
+      const res = battleRoyaleManager.returnToLobby(data.roomId, userIdNum);
+      broadcastActiveTables();
+      if (cb) cb(res);
+    });
+
+    socket.on("royale:get_leaderboard", async (data: { sortBy?: 'wins' | 'kills' }, cb?: (rows: any[]) => void) => {
+      const rows = await battleRoyaleManager.getLeaderboard(data?.sortBy || 'wins');
+      if (cb) cb(rows);
     });
 
     socket.on("royale:input", (input: any) => {

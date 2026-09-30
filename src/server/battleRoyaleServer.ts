@@ -1,4 +1,4 @@
-import { Server as SocketIOServer, Socket } from "socket.io";
+import { Server as SocketIOServer } from "socket.io";
 import { Client as LibsqlClient } from "@libsql/client";
 
 export interface RoyalePlayer {
@@ -19,8 +19,9 @@ export interface RoyalePlayer {
   maxHp: number;
   shield: number;
   maxShield: number;
-  activeWeapon: string; // 'pistol' | 'shotgun' | 'rifle' | 'sniper'
-  weapons: string[];
+  activeWeapon: string; // 'pistol' | 'shotgun' | 'smg' | 'rifle' | 'sniper' | 'plasma'
+  activeWeaponSlot: number; // 0 or 1
+  weapons: string[]; // max 2 weapons: e.g. ['pistol', 'rifle']
   ammo: Record<string, number>;
   reserveAmmo: Record<string, number>;
   isReloading: boolean;
@@ -28,7 +29,15 @@ export interface RoyalePlayer {
   lastShotTime: number;
   isAlive: boolean;
   kills: number;
+  deaths: number;
   spectating: boolean;
+  // Deathmatch respawn & protection
+  respawnAt: number | null;
+  spawnShieldEndTime: number;
+  // Buffs
+  speedBuffEndTime: number;
+  rageBuffEndTime: number;
+  lastSwapTime: number;
   // Bot AI state
   botTargetX?: number;
   botTargetY?: number;
@@ -48,6 +57,9 @@ export interface RoyaleBullet {
   maxDistance: number;
   color: string;
   radius: number;
+  isAoE?: boolean;
+  aoeRadius?: number;
+  isRage?: boolean;
 }
 
 export interface RoyaleCrate {
@@ -56,15 +68,30 @@ export interface RoyaleCrate {
   y: number;
   hp: number;
   maxHp: number;
+  tier: 'normal' | 'rare';
   lootType: string;
 }
 
 export interface RoyaleLoot {
   id: string;
-  type: 'weapon_shotgun' | 'weapon_rifle' | 'weapon_sniper' | 'ammo' | 'medkit' | 'shield';
+  type: 
+    | 'weapon_pistol' 
+    | 'weapon_shotgun' 
+    | 'weapon_smg' 
+    | 'weapon_rifle' 
+    | 'weapon_sniper' 
+    | 'weapon_plasma'
+    | 'bandage' 
+    | 'medkit' 
+    | 'shield' 
+    | 'heavy_shield' 
+    | 'ammo' 
+    | 'adrenaline' 
+    | 'rage';
   x: number;
   y: number;
   value?: number;
+  createdAt?: number;
 }
 
 export interface RoyaleObstacle {
@@ -97,6 +124,15 @@ export interface RoyaleKillfeedItem {
   time: number;
 }
 
+export interface RoyaleDamagePopup {
+  id: string;
+  x: number;
+  y: number;
+  damage: number;
+  color: string;
+  createdAt: number;
+}
+
 export interface RoyaleRoom {
   id: string;
   title: string;
@@ -104,8 +140,9 @@ export interface RoyaleRoom {
   hostName: string;
   hostAvatar: string | null;
   capacity: number; // 2, 3, or 4
-  buyIn: number; // 0, 100, 250, 500, 1000 etc.
-  pot: number;
+  mode: 'royale' | 'deathmatch';
+  duration: number; // match duration in seconds (120, 180, 300) for deathmatch
+  matchTimeRemaining: number; // countdown in seconds
   status: 'lobby' | 'countdown' | 'playing' | 'gameover';
   countdown: number;
   players: RoyalePlayer[];
@@ -115,6 +152,7 @@ export interface RoyaleRoom {
   obstacles: RoyaleObstacle[];
   zone: RoyaleZone;
   killfeed: RoyaleKillfeedItem[];
+  damagePopups: RoyaleDamagePopup[];
   winner: RoyalePlayer | null;
   startedAt: number;
   timerInterval?: any;
@@ -139,55 +177,90 @@ export const WEAPON_CONFIGS: Record<string, {
   pellets?: number;
   bulletRadius: number;
   bulletColor: string;
+  themeColor: string;
+  isAoE?: boolean;
+  aoeRadius?: number;
 }> = {
   pistol: {
     name: 'Tabanca',
-    damage: 16,
-    speed: 18,
-    fireRate: 350,
-    magazine: 12,
-    reloadTime: 1100,
-    maxRange: 650,
-    spread: 0.05,
+    damage: 18,
+    speed: 20,
+    fireRate: 280,
+    magazine: 15,
+    reloadTime: 1000,
+    maxRange: 700,
+    spread: 0.04,
     bulletRadius: 3.5,
-    bulletColor: '#fbbf24' // amber
+    bulletColor: '#f8fafc',
+    themeColor: '#94a3b8'
   },
   shotgun: {
-    name: 'Pompalı',
-    damage: 15, // 5 pellets x 15 = 75 max damage
-    speed: 16,
-    fireRate: 850,
-    magazine: 5,
-    reloadTime: 1800,
-    maxRange: 420,
-    spread: 0.32,
-    pellets: 5,
+    name: 'Pompalı Tüfek',
+    damage: 14, // 6 pellets x 14 = 84 max damage
+    speed: 18,
+    fireRate: 750,
+    magazine: 6,
+    reloadTime: 1700,
+    maxRange: 450,
+    spread: 0.34,
+    pellets: 6,
     bulletRadius: 3,
-    bulletColor: '#f97316' // orange
+    bulletColor: '#f87171',
+    themeColor: '#ef4444'
+  },
+  smg: {
+    name: 'Uzi SMG',
+    damage: 12,
+    speed: 22,
+    fireRate: 85,
+    magazine: 35,
+    reloadTime: 1200,
+    maxRange: 620,
+    spread: 0.12,
+    bulletRadius: 3.2,
+    bulletColor: '#22d3ee',
+    themeColor: '#06b6d4'
   },
   rifle: {
-    name: 'Taramalı Tüfek',
-    damage: 19,
-    speed: 23,
-    fireRate: 150,
+    name: 'AK-47 Tüfek',
+    damage: 24,
+    speed: 24,
+    fireRate: 135,
     magazine: 30,
-    reloadTime: 1500,
-    maxRange: 800,
-    spread: 0.07,
-    bulletRadius: 3.8,
-    bulletColor: '#38bdf8' // sky blue
+    reloadTime: 1400,
+    maxRange: 850,
+    spread: 0.06,
+    bulletRadius: 4,
+    bulletColor: '#fb923c',
+    themeColor: '#f97316'
   },
   sniper: {
-    name: 'Keskin Nişancı',
-    damage: 65,
-    speed: 34,
-    fireRate: 1300,
+    name: 'AWP Sniper',
+    damage: 75,
+    speed: 38,
+    fireRate: 1200,
     magazine: 5,
-    reloadTime: 2200,
-    maxRange: 1200,
-    spread: 0.015,
-    bulletRadius: 4.5,
-    bulletColor: '#ec4899' // pink
+    reloadTime: 2000,
+    maxRange: 1300,
+    spread: 0.01,
+    bulletRadius: 5,
+    bulletColor: '#c084fc',
+    themeColor: '#a855f7'
+  },
+  plasma: {
+    name: 'Plazma Roket',
+    damage: 65,
+    speed: 16,
+    fireRate: 900,
+    magazine: 4,
+    reloadTime: 2100,
+    maxRange: 750,
+    spread: 0.02,
+    bulletRadius: 7.5,
+    bulletColor: '#facc15',
+    themeColor: '#eab308',
+    isAoE: true,
+    aoeRadius: 65
   }
 };
 
@@ -212,45 +285,26 @@ export class BattleRoyaleManager {
     this.db = db;
   }
 
-  // Create Room
+  // Create Room (100% Free - no coin deductions)
   public createRoom(
     hostUser: { id: number; username: string; avatar: string | null; color?: string },
-    options: { title?: string; capacity?: number; buyIn?: number }
+    options: { title?: string; capacity?: number; mode?: 'royale' | 'deathmatch'; duration?: number }
   ): RoyaleRoom {
     const roomId = `br_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
     const capacity = Math.min(4, Math.max(2, options.capacity || 4));
-    const buyIn = Math.max(0, options.buyIn || 0);
+    const mode = options.mode === 'deathmatch' ? 'deathmatch' : 'royale';
+    const duration = options.duration && [120, 180, 300].includes(options.duration) ? options.duration : 180;
     const title = options.title?.trim() || `${hostUser.username}'ın Arenası`;
 
-    const hostPlayer: RoyalePlayer = {
-      id: `u_${hostUser.id}`,
-      userId: hostUser.id,
-      username: hostUser.username,
-      avatar: hostUser.avatar,
-      color: hostUser.color || '#3b82f6',
-      isBot: false,
-      isHost: true,
-      ready: true,
-      x: 0,
-      y: 0,
-      vx: 0,
-      vy: 0,
-      angle: 0,
-      hp: 100,
-      maxHp: 100,
-      shield: 0,
-      maxShield: 100,
-      activeWeapon: 'pistol',
-      weapons: ['pistol'],
-      ammo: { pistol: 12, shotgun: 0, rifle: 0, sniper: 0 },
-      reserveAmmo: { pistol: 60, shotgun: 0, rifle: 0, sniper: 0 },
-      isReloading: false,
-      reloadEndTime: 0,
-      lastShotTime: 0,
-      isAlive: true,
-      kills: 0,
-      spectating: false
-    };
+    const hostPlayer: RoyalePlayer = this.createInitialPlayer(
+      `u_${hostUser.id}`,
+      hostUser.id,
+      hostUser.username,
+      hostUser.avatar,
+      hostUser.color || '#3b82f6',
+      false,
+      true
+    );
 
     const room: RoyaleRoom = {
       id: roomId,
@@ -259,8 +313,9 @@ export class BattleRoyaleManager {
       hostName: hostUser.username,
       hostAvatar: hostUser.avatar,
       capacity,
-      buyIn,
-      pot: 0,
+      mode,
+      duration,
+      matchTimeRemaining: duration,
       status: 'lobby',
       countdown: 3,
       players: [hostPlayer],
@@ -268,20 +323,9 @@ export class BattleRoyaleManager {
       crates: [],
       loot: [],
       obstacles: [],
-      zone: {
-        currentX: MAP_SIZE / 2,
-        currentY: MAP_SIZE / 2,
-        currentRadius: MAP_SIZE * 0.7,
-        targetX: MAP_SIZE / 2,
-        targetY: MAP_SIZE / 2,
-        targetRadius: MAP_SIZE * 0.45,
-        shrinkSpeed: 1.2,
-        phase: 0,
-        isShrinking: false,
-        nextShrinkTime: 0,
-        damage: 5
-      },
+      zone: this.createInitialZone(),
       killfeed: [],
+      damagePopups: [],
       winner: null,
       startedAt: 0,
       lastZoneDamageTime: 0,
@@ -293,6 +337,71 @@ export class BattleRoyaleManager {
     return room;
   }
 
+  // Helper to create clean initial player state
+  private createInitialPlayer(
+    id: string,
+    userId: number,
+    username: string,
+    avatar: string | null,
+    color: string,
+    isBot: boolean,
+    isHost: boolean
+  ): RoyalePlayer {
+    return {
+      id,
+      userId,
+      username,
+      avatar,
+      color,
+      isBot,
+      isHost,
+      ready: isHost,
+      x: MAP_SIZE / 2,
+      y: MAP_SIZE / 2,
+      vx: 0,
+      vy: 0,
+      angle: 0,
+      hp: 100,
+      maxHp: 100,
+      shield: 0,
+      maxShield: 100,
+      activeWeapon: 'pistol',
+      activeWeaponSlot: 0,
+      weapons: ['pistol'],
+      ammo: { pistol: 15, shotgun: 0, smg: 0, rifle: 0, sniper: 0, plasma: 0 },
+      reserveAmmo: { pistol: 60, shotgun: 0, smg: 0, rifle: 0, sniper: 0, plasma: 0 },
+      isReloading: false,
+      reloadEndTime: 0,
+      lastShotTime: 0,
+      isAlive: true,
+      kills: 0,
+      deaths: 0,
+      spectating: false,
+      respawnAt: null,
+      spawnShieldEndTime: 0,
+      speedBuffEndTime: 0,
+      rageBuffEndTime: 0,
+      lastSwapTime: 0
+    };
+  }
+
+  // Create initial storm zone
+  private createInitialZone(): RoyaleZone {
+    return {
+      currentX: MAP_SIZE / 2,
+      currentY: MAP_SIZE / 2,
+      currentRadius: MAP_SIZE * 0.7,
+      targetX: MAP_SIZE / 2,
+      targetY: MAP_SIZE / 2,
+      targetRadius: MAP_SIZE * 0.45,
+      shrinkSpeed: 1.2,
+      phase: 0,
+      isShrinking: false,
+      nextShrinkTime: 0,
+      damage: 5
+    };
+  }
+
   // Join Room
   public joinRoom(
     roomId: string,
@@ -302,912 +411,1036 @@ export class BattleRoyaleManager {
     if (!room) return { success: false, error: 'Masa bulunamadı.' };
 
     if (room.status !== 'lobby') {
-      return { success: false, error: 'Oyun zaten başlamış.' };
+      return { success: false, error: 'Bu oyun zaten başlamış veya bitti.' };
     }
 
     if (room.players.length >= room.capacity) {
       return { success: false, error: 'Masa dolu.' };
     }
 
-    const existing = room.players.find(p => !p.isBot && p.userId === user.id);
+    // Check if player is already in room
+    const existing = room.players.find(p => p.userId === user.id);
     if (existing) {
+      existing.avatar = user.avatar;
+      existing.color = user.color || existing.color;
       return { success: true, room };
     }
 
-    const player: RoyalePlayer = {
-      id: `u_${user.id}`,
-      userId: user.id,
-      username: user.username,
-      avatar: user.avatar,
-      color: user.color || '#10b981',
-      isBot: false,
-      isHost: false,
-      ready: false,
-      x: 0,
-      y: 0,
-      vx: 0,
-      vy: 0,
-      angle: 0,
-      hp: 100,
-      maxHp: 100,
-      shield: 0,
-      maxShield: 100,
-      activeWeapon: 'pistol',
-      weapons: ['pistol'],
-      ammo: { pistol: 12, shotgun: 0, rifle: 0, sniper: 0 },
-      reserveAmmo: { pistol: 60, shotgun: 0, rifle: 0, sniper: 0 },
-      isReloading: false,
-      reloadEndTime: 0,
-      lastShotTime: 0,
-      isAlive: true,
-      kills: 0,
-      spectating: false
-    };
+    const player = this.createInitialPlayer(
+      `u_${user.id}`,
+      user.id,
+      user.username,
+      user.avatar,
+      user.color || '#10b981',
+      false,
+      false
+    );
 
     room.players.push(player);
-    this.io.to(roomId).emit('royale:room_state', this.getPublicRoomState(room));
+    this.broadcastRoomState(room);
     this.broadcastRoomsList();
     return { success: true, room };
   }
 
+  // Leave Room (Only delete room if ALL human players have left)
+  public leaveRoom(roomId: string, userId: number) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    const pIdx = room.players.findIndex(p => p.userId === userId);
+    if (pIdx !== -1) {
+      const isHost = room.players[pIdx].isHost;
+      room.players.splice(pIdx, 1);
+
+      // Check if any real human players remain
+      const realPlayers = room.players.filter(p => !p.isBot);
+
+      if (realPlayers.length === 0) {
+        // Safe to destroy room completely
+        this.destroyRoom(roomId);
+        return;
+      }
+
+      // If host left, pass host crown to next real human player
+      if (isHost && realPlayers.length > 0) {
+        realPlayers[0].isHost = true;
+        realPlayers[0].ready = true;
+        room.hostId = realPlayers[0].userId;
+        room.hostName = realPlayers[0].username;
+        room.hostAvatar = realPlayers[0].avatar;
+      }
+
+      this.broadcastRoomState(room);
+      this.broadcastRoomsList();
+    }
+  }
+
   // Add Bot
-  public addBot(roomId: string, hostId: number): { success: boolean; error?: string } {
+  public addBot(roomId: string, hostUserId: number): { success: boolean; error?: string } {
     const room = this.rooms.get(roomId);
     if (!room) return { success: false, error: 'Masa bulunamadı.' };
-    if (room.hostId !== hostId) return { success: false, error: 'Sadece masa sahibi bot ekleyebilir.' };
+    if (room.hostId !== hostUserId) return { success: false, error: 'Sadece masa sahibi bot ekleyebilir.' };
     if (room.status !== 'lobby') return { success: false, error: 'Oyun sırasında bot eklenemez.' };
-    if (room.players.length >= room.capacity) return { success: false, error: 'Masa kapasitesi dolu.' };
+    if (room.players.length >= room.capacity) return { success: false, error: 'Masa dolu.' };
 
-    const botNumber = room.players.filter(p => p.isBot).length + 1;
-    const botName = BOT_NAMES[(botNumber - 1) % BOT_NAMES.length];
+    const botColors = ['#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444', '#3b82f6'];
+    const botIdx = room.players.filter(p => p.isBot).length;
+    const botName = BOT_NAMES[botIdx % BOT_NAMES.length];
+    const botId = `bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-    const botPlayer: RoyalePlayer = {
-      id: `bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      userId: 0,
-      username: botName,
-      avatar: null,
-      color: '#f59e0b',
-      isBot: true,
-      isHost: false,
-      ready: true,
-      x: 0,
-      y: 0,
-      vx: 0,
-      vy: 0,
-      angle: 0,
-      hp: 100,
-      maxHp: 100,
-      shield: 25,
-      maxShield: 100,
-      activeWeapon: 'pistol',
-      weapons: ['pistol'],
-      ammo: { pistol: 12, shotgun: 0, rifle: 0, sniper: 0 },
-      reserveAmmo: { pistol: 60, shotgun: 0, rifle: 0, sniper: 0 },
-      isReloading: false,
-      reloadEndTime: 0,
-      lastShotTime: 0,
-      isAlive: true,
-      kills: 0,
-      spectating: false
-    };
+    const botPlayer = this.createInitialPlayer(
+      botId,
+      0,
+      botName,
+      null,
+      botColors[botIdx % botColors.length],
+      true,
+      false
+    );
+    botPlayer.ready = true;
 
     room.players.push(botPlayer);
-    this.io.to(roomId).emit('royale:room_state', this.getPublicRoomState(room));
+    this.broadcastRoomState(room);
     this.broadcastRoomsList();
     return { success: true };
   }
 
   // Remove Bot
-  public removeBot(roomId: string, hostId: number, botId?: string): { success: boolean; error?: string } {
+  public removeBot(roomId: string, hostUserId: number, botId?: string): { success: boolean; error?: string } {
     const room = this.rooms.get(roomId);
     if (!room) return { success: false, error: 'Masa bulunamadı.' };
-    if (room.hostId !== hostId) return { success: false, error: 'Sadece masa sahibi bot çıkarabilir.' };
-    if (room.status !== 'lobby') return { success: false, error: 'Oyun sırasında bot çıkarılamaz.' };
+    if (room.hostId !== hostUserId) return { success: false, error: 'Sadece masa sahibi bot çıkarabilir.' };
 
-    const botIndex = botId
-      ? room.players.findIndex(p => p.isBot && p.id === botId)
-      : room.players.map(p => p.isBot).lastIndexOf(true);
+    let idx = -1;
+    if (botId) {
+      idx = room.players.findIndex(p => p.id === botId && p.isBot);
+    } else {
+      for (let i = room.players.length - 1; i >= 0; i--) {
+        if (room.players[i].isBot) {
+          idx = i;
+          break;
+        }
+      }
+    }
 
-    if (botIndex === -1) return { success: false, error: 'Çıkarılacak bot bulunamadı.' };
-
-    room.players.splice(botIndex, 1);
-    this.io.to(roomId).emit('royale:room_state', this.getPublicRoomState(room));
-    this.broadcastRoomsList();
-    return { success: true };
+    if (idx !== -1) {
+      room.players.splice(idx, 1);
+      this.broadcastRoomState(room);
+      this.broadcastRoomsList();
+      return { success: true };
+    }
+    return { success: false, error: 'Bot bulunamadı.' };
   }
 
   // Toggle Ready
   public toggleReady(roomId: string, userId: number): { success: boolean; ready?: boolean } {
     const room = this.rooms.get(roomId);
-    if (!room || room.status !== 'lobby') return { success: false };
-
-    const player = room.players.find(p => !p.isBot && p.userId === userId);
-    if (!player) return { success: false };
-
-    player.ready = !player.ready;
-    this.io.to(roomId).emit('royale:room_state', this.getPublicRoomState(room));
-    return { success: true, ready: player.ready };
+    if (!room) return { success: false };
+    const player = room.players.find(p => p.userId === userId);
+    if (player && !player.isHost) {
+      player.ready = !player.ready;
+      this.broadcastRoomState(room);
+      return { success: true, ready: player.ready };
+    }
+    return { success: false };
   }
 
-  // Leave Room
-  public leaveRoom(roomId: string, userId: number) {
-    const room = this.rooms.get(roomId);
-    if (!room) return;
-
-    const playerIndex = room.players.findIndex(p => !p.isBot && p.userId === userId);
-    if (playerIndex === -1) return;
-
-    const wasHost = room.players[playerIndex].isHost;
-    room.players.splice(playerIndex, 1);
-
-    // If no human players left, clean up room
-    const humanPlayers = room.players.filter(p => !p.isBot);
-    if (humanPlayers.length === 0) {
-      this.destroyRoom(roomId);
-      return;
-    }
-
-    // If host left, migrate host to first human
-    if (wasHost && humanPlayers.length > 0) {
-      humanPlayers[0].isHost = true;
-      humanPlayers[0].ready = true;
-      room.hostId = humanPlayers[0].userId;
-      room.hostName = humanPlayers[0].username;
-      room.hostAvatar = humanPlayers[0].avatar;
-    }
-
-    this.io.to(roomId).emit('royale:room_state', this.getPublicRoomState(room));
-    this.broadcastRoomsList();
-  }
-
-  // Start Game
-  public async startGame(roomId: string, hostId: number): Promise<{ success: boolean; error?: string }> {
+  // Return Room to Lobby (Persistent room cycle - allows playing again without recreating table)
+  public returnToLobby(roomId: string, userId: number): { success: boolean; room?: RoyaleRoom; error?: string } {
     const room = this.rooms.get(roomId);
     if (!room) return { success: false, error: 'Masa bulunamadı.' };
-    if (room.hostId !== hostId) return { success: false, error: 'Sadece masa sahibi oyunu başlatabilir.' };
-    if (room.status !== 'lobby') return { success: false, error: 'Oyun zaten başlatıldı.' };
-    if (room.players.length < 2) return { success: false, error: 'Oyunu başlatmak için en az 2 oyuncu veya bot gereklidir.' };
 
-    const humanPlayers = room.players.filter(p => !p.isBot);
-
-    // Check balances if buyIn > 0
-    if (room.buyIn > 0) {
-      for (const p of humanPlayers) {
-        const uRes = await this.db.execute({
-          sql: "SELECT id, chips FROM users WHERE id = ?",
-          args: [p.userId]
-        });
-        let currentChips = Number(uRes.rows[0]?.chips ?? 0);
-        if (currentChips < room.buyIn) {
-          // If user has 0 chips, give them 1000 free test chips
-          if (currentChips === 0) {
-            await this.db.execute({
-              sql: "UPDATE users SET chips = 1000 WHERE id = ?",
-              args: [p.userId]
-            });
-            currentChips = 1000;
-            this.io.emit('chips_updated', { userId: p.userId, chips: 1000 });
-          } else {
-            return {
-              success: false,
-              error: `${p.username} yeterli bakiyeye sahip değil! Gereken: ${room.buyIn} Coin (Mevcut: ${currentChips})`
-            };
-          }
-        }
-      }
-
-      // Deduct buy-in from all real players
-      for (const p of humanPlayers) {
-        await this.db.execute({
-          sql: "UPDATE users SET chips = MAX(0, chips - ?) WHERE id = ?",
-          args: [room.buyIn, p.userId]
-        });
-        const updated = await this.db.execute({
-          sql: "SELECT chips FROM users WHERE id = ?",
-          args: [p.userId]
-        });
-        const newChips = Number(updated.rows[0]?.chips ?? 0);
-        this.io.emit('chips_updated', { userId: p.userId, chips: newChips });
-      }
-
-      room.pot = room.buyIn * humanPlayers.length;
-    } else {
-      room.pot = 0;
-    }
-
-    // Clear any previous timers
+    // Clear active match timers
     if (room.timerInterval) clearInterval(room.timerInterval);
     if (room.tickInterval) clearInterval(room.tickInterval);
 
-    // Transition to countdown
+    // Reset room state
+    room.status = 'lobby';
+    room.winner = null;
+    room.bullets = [];
+    room.crates = [];
+    room.loot = [];
+    room.obstacles = [];
+    room.killfeed = [];
+    room.damagePopups = [];
+    room.matchTimeRemaining = room.duration || 180;
+    room.countdown = 3;
+
+    // Reset all existing players for next match
+    room.players.forEach(p => {
+      p.hp = 100;
+      p.shield = 0;
+      p.isAlive = true;
+      p.activeWeapon = 'pistol';
+      p.activeWeaponSlot = 0;
+      p.weapons = ['pistol'];
+      p.ammo = { pistol: 15, shotgun: 0, smg: 0, rifle: 0, sniper: 0, plasma: 0 };
+      p.reserveAmmo = { pistol: 60, shotgun: 0, smg: 0, rifle: 0, sniper: 0, plasma: 0 };
+      p.isReloading = false;
+      p.reloadEndTime = 0;
+      p.lastShotTime = 0;
+      p.kills = 0;
+      p.deaths = 0;
+      p.spectating = false;
+      p.respawnAt = null;
+      p.spawnShieldEndTime = 0;
+      p.speedBuffEndTime = 0;
+      p.rageBuffEndTime = 0;
+      p.lastSwapTime = 0;
+      p.ready = p.isHost || p.isBot;
+    });
+
+    this.broadcastRoomState(room);
+    this.broadcastRoomsList();
+    return { success: true, room };
+  }
+
+  // Start Game
+  public async startGame(roomId: string, hostUserId: number): Promise<{ success: boolean; error?: string }> {
+    const room = this.rooms.get(roomId);
+    if (!room) return { success: false, error: 'Masa bulunamadı.' };
+    if (room.hostId !== hostUserId) return { success: false, error: 'Sadece masa sahibi oyunu başlatabilir.' };
+    if (room.players.length < 2) return { success: false, error: 'Oyunu başlatmak için en az 2 oyuncu (veya bot) olmalıdır.' };
+    if (room.status !== 'lobby') return { success: false, error: 'Oyun zaten başlamış.' };
+
     room.status = 'countdown';
     room.countdown = 3;
-    this.io.to(roomId).emit('royale:countdown', { countdown: 3, pot: room.pot });
+    room.winner = null;
+    room.bullets = [];
+    room.damagePopups = [];
+    room.killfeed = [];
+    room.matchTimeRemaining = room.duration || 180;
 
-    room.timerInterval = setInterval(() => {
-      room.countdown--;
-      if (room.countdown > 0) {
-        this.io.to(roomId).emit('royale:countdown', { countdown: room.countdown, pot: room.pot });
+    // Generate Map Entities
+    this.generateObstacles(room);
+    this.generateCrates(room);
+    this.generateInitialLoot(room);
+    this.spawnPlayers(room);
+
+    this.broadcastRoomState(room);
+
+    // 3s Countdown Timer
+    let count = 3;
+    this.io.to(roomId).emit('royale:countdown', { countdown: count });
+
+    const countdownTimer = setInterval(() => {
+      count--;
+      if (count > 0) {
+        room.countdown = count;
+        this.io.to(roomId).emit('royale:countdown', { countdown: count });
       } else {
-        clearInterval(room.timerInterval);
-        room.timerInterval = null;
-        this.launchMatch(room);
+        clearInterval(countdownTimer);
+        this.beginPlayingState(room);
       }
     }, 1000);
 
-    this.broadcastRoomsList();
     return { success: true };
   }
 
-  // Launch Match arena setup
-  private launchMatch(room: RoyaleRoom) {
-    if (room.tickInterval) clearInterval(room.tickInterval);
-
+  // Transition to playing state & start 30 FPS tick loop
+  private beginPlayingState(room: RoyaleRoom) {
     room.status = 'playing';
     room.startedAt = Date.now();
     room.lastZoneDamageTime = Date.now();
 
-    // Spawn obstacles (Rocks & Bushes)
-    room.obstacles = this.generateObstacles();
-
-    // Spawn crates
-    room.crates = this.generateCrates();
-    room.loot = [];
-    room.bullets = [];
-    room.killfeed = [];
-    room.winner = null;
-
-    // Initialize Zone
+    // Reset zone for Battle Royale mode
     room.zone = {
       currentX: MAP_SIZE / 2,
       currentY: MAP_SIZE / 2,
       currentRadius: MAP_SIZE * 0.72,
       targetX: MAP_SIZE / 2,
       targetY: MAP_SIZE / 2,
-      targetRadius: MAP_SIZE * 0.48,
+      targetRadius: MAP_SIZE * 0.45,
       shrinkSpeed: 1.1,
-      phase: 1,
+      phase: 0,
       isShrinking: false,
-      nextShrinkTime: Date.now() + 15000, // starts shrinking after 15s
+      nextShrinkTime: Date.now() + 18000,
       damage: 5
     };
 
-    // Position players around the safe circle
-    const count = Math.max(1, room.players.length);
-    const spawnRadius = 550;
-    const center = MAP_SIZE / 2;
-
-    room.players.forEach((p, idx) => {
-      const angle = (idx / count) * Math.PI * 2;
-      const px = center + Math.cos(angle) * spawnRadius;
-      const py = center + Math.sin(angle) * spawnRadius;
-      p.x = Number.isFinite(px) ? Math.round(px) : center;
-      p.y = Number.isFinite(py) ? Math.round(py) : center;
-      p.vx = 0;
-      p.vy = 0;
-      p.angle = Number.isFinite(angle) ? angle + Math.PI : 0;
-      p.hp = 100;
-      p.maxHp = 100;
-      p.shield = p.isBot ? 25 : 0;
-      p.maxShield = 100;
-      p.isAlive = true;
-      p.kills = 0;
-      p.spectating = false;
-      p.activeWeapon = 'pistol';
-      p.weapons = ['pistol'];
-      p.ammo = { pistol: 12, shotgun: 0, rifle: 0, sniper: 0 };
-      p.reserveAmmo = { pistol: 60, shotgun: 0, rifle: 0, sniper: 0 };
-      p.isReloading = false;
-    });
-
-    // Start 30 FPS tick loop
-    room.tickInterval = setInterval(() => {
-      this.tickRoom(room);
-    }, 1000 / TICK_RATE);
-
-    const initialGameState = this.getPublicGameState(room);
-    this.io.to(room.id).emit('royale:game_started', initialGameState);
-    this.io.to(room.id).emit('royale:game_state', initialGameState);
+    this.io.to(room.id).emit('royale:game_started', this.getPublicGameState(room));
     this.broadcastRoomsList();
+
+    // 1-second interval for Deathmatch Timer & Zone Warnings
+    if (room.timerInterval) clearInterval(room.timerInterval);
+    room.timerInterval = setInterval(() => {
+      if (room.status !== 'playing') {
+        clearInterval(room.timerInterval);
+        return;
+      }
+
+      // In Deathmatch mode, decrement time remaining
+      if (room.mode === 'deathmatch') {
+        room.matchTimeRemaining--;
+        if (room.matchTimeRemaining <= 0) {
+          this.endDeathmatchByTime(room);
+          return;
+        }
+      }
+
+      // In Royale mode, check zone phases
+      if (room.mode === 'royale') {
+        const now = Date.now();
+        if (!room.zone.isShrinking && now >= room.zone.nextShrinkTime) {
+          room.zone.isShrinking = true;
+          this.io.to(room.id).emit('royale:zone_warning', {
+            message: `⚠️ Faz ${room.zone.phase + 1}: Fırtına Çemberi Daralıyor!`
+          });
+        }
+      }
+    }, 1000);
+
+    // 30 FPS Game Simulation Tick Loop
+    if (room.tickInterval) clearInterval(room.tickInterval);
+    room.tickInterval = setInterval(() => {
+      this.gameTick(room);
+    }, 1000 / TICK_RATE);
   }
 
-  // 30 FPS Game Simulation Tick
-  private tickRoom(room: RoyaleRoom) {
+  // 30 FPS Authoritative Game Tick
+  private gameTick(room: RoyaleRoom) {
     if (room.status !== 'playing') return;
 
     const now = Date.now();
 
-    // 1. Zone / Storm Updates
-    this.updateZone(room, now);
+    // 1. Update Zone (Royale mode only)
+    if (room.mode === 'royale') {
+      this.updateZone(room, now);
+    }
 
-    // 2. Bot AI updates
-    this.updateBots(room, now);
-
-    // 3. Player Movement & Physics
-    this.updatePlayers(room, now);
-
-    // 4. Bullet Movement & Collisions
+    // 2. Update Bullets and Collisions
     this.updateBullets(room);
 
-    // 5. Zone Damage (every 1 second)
-    if (now - room.lastZoneDamageTime >= 1000) {
-      room.lastZoneDamageTime = now;
-      this.applyZoneDamage(room);
-    }
+    // 3. Update Players & Respawn in Deathmatch
+    this.updatePlayers(room, now);
+
+    // 4. Update Bot AI
+    this.updateBots(room, now);
+
+    // 5. Clean expired damage popups (older than 1.2s)
+    room.damagePopups = room.damagePopups.filter(p => now - p.createdAt < 1200);
 
     // 6. Check Win Condition
-    const alivePlayers = room.players.filter(p => p.isAlive);
-    if (alivePlayers.length <= 1) {
-      this.finishMatch(room, alivePlayers[0] || null);
-      return;
-    }
+    this.checkWinCondition(room);
 
-    // 7. Broadcast state
+    // 7. Broadcast state to players in room
     this.io.to(room.id).emit('royale:game_state', this.getPublicGameState(room));
   }
 
-  // Zone / Storm Mechanics
-  private updateZone(room: RoyaleRoom, now: number) {
-    const z = room.zone;
-
-    // Check if shrink phase triggers
-    if (!z.isShrinking && now >= z.nextShrinkTime) {
-      z.isShrinking = true;
-      this.io.to(room.id).emit('royale:zone_warning', {
-        message: '⚠️ Dikkat! Fırtına Gazı Daralıyor!',
-        phase: z.phase
-      });
-    }
-
-    // Shrink radius towards target
-    if (z.isShrinking) {
-      if (z.currentRadius > z.targetRadius) {
-        z.currentRadius = Math.max(z.targetRadius, z.currentRadius - z.shrinkSpeed);
-        // Slightly nudge center towards target
-        z.currentX += (z.targetX - z.currentX) * 0.002;
-        z.currentY += (z.targetY - z.currentY) * 0.002;
-      } else {
-        // Stage completed, prepare next smaller circle
-        z.isShrinking = false;
-        z.phase++;
-        z.damage += 5; // damage increases each phase (5 -> 10 -> 15 -> 20)
-        z.nextShrinkTime = now + 12000; // 12 seconds grace period
-
-        // Random new target center inside current circle
-        const maxOffset = z.currentRadius * 0.35;
-        const randAngle = Math.random() * Math.PI * 2;
-        const randDist = Math.random() * maxOffset;
-
-        z.targetX = Math.max(400, Math.min(MAP_SIZE - 400, z.currentX + Math.cos(randAngle) * randDist));
-        z.targetY = Math.max(400, Math.min(MAP_SIZE - 400, z.currentY + Math.sin(randAngle) * randDist));
-        z.targetRadius = Math.max(120, z.currentRadius * 0.55);
-        z.shrinkSpeed = Math.max(0.8, z.shrinkSpeed * 1.15);
-      }
-    }
-  }
-
-  // Apply zone damage to players outside currentRadius
-  private applyZoneDamage(room: RoyaleRoom) {
-    const z = room.zone;
-    room.players.forEach(p => {
-      if (!p.isAlive) return;
-      const dx = p.x - z.currentX;
-      const dy = p.y - z.currentY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist > z.currentRadius) {
-        p.hp -= z.damage;
-        if (p.hp <= 0) {
-          p.hp = 0;
-          this.handlePlayerDeath(room, p, null, 'Fırtına');
-        }
-      }
-    });
-  }
-
-  // Bot AI System
-  private updateBots(room: RoyaleRoom, now: number) {
-    const aliveBots = room.players.filter(p => p.isBot && p.isAlive);
-    const z = room.zone;
-
-    aliveBots.forEach(bot => {
-      // Find nearest living enemy
-      let nearestEnemy: RoyalePlayer | null = null;
-      let nearestEnemyDist = Infinity;
-
-      room.players.forEach(other => {
-        if (!other.isAlive || other.id === bot.id) return;
-        const dist = Math.hypot(other.x - bot.x, other.y - bot.y);
-        if (dist < nearestEnemyDist) {
-          nearestEnemyDist = dist;
-          nearestEnemy = other;
-        }
-      });
-
-      // Zone safety priority: if bot is in or close to storm, head towards center of safe zone
-      const distFromZone = Math.hypot(bot.x - z.currentX, bot.y - z.currentY);
-      const isDangerousStorm = distFromZone > z.currentRadius * 0.85;
-
-      let moveTargetX = bot.x;
-      let moveTargetY = bot.y;
-      let shouldShoot = false;
-
-      if (isDangerousStorm) {
-        // Run towards safe zone
-        moveTargetX = z.currentX + (Math.random() - 0.5) * 150;
-        moveTargetY = z.currentY + (Math.random() - 0.5) * 150;
-      } else if (nearestEnemy && nearestEnemyDist < 600) {
-        // Combat engagement
-        bot.angle = Math.atan2((nearestEnemy as RoyalePlayer).y - bot.y, (nearestEnemy as RoyalePlayer).x - bot.x);
-
-        if (nearestEnemyDist > 250) {
-          // Move towards enemy
-          moveTargetX = (nearestEnemy as RoyalePlayer).x;
-          moveTargetY = (nearestEnemy as RoyalePlayer).y;
-        } else {
-          // Circle or strafe enemy
-          moveTargetX = bot.x + Math.cos(bot.angle + Math.PI / 2) * 50;
-          moveTargetY = bot.y + Math.sin(bot.angle + Math.PI / 2) * 50;
-        }
-
-        // Shoot if within weapon range
-        const config = WEAPON_CONFIGS[bot.activeWeapon] || WEAPON_CONFIGS.pistol;
-        if (nearestEnemyDist <= config.maxRange) {
-          shouldShoot = true;
-        }
-      } else {
-        // Wander or search for nearest crate/loot
-        let nearestCrate: RoyaleCrate | null = null;
-        let nearestCrateDist = Infinity;
-
-        room.crates.forEach(c => {
-          const d = Math.hypot(c.x - bot.x, c.y - bot.y);
-          if (d < nearestCrateDist) {
-            nearestCrateDist = d;
-            nearestCrate = c;
-          }
-        });
-
-        if (nearestCrate && nearestCrateDist < 450) {
-          moveTargetX = (nearestCrate as RoyaleCrate).x;
-          moveTargetY = (nearestCrate as RoyaleCrate).y;
-          bot.angle = Math.atan2((nearestCrate as RoyaleCrate).y - bot.y, (nearestCrate as RoyaleCrate).x - bot.x);
-          if (nearestCrateDist < 200) shouldShoot = true;
-        } else {
-          // Idle patrol
-          if (!bot.botNextActionTime || now > bot.botNextActionTime) {
-            bot.botTargetX = z.currentX + (Math.random() - 0.5) * z.currentRadius * 0.8;
-            bot.botTargetY = z.currentY + (Math.random() - 0.5) * z.currentRadius * 0.8;
-            bot.botNextActionTime = now + 2500 + Math.random() * 2000;
-          }
-          moveTargetX = bot.botTargetX || bot.x;
-          moveTargetY = bot.botTargetY || bot.y;
-          bot.angle = Math.atan2(moveTargetY - bot.y, moveTargetX - bot.x);
-        }
-      }
-
-      // Compute velocity
-      const toX = moveTargetX - bot.x;
-      const toY = moveTargetY - bot.y;
-      const d = Math.hypot(toX, toY);
-      if (d > 10) {
-        bot.vx = (toX / d) * 4.2;
-        bot.vy = (toY / d) * 4.2;
-      } else {
-        bot.vx = 0;
-        bot.vy = 0;
-      }
-
-      // Bot auto-reload
-      const wpn = bot.activeWeapon;
-      if (bot.ammo[wpn] === 0 && bot.reserveAmmo[wpn] > 0 && !bot.isReloading) {
-        this.startReload(bot, now);
-      }
-
-      // Bot shoot
-      if (shouldShoot && !bot.isReloading) {
-        this.tryShoot(room, bot, now);
-      }
-    });
-  }
-
-  // Update Players & Obstacle Collisions
+  // Update Players position, reload timers, and respawns
   private updatePlayers(room: RoyaleRoom, now: number) {
-    room.players.forEach(p => {
-      if (!p.isAlive) return;
+    for (const p of room.players) {
+      // Deathmatch Respawn check
+      if (room.mode === 'deathmatch' && !p.isAlive && p.respawnAt && now >= p.respawnAt) {
+        this.respawnPlayerInDeathmatch(room, p);
+      }
 
-      // Handle reload finish
+      if (!p.isAlive) continue;
+
+      // Handle Reload completion
       if (p.isReloading && now >= p.reloadEndTime) {
         p.isReloading = false;
-        const config = WEAPON_CONFIGS[p.activeWeapon] || WEAPON_CONFIGS.pistol;
-        const needed = config.magazine - (p.ammo[p.activeWeapon] || 0);
-        const available = p.reserveAmmo[p.activeWeapon] || 0;
-        const amount = Math.min(needed, available);
-        p.ammo[p.activeWeapon] = (p.ammo[p.activeWeapon] || 0) + amount;
-        p.reserveAmmo[p.activeWeapon] = Math.max(0, available - amount);
+        const wpn = p.activeWeapon;
+        const config = WEAPON_CONFIGS[wpn] || WEAPON_CONFIGS.pistol;
+        const needed = config.magazine - (p.ammo[wpn] || 0);
+        const available = p.reserveAmmo[wpn] || 0;
+        const toLoad = Math.min(needed, available);
+        p.ammo[wpn] = (p.ammo[wpn] || 0) + toLoad;
+        p.reserveAmmo[wpn] = Math.max(0, available - toLoad);
       }
 
-      // Proposed position
-      let newX = p.x + p.vx;
-      let newY = p.y + p.vy;
+      // Calculate speed (apply +35% speed buff if active)
+      let baseSpeed = 5.2;
+      if (p.speedBuffEndTime > now) {
+        baseSpeed *= 1.35;
+      }
 
-      // Map boundary check
-      newX = Math.max(PLAYER_RADIUS, Math.min(MAP_SIZE - PLAYER_RADIUS, newX));
-      newY = Math.max(PLAYER_RADIUS, Math.min(MAP_SIZE - PLAYER_RADIUS, newY));
+      // Apply movement velocity
+      let nextX = p.x + p.vx * baseSpeed;
+      let nextY = p.y + p.vy * baseSpeed;
 
-      // Solid obstacle collisions (Rocks)
-      room.obstacles.forEach(obs => {
+      // Map bounds clamping
+      nextX = Math.max(PLAYER_RADIUS + 10, Math.min(MAP_SIZE - PLAYER_RADIUS - 10, nextX));
+      nextY = Math.max(PLAYER_RADIUS + 10, Math.min(MAP_SIZE - PLAYER_RADIUS - 10, nextY));
+
+      // Obstacle & Rock collisions
+      for (const obs of room.obstacles) {
         if (obs.type === 'rock') {
-          const dx = newX - obs.x;
-          const dy = newY - obs.y;
-          const dist = Math.hypot(dx, dy);
+          const dist = Math.hypot(nextX - obs.x, nextY - obs.y);
           const minDist = PLAYER_RADIUS + obs.radius;
-          if (dist < minDist && dist > 0) {
-            newX = obs.x + (dx / dist) * minDist;
-            newY = obs.y + (dy / dist) * minDist;
+          if (dist < minDist) {
+            const angle = Math.atan2(nextY - obs.y, nextX - obs.x);
+            nextX = obs.x + Math.cos(angle) * minDist;
+            nextY = obs.y + Math.sin(angle) * minDist;
           }
         }
-      });
+      }
 
       // Crate collisions
-      room.crates.forEach(c => {
-        const dx = newX - c.x;
-        const dy = newY - c.y;
-        const dist = Math.hypot(dx, dy);
+      for (const c of room.crates) {
+        const dist = Math.hypot(nextX - c.x, nextY - c.y);
         const minDist = PLAYER_RADIUS + 22;
-        if (dist < minDist && dist > 0) {
-          newX = c.x + (dx / dist) * minDist;
-          newY = c.y + (dy / dist) * minDist;
+        if (dist < minDist) {
+          const angle = Math.atan2(nextY - c.y, nextX - c.x);
+          nextX = c.x + Math.cos(angle) * minDist;
+          nextY = c.y + Math.sin(angle) * minDist;
         }
-      });
+      }
 
-      p.x = newX;
-      p.y = newY;
+      p.x = nextX;
+      p.y = nextY;
 
-      // Check auto-pickup of nearby loot
+      // Auto-pickup nearby loot & consumables
       this.checkPlayerLootPickup(room, p);
-    });
+    }
+  }
+
+  // Respawn a player in deathmatch mode with 2s spawn shield
+  private respawnPlayerInDeathmatch(room: RoyaleRoom, player: RoyalePlayer) {
+    // Find safe spot far from other players
+    let bestX = MAP_SIZE / 2;
+    let bestY = MAP_SIZE / 2;
+    let maxMinDist = 0;
+
+    for (let i = 0; i < 10; i++) {
+      const candidateX = 200 + Math.random() * (MAP_SIZE - 400);
+      const candidateY = 200 + Math.random() * (MAP_SIZE - 400);
+
+      let minDistToPlayer = 9999;
+      for (const other of room.players) {
+        if (other.id !== player.id && other.isAlive) {
+          const d = Math.hypot(candidateX - other.x, candidateY - other.y);
+          if (d < minDistToPlayer) minDistToPlayer = d;
+        }
+      }
+
+      if (minDistToPlayer > maxMinDist) {
+        maxMinDist = minDistToPlayer;
+        bestX = candidateX;
+        bestY = candidateY;
+      }
+    }
+
+    player.x = bestX;
+    player.y = bestY;
+    player.hp = 100;
+    player.shield = 0;
+    player.isAlive = true;
+    player.respawnAt = null;
+    player.spawnShieldEndTime = Date.now() + 2000; // 2s invincible protection
+    player.weapons = ['pistol'];
+    player.activeWeapon = 'pistol';
+    player.activeWeaponSlot = 0;
+    player.ammo.pistol = 15;
+    player.reserveAmmo.pistol = 60;
+    player.isReloading = false;
   }
 
   // Check and pickup loot
   private checkPlayerLootPickup(room: RoyaleRoom, p: RoyalePlayer, customRadius?: number) {
-    const pickupRadius = customRadius || (PLAYER_RADIUS + 25);
+    const pickupRadius = customRadius || (PLAYER_RADIUS + 30);
+    const now = Date.now();
+
     for (let i = room.loot.length - 1; i >= 0; i--) {
       const item = room.loot[i];
       const dist = Math.hypot(p.x - item.x, p.y - item.y);
-      if (dist <= pickupRadius) {
-        let picked = false;
 
-        if (item.type === 'medkit' && p.hp < p.maxHp) {
-          p.hp = Math.min(p.maxHp, p.hp + 50);
-          picked = true;
-        } else if (item.type === 'shield' && p.shield < p.maxShield) {
-          p.shield = Math.min(p.maxShield, p.shield + 50);
-          picked = true;
+      if (dist < pickupRadius) {
+        let pickedUp = false;
+
+        // Consumables: Always Auto-Pickup
+        if (item.type === 'bandage') {
+          if (p.hp < p.maxHp) {
+            p.hp = Math.min(p.maxHp, p.hp + 25);
+            this.pushDamagePopup(room, p.x, p.y - 20, 25, '#4ade80');
+            pickedUp = true;
+          }
+        } else if (item.type === 'medkit') {
+          if (p.hp < p.maxHp) {
+            p.hp = Math.min(p.maxHp, p.hp + 60);
+            this.pushDamagePopup(room, p.x, p.y - 20, 60, '#22c55e');
+            pickedUp = true;
+          }
+        } else if (item.type === 'shield') {
+          if (p.shield < p.maxShield) {
+            p.shield = Math.min(p.maxShield, p.shield + 50);
+            this.pushDamagePopup(room, p.x, p.y - 30, 50, '#38bdf8');
+            pickedUp = true;
+          }
+        } else if (item.type === 'heavy_shield') {
+          if (p.shield < p.maxShield) {
+            p.shield = Math.min(p.maxShield, p.shield + 100);
+            this.pushDamagePopup(room, p.x, p.y - 30, 100, '#0ea5e9');
+            pickedUp = true;
+          }
         } else if (item.type === 'ammo') {
-          p.reserveAmmo.pistol = (p.reserveAmmo.pistol || 0) + 30;
-          p.reserveAmmo.shotgun = (p.reserveAmmo.shotgun || 0) + 15;
-          p.reserveAmmo.rifle = (p.reserveAmmo.rifle || 0) + 60;
-          p.reserveAmmo.sniper = (p.reserveAmmo.sniper || 0) + 10;
-          picked = true;
-        } else if (item.type.startsWith('weapon_')) {
-          const wpnName = item.type.replace('weapon_', '');
-          if (!p.weapons.includes(wpnName)) {
-            p.weapons.push(wpnName);
-            p.activeWeapon = wpnName;
-            p.ammo[wpnName] = WEAPON_CONFIGS[wpnName]?.magazine || 10;
-            p.reserveAmmo[wpnName] = (WEAPON_CONFIGS[wpnName]?.magazine || 10) * 3;
-            picked = true;
-          } else {
-            // Give ammo if already has weapon
-            p.reserveAmmo[wpnName] = (p.reserveAmmo[wpnName] || 0) + (WEAPON_CONFIGS[wpnName]?.magazine || 10);
-            picked = true;
+          // Add ammo to all weapons
+          for (const w of Object.keys(WEAPON_CONFIGS)) {
+            p.reserveAmmo[w] = (p.reserveAmmo[w] || 0) + (WEAPON_CONFIGS[w].magazine * 2);
+          }
+          pickedUp = true;
+        } else if (item.type === 'adrenaline') {
+          p.speedBuffEndTime = now + 10000; // 10s +35% speed
+          pickedUp = true;
+        } else if (item.type === 'rage') {
+          p.rageBuffEndTime = now + 10000; // 10s +50% dmg & flame bullets
+          pickedUp = true;
+        } 
+        // Weapon Pickup Logic (Max 2 Weapons)
+        else if (item.type.startsWith('weapon_')) {
+          const wName = item.type.replace('weapon_', '');
+          if (WEAPON_CONFIGS[wName]) {
+            // If player has empty slot (< 2 weapons), auto-equip into empty slot
+            if (p.weapons.length < 2 && !p.weapons.includes(wName)) {
+              p.weapons.push(wName);
+              p.activeWeapon = wName;
+              p.activeWeaponSlot = p.weapons.length - 1;
+              p.ammo[wName] = WEAPON_CONFIGS[wName].magazine;
+              p.reserveAmmo[wName] = WEAPON_CONFIGS[wName].magazine * 3;
+              pickedUp = true;
+            }
           }
         }
 
-        if (picked) {
+        if (pickedUp) {
           room.loot.splice(i, 1);
         }
       }
     }
   }
 
-  // Update Bullets & Collisions
+  // Swap active weapon with ground weapon when requested
+  public swapWeaponWithGround(room: RoyaleRoom, player: RoyalePlayer) {
+    const now = Date.now();
+    if (now - (player.lastSwapTime || 0) < 500) return; // Debounce to prevent ground loops
+
+    const pickupRadius = PLAYER_RADIUS + 45;
+    for (let i = room.loot.length - 1; i >= 0; i--) {
+      const item = room.loot[i];
+      if (item.type.startsWith('weapon_')) {
+        const dist = Math.hypot(player.x - item.x, player.y - item.y);
+        if (dist < pickupRadius) {
+          const newWeaponName = item.type.replace('weapon_', '');
+          const oldWeaponName = player.activeWeapon;
+
+          if (WEAPON_CONFIGS[newWeaponName]) {
+            // Drop old weapon to ground
+            room.loot[i] = {
+              id: `loot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              type: `weapon_${oldWeaponName}` as any,
+              x: player.x,
+              y: player.y,
+              createdAt: Date.now()
+            };
+
+            // Equip new weapon into active slot
+            const slotIdx = player.activeWeaponSlot || 0;
+            player.weapons[slotIdx] = newWeaponName;
+            player.activeWeapon = newWeaponName;
+            player.ammo[newWeaponName] = WEAPON_CONFIGS[newWeaponName].magazine;
+            player.reserveAmmo[newWeaponName] = WEAPON_CONFIGS[newWeaponName].magazine * 3;
+            player.lastSwapTime = now;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Update Bullets and handle hits
   private updateBullets(room: RoyaleRoom) {
+    const now = Date.now();
+
     for (let i = room.bullets.length - 1; i >= 0; i--) {
       const b = room.bullets[i];
       b.x += b.vx;
       b.y += b.vy;
       b.distanceTraveled += Math.hypot(b.vx, b.vy);
 
-      // Max distance check
+      let bulletDestroyed = false;
+
+      // 1. Max Range Check
       if (b.distanceTraveled >= b.maxDistance) {
+        if (b.isAoE) this.triggerAoEExplosion(room, b.x, b.y, b.damage, b.shooterId, b.aoeRadius || 65);
         room.bullets.splice(i, 1);
         continue;
       }
 
-      // Map bounds check
+      // 2. Map Boundary Check
       if (b.x < 0 || b.x > MAP_SIZE || b.y < 0 || b.y > MAP_SIZE) {
+        if (b.isAoE) this.triggerAoEExplosion(room, b.x, b.y, b.damage, b.shooterId, b.aoeRadius || 65);
         room.bullets.splice(i, 1);
         continue;
       }
 
-      // Check collision with solid rocks
-      let hitObstacle = false;
+      // 3. Obstacle Collision (Rocks block bullets)
       for (const obs of room.obstacles) {
         if (obs.type === 'rock') {
-          if (Math.hypot(b.x - obs.x, b.y - obs.y) <= obs.radius + b.radius) {
-            hitObstacle = true;
+          const dist = Math.hypot(b.x - obs.x, b.y - obs.y);
+          if (dist < obs.radius + b.radius) {
+            bulletDestroyed = true;
+            if (b.isAoE) this.triggerAoEExplosion(room, b.x, b.y, b.damage, b.shooterId, b.aoeRadius || 65);
             break;
           }
         }
       }
-      if (hitObstacle) {
+
+      if (bulletDestroyed) {
         room.bullets.splice(i, 1);
         continue;
       }
 
-      // Check collision with Crates
-      let hitCrate = false;
-      for (let cIdx = room.crates.length - 1; cIdx >= 0; cIdx--) {
-        const c = room.crates[cIdx];
-        if (Math.hypot(b.x - c.x, b.y - c.y) <= 24 + b.radius) {
-          hitCrate = true;
+      // 4. Crate Collision
+      for (let ci = room.crates.length - 1; ci >= 0; ci--) {
+        const c = room.crates[ci];
+        const dist = Math.hypot(b.x - c.x, b.y - c.y);
+        if (dist < 22 + b.radius) {
           c.hp -= b.damage;
+          this.pushDamagePopup(room, c.x, c.y - 15, b.damage, '#fbbf24');
+          bulletDestroyed = true;
+
           if (c.hp <= 0) {
-            // Drop loot
-            room.loot.push({
-              id: `loot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-              type: c.lootType as any,
-              x: c.x,
-              y: c.y
-            });
-            room.crates.splice(cIdx, 1);
+            // Drop loot from destroyed crate
+            this.dropCrateLoot(room, c);
+            room.crates.splice(ci, 1);
           }
           break;
         }
       }
-      if (hitCrate) {
+
+      if (bulletDestroyed) {
+        if (b.isAoE) this.triggerAoEExplosion(room, b.x, b.y, b.damage, b.shooterId, b.aoeRadius || 65);
         room.bullets.splice(i, 1);
         continue;
       }
 
-      // Check collision with other players
-      let hitPlayer = false;
+      // 5. Player Hit Collision
       for (const p of room.players) {
-        if (!p.isAlive || p.id === b.shooterId) continue;
+        if (p.id === b.shooterId || !p.isAlive) continue;
 
-        if (Math.hypot(b.x - p.x, b.y - p.y) <= PLAYER_RADIUS + b.radius) {
-          hitPlayer = true;
-          // Damage calculation (absorb with shield first)
-          let remainingDamage = b.damage;
-          if (p.shield > 0) {
-            if (p.shield >= remainingDamage) {
-              p.shield -= remainingDamage;
-              remainingDamage = 0;
-            } else {
-              remainingDamage -= p.shield;
-              p.shield = 0;
-            }
-          }
+        // Check if player has active spawn shield (invulnerable)
+        if (p.spawnShieldEndTime > now) continue;
 
-          p.hp -= remainingDamage;
-
-          // Check kill
-          if (p.hp <= 0) {
-            p.hp = 0;
-            const shooter = room.players.find(s => s.id === b.shooterId);
-            if (shooter) shooter.kills++;
-            this.handlePlayerDeath(room, p, shooter || null, 'Mermi');
-          }
+        const dist = Math.hypot(b.x - p.x, b.y - p.y);
+        if (dist < PLAYER_RADIUS + b.radius) {
+          bulletDestroyed = true;
+          this.applyDamageToPlayer(room, p, b.damage, b.shooterId);
           break;
         }
       }
 
-      if (hitPlayer) {
+      if (bulletDestroyed) {
+        if (b.isAoE) this.triggerAoEExplosion(room, b.x, b.y, b.damage, b.shooterId, b.aoeRadius || 65);
         room.bullets.splice(i, 1);
       }
     }
   }
 
-  // Handle Player Death
-  private handlePlayerDeath(
-    room: RoyaleRoom,
-    victim: RoyalePlayer,
-    killer: RoyalePlayer | null,
-    weaponName: string
-  ) {
-    victim.isAlive = false;
+  // Trigger AoE Explosion (for Plasma / Rocket launcher)
+  private triggerAoEExplosion(room: RoyaleRoom, x: number, y: number, damage: number, shooterId: string, radius: number) {
+    const now = Date.now();
+    for (const p of room.players) {
+      if (p.id === shooterId || !p.isAlive || p.spawnShieldEndTime > now) continue;
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d < radius + PLAYER_RADIUS) {
+        const falloff = 1 - (d / (radius + PLAYER_RADIUS));
+        const finalDmg = Math.round(damage * Math.max(0.4, falloff));
+        this.applyDamageToPlayer(room, p, finalDmg, shooterId);
+      }
+    }
 
-    // Drop all loot from victim
-    victim.weapons.forEach(w => {
-      if (w !== 'pistol') {
+    // Also damage crates in AoE radius
+    for (let ci = room.crates.length - 1; ci >= 0; ci--) {
+      const c = room.crates[ci];
+      const d = Math.hypot(c.x - x, c.y - y);
+      if (d < radius + 22) {
+        c.hp -= damage;
+        this.pushDamagePopup(room, c.x, c.y - 15, damage, '#f59e0b');
+        if (c.hp <= 0) {
+          this.dropCrateLoot(room, c);
+          room.crates.splice(ci, 1);
+        }
+      }
+    }
+  }
+
+  // Apply damage to player, absorbing with shield first
+  private applyDamageToPlayer(room: RoyaleRoom, victim: RoyalePlayer, dmg: number, shooterId: string) {
+    let remaining = dmg;
+    if (victim.shield > 0) {
+      if (victim.shield >= remaining) {
+        victim.shield -= remaining;
+        this.pushDamagePopup(room, victim.x, victim.y - 30, remaining, '#38bdf8');
+        remaining = 0;
+      } else {
+        remaining -= victim.shield;
+        this.pushDamagePopup(room, victim.x, victim.y - 30, victim.shield, '#38bdf8');
+        victim.shield = 0;
+      }
+    }
+
+    if (remaining > 0) {
+      victim.hp = Math.max(0, victim.hp - remaining);
+      this.pushDamagePopup(room, victim.x, victim.y - 15, remaining, '#ef4444');
+    }
+
+    // Check Death
+    if (victim.hp <= 0) {
+      victim.isAlive = false;
+      victim.deaths++;
+
+      const shooter = room.players.find(p => p.id === shooterId);
+      if (shooter) {
+        shooter.kills++;
+      }
+
+      // Add to killfeed
+      const kName = shooter ? shooter.username : 'Fırtına';
+      room.killfeed.unshift({
+        id: `kf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        killer: kName,
+        victim: victim.username,
+        weapon: shooter ? (WEAPON_CONFIGS[shooter.activeWeapon]?.name || 'Silah') : 'Zehirli Gaz',
+        time: Date.now()
+      });
+      if (room.killfeed.length > 5) room.killfeed.pop();
+
+      // Drop victim loot
+      if (room.mode === 'royale') {
+        // Drop weapons & medkit in classic Battle Royale
+        for (const w of victim.weapons) {
+          if (w !== 'pistol') {
+            room.loot.push({
+              id: `loot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              type: `weapon_${w}` as any,
+              x: victim.x + (Math.random() - 0.5) * 40,
+              y: victim.y + (Math.random() - 0.5) * 40,
+              createdAt: Date.now()
+            });
+          }
+        }
         room.loot.push({
-          id: `loot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          type: `weapon_${w}` as any,
-          x: victim.x + (Math.random() - 0.5) * 40,
-          y: victim.y + (Math.random() - 0.5) * 40
+          id: `loot_${Date.now()}_ammo`,
+          type: 'ammo',
+          x: victim.x + 20,
+          y: victim.y,
+          createdAt: Date.now()
+        });
+        room.loot.push({
+          id: `loot_${Date.now()}_med`,
+          type: 'medkit',
+          x: victim.x - 20,
+          y: victim.y,
+          createdAt: Date.now()
+        });
+      } else {
+        // In Deathmatch, set 3-second respawn timer & drop a random ammo or bandage
+        victim.respawnAt = Date.now() + 3000;
+        room.loot.push({
+          id: `loot_${Date.now()}_dm`,
+          type: Math.random() > 0.5 ? 'ammo' : 'bandage',
+          x: victim.x,
+          y: victim.y,
+          createdAt: Date.now()
         });
       }
-    });
+    }
+  }
 
-    room.loot.push({
-      id: `loot_${Date.now()}_ammo`,
-      type: 'ammo',
-      x: victim.x + (Math.random() - 0.5) * 30,
-      y: victim.y + (Math.random() - 0.5) * 30
-    });
-
-    room.loot.push({
-      id: `loot_${Date.now()}_med`,
-      type: 'medkit',
-      x: victim.x + (Math.random() - 0.5) * 30,
-      y: victim.y + (Math.random() - 0.5) * 30
-    });
-
-    // Add to killfeed
-    const killerName = killer ? killer.username : 'Fırtına';
-    room.killfeed.unshift({
-      id: `kf_${Date.now()}_${Math.random()}`,
-      killer: killerName,
-      victim: victim.username,
-      weapon: weaponName,
-      time: Date.now()
-    });
-
-    if (room.killfeed.length > 5) room.killfeed.pop();
-
-    this.io.to(room.id).emit('royale:player_killed', {
-      victimId: victim.id,
-      victimName: victim.username,
-      killerName,
-      aliveCount: room.players.filter(p => p.isAlive).length
+  // Push damage numbers for client animation
+  private pushDamagePopup(room: RoyaleRoom, x: number, y: number, damage: number, color: string) {
+    room.damagePopups.push({
+      id: `dp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      x: x + (Math.random() - 0.5) * 16,
+      y: y + (Math.random() - 0.5) * 16,
+      damage,
+      color,
+      createdAt: Date.now()
     });
   }
 
-  // Finish Match & Award Pot to Winner
-  private async finishMatch(room: RoyaleRoom, winner: RoyalePlayer | null) {
-    if (room.status === 'gameover') return;
+  // Drop loot when crate breaks
+  private dropCrateLoot(room: RoyaleRoom, c: RoyaleCrate) {
+    room.loot.push({
+      id: `loot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: c.lootType as any,
+      x: c.x,
+      y: c.y,
+      createdAt: Date.now()
+    });
+
+    // Extra ammo drop for rare crates
+    if (c.tier === 'rare') {
+      room.loot.push({
+        id: `loot_${Date.now()}_rare_ammo`,
+        type: 'ammo',
+        x: c.x + 25,
+        y: c.y + 15,
+        createdAt: Date.now()
+      });
+    }
+  }
+
+  // Update Storm Zone (Royale mode only)
+  private updateZone(room: RoyaleRoom, now: number) {
+    const z = room.zone;
+    if (z.isShrinking) {
+      const dx = z.targetX - z.currentX;
+      const dy = z.targetY - z.currentY;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > 1) {
+        z.currentX += (dx / dist) * z.shrinkSpeed;
+        z.currentY += (dy / dist) * z.shrinkSpeed;
+      }
+
+      if (z.currentRadius > z.targetRadius) {
+        z.currentRadius = Math.max(z.targetRadius, z.currentRadius - z.shrinkSpeed);
+      } else {
+        // Phase shrink completed, set next phase
+        z.isShrinking = false;
+        z.phase++;
+        z.damage += 3;
+        z.nextShrinkTime = now + 15000;
+        z.targetRadius = Math.max(120, z.currentRadius * 0.55);
+        z.targetX = Math.max(z.targetRadius + 100, Math.min(MAP_SIZE - z.targetRadius - 100, z.currentX + (Math.random() - 0.5) * 250));
+        z.targetY = Math.max(z.targetRadius + 100, Math.min(MAP_SIZE - z.targetRadius - 100, z.currentY + (Math.random() - 0.5) * 250));
+      }
+    }
+
+    // Apply Zone Damage every 1 second
+    if (now - room.lastZoneDamageTime >= 1000) {
+      room.lastZoneDamageTime = now;
+      for (const p of room.players) {
+        if (!p.isAlive) continue;
+        const distFromCenter = Math.hypot(p.x - z.currentX, p.y - z.currentY);
+        if (distFromCenter > z.currentRadius) {
+          this.applyDamageToPlayer(room, p, z.damage, 'zone');
+        }
+      }
+    }
+  }
+
+  // Bot AI behavior
+  private updateBots(room: RoyaleRoom, now: number) {
+    for (const bot of room.players) {
+      if (!bot.isBot || !bot.isAlive) continue;
+
+      if (!bot.botNextActionTime || now >= bot.botNextActionTime) {
+        bot.botNextActionTime = now + 400 + Math.random() * 500;
+
+        // Find nearest living enemy
+        let nearestEnemy: RoyalePlayer | null = null;
+        let minDist = 700;
+
+        for (const other of room.players) {
+          if (other.id !== bot.id && other.isAlive && other.spawnShieldEndTime <= now) {
+            const d = Math.hypot(other.x - bot.x, other.y - bot.y);
+            if (d < minDist) {
+              minDist = d;
+              nearestEnemy = other;
+            }
+          }
+        }
+
+        if (nearestEnemy) {
+          bot.botTargetEnemyId = nearestEnemy.id;
+          const angle = Math.atan2(nearestEnemy.y - bot.y, nearestEnemy.x - bot.x);
+          bot.angle = angle;
+
+          if (minDist > 260) {
+            bot.vx = Math.cos(angle);
+            bot.vy = Math.sin(angle);
+          } else if (minDist < 120) {
+            bot.vx = -Math.cos(angle);
+            bot.vy = -Math.sin(angle);
+          } else {
+            bot.vx = -Math.sin(angle);
+            bot.vy = Math.cos(angle);
+          }
+        } else {
+          bot.botTargetEnemyId = null;
+          // Wander or seek storm center
+          let targetX = MAP_SIZE / 2;
+          let targetY = MAP_SIZE / 2;
+          if (room.mode === 'royale') {
+            targetX = room.zone.currentX;
+            targetY = room.zone.currentY;
+          }
+          const angle = Math.atan2(targetY - bot.y, targetX - bot.x) + (Math.random() - 0.5) * 1.2;
+          bot.vx = Math.cos(angle) * 0.75;
+          bot.vy = Math.sin(angle) * 0.75;
+          bot.angle = angle;
+        }
+      }
+
+      // Bot Shooting
+      const wpn = bot.activeWeapon;
+      const config = WEAPON_CONFIGS[wpn] || WEAPON_CONFIGS.pistol;
+      const shouldShoot = bot.botTargetEnemyId && now - bot.lastShotTime >= config.fireRate;
+
+      if (bot.ammo[wpn] === 0 && bot.reserveAmmo[wpn] > 0 && !bot.isReloading) {
+        this.reloadWeapon(bot);
+      }
+
+      if (shouldShoot && !bot.isReloading) {
+        this.shootBullet(room, bot, bot.angle);
+      }
+    }
+  }
+
+  // Check Win Condition
+  private checkWinCondition(room: RoyaleRoom) {
+    if (room.status !== 'playing') return;
+
+    if (room.mode === 'royale') {
+      // Classic Battle Royale: Last man standing wins
+      const alivePlayers = room.players.filter(p => p.isAlive);
+      if (alivePlayers.length <= 1) {
+        const winner = alivePlayers[0] || room.players[0];
+        this.endMatch(room, winner);
+      }
+    }
+  }
+
+  // End Deathmatch when timer hits 00:00 (Winner has most kills)
+  private endDeathmatchByTime(room: RoyaleRoom) {
+    if (room.status !== 'playing') return;
+
+    // Sort players by kills descending, then by lowest deaths
+    const sorted = [...room.players].sort((a, b) => {
+      if (b.kills !== a.kills) return b.kills - a.kills;
+      return a.deaths - b.deaths;
+    });
+
+    const winner = sorted[0] || room.players[0];
+    this.endMatch(room, winner);
+  }
+
+  // End Match & Update Database Stats
+  private async endMatch(room: RoyaleRoom, winner: RoyalePlayer) {
     room.status = 'gameover';
     room.winner = winner;
 
-    if (room.tickInterval) {
-      clearInterval(room.tickInterval);
-      room.tickInterval = null;
-    }
+    if (room.timerInterval) clearInterval(room.timerInterval);
+    if (room.tickInterval) clearInterval(room.tickInterval);
 
-    // Award Pot to Winner
-    if (winner && !winner.isBot && room.pot > 0) {
-      try {
-        await this.db.execute({
-          sql: "UPDATE users SET chips = chips + ?, royale_wins = COALESCE(royale_wins, 0) + 1 WHERE id = ?",
-          args: [room.pot, winner.userId]
-        });
-
-        const userRes = await this.db.execute({
-          sql: "SELECT chips FROM users WHERE id = ?",
-          args: [winner.userId]
-        });
-        const newChips = Number(userRes.rows[0]?.chips ?? 0);
-
-        this.io.emit('chips_updated', {
-          userId: winner.userId,
-          chips: newChips,
-          message: `🏆 Battle Royale Zaferi! +${room.pot} Coin Kazandınız!`
-        });
-        this.io.emit('leaderboard_updated');
-      } catch (err) {
-        console.error('Error awarding royale pot:', err);
+    // Save statistics in database for all real human players
+    try {
+      for (const p of room.players) {
+        if (!p.isBot && p.userId > 0) {
+          const isWin = p.id === winner.id ? 1 : 0;
+          await this.db.execute({
+            sql: `UPDATE users SET 
+                    royale_wins = COALESCE(royale_wins, 0) + ?, 
+                    royale_kills = COALESCE(royale_kills, 0) + ?, 
+                    royale_matches = COALESCE(royale_matches, 0) + 1 
+                  WHERE id = ?`,
+            args: [isWin, p.kills, p.userId]
+          });
+        }
       }
+    } catch (e) {
+      console.error('Error updating Battle Royale match stats:', e);
     }
 
     this.io.to(room.id).emit('royale:game_over', {
-      winner: winner
-        ? {
-            id: winner.id,
-            userId: winner.userId,
-            username: winner.username,
-            avatar: winner.avatar,
-            kills: winner.kills,
-            isBot: winner.isBot
-          }
-        : null,
-      pot: room.pot,
+      winner,
       state: this.getPublicGameState(room)
     });
 
     this.broadcastRoomsList();
   }
 
-  // Shoot Attempt
-  public tryShoot(room: RoyaleRoom, player: RoyalePlayer, now: number) {
-    if (!player.isAlive || player.isReloading) return;
-
+  // Shoot bullet
+  private shootBullet(room: RoyaleRoom, player: RoyalePlayer, angle: number) {
+    const now = Date.now();
     const wpn = player.activeWeapon;
     const config = WEAPON_CONFIGS[wpn] || WEAPON_CONFIGS.pistol;
 
-    // Check fire rate cooldown
-    if (now - player.lastShotTime < config.fireRate) return;
+    if (player.isReloading) return;
 
-    // Check ammo
-    const currentAmmo = player.ammo[wpn] || 0;
-    if (currentAmmo <= 0) {
-      this.startReload(player, now);
+    if ((player.ammo[wpn] || 0) <= 0) {
+      this.reloadWeapon(player);
       return;
     }
 
+    player.ammo[wpn]--;
     player.lastShotTime = now;
-    player.ammo[wpn] = currentAmmo - 1;
 
-    // Spawn bullets
+    // Check rage buff (+50% damage & flame bullets)
+    const isRage = player.rageBuffEndTime > now;
+    const dmgMultiplier = isRage ? 1.5 : 1.0;
+    const bulletColor = isRage ? '#ef4444' : config.bulletColor;
+
     const pellets = config.pellets || 1;
-    for (let p = 0; p < pellets; p++) {
-      const spreadOffset = (Math.random() - 0.5) * config.spread;
-      const angle = player.angle + spreadOffset;
+    for (let i = 0; i < pellets; i++) {
+      const spreadAngle = angle + (Math.random() - 0.5) * config.spread;
+      const bulletSpeed = config.speed;
+      const vx = Math.cos(spreadAngle) * bulletSpeed;
+      const vy = Math.sin(spreadAngle) * bulletSpeed;
 
-      const spawnX = player.x + Math.cos(player.angle) * (PLAYER_RADIUS + 12);
-      const spawnY = player.y + Math.sin(player.angle) * (PLAYER_RADIUS + 12);
-
-      room.bullets.push({
-        id: `b_${Date.now()}_${Math.random()}`,
+      const bullet: RoyaleBullet = {
+        id: `b_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         shooterId: player.id,
-        x: spawnX,
-        y: spawnY,
-        vx: Math.cos(angle) * config.speed,
-        vy: Math.sin(angle) * config.speed,
-        damage: config.damage,
+        x: player.x + Math.cos(angle) * (PLAYER_RADIUS + 6),
+        y: player.y + Math.sin(angle) * (PLAYER_RADIUS + 6),
+        vx,
+        vy,
+        damage: Math.round(config.damage * dmgMultiplier),
         distanceTraveled: 0,
         maxDistance: config.maxRange,
-        color: config.bulletColor,
-        radius: config.bulletRadius
-      });
-    }
+        color: bulletColor,
+        radius: config.bulletRadius,
+        isAoE: config.isAoE,
+        aoeRadius: config.aoeRadius,
+        isRage
+      };
 
-    // Auto reload if empty after this shot
-    if (player.ammo[wpn] <= 0) {
-      this.startReload(player, now);
+      room.bullets.push(bullet);
     }
   }
 
-  // Start Reload
-  public startReload(player: RoyalePlayer, now: number) {
-    if (player.isReloading) return;
+  // Reload active weapon
+  public reloadWeapon(player: RoyalePlayer) {
+    const now = Date.now();
     const wpn = player.activeWeapon;
-    const reserve = player.reserveAmmo[wpn] || 0;
-    if (reserve <= 0) return;
-
     const config = WEAPON_CONFIGS[wpn] || WEAPON_CONFIGS.pistol;
+
+    if (player.isReloading) return;
     if ((player.ammo[wpn] || 0) >= config.magazine) return;
+    if ((player.reserveAmmo[wpn] || 0) <= 0) return;
 
     player.isReloading = true;
     player.reloadEndTime = now + config.reloadTime;
   }
 
-  // Switch Weapon by name, slot index (0-3), or cycle ('next' / 'prev')
+  // Switch weapon slot (0 or 1), cycle 'next' / 'prev', or by weapon name
   public switchWeapon(player: RoyalePlayer, weaponNameOrSlot: string | number) {
     if (!player.isAlive || player.isReloading) return;
+
     if (typeof weaponNameOrSlot === 'number') {
-      if (player.weapons[weaponNameOrSlot]) {
-        player.activeWeapon = player.weapons[weaponNameOrSlot];
+      const slot = weaponNameOrSlot === 1 ? 1 : 0;
+      if (player.weapons[slot]) {
+        player.activeWeaponSlot = slot;
+        player.activeWeapon = player.weapons[slot];
       }
-    } else if (weaponNameOrSlot === 'next') {
-      const idx = player.weapons.indexOf(player.activeWeapon);
-      const nextIdx = (idx + 1) % Math.max(1, player.weapons.length);
-      if (player.weapons[nextIdx]) {
-        player.activeWeapon = player.weapons[nextIdx];
+    } else if (weaponNameOrSlot === 'next' || weaponNameOrSlot === 'prev') {
+      if (player.weapons.length > 1) {
+        const newSlot = player.activeWeaponSlot === 0 ? 1 : 0;
+        player.activeWeaponSlot = newSlot;
+        player.activeWeapon = player.weapons[newSlot];
       }
-    } else if (weaponNameOrSlot === 'prev') {
-      const idx = player.weapons.indexOf(player.activeWeapon);
-      const prevIdx = (idx - 1 + player.weapons.length) % Math.max(1, player.weapons.length);
-      if (player.weapons[prevIdx]) {
-        player.activeWeapon = player.weapons[prevIdx];
+    } else if (typeof weaponNameOrSlot === 'string') {
+      const idx = player.weapons.indexOf(weaponNameOrSlot);
+      if (idx !== -1) {
+        player.activeWeaponSlot = idx;
+        player.activeWeapon = weaponNameOrSlot;
       }
-    } else if (typeof weaponNameOrSlot === 'string' && player.weapons.includes(weaponNameOrSlot)) {
-      player.activeWeapon = weaponNameOrSlot;
     }
   }
 
-  // Process Player Input
+  // Process player input from client (30 FPS)
   public processPlayerInput(
     roomId: string,
     userId: number,
@@ -1219,185 +1452,270 @@ export class BattleRoyaleManager {
       reload?: boolean;
       switchWeapon?: string | number;
       pickup?: boolean;
+      swapWeapon?: boolean;
     }
   ) {
     const room = this.rooms.get(roomId);
     if (!room || room.status !== 'playing') return;
 
-    const player = room.players.find(p => !p.isBot && p.userId === userId);
+    const player = room.players.find(p => p.userId === userId && !p.isBot);
     if (!player || !player.isAlive) return;
 
-    const now = Date.now();
-
-    // Movement speed: 5.2 pixels per tick
-    const maxSpeed = 5.2;
+    // Movement
     if (typeof input.vx === 'number' && typeof input.vy === 'number') {
       const len = Math.hypot(input.vx, input.vy);
-      if (len > 0.05) {
-        player.vx = (input.vx / len) * maxSpeed;
-        player.vy = (input.vy / len) * maxSpeed;
+      if (len > 0) {
+        player.vx = input.vx / len;
+        player.vy = input.vy / len;
       } else {
         player.vx = 0;
         player.vy = 0;
       }
-    } else {
-      player.vx = 0;
-      player.vy = 0;
     }
-    if (!Number.isFinite(player.vx)) player.vx = 0;
-    if (!Number.isFinite(player.vy)) player.vy = 0;
 
-    // Aim Angle
-    if (typeof input.angle === 'number' && Number.isFinite(input.angle)) {
+    // Aim angle
+    if (typeof input.angle === 'number') {
       player.angle = input.angle;
     }
 
     // Shooting
     if (input.shooting) {
-      this.tryShoot(room, player, now);
+      const wpn = player.activeWeapon;
+      const config = WEAPON_CONFIGS[wpn] || WEAPON_CONFIGS.pistol;
+      const now = Date.now();
+      if (now - player.lastShotTime >= config.fireRate) {
+        this.shootBullet(room, player, player.angle);
+      }
     }
 
     // Reload
     if (input.reload) {
-      this.startReload(player, now);
+      this.reloadWeapon(player);
     }
 
     // Switch Weapon
-    if (typeof input.switchWeapon === 'string' || typeof input.switchWeapon === 'number') {
+    if (input.switchWeapon !== undefined) {
       this.switchWeapon(player, input.switchWeapon);
     }
 
-    // Manual pickup via keypress E / F
-    if (input.pickup) {
+    // Manual pickup / swap weapon on ground
+    if (input.swapWeapon || input.pickup) {
+      this.swapWeaponWithGround(room, player);
       this.checkPlayerLootPickup(room, player, PLAYER_RADIUS + 50);
     }
   }
 
   // Generate obstacles (Rocks & Bushes)
-  private generateObstacles(): RoyaleObstacle[] {
-    const obstacles: RoyaleObstacle[] = [];
-    const count = 38;
+  private generateObstacles(room: RoyaleRoom) {
+    room.obstacles = [];
 
-    for (let i = 0; i < count; i++) {
-      const isRock = Math.random() > 0.45;
-      const radius = isRock ? 30 + Math.random() * 22 : 45 + Math.random() * 25;
-      const x = 200 + Math.random() * (MAP_SIZE - 400);
-      const y = 200 + Math.random() * (MAP_SIZE - 400);
-
-      // Keep center somewhat clear
-      if (Math.hypot(x - MAP_SIZE / 2, y - MAP_SIZE / 2) < 200) continue;
-
-      obstacles.push({
-        id: `obs_${i}`,
-        type: isRock ? 'rock' : 'bush',
-        x,
-        y,
-        radius
+    // Rocks (hard cover, blocks bullets)
+    for (let i = 0; i < 28; i++) {
+      room.obstacles.push({
+        id: `obs_rock_${i}`,
+        type: 'rock',
+        x: 150 + Math.random() * (MAP_SIZE - 300),
+        y: 150 + Math.random() * (MAP_SIZE - 300),
+        radius: 28 + Math.random() * 20
       });
     }
-    return obstacles;
+
+    // Bushes (soft foliage, hides players inside)
+    for (let i = 0; i < 34; i++) {
+      room.obstacles.push({
+        id: `obs_bush_${i}`,
+        type: 'bush',
+        x: 100 + Math.random() * (MAP_SIZE - 200),
+        y: 100 + Math.random() * (MAP_SIZE - 200),
+        radius: 36 + Math.random() * 24
+      });
+    }
   }
 
-  // Generate Crates
-  private generateCrates(): RoyaleCrate[] {
-    const crates: RoyaleCrate[] = [];
-    const count = 28;
-    const lootPool = [
+  // Generate crates (Normal wooden & Rare golden crates)
+  private generateCrates(room: RoyaleRoom) {
+    room.crates = [];
+    const normalLootPool = [
       'weapon_shotgun',
-      'weapon_shotgun',
+      'weapon_smg',
       'weapon_rifle',
-      'weapon_rifle',
-      'weapon_sniper',
+      'bandage',
       'medkit',
       'shield',
       'ammo',
-      'ammo'
+      'adrenaline'
+    ];
+    const rareLootPool = [
+      'weapon_sniper',
+      'weapon_plasma',
+      'heavy_shield',
+      'rage',
+      'medkit'
     ];
 
-    for (let i = 0; i < count; i++) {
-      const x = 250 + Math.random() * (MAP_SIZE - 500);
-      const y = 250 + Math.random() * (MAP_SIZE - 500);
-      const lootType = lootPool[Math.floor(Math.random() * lootPool.length)];
-
-      crates.push({
-        id: `crate_${i}`,
-        x,
-        y,
+    // 25 Normal Crates
+    for (let i = 0; i < 25; i++) {
+      const lootType = normalLootPool[Math.floor(Math.random() * normalLootPool.length)];
+      room.crates.push({
+        id: `crate_norm_${i}`,
+        x: 180 + Math.random() * (MAP_SIZE - 360),
+        y: 180 + Math.random() * (MAP_SIZE - 360),
         hp: 45,
         maxHp: 45,
+        tier: 'normal',
         lootType
       });
     }
-    return crates;
+
+    // 10 Rare Golden/Purple Crates
+    for (let i = 0; i < 10; i++) {
+      const lootType = rareLootPool[Math.floor(Math.random() * rareLootPool.length)];
+      room.crates.push({
+        id: `crate_rare_${i}`,
+        x: 250 + Math.random() * (MAP_SIZE - 500),
+        y: 250 + Math.random() * (MAP_SIZE - 500),
+        hp: 90,
+        maxHp: 90,
+        tier: 'rare',
+        lootType
+      });
+    }
   }
 
-  // Destroy Room
-  public destroyRoom(roomId: string) {
-    const room = this.rooms.get(roomId);
-    if (!room) return;
+  // Generate initial ground loot
+  private generateInitialLoot(room: RoyaleRoom) {
+    room.loot = [];
+    const initialPool = [
+      'weapon_shotgun',
+      'weapon_smg',
+      'weapon_rifle',
+      'weapon_sniper',
+      'weapon_plasma',
+      'bandage',
+      'medkit',
+      'shield',
+      'heavy_shield',
+      'ammo',
+      'adrenaline',
+      'rage'
+    ];
 
-    if (room.timerInterval) clearInterval(room.timerInterval);
-    if (room.tickInterval) clearInterval(room.tickInterval);
-
-    this.rooms.delete(roomId);
-    this.broadcastRoomsList();
+    for (let i = 0; i < 30; i++) {
+      const t = initialPool[Math.floor(Math.random() * initialPool.length)];
+      room.loot.push({
+        id: `loot_init_${i}`,
+        type: t as any,
+        x: 120 + Math.random() * (MAP_SIZE - 240),
+        y: 120 + Math.random() * (MAP_SIZE - 240),
+        createdAt: Date.now()
+      });
+    }
   }
 
-  // Public Room List info
-  public getRoomsList() {
-    return Array.from(this.rooms.values()).map(r => ({
-      id: r.id,
-      title: r.title,
-      hostId: r.hostId,
-      hostName: r.hostName,
-      hostAvatar: r.hostAvatar,
-      playerCount: r.players.length,
-      capacity: r.capacity,
-      buyIn: r.buyIn,
-      pot: r.pot,
-      status: r.status,
-      isPrivate: false,
-      createdAt: r.createdAt
-    }));
+  // Spawn players in circle formation around map
+  private spawnPlayers(room: RoyaleRoom) {
+    const total = room.players.length;
+    const center = MAP_SIZE / 2;
+    const spawnRadius = 600;
+
+    room.players.forEach((p, idx) => {
+      const angle = (idx / total) * Math.PI * 2;
+      p.x = center + Math.cos(angle) * spawnRadius;
+      p.y = center + Math.sin(angle) * spawnRadius;
+      p.hp = 100;
+      p.shield = 0;
+      p.isAlive = true;
+      p.kills = 0;
+      p.deaths = 0;
+      p.weapons = ['pistol'];
+      p.activeWeapon = 'pistol';
+      p.activeWeaponSlot = 0;
+      p.ammo.pistol = 15;
+      p.reserveAmmo.pistol = 60;
+      p.isReloading = false;
+      p.respawnAt = null;
+      p.spawnShieldEndTime = 0;
+      p.speedBuffEndTime = 0;
+      p.rageBuffEndTime = 0;
+    });
   }
 
+  // Get Win/Kill Leaderboard
+  public async getLeaderboard(sortBy: 'wins' | 'kills' = 'wins'): Promise<any[]> {
+    try {
+      const orderCol = sortBy === 'kills' ? 'royale_kills' : 'royale_wins';
+      const res = await this.db.execute({
+        sql: `SELECT id, username, avatar, color, 
+                     COALESCE(royale_wins, 0) as wins, 
+                     COALESCE(royale_kills, 0) as kills, 
+                     COALESCE(royale_matches, 0) as matches 
+              FROM users 
+              WHERE (royale_wins > 0 OR royale_kills > 0 OR royale_matches > 0)
+              ORDER BY ${orderCol} DESC, royale_wins DESC 
+              LIMIT 25`,
+        args: []
+      });
+
+      return res.rows.map((row: any, index: number) => ({
+        rank: index + 1,
+        id: Number(row.id),
+        username: String(row.username || 'Oyuncu'),
+        avatar: row.avatar ? String(row.avatar) : null,
+        color: row.color ? String(row.color) : '#3b82f6',
+        wins: Number(row.wins || 0),
+        kills: Number(row.kills || 0),
+        matches: Number(row.matches || 0)
+      }));
+    } catch (e) {
+      console.error('Error fetching Battle Royale leaderboard:', e);
+      return [];
+    }
+  }
+
+  // Broadcast unified active rooms list
   public broadcastRoomsList() {
-    this.io.emit('royale:rooms_list', this.getRoomsList());
-    this.io.emit('active_tables_updated', this.getUnifiedTables());
+    const list = this.getRoomsList();
+    this.io.emit('royale:rooms_list', list);
   }
 
-  // Unified tables for platform Active Tables list
-  public getUnifiedTables() {
-    return Array.from(this.rooms.values()).map(r => ({
-      id: r.id,
-      gameType: 'royale',
-      title: r.title,
-      hostId: r.hostId,
-      hostName: r.hostName,
-      hostAvatar: r.hostAvatar,
-      playerCount: r.players.filter(p => !p.isBot).length,
-      maxPlayers: r.capacity,
-      botCount: r.players.filter(p => p.isBot).length,
-      status: r.status === 'lobby' ? 'Lobi Bekliyor' : 'Oyunda',
-      minBet: r.buyIn,
-      maxBet: r.buyIn,
-      minBalance: r.buyIn,
-      isPrivate: false,
-      createdAt: 'Bugün',
-      updatedAt: Date.now()
-    }));
+  // Broadcast single room state
+  public broadcastRoomState(room: RoyaleRoom) {
+    this.io.to(room.id).emit('royale:room_state', this.getPublicRoomState(room));
   }
 
-  // Public Room State for Lobby
+  // Get public rooms list for lobby
+  public getRoomsList() {
+    const list: any[] = [];
+    for (const [, r] of this.rooms) {
+      list.push({
+        id: r.id,
+        title: r.title,
+        hostId: r.hostId,
+        hostName: r.hostName,
+        hostAvatar: r.hostAvatar,
+        playerCount: r.players.length,
+        capacity: r.capacity,
+        mode: r.mode,
+        duration: r.duration,
+        status: r.status,
+        createdAt: r.createdAt
+      });
+    }
+    return list;
+  }
+
+  // Public Room state
   public getPublicRoomState(r: RoyaleRoom) {
     return {
       id: r.id,
       title: r.title,
       hostId: r.hostId,
       hostName: r.hostName,
+      hostAvatar: r.hostAvatar,
       capacity: r.capacity,
-      buyIn: r.buyIn,
-      pot: r.pot,
+      mode: r.mode,
+      duration: r.duration,
+      matchTimeRemaining: r.matchTimeRemaining,
       status: r.status,
       countdown: r.countdown,
       players: r.players.map(p => ({
@@ -1408,19 +1726,22 @@ export class BattleRoyaleManager {
         color: p.color,
         isBot: p.isBot,
         isHost: p.isHost,
-        ready: p.ready
+        ready: p.ready,
+        kills: p.kills,
+        deaths: p.deaths,
+        isAlive: p.isAlive
       }))
     };
   }
 
-  // Public Full Game State for Canvas
+  // Public Game state for 30 FPS sync
   public getPublicGameState(r: RoyaleRoom) {
     return {
       id: r.id,
-      title: r.title,
       status: r.status,
-      pot: r.pot,
-      countdown: r.countdown,
+      mode: r.mode,
+      matchTimeRemaining: r.matchTimeRemaining,
+      duration: r.duration,
       players: r.players.map(p => ({
         id: p.id,
         userId: p.userId,
@@ -1429,60 +1750,77 @@ export class BattleRoyaleManager {
         color: p.color,
         isBot: p.isBot,
         isHost: p.isHost,
-        x: Number.isFinite(p.x) ? Math.round(p.x * 10) / 10 : MAP_SIZE / 2,
-        y: Number.isFinite(p.y) ? Math.round(p.y * 10) / 10 : MAP_SIZE / 2,
-        vx: Number.isFinite(p.vx) ? p.vx : 0,
-        vy: Number.isFinite(p.vy) ? p.vy : 0,
-        angle: Number.isFinite(p.angle) ? p.angle : 0,
+        x: p.x,
+        y: p.y,
+        angle: p.angle,
         hp: p.hp,
         maxHp: p.maxHp,
         shield: p.shield,
         maxShield: p.maxShield,
         activeWeapon: p.activeWeapon,
+        activeWeaponSlot: p.activeWeaponSlot,
         weapons: p.weapons,
         ammo: p.ammo,
         reserveAmmo: p.reserveAmmo,
         isReloading: p.isReloading,
         isAlive: p.isAlive,
         kills: p.kills,
-        spectating: p.spectating
+        deaths: p.deaths,
+        spectating: p.spectating,
+        respawnAt: p.respawnAt,
+        spawnShieldEndTime: p.spawnShieldEndTime,
+        speedBuffEndTime: p.speedBuffEndTime,
+        rageBuffEndTime: p.rageBuffEndTime
       })),
-      bullets: r.bullets.map(b => ({
-        id: b.id,
-        x: Math.round(b.x),
-        y: Math.round(b.y),
-        color: b.color,
-        radius: b.radius
-      })),
-      crates: r.crates.map(c => ({
-        id: c.id,
-        x: c.x,
-        y: c.y,
-        hp: c.hp,
-        maxHp: c.maxHp
-      })),
+      bullets: r.bullets,
+      crates: r.crates,
       loot: r.loot,
       obstacles: r.obstacles,
-      zone: {
-        currentX: Math.round(r.zone.currentX),
-        currentY: Math.round(r.zone.currentY),
-        currentRadius: Math.round(r.zone.currentRadius),
-        targetX: Math.round(r.zone.targetX),
-        targetY: Math.round(r.zone.targetY),
-        targetRadius: Math.round(r.zone.targetRadius),
-        isShrinking: r.zone.isShrinking,
-        phase: r.zone.phase,
-        damage: r.zone.damage
-      },
+      zone: r.zone,
+      damagePopups: r.damagePopups,
       killfeed: r.killfeed,
-      winner: r.winner
-        ? {
-            id: r.winner.id,
-            userId: r.winner.userId,
-            username: r.winner.username,
-            kills: r.winner.kills
-          }
-        : null
+      winner: r.winner ? {
+        id: r.winner.id,
+        userId: r.winner.userId,
+        username: r.winner.username,
+        avatar: r.winner.avatar,
+        kills: r.winner.kills
+      } : null
     };
+  }
+
+  // Unified tables for global active tables list
+  public getUnifiedTables() {
+    const list: any[] = [];
+    for (const [, r] of this.rooms) {
+      list.push({
+        id: r.id,
+        name: r.title,
+        gameType: 'royale',
+        gameTitle: r.mode === 'deathmatch' ? 'Mini Battle Royale (Ölüm Maçı)' : 'Mini Battle Royale (Hayatta Kalma)',
+        capacity: r.capacity,
+        playerCount: r.players.length,
+        status: r.status === 'lobby' ? 'waiting' : 'playing',
+        players: r.players.map(p => ({
+          userId: p.userId,
+          username: p.username,
+          avatar: p.avatar,
+          isHost: p.isHost
+        })),
+        createdAt: r.createdAt
+      });
+    }
+    return list;
+  }
+
+  // Destroy room completely
+  public destroyRoom(roomId: string) {
+    const room = this.rooms.get(roomId);
+    if (room) {
+      if (room.timerInterval) clearInterval(room.timerInterval);
+      if (room.tickInterval) clearInterval(room.tickInterval);
+      this.rooms.delete(roomId);
+      this.broadcastRoomsList();
+    }
   }
 }
