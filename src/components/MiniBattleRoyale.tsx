@@ -3,7 +3,8 @@ import { Socket } from 'socket.io-client';
 import { 
   Trophy, Users, Bot, Crown, ArrowLeft, RefreshCw, Plus, Play, Shield, 
   Flame, Crosshair, Volume2, VolumeX, Maximize2, Minimize2, 
-  Smartphone, Keyboard, AlertTriangle, Coins, Zap, Skull
+  Smartphone, Keyboard, AlertTriangle, Coins, Zap, Skull,
+  HelpCircle, MousePointer, Info, CheckCircle2, Move
 } from 'lucide-react';
 import Avatar from './Avatar';
 import { WEAPON_CONFIGS, MAP_SIZE } from '../server/battleRoyaleServer';
@@ -176,6 +177,8 @@ export default function MiniBattleRoyale({
   const keysPressed = useRef<Record<string, boolean>>({});
   const mousePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isMouseDown = useRef<boolean>(false);
+  const isSpaceDown = useRef<boolean>(false);
+  const [showControlsModal, setShowControlsModal] = useState<boolean>(false);
 
   // Virtual Touch Joysticks
   const touchMoveOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -425,7 +428,7 @@ export default function MiniBattleRoyale({
         }
       }
 
-      if (isMouseDown.current) shooting = true;
+      if (isMouseDown.current || isSpaceDown.current) shooting = true;
 
       // 2. Touch Mode Virtual Joystick overrides
       if (touchMoveOrigin.current && touchMoveCurrent.current) {
@@ -452,22 +455,37 @@ export default function MiniBattleRoyale({
         shooting = true;
       }
 
+      let pickup = false;
+      if (
+        keysPressed.current['KeyE'] || keysPressed.current['KeyF'] ||
+        keysPressed.current['e'] || keysPressed.current['E'] ||
+        keysPressed.current['f'] || keysPressed.current['F']
+      ) {
+        pickup = true;
+      }
+
       socket.emit('royale:input', {
         vx,
         vy,
         angle,
-        shooting
+        shooting,
+        pickup
       });
     }, 1000 / 30);
 
     return () => clearInterval(inputTimer);
   }, [view, socket, currentUserId, controlMode]);
 
-  // Desktop Controls Event Listeners (WASD, R, 1-4, Click)
+  // Desktop Controls Event Listeners (WASD, Arrows, Space, R, Q, E, F, 1-4, Click, Wheel)
   useEffect(() => {
     if (view !== 'game') return;
 
     const onKeyDown = (e: KeyboardEvent) => {
+      // Prevent browser default scroll for game keys
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
+
       keysPressed.current[e.code] = true;
       if (e.key) {
         keysPressed.current[e.key] = true;
@@ -475,16 +493,35 @@ export default function MiniBattleRoyale({
         keysPressed.current[e.key.toLowerCase()] = true;
       }
 
+      if (e.code === 'Space') {
+        isSpaceDown.current = true;
+      }
+
+      // Reload [R]
       if (e.code === 'KeyR' || e.key === 'r' || e.key === 'R') {
         socket?.emit('royale:input', { reload: true });
-      } else if (e.code === 'Digit1' || e.key === '1') {
-        socket?.emit('royale:input', { switchWeapon: 'pistol' });
-      } else if (e.code === 'Digit2' || e.key === '2') {
-        socket?.emit('royale:input', { switchWeapon: 'shotgun' });
-      } else if (e.code === 'Digit3' || e.key === '3') {
-        socket?.emit('royale:input', { switchWeapon: 'rifle' });
-      } else if (e.code === 'Digit4' || e.key === '4') {
-        socket?.emit('royale:input', { switchWeapon: 'sniper' });
+      }
+      // Pickup / Loot [E] / [F]
+      else if (e.code === 'KeyE' || e.key === 'e' || e.key === 'E' || e.code === 'KeyF' || e.key === 'f' || e.key === 'F') {
+        socket?.emit('royale:input', { pickup: true });
+      }
+      // Quick Cycle Weapon [Q]
+      else if (e.code === 'KeyQ' || e.key === 'q' || e.key === 'Q') {
+        socket?.emit('royale:input', { switchWeapon: 'next' });
+      }
+      // Slots 1 to 4 (Direct number keys or numpad)
+      else if (e.code === 'Digit1' || e.code === 'Numpad1' || e.key === '1') {
+        socket?.emit('royale:input', { switchWeapon: 0 });
+      } else if (e.code === 'Digit2' || e.code === 'Numpad2' || e.key === '2') {
+        socket?.emit('royale:input', { switchWeapon: 1 });
+      } else if (e.code === 'Digit3' || e.code === 'Numpad3' || e.key === '3') {
+        socket?.emit('royale:input', { switchWeapon: 2 });
+      } else if (e.code === 'Digit4' || e.code === 'Numpad4' || e.key === '4') {
+        socket?.emit('royale:input', { switchWeapon: 3 });
+      }
+      // Toggle Key Help [H]
+      else if (e.code === 'KeyH' || e.key === 'h' || e.key === 'H') {
+        setShowControlsModal(prev => !prev);
       }
     };
 
@@ -494,6 +531,9 @@ export default function MiniBattleRoyale({
         keysPressed.current[e.key] = false;
         keysPressed.current[e.key.toUpperCase()] = false;
         keysPressed.current[e.key.toLowerCase()] = false;
+      }
+      if (e.code === 'Space') {
+        isSpaceDown.current = false;
       }
     };
 
@@ -514,11 +554,18 @@ export default function MiniBattleRoyale({
       if (e.button === 0) isMouseDown.current = false;
     };
 
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) > 5) {
+        socket?.emit('royale:input', { switchWeapon: e.deltaY > 0 ? 'next' : 'prev' });
+      }
+    };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('wheel', onWheel, { passive: true });
 
     return () => {
       window.removeEventListener('keydown', onKeyDown);
@@ -526,7 +573,9 @@ export default function MiniBattleRoyale({
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('wheel', onWheel);
       isMouseDown.current = false;
+      isSpaceDown.current = false;
       keysPressed.current = {};
     };
   }, [view, socket]);
@@ -1036,6 +1085,9 @@ export default function MiniBattleRoyale({
   const aliveCount = gameStateRef.current?.players.filter(p => p.isAlive).length || 0;
   const totalCount = gameStateRef.current?.players.length || 0;
   const isWinner = gameStateRef.current?.winner?.userId === currentUserId;
+  const nearbyLoot = myPlayer && gameStateRef.current?.loot?.find(l => 
+    Math.hypot(l.x - myPlayer.x, l.y - myPlayer.y) < 70
+  );
 
   return (
     <div 
@@ -1323,6 +1375,16 @@ export default function MiniBattleRoyale({
                   </>
                 )}
               </button>
+
+              {/* Keyboard Controls Guide Button */}
+              <button
+                onClick={() => setShowControlsModal(true)}
+                className="px-3 py-1.5 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs font-bold text-amber-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Klavye ve Fare Kontrolleri Rehberi"
+              >
+                <Keyboard size={14} className="text-amber-400" />
+                <span>⌨️ Tuş Rehberi</span>
+              </button>
             </div>
           </div>
 
@@ -1404,6 +1466,31 @@ export default function MiniBattleRoyale({
                 </div>
               );
             })}
+          </div>
+
+          {/* Keyboard Controls Summary Card in Lobby */}
+          <div className="mt-6 p-4 rounded-3xl bg-slate-900/60 border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+                <Keyboard size={20} />
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-white flex items-center gap-2">
+                  <span>🎮 Klavye ve Fare Kontrolleri Özeti</span>
+                  <span className="text-[10px] text-amber-400 font-mono">Hibrit / PC & Tablet</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  WASD: Hareket • Fare: 360° Nişan • Sol Tık / Boşluk: Ateş • E/F: Eşya Al • R: Şarjör • 1-4 / Q / Scroll: Silah
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowControlsModal(true)}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer self-start md:self-auto"
+            >
+              <span>Detaylı Tuş Rehberi</span>
+              <span className="font-mono text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-amber-400">[H]</span>
+            </button>
           </div>
 
           {/* Lobby Bottom Controls */}
@@ -1533,6 +1620,15 @@ export default function MiniBattleRoyale({
                 </button>
 
                 <button
+                  onClick={() => setShowControlsModal(true)}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-900/80 backdrop-blur-md border border-amber-500/40 text-[11px] font-bold text-amber-300 hover:text-amber-100 hover:border-amber-400 transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
+                  title="Tuş Kılavuzu (H / F1)"
+                >
+                  <Keyboard size={13} className="text-amber-400" />
+                  <span>Tuşlar [H]</span>
+                </button>
+
+                <button
                   onClick={toggleFullscreen}
                   className="p-1.5 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
                   title="Tam Ekran"
@@ -1592,9 +1688,77 @@ export default function MiniBattleRoyale({
             </div>
           </div>
 
+          {/* FLOATING NEARBY LOOT PROMPT */}
+          {nearbyLoot && myPlayer?.isAlive && (
+            <div className="absolute bottom-28 left-1/2 -translate-x-1/2 pointer-events-auto z-20 flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-amber-500/60 shadow-2xl text-xs font-bold text-white animate-bounce">
+              <kbd className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black font-mono text-xs shadow">
+                E
+              </kbd>
+              <span className="text-slate-400">veya</span>
+              <kbd className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black font-mono text-xs shadow">
+                F
+              </kbd>
+              <span className="text-amber-300 ml-1">
+                {nearbyLoot.type.startsWith('weapon_')
+                  ? `${nearbyLoot.type.replace('weapon_', '').toUpperCase()} Silahını Al`
+                  : nearbyLoot.type === 'medkit'
+                  ? 'İlk Yardım Kiti Al (+50 Can)'
+                  : nearbyLoot.type === 'shield'
+                  ? 'Zırh Yeleği Al (+50 Kalkan)'
+                  : 'Mermi Kutusu Al'}
+              </span>
+            </div>
+          )}
+
+          {/* QUICK KEYBOARD SHORTCUTS BAR (CENTER BOTTOM) */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto z-20 hidden lg:flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-800 shadow-2xl text-[11px] text-slate-300 select-none">
+            <div className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-white font-mono border border-slate-700 text-[10px]">WASD</kbd>
+              <span className="text-slate-400">Hareket</span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <div className="flex items-center gap-1">
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-white font-mono border border-slate-700 text-[10px]">Fare</span>
+              <span className="text-slate-400">360° Nişan</span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <div className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/40 text-[10px]">Sol Tık / Boşluk</kbd>
+              <span className="text-slate-400">Ateş</span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <div className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-white font-mono border border-slate-700 text-[10px]">R</kbd>
+              <span className="text-slate-400">Şarjör</span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <div className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-white font-mono border border-slate-700 text-[10px]">1-4 / Q / Scroll</kbd>
+              <span className="text-slate-400">Silah</span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <div className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-white font-mono border border-slate-700 text-[10px]">E / F</kbd>
+              <span className="text-slate-400">Eşya Al</span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <button
+              onClick={() => setShowControlsModal(true)}
+              className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-bold ml-1 cursor-pointer transition-colors"
+            >
+              <kbd className="px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-300 font-mono border border-amber-500/50 text-[10px]">H</kbd>
+              <span>Rehber</span>
+            </button>
+          </div>
+
           {/* HUD LAYER: BOTTOM RIGHT WEAPON SLOTS */}
           <div className="absolute bottom-4 right-4 pointer-events-auto flex items-end gap-2 z-20">
             <div className="p-3 rounded-2xl bg-slate-900/85 backdrop-blur-md border border-slate-800/80 shadow-xl space-y-2">
+              <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 font-mono">
+                <span>Silah Yuvaları [1 - 4]</span>
+                <span className="text-amber-400/90">[Q / Scroll ↕]</span>
+              </div>
+
               <div className="flex items-center gap-1.5">
                 {['pistol', 'shotgun', 'rifle', 'sniper'].map((wType, idx) => {
                   const hasW = myPlayer?.weapons.includes(wType);
@@ -1604,8 +1768,9 @@ export default function MiniBattleRoyale({
                     <button
                       key={wType}
                       disabled={!hasW}
-                      onClick={() => socket?.emit('royale:input', { switchWeapon: wType })}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                      onClick={() => socket?.emit('royale:input', { switchWeapon: idx })}
+                      title={`[${idx + 1}] ${WEAPON_CONFIGS[wType]?.name} Kuşan`}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer flex items-center gap-1.5 ${
                         isAct
                           ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30 scale-105'
                           : hasW
@@ -1613,21 +1778,36 @@ export default function MiniBattleRoyale({
                           : 'bg-slate-900/50 text-slate-600 opacity-40 cursor-not-allowed'
                       }`}
                     >
-                      <span className="font-mono opacity-60 mr-1">{idx + 1}</span>
+                      <span className={`px-1.5 py-0.2 rounded font-mono text-[9px] font-bold ${
+                        isAct ? 'bg-slate-950/25 text-slate-950 border border-slate-950/30' : 'bg-slate-700/60 text-slate-300 border border-slate-600'
+                      }`}>
+                        {idx + 1}
+                      </span>
                       <span>{WEAPON_CONFIGS[wType]?.name.split(' ')[0] || wType}</span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Ammo Counter */}
-              <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-300 pt-1 border-t border-slate-800">
-                <span className="text-amber-400 font-extrabold uppercase">
-                  {WEAPON_CONFIGS[myPlayer?.activeWeapon || 'pistol']?.name}
-                </span>
+              {/* Ammo Counter & Quick Reload */}
+              <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-300 pt-1.5 border-t border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-400 font-extrabold uppercase">
+                    {WEAPON_CONFIGS[myPlayer?.activeWeapon || 'pistol']?.name}
+                  </span>
+                  <button
+                    onClick={() => socket?.emit('royale:input', { reload: true })}
+                    className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-amber-300 transition-colors font-sans cursor-pointer"
+                    title="Şarjör Doldur (R)"
+                  >
+                    <kbd className="px-1 py-0.2 rounded bg-slate-800 border border-slate-700 font-mono text-[9px] text-amber-400">R</kbd>
+                    <span>Yenile</span>
+                  </button>
+                </div>
+
                 <span className="text-sm">
                   {myPlayer?.isReloading ? (
-                    <span className="text-amber-400 animate-pulse font-sans">Yenileniyor...</span>
+                    <span className="text-amber-400 animate-pulse font-sans text-xs">Yenileniyor...</span>
                   ) : (
                     <>
                       <strong className="text-white text-base">{myPlayer?.ammo[myPlayer?.activeWeapon || 'pistol'] || 0}</strong>
@@ -1678,13 +1858,21 @@ export default function MiniBattleRoyale({
                 </div>
               </div>
 
-              {/* Big Touch Action Buttons: Reload & Weapon Switch */}
-              <div className="absolute bottom-36 right-6 pointer-events-auto flex flex-col gap-2 z-20">
+              {/* Big Touch Action Buttons: Reload & Weapon Switch & Pickup */}
+              <div className="absolute bottom-36 right-6 pointer-events-auto flex flex-col gap-2.5 z-20">
                 <button
                   onTouchStart={() => socket?.emit('royale:input', { reload: true })}
-                  className="w-13 h-13 rounded-2xl bg-amber-500/80 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90"
+                  className="w-13 h-13 rounded-2xl bg-amber-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-amber-400"
+                  title="Şarjör Yenile"
                 >
                   R
+                </button>
+                <button
+                  onTouchStart={() => socket?.emit('royale:input', { pickup: true })}
+                  className="w-13 h-13 rounded-2xl bg-emerald-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-emerald-400"
+                  title="Yerdeki Eşyayı Al"
+                >
+                  E
                 </button>
               </div>
             </>
@@ -1762,6 +1950,151 @@ export default function MiniBattleRoyale({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 5. KEYBOARD & CONTROLS GUIDE MODAL (DETAYLI TUŞ REHBERİ) */}
+      {/* ========================================================================= */}
+      {showControlsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in pointer-events-auto">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center font-bold">
+                  <Keyboard size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Klavye ve Fare Kontrolleri Rehberi</h3>
+                  <p className="text-[11px] text-slate-400">Mini Battle Royale tuş işlevleri ve kısayolları</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowControlsModal(false)}
+                className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-3.5 text-xs">
+              {/* Movement */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">Karakter Hareketi</span>
+                  <p className="text-slate-400 text-[11px]">Karakteri 8 yöne akıcı ve eşit hızda hareket ettirir</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-amber-400 shadow-sm text-xs">W</kbd>
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-amber-400 shadow-sm text-xs">A</kbd>
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-amber-400 shadow-sm text-xs">S</kbd>
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-amber-400 shadow-sm text-xs">D</kbd>
+                  <span className="text-slate-500 mx-1">/</span>
+                  <span className="text-[11px] text-slate-400 font-semibold">Ok Tuşları</span>
+                </div>
+              </div>
+
+              {/* Aiming */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">360° Nişan Alma</span>
+                  <p className="text-slate-400 text-[11px]">Silah namlusunu ve bakış yönünü fare imlecine doğru çevirir</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-2.5 py-1 rounded-lg bg-cyan-950/80 border border-cyan-800/80 font-mono font-black text-cyan-300 shadow-sm text-xs">Fare / Mouse Hareketi</kbd>
+                </div>
+              </div>
+
+              {/* Shooting */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">Ateş Etme</span>
+                  <p className="text-slate-400 text-[11px]">Aktif silahla hedefe doğru seri veya tek tek kurşun sıkar</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-2 py-1 rounded-lg bg-rose-950/80 border border-rose-800/80 font-mono font-black text-rose-300 shadow-sm text-xs">Sol Tık</kbd>
+                  <span className="text-slate-500 mx-1">veya</span>
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-white shadow-sm text-xs">Boşluk (Space)</kbd>
+                </div>
+              </div>
+
+              {/* Loot Pickup */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">Eşya & Sandık Alma</span>
+                  <p className="text-slate-400 text-[11px]">Yerdeki silahları, zırh yeleğini (+50 Shield) ve can kitlerini toplar</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-800/80 font-mono font-black text-emerald-300 shadow-sm text-xs">E</kbd>
+                  <span className="text-slate-500 mx-1">veya</span>
+                  <kbd className="px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-800/80 font-mono font-black text-emerald-300 shadow-sm text-xs">F</kbd>
+                </div>
+              </div>
+
+              {/* Reload */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">Şarjör Doldurma (Reload)</span>
+                  <p className="text-slate-400 text-[11px]">Yedek mermilerden mevcut silaha tam şarjör doldurur</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-2.5 py-1 rounded-lg bg-amber-950/80 border border-amber-800/80 font-mono font-black text-amber-300 shadow-sm text-xs">R</kbd>
+                </div>
+              </div>
+
+              {/* Weapon Switching */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">Doğrudan Silah Seçimi</span>
+                  <p className="text-slate-400 text-[11px]">1: Tabanca | 2: Pompalı | 3: Tüfek | 4: Keskin Nişancı</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-blue-400 shadow-sm text-xs">1</kbd>
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-blue-400 shadow-sm text-xs">2</kbd>
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-blue-400 shadow-sm text-xs">3</kbd>
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-blue-400 shadow-sm text-xs">4</kbd>
+                </div>
+              </div>
+
+              {/* Fast Cycle & Scroll */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">Hızlı Silah Değiştirme</span>
+                  <p className="text-slate-400 text-[11px]">Envanterdeki silahlar arasında seri geçiş yapar</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-purple-300 shadow-sm text-xs">Q</kbd>
+                  <span className="text-slate-500 mx-1">/</span>
+                  <kbd className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-purple-300 shadow-sm text-xs">Fare Tekerleği (Scroll)</kbd>
+                </div>
+              </div>
+
+              {/* Guide shortcut */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-white text-sm block">Kılavuzu Aç / Kapat</span>
+                  <p className="text-slate-400 text-[11px]">Oyun sırasında bu rehber penceresini açıp kapatır</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <kbd className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-amber-400 shadow-sm text-xs">H</kbd>
+                  <span className="text-slate-500 mx-1">/</span>
+                  <kbd className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-amber-400 shadow-sm text-xs">F1</kbd>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end">
+              <button
+                onClick={() => setShowControlsModal(false)}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 text-slate-950 font-black text-xs transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+              >
+                Anladım, Kapat
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

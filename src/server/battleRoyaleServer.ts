@@ -870,8 +870,8 @@ export class BattleRoyaleManager {
   }
 
   // Check and pickup loot
-  private checkPlayerLootPickup(room: RoyaleRoom, p: RoyalePlayer) {
-    const pickupRadius = PLAYER_RADIUS + 25;
+  private checkPlayerLootPickup(room: RoyaleRoom, p: RoyalePlayer, customRadius?: number) {
+    const pickupRadius = customRadius || (PLAYER_RADIUS + 25);
     for (let i = room.loot.length - 1; i >= 0; i--) {
       const item = room.loot[i];
       const dist = Math.hypot(p.x - item.x, p.y - item.y);
@@ -1183,11 +1183,27 @@ export class BattleRoyaleManager {
     player.reloadEndTime = now + config.reloadTime;
   }
 
-  // Switch Weapon
-  public switchWeapon(player: RoyalePlayer, weaponName: string) {
+  // Switch Weapon by name, slot index (0-3), or cycle ('next' / 'prev')
+  public switchWeapon(player: RoyalePlayer, weaponNameOrSlot: string | number) {
     if (!player.isAlive || player.isReloading) return;
-    if (player.weapons.includes(weaponName)) {
-      player.activeWeapon = weaponName;
+    if (typeof weaponNameOrSlot === 'number') {
+      if (player.weapons[weaponNameOrSlot]) {
+        player.activeWeapon = player.weapons[weaponNameOrSlot];
+      }
+    } else if (weaponNameOrSlot === 'next') {
+      const idx = player.weapons.indexOf(player.activeWeapon);
+      const nextIdx = (idx + 1) % Math.max(1, player.weapons.length);
+      if (player.weapons[nextIdx]) {
+        player.activeWeapon = player.weapons[nextIdx];
+      }
+    } else if (weaponNameOrSlot === 'prev') {
+      const idx = player.weapons.indexOf(player.activeWeapon);
+      const prevIdx = (idx - 1 + player.weapons.length) % Math.max(1, player.weapons.length);
+      if (player.weapons[prevIdx]) {
+        player.activeWeapon = player.weapons[prevIdx];
+      }
+    } else if (typeof weaponNameOrSlot === 'string' && player.weapons.includes(weaponNameOrSlot)) {
+      player.activeWeapon = weaponNameOrSlot;
     }
   }
 
@@ -1201,7 +1217,8 @@ export class BattleRoyaleManager {
       angle?: number;
       shooting?: boolean;
       reload?: boolean;
-      switchWeapon?: string;
+      switchWeapon?: string | number;
+      pickup?: boolean;
     }
   ) {
     const room = this.rooms.get(roomId);
@@ -1246,8 +1263,13 @@ export class BattleRoyaleManager {
     }
 
     // Switch Weapon
-    if (typeof input.switchWeapon === 'string') {
+    if (typeof input.switchWeapon === 'string' || typeof input.switchWeapon === 'number') {
       this.switchWeapon(player, input.switchWeapon);
+    }
+
+    // Manual pickup via keypress E / F
+    if (input.pickup) {
+      this.checkPlayerLootPickup(room, player, PLAYER_RADIUS + 50);
     }
   }
 
