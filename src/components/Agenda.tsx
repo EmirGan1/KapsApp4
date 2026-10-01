@@ -31,6 +31,7 @@ import { getApiUrl } from "../utils/api";
 import { AgendaEvent, isVisibleToUser, parseTargetRoles } from "../types";
 import TargetRoleSelector from "./TargetRoleSelector";
 import TargetRoleBadge from "./TargetRoleBadge";
+import DailyScheduleModal from "./DailyScheduleModal";
 
 interface AgendaProps {
   socket: Socket | null;
@@ -84,6 +85,9 @@ export default function Agenda({
 
   // Dedicated Exam Detail Modal State
   const [selectedExamEvent, setSelectedExamEvent] = useState<AgendaEvent | null>(null);
+
+  // Dynamic Course Schedule Modal State
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
   // Admin Event Form Modal State
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -618,7 +622,18 @@ export default function Agenda({
           </div>
 
           {/* Action Bar: Month Prev/Next & Filter & Admin Add */}
-          <div className="flex items-center gap-2 self-end sm:self-auto">
+          <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+            {/* Dynamic Daily Course Schedule Modal Button */}
+            <button
+              type="button"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white text-xs font-black shadow-md shadow-indigo-500/20 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+              title="Kişiselleştirilmiş Günlük ve Haftalık Ders Programınızı Görüntüleyin"
+            >
+              <CalendarDays size={15} className="text-blue-200 shrink-0" />
+              <span>📅 Günlük Ders Programım</span>
+            </button>
+
             {/* Prev / Next Month Buttons */}
             <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
               <button
@@ -1506,6 +1521,14 @@ export default function Agenda({
           </div>
         </div>
       )}
+
+      {/* Dynamic Course Schedule Modal */}
+      <DailyScheduleModal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        userRoles={effectiveRoles}
+        currentUsername={currentUsername}
+      />
 
     </div>
   );

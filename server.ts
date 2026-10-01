@@ -6017,6 +6017,19 @@ async function startServer() {
     socket.on("location:disabled", handleStopLocationSharing);
     socket.on("user:passive", handleStopLocationSharing);
 
+    // ============================================================
+    // KAP ATTACK: Global Screen Shake & Flying Text Events
+    // ============================================================
+    socket.on("admin:trigger_kap_attack", () => {
+      console.log(`[KAP ATTACK] Triggered by user ${user?.username || socket.id}`);
+      io.emit("global:kap_attack_start");
+    });
+
+    socket.on("admin:stop_kap_attack", () => {
+      console.log(`[KAP ATTACK] Stopped by user ${user?.username || socket.id}`);
+      io.emit("global:kap_attack_stop");
+    });
+
     socket.on("mark_global_read", (messageId) => {
       globalRead.set(Number(user.id), messageId);
       io.emit("global_read_update", Array.from(globalRead.entries()));

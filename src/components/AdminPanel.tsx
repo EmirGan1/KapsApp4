@@ -6,7 +6,7 @@ import {
   Unlock, Crown, AlertTriangle, Eye, UserX,
   Radio, HardDrive, Terminal, X, Check, Edit3, 
   ShieldAlert, Ban, UserCheck, ShieldCheck, Gamepad2, Tag,
-  Award, Plus, ArrowUp, ArrowDown, Layers, Sparkles, Palette
+  Award, Plus, ArrowUp, ArrowDown, Layers, Sparkles, Palette, Flame
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import { COURSE_ROLES, CourseRole, sortRolesByPosition } from "../types";
@@ -849,7 +849,39 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* KAP ATTACK TRIGGER BUTTONS */}
+          <button
+            onClick={() => {
+              if (!socket) {
+                showToast("Socket bağlantısı bulunamadı!", "error");
+                return;
+              }
+              socket.emit("admin:trigger_kap_attack");
+              showToast("🚀 KAP ATTACK BAŞLATILDI! (Tüm ekranlar 5 saniye sallanacak)", "success");
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-orange-500 to-amber-500 hover:from-red-500 hover:via-orange-400 hover:to-amber-400 text-white text-xs font-black tracking-wide shadow-md shadow-red-500/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            title="Tüm kullanıcılara 5 saniyelik ekran sarsıntısı ve kap yağmuru gönderir"
+          >
+            <Flame size={14} className="text-yellow-200 animate-pulse" />
+            <span>🚀 KAP ATTACK BAŞLAT</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (!socket) {
+                showToast("Socket bağlantısı bulunamadı!", "error");
+                return;
+              }
+              socket.emit("admin:stop_kap_attack");
+              showToast("🛑 KAP ATTACK DURDURULDU!", "success");
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-red-950/70 text-red-400 hover:text-red-300 text-xs font-bold transition-all border border-red-900/40 hover:border-red-700 cursor-pointer"
+            title="KAP Attack efektini anında durdurur"
+          >
+            <span>🛑 KAP ATTACK DURDUR</span>
+          </button>
+
           <button
             onClick={() => {
               fetchPendingUsers();
@@ -1927,6 +1959,52 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
               >
                 Canlı Duyuruyu Herkese Gönder
               </button>
+            </div>
+
+            {/* KAP ATTACK TRIGGER PANEL */}
+            <div className="mt-6 pt-5 border-t border-slate-800">
+              <div className="p-4 rounded-xl bg-gradient-to-br from-red-950/40 via-orange-950/30 to-slate-900 border border-red-500/30">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 text-red-400 font-black text-sm">
+                    <Flame className="text-red-500 animate-pulse" size={18} />
+                    <span>🔥 GLOBAL KAP ATTACK KONSOLU</span>
+                  </div>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40">
+                    Eğlence Modu
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+                  Bu butona basıldığında sunucuya bağlı <strong>tüm kullanıcıların</strong> ekranı 5 saniye boyunca sarsılır (screen shake) ve ekranda rastgele neon &quot;kap&quot; yazıları uçuşur.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      if (!socket) {
+                        showToast("Socket bağlantısı bulunamadı!", "error");
+                        return;
+                      }
+                      socket.emit("admin:trigger_kap_attack");
+                      showToast("🚀 KAP ATTACK BAŞLATILDI!", "success");
+                    }}
+                    className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-red-600 via-orange-500 to-amber-500 hover:from-red-500 hover:to-orange-400 text-white font-black text-sm shadow-lg shadow-red-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>🚀 KAP ATTACK BAŞLAT</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!socket) {
+                        showToast("Socket bağlantısı bulunamadı!", "error");
+                        return;
+                      }
+                      socket.emit("admin:stop_kap_attack");
+                      showToast("🛑 KAP ATTACK DURDURULDU!", "success");
+                    }}
+                    className="py-3 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 text-red-400 hover:text-red-300 font-bold text-sm border border-red-900/50 hover:border-red-700 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>🛑 KAP ATTACK DURDUR</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

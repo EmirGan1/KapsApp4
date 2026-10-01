@@ -25,6 +25,7 @@ import { CallProvider } from "./context/CallContext";
 import IncomingCallNotification from "./components/IncomingCallNotification";
 import ActiveCallPanel from "./components/ActiveCallPanel";
 import VoiceCallInviteModal, { VoiceCallInvite } from "./components/VoiceCallInviteModal";
+import KapAttackOverlay from "./components/KapAttackOverlay";
 import { getSocketUrl, getApiUrl } from "./utils/api";
 import { getCachedHardwareFingerprint, getHardwareFingerprint } from "./utils/deviceFingerprint";
 import { isVisibleToUser } from "./types";
@@ -1210,6 +1211,8 @@ export default function App() {
         onAccept={handleAcceptVoiceInvite}
         onReject={handleRejectVoiceInvite}
       />
+      {/* Global Screen Shake & Flying "kap" Text Overlay */}
+      <KapAttackOverlay socket={socket} />
     </div>
     </CallProvider>
   );
