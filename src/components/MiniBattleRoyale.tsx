@@ -225,6 +225,8 @@ export default function MiniBattleRoyale({
 
   // Canvas Refs & Game Engine
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const minimapCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const avatarCacheRef = useRef<Record<string, HTMLImageElement>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gameStateRef = useRef<GameState | null>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -840,6 +842,61 @@ export default function MiniBattleRoyale({
 
     let running = true;
 
+    // RADAR MINIMAP RENDERING
+    const drawMinimap = (ctx: CanvasRenderingContext2D, state: GameState) => {
+      const canvas = ctx.canvas;
+      const width = canvas.width;
+      const height = canvas.height;
+      ctx.clearRect(0, 0, width, height);
+
+      const minimapScale = width / MAP_SIZE;
+
+      // Draw Buildings
+      ctx.fillStyle = '#78350f';
+      MAP_BUILDINGS.forEach(b => {
+        ctx.fillRect(b.x * minimapScale, b.y * minimapScale, b.w * minimapScale, b.h * minimapScale);
+      });
+
+      // Draw Players
+      state.players?.forEach(p => {
+        if (!p.isAlive) return;
+
+        const mapX = p.x * minimapScale;
+        const mapY = p.y * minimapScale;
+        const avatarRadius = 6;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(mapX, mapY, avatarRadius, 0, Math.PI * 2);
+        ctx.clip();
+
+        const cachedImg = avatarCacheRef.current[p.id];
+        if (p.avatar && cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0) {
+          ctx.drawImage(cachedImg, mapX - avatarRadius, mapY - avatarRadius, avatarRadius * 2, avatarRadius * 2);
+        } else {
+          if (p.avatar && !cachedImg) {
+            const img = new Image();
+            img.src = p.avatar;
+            avatarCacheRef.current[p.id] = img;
+          }
+          ctx.fillStyle = p.color || '#475569';
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold 6px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(p.username.charAt(0).toUpperCase(), mapX, mapY + 2);
+        }
+        ctx.restore();
+
+        // Border
+        ctx.beginPath();
+        ctx.arc(mapX, mapY, avatarRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = p.userId === currentUserId ? '#fff' : p.isBot ? '#f59e0b' : '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+    };
+
     const render = () => {
       if (!running) return;
 
@@ -847,6 +904,12 @@ export default function MiniBattleRoyale({
       if (!canvas) {
         animFrameRef.current = requestAnimationFrame(render);
         return;
+      }
+      
+      // CALL DRAW MINIMAP
+      if (minimapCanvasRef.current && gameStateRef.current) {
+        const ctx = minimapCanvasRef.current.getContext('2d');
+        if (ctx) drawMinimap(ctx, gameStateRef.current);
       }
 
       const ctx = canvas.getContext('2d');
@@ -2677,31 +2740,12 @@ export default function MiniBattleRoyale({
               )}
 
               {/* Radar Minimap */}
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-2xl relative overflow-hidden">
-                {/* Minimap River */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-60">
-                  <path
-                    d={`M ${(RIVER_POINTS[0].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[0].y / MAP_SIZE) * 100}% L ${(RIVER_POINTS[1].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[1].y / MAP_SIZE) * 100}% L ${(RIVER_POINTS[2].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[2].y / MAP_SIZE) * 100}% L ${(RIVER_POINTS[3].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[3].y / MAP_SIZE) * 100}% L ${(RIVER_POINTS[4].x / MAP_SIZE) * 100}% ${(RIVER_POINTS[4].y / MAP_SIZE) * 100}%`}
-                    stroke="#0284c7"
-                    strokeWidth="5"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
-                </svg>
-
-                {/* Minimap Buildings */}
-                {MAP_BUILDINGS.map(b => (
-                  <div
-                    key={b.id}
-                    className="absolute bg-amber-800/80 border border-amber-600/60 rounded-xs pointer-events-none"
-                    style={{
-                      left: `${(b.x / MAP_SIZE) * 100}%`,
-                      top: `${(b.y / MAP_SIZE) * 100}%`,
-                      width: `${Math.max(2, (b.w / MAP_SIZE) * 100)}%`,
-                      height: `${Math.max(2, (b.h / MAP_SIZE) * 100)}%`
-                    }}
-                  />
-                ))}
+              <canvas
+                ref={minimapCanvasRef}
+                width={128}
+                height={128}
+                className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-2xl relative overflow-hidden"
+              />
 
                 {/* Safe Zone Circles */}
                 {gameStateRef.current?.mode === 'royale' && gameStateRef.current?.zone && (
