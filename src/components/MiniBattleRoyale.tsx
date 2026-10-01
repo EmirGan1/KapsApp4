@@ -1122,30 +1122,25 @@ export default function MiniBattleRoyale({
           }
         }
 
-        // 4B. Visible Doorway Threshold Sills (Görünür Kapı Eşikleri & Renkli Zemin Geçişi)
+        // 4B. Visible Doorway Threshold Sills (Görünür Kapı Eşikleri)
         bldg.doorways.forEach(d => {
           ctx.save();
+          // Entry Marker Glow / Light Leak
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+          
           if (bldg.floorType === 'wood') {
-            ctx.fillStyle = '#b45309'; // Warm timber door sill
+            ctx.fillStyle = '#b45309';
             ctx.fillRect(d.x, d.y, d.w, d.h);
             ctx.strokeStyle = '#f59e0b';
             ctx.lineWidth = 2;
             ctx.strokeRect(d.x, d.y, d.w, d.h);
           } else if (bldg.floorType === 'concrete') {
-            // Concrete step with yellow caution stripes
             ctx.fillStyle = '#475569';
             ctx.fillRect(d.x, d.y, d.w, d.h);
             ctx.strokeStyle = '#eab308';
             ctx.lineWidth = 2;
             ctx.strokeRect(d.x, d.y, d.w, d.h);
-            ctx.strokeStyle = '#eab308';
-            ctx.lineWidth = 2.5;
-            for (let sx = d.x + 8; sx < d.x + d.w; sx += 14) {
-              ctx.beginPath();
-              ctx.moveTo(sx, d.y);
-              ctx.lineTo(sx - 6, d.y + d.h);
-              ctx.stroke();
-            }
           } else {
             ctx.fillStyle = '#0d9488';
             ctx.fillRect(d.x, d.y, d.w, d.h);
@@ -1154,15 +1149,28 @@ export default function MiniBattleRoyale({
             ctx.strokeRect(d.x, d.y, d.w, d.h);
           }
           ctx.restore();
+          
+          // Entry Posts
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(d.x - 2, d.y - 2, d.w + 4, 4); // Top
+          ctx.fillRect(d.x - 2, d.y + d.h - 2, d.w + 4, 4); // Bottom
         });
 
-        // 4C. Building Solid Walls
+        // 4C. Building Solid Walls (Segmented drawing based on walls array)
         ctx.fillStyle = '#0f172a';
         ctx.strokeStyle = '#475569';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 4; // Thicker wall borders for visibility
+        ctx.lineCap = 'square';
+        
         bldg.walls.forEach(w => {
-          ctx.fillRect(w.x, w.y, w.w, w.h);
-          ctx.strokeRect(w.x, w.y, w.w, w.h);
+          ctx.beginPath();
+          ctx.moveTo(w.x, w.y);
+          ctx.lineTo(w.x + w.w, w.y);
+          ctx.lineTo(w.x + w.w, w.y + w.h);
+          ctx.lineTo(w.x, w.y + w.h);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
         });
 
         // 4C. Smart Roof Fade (Surviv.io Style)
