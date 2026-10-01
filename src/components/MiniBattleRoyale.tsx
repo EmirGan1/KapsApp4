@@ -2786,7 +2786,6 @@ export default function MiniBattleRoyale({
                 )}
               </div>
             </div>
-          </div>
 
           {/* FLOATING NEARBY LOOT / WEAPON SWAP PROMPT */}
           {nearbyGroundWeapon && myPlayer?.isAlive && myPlayer.weapons.length >= 2 && (
