@@ -977,10 +977,7 @@ export default function MiniBattleRoyale({
       ctx.translate(-renderCamX, -renderCamY);
 
       // 1. ARENA GROUND & TACTICAL GRID (Viewport Culled)
-      ctx.fillStyle = '#1b3b1d';
-      ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
-
-      const viewMargin = 220;
+      const viewMargin = 70;
       const cullMinX = renderCamX - (width / scale) / 2 - viewMargin;
       const cullMaxX = renderCamX + (width / scale) / 2 + viewMargin;
       const cullMinY = renderCamY - (height / scale) / 2 - viewMargin;
@@ -993,6 +990,16 @@ export default function MiniBattleRoyale({
       const rectInView = (rx: number, ry: number, rw: number, rh: number) => {
         return rx + rw >= cullMinX && rx <= cullMaxX && ry + rh >= cullMinY && ry <= cullMaxY;
       };
+
+      // Fill ONLY visible viewport ground, not 4200x4200 entire world
+      ctx.fillStyle = '#1b3b1d';
+      const drawGroundX = Math.max(0, cullMinX);
+      const drawGroundY = Math.max(0, cullMinY);
+      const drawGroundW = Math.min(MAP_SIZE, cullMaxX) - drawGroundX;
+      const drawGroundH = Math.min(MAP_SIZE, cullMaxY) - drawGroundY;
+      if (drawGroundW > 0 && drawGroundH > 0) {
+        ctx.fillRect(drawGroundX, drawGroundY, drawGroundW, drawGroundH);
+      }
 
       const tileSize = 140;
       const startTileX = Math.max(0, Math.floor(cullMinX / tileSize) * tileSize);
@@ -1110,9 +1117,9 @@ export default function MiniBattleRoyale({
         ctx.restore();
       });
 
-      // 4. DRAW ENTERABLE BUILDINGS (Floors, Walls, and Smart Roof Fade)
+      // 4. DRAW ENTERABLE BUILDINGS (Floors, Walls, Extended Doorways & Sills, and Smart Roof Fade)
       MAP_BUILDINGS.forEach(bldg => {
-        if (!rectInView(bldg.x, bldg.y, bldg.w, bldg.h)) return;
+        if (!rectInView(bldg.x - 30, bldg.y - 30, bldg.w + 60, bldg.h + 60)) return;
 
         const isInside = focusedPlayer
           ? focusedPlayer.x >= bldg.x && focusedPlayer.x <= bldg.x + bldg.w && focusedPlayer.y >= bldg.y && focusedPlayer.y <= bldg.y + bldg.h
@@ -1126,18 +1133,11 @@ export default function MiniBattleRoyale({
           ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
           ctx.strokeStyle = '#92400e';
           ctx.lineWidth = 1.5;
-          for (let fy = bldg.y + 20; fy < bldg.y + bldg.h; fy += 20) {
+          for (let fy = bldg.y + 20; fy < bldg.y + bldg.h; fy += 25) {
             ctx.beginPath();
             ctx.moveTo(bldg.x, fy);
             ctx.lineTo(bldg.x + bldg.w, fy);
             ctx.stroke();
-          }
-          // Wood nail details
-          ctx.fillStyle = '#451a03';
-          for (let nx = bldg.x + 25; nx < bldg.x + bldg.w; nx += 70) {
-            for (let ny = bldg.y + 10; ny < bldg.y + bldg.h; ny += 20) {
-              ctx.fillRect(nx, ny, 2, 2);
-            }
           }
         } else if (bldg.floorType === 'concrete') {
           ctx.fillStyle = '#334155';
@@ -1150,16 +1150,10 @@ export default function MiniBattleRoyale({
             ctx.lineTo(fx, bldg.y + bldg.h);
             ctx.stroke();
           }
-          for (let fy = bldg.y + 40; fy < bldg.y + bldg.h; fy += 40) {
-            ctx.beginPath();
-            ctx.moveTo(bldg.x, fy);
-            ctx.lineTo(bldg.x + bldg.w, fy);
-            ctx.stroke();
-          }
         } else if (bldg.floorType === 'tiles') {
           ctx.fillStyle = '#0f766e';
           ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
-          const tSize = 25;
+          const tSize = 30;
           for (let cx = bldg.x; cx < bldg.x + bldg.w; cx += tSize) {
             for (let cy = bldg.y; cy < bldg.y + bldg.h; cy += tSize) {
               if ((Math.floor((cx - bldg.x) / tSize) + Math.floor((cy - bldg.y) / tSize)) % 2 === 0) {
@@ -1168,16 +1162,13 @@ export default function MiniBattleRoyale({
               }
             }
           }
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(bldg.x, bldg.y, bldg.w, bldg.h);
         } else {
           // Metal Floor
           ctx.fillStyle = '#1e293b';
           ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
           ctx.strokeStyle = '#334155';
-          ctx.lineWidth = 1;
-          for (let m = -bldg.h; m < bldg.w; m += 24) {
+          ctx.lineWidth = 1.5;
+          for (let m = -bldg.h; m < bldg.w; m += 30) {
             ctx.beginPath();
             ctx.moveTo(Math.max(bldg.x, bldg.x + m), bldg.y);
             ctx.lineTo(Math.min(bldg.x + bldg.w, bldg.x + m + bldg.h), bldg.y + bldg.h);
@@ -1185,80 +1176,136 @@ export default function MiniBattleRoyale({
           }
         }
 
-        // 4B. Visible Doorway Threshold Sills (Görünür Kapı Eşikleri)
+        // 4B. Visible Doorway Extended Threshold Sills (Binadan Çimlerin Üzerine Dışarı Taşacak Şekilde)
         bldg.doorways.forEach(d => {
-          ctx.save();
-          // Entry Marker Glow / Light Leak
-          ctx.shadowBlur = 10;
-          ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-          
-          if (bldg.floorType === 'wood') {
-            ctx.fillStyle = '#b45309';
-            ctx.fillRect(d.x, d.y, d.w, d.h);
-            ctx.strokeStyle = '#f59e0b';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(d.x, d.y, d.w, d.h);
-          } else if (bldg.floorType === 'concrete') {
-            ctx.fillStyle = '#475569';
-            ctx.fillRect(d.x, d.y, d.w, d.h);
-            ctx.strokeStyle = '#eab308';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(d.x, d.y, d.w, d.h);
-          } else {
-            ctx.fillStyle = '#0d9488';
-            ctx.fillRect(d.x, d.y, d.w, d.h);
-            ctx.strokeStyle = '#2dd4bf';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(d.x, d.y, d.w, d.h);
+          const isHoriz = d.w >= d.h;
+          const isTop = isHoriz && (d.y < bldg.y + bldg.h / 2);
+          const isBottom = isHoriz && (d.y >= bldg.y + bldg.h / 2);
+          const isLeft = !isHoriz && (d.x < bldg.x + bldg.w / 2);
+          const isRight = !isHoriz && (d.x >= bldg.x + bldg.w / 2);
+
+          const extendPx = 18;
+          let rampX = d.x;
+          let rampY = d.y;
+          let rampW = d.w;
+          let rampH = d.h;
+
+          if (isTop) {
+            rampY = d.y - extendPx;
+            rampH = d.h + extendPx;
+          } else if (isBottom) {
+            rampH = d.h + extendPx;
+          } else if (isLeft) {
+            rampX = d.x - extendPx;
+            rampW = d.w + extendPx;
+          } else if (isRight) {
+            rampW = d.w + extendPx;
           }
-          ctx.restore();
-          
-          // Entry Posts
+
+          // Step / Doormat Base (Extending onto grass)
+          ctx.fillStyle = '#b45309';
+          ctx.fillRect(rampX, rampY, rampW, rampH);
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(rampX, rampY, rampW, rampH);
+
+          // Yellow/Black Hazard Stripes on the Doorstep Threshold
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 2;
+          if (isHoriz) {
+            for (let sx = rampX + 8; sx < rampX + rampW; sx += 14) {
+              ctx.beginPath();
+              ctx.moveTo(sx, rampY);
+              ctx.lineTo(sx - 6, rampY + rampH);
+              ctx.stroke();
+            }
+          } else {
+            for (let sy = rampY + 8; sy < rampY + rampH; sy += 14) {
+              ctx.beginPath();
+              ctx.moveTo(rampX, sy);
+              ctx.lineTo(rampX + rampW, sy - 6);
+              ctx.stroke();
+            }
+          }
+
+          // Entry Posts / Columns
           ctx.fillStyle = '#0f172a';
-          ctx.fillRect(d.x - 2, d.y - 2, d.w + 4, 4); // Top
-          ctx.fillRect(d.x - 2, d.y + d.h - 2, d.w + 4, 4); // Bottom
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 1;
+          if (isHoriz) {
+            ctx.fillRect(d.x - 3, d.y - 2, 6, d.h + 4);
+            ctx.strokeRect(d.x - 3, d.y - 2, 6, d.h + 4);
+            ctx.fillRect(d.x + d.w - 3, d.y - 2, 6, d.h + 4);
+            ctx.strokeRect(d.x + d.w - 3, d.y - 2, 6, d.h + 4);
+          } else {
+            ctx.fillRect(d.x - 2, d.y - 3, d.w + 4, 6);
+            ctx.strokeRect(d.x - 2, d.y - 3, d.w + 4, 6);
+            ctx.fillRect(d.x - 2, d.y + d.h - 3, d.w + 4, 6);
+            ctx.strokeRect(d.x - 2, d.y + d.h - 3, d.w + 4, 6);
+          }
         });
 
-        // 4C. Building Solid Walls (Segmented drawing based on walls array)
+        // 4C. Building Solid Walls
         ctx.fillStyle = '#0f172a';
         ctx.strokeStyle = '#475569';
-        ctx.lineWidth = 4; // Thicker wall borders for visibility
-        ctx.lineCap = 'square';
-        
+        ctx.lineWidth = 3;
         bldg.walls.forEach(w => {
-          ctx.beginPath();
-          ctx.moveTo(w.x, w.y);
-          ctx.lineTo(w.x + w.w, w.y);
-          ctx.lineTo(w.x + w.w, w.y + w.h);
-          ctx.lineTo(w.x, w.y + w.h);
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
+          ctx.fillRect(w.x, w.y, w.w, w.h);
+          ctx.strokeRect(w.x, w.y, w.w, w.h);
         });
 
-        // 4C. Smart Roof Fade (Surviv.io Style)
+        // 4D. Smart Roof Fade (10px Inset so outer walls and doors are visible from afar)
         if (!isInside) {
-          ctx.fillStyle = bldg.roofColor || '#713f12';
-          ctx.fillRect(bldg.x - 4, bldg.y - 4, bldg.w + 8, bldg.h + 8);
-          ctx.strokeStyle = '#090d16';
-          ctx.lineWidth = 4;
-          ctx.strokeRect(bldg.x - 4, bldg.y - 4, bldg.w + 8, bldg.h + 8);
+          const roofInset = 10;
+          const rx = bldg.x + roofInset;
+          const ry = bldg.y + roofInset;
+          const rw = bldg.w - roofInset * 2;
+          const rh = bldg.h - roofInset * 2;
 
-          // Roof Ridge & Tiles
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.fillStyle = bldg.roofColor || '#713f12';
+          ctx.fillRect(rx, ry, rw, rh);
+          ctx.strokeStyle = '#020617';
           ctx.lineWidth = 3;
+          ctx.strokeRect(rx, ry, rw, rh);
+
+          // Roof Ridge / Diagonal Details
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.moveTo(bldg.x, bldg.y + bldg.h / 2);
-          ctx.lineTo(bldg.x + bldg.w, bldg.y + bldg.h / 2);
+          ctx.moveTo(rx, ry + rh / 2);
+          ctx.lineTo(rx + rw, ry + rh / 2);
           ctx.stroke();
 
           // Building Name Label on Roof
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
           ctx.font = 'bold 11px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText(bldg.name, bldg.x + bldg.w / 2, bldg.y + bldg.h / 2 - 8);
+
+          // Doorway Entrance Indicators on Top of Roof Perimeter (Uzaktan Görünür Kapı İşaretleri)
+          bldg.doorways.forEach(d => {
+            const isHoriz = d.w >= d.h;
+            const isTop = isHoriz && (d.y < bldg.y + bldg.h / 2);
+            const isBottom = isHoriz && (d.y >= bldg.y + bldg.h / 2);
+            const isLeft = !isHoriz && (d.x < bldg.x + bldg.w / 2);
+
+            let markerX = d.x + d.w / 2;
+            let markerY = d.y + d.h / 2;
+            if (isTop) markerY = d.y - 6;
+            else if (isBottom) markerY = d.y + d.h + 6;
+            else if (isLeft) markerX = d.x - 6;
+            else markerX = d.x + d.w + 6;
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.arc(markerX, markerY, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          });
         } else {
-          // Subtle transparent dashed roof boundary when player is inside
+          // Inside building: subtle dashed boundary
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
           ctx.lineWidth = 2;
           ctx.setLineDash([8, 6]);
@@ -1298,17 +1345,14 @@ export default function MiniBattleRoyale({
         ctx.fill();
 
         ctx.strokeStyle = '#c084fc';
-        ctx.lineWidth = 7;
-        ctx.shadowColor = '#c084fc';
-        ctx.shadowBlur = 14;
+        ctx.lineWidth = 6;
         ctx.beginPath();
         ctx.arc(z.currentX, z.currentY, Math.max(0, z.currentRadius), 0, Math.PI * 2);
         ctx.stroke();
-        ctx.shadowBlur = 0;
 
         if (z.targetRadius && z.targetRadius < z.currentRadius) {
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 2.5;
           ctx.setLineDash([16, 10]);
           ctx.beginPath();
           ctx.arc(z.targetX, z.targetY, Math.max(0, z.targetRadius), 0, Math.PI * 2);
@@ -1429,7 +1473,7 @@ export default function MiniBattleRoyale({
         ctx.restore();
       });
 
-      // 7. DRAW EXPLOSIVE TNT BARRELS
+      // 7. DRAW EXPLOSIVE TNT BARRELS (Viewport Culled)
       state.barrels?.forEach(barrel => {
         if (!inView(barrel.x, barrel.y, barrel.radius + 10)) return;
         ctx.save();
@@ -1468,7 +1512,7 @@ export default function MiniBattleRoyale({
         ctx.restore();
       });
 
-      // 8. DRAW CRATES (Normal, Rare & Military Crates)
+      // 8. DRAW CRATES (Viewport Culled)
       state.crates?.forEach(c => {
         if (!inView(c.x, c.y, 35)) return;
         ctx.save();
@@ -1519,7 +1563,7 @@ export default function MiniBattleRoyale({
           ctx.fill();
 
           ctx.strokeStyle = '#64748b';
-          ctx.lineWidth = 5;
+          ctx.lineWidth = 4;
           ctx.stroke();
 
           ctx.fillStyle = '#94a3b8';
@@ -1530,22 +1574,29 @@ export default function MiniBattleRoyale({
         }
       });
 
-      // 10. DRAW BULLETS & TRACERS
+      // 10. DRAW BULLETS & TRACERS (Viewport Culled - Zero Blur for High FPS)
       state.bullets?.forEach(b => {
         if (!inView(b.x, b.y, b.radius + 10)) return;
         ctx.save();
         ctx.fillStyle = b.color || '#fbbf24';
-        ctx.shadowColor = b.color || '#fbbf24';
-        ctx.shadowBlur = b.isAoE ? 16 : 8;
         ctx.beginPath();
         ctx.arc(b.x, b.y, b.radius || 4, 0, Math.PI * 2);
         ctx.fill();
+
+        if (b.isAoE) {
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.4)';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, (b.radius || 4) + 3, 0, Math.PI * 2);
+          ctx.stroke();
+        }
         ctx.restore();
       });
 
-      // 11. DRAW EXPLOSION EFFECTS
+      // 11. DRAW EXPLOSION EFFECTS (Viewport Culled)
       const now = Date.now();
       state.explosions?.forEach(exp => {
+        if (!inView(exp.x, exp.y, exp.radius + 10)) return;
         const age = now - exp.createdAt;
         const progress = Math.min(1, age / 700);
         const radius = exp.radius * progress;
@@ -1576,7 +1627,7 @@ export default function MiniBattleRoyale({
         const targetY = startY + Math.sin(laserAngle) * laserLength;
 
         // Laser Sight Line
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.55)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([8, 6]);
         ctx.beginPath();
@@ -1585,13 +1636,11 @@ export default function MiniBattleRoyale({
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Cyber Crosshair Marker
+        // Cyber Crosshair Marker (Clean geometry, zero shadowBlur)
         const chX = myPlayer.x + virtualCrosshairOffset.current.x;
         const chY = myPlayer.y + virtualCrosshairOffset.current.y;
         ctx.strokeStyle = '#ef4444';
         ctx.lineWidth = 2;
-        ctx.shadowColor = '#ef4444';
-        ctx.shadowBlur = 8;
 
         // Crosshair Circle & Brackets
         ctx.beginPath();
@@ -1613,13 +1662,14 @@ export default function MiniBattleRoyale({
         ctx.moveTo(chX, chY + 8);
         ctx.lineTo(chX, chY + 18);
         ctx.stroke();
-        ctx.shadowBlur = 0;
 
         ctx.restore();
       }
 
-      // 13. DRAW PLAYERS
+      // 13. DRAW PLAYERS (Viewport Culled)
       state.players?.forEach(p => {
+        if (!inView(p.x, p.y, 65)) return;
+
         ctx.save();
         ctx.translate(p.x, p.y);
 
@@ -1655,15 +1705,16 @@ export default function MiniBattleRoyale({
           ctx.globalAlpha = p.userId === currentUserId ? 0.6 : 0.2;
         }
 
-        // Spawn Protection Shield Ring (Gold glowing aura)
+        // Spawn Protection Shield Ring (Gold glowing aura without blur)
         if (p.spawnShieldEndTime > now) {
           ctx.save();
           ctx.strokeStyle = '#facc15';
-          ctx.lineWidth = 4;
-          ctx.shadowColor = '#facc15';
-          ctx.shadowBlur = 12;
+          ctx.lineWidth = 3.5;
           ctx.beginPath();
           ctx.arc(0, 0, 34, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(250, 204, 21, 0.4)';
+          ctx.lineWidth = 6;
           ctx.stroke();
           ctx.restore();
         }
@@ -1746,14 +1797,11 @@ export default function MiniBattleRoyale({
         // Overhead Player Name & Badges
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-        ctx.shadowBlur = 4;
 
         const isSelf = p.userId === currentUserId;
         const label = isSelf ? `[SEN] ${p.username}` : p.isBot ? `[BOT] ${p.username}` : p.username;
         ctx.fillStyle = isSelf ? '#38bdf8' : p.isBot ? '#fbbf24' : '#ffffff';
         ctx.fillText(label, 0, -38);
-        ctx.shadowBlur = 0;
 
         // Overhead Shield Bar
         const barW = 46;
@@ -1779,9 +1827,9 @@ export default function MiniBattleRoyale({
         ctx.restore();
       });
 
-      // 8. DRAW BUSHES (Foliage on top)
+      // 14. DRAW BUSHES (Foliage on top - Viewport Culled)
       state.obstacles?.forEach(obs => {
-        if (obs.type === 'bush') {
+        if (obs.type === 'bush' && inView(obs.x, obs.y, obs.radius)) {
           ctx.save();
           ctx.fillStyle = '#15803d';
           ctx.beginPath();
@@ -1797,8 +1845,9 @@ export default function MiniBattleRoyale({
         }
       });
 
-      // 9. FLOATING DAMAGE POPUPS
+      // 15. FLOATING DAMAGE POPUPS (Viewport Culled)
       state.damagePopups?.forEach(dp => {
+        if (!inView(dp.x, dp.y, 40)) return;
         const age = now - dp.createdAt;
         const progress = Math.min(1, age / 1000);
         const offsetY = progress * 24;
@@ -1808,8 +1857,6 @@ export default function MiniBattleRoyale({
         ctx.font = 'bold 15px sans-serif';
         ctx.fillStyle = dp.color;
         ctx.globalAlpha = alpha;
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 4;
         ctx.textAlign = 'center';
         ctx.fillText(`${dp.damage > 0 ? '-' : '+'}${dp.damage}`, dp.x, dp.y - offsetY);
         ctx.restore();
@@ -1818,7 +1865,7 @@ export default function MiniBattleRoyale({
       ctx.restore(); // camera translate restore
 
       // ============================================================
-      // 10. OFF-SCREEN THREAT INDICATORS (RADAR EDGES FOR SCREEN BORDERS)
+      // 16. OFF-SCREEN THREAT INDICATORS (RADAR EDGES FOR SCREEN BORDERS)
       // ============================================================
       if (focusedPlayer && state.players) {
         const threatMaxDist = 950;
@@ -1890,9 +1937,6 @@ export default function MiniBattleRoyale({
 
           // Threat Chevron / Arrow pointing outward to threat
           ctx.globalAlpha = alpha;
-          ctx.shadowColor = arrowColor;
-          ctx.shadowBlur = 8 * distFactor;
-
           ctx.fillStyle = arrowColor;
           ctx.beginPath();
           ctx.moveTo(14, 0);     // Front tip

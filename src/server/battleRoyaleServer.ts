@@ -2093,6 +2093,7 @@ export class BattleRoyaleManager {
   // NETCODE OPTIMIZATION: Compact JSON Payload for 20 Players
   // ============================================================
   public getPublicGameState(room: GameRoom) {
+    const now = Date.now();
     return {
       id: room.id,
       status: room.status,
@@ -2109,8 +2110,8 @@ export class BattleRoyaleManager {
         isHost: p.isHost,
         platform: p.platform,
         ready: p.ready,
-        x: Math.round(p.x * 10) / 10,
-        y: Math.round(p.y * 10) / 10,
+        x: Math.round(p.x),
+        y: Math.round(p.y),
         angle: Math.round(p.angle * 100) / 100,
         hp: Math.round(p.hp),
         maxHp: p.maxHp,
@@ -2134,19 +2135,39 @@ export class BattleRoyaleManager {
       bullets: room.bullets.map(b => ({
         id: b.id,
         shooterId: b.shooterId,
-        x: Math.round(b.x * 10) / 10,
-        y: Math.round(b.y * 10) / 10,
-        vx: Math.round(b.vx * 10) / 10,
-        vy: Math.round(b.vy * 10) / 10,
+        x: Math.round(b.x),
+        y: Math.round(b.y),
+        vx: Math.round(b.vx),
+        vy: Math.round(b.vy),
         damage: b.damage,
         color: b.color,
         radius: b.radius,
         isAoE: b.isAoE
       })),
-      crates: room.crates,
-      barrels: room.barrels,
-      explosions: room.explosions,
-      loot: room.loot,
+      crates: room.crates.map(c => ({
+        id: c.id,
+        x: Math.round(c.x),
+        y: Math.round(c.y),
+        hp: Math.round(c.hp),
+        maxHp: c.maxHp,
+        tier: c.tier,
+        isMilitary: c.isMilitary
+      })),
+      barrels: room.barrels.map(b => ({
+        id: b.id,
+        x: Math.round(b.x),
+        y: Math.round(b.y),
+        hp: Math.round(b.hp),
+        maxHp: b.maxHp,
+        radius: b.radius
+      })),
+      explosions: room.explosions.filter(e => now - e.createdAt < 750),
+      loot: room.loot.map(l => ({
+        id: l.id,
+        x: Math.round(l.x),
+        y: Math.round(l.y),
+        type: l.type
+      })),
       obstacles: room.obstacles,
       zone: {
         currentX: Math.round(room.zone.currentX),
@@ -2158,8 +2179,8 @@ export class BattleRoyaleManager {
         isShrinking: room.zone.isShrinking,
         phase: room.zone.phase
       },
-      damagePopups: room.damagePopups.slice(-10),
-      killfeed: room.killfeed,
+      damagePopups: room.damagePopups.filter(dp => now - dp.createdAt < 1000).slice(-6),
+      killfeed: room.killfeed.slice(-4),
       winner: room.winner
     };
   }
