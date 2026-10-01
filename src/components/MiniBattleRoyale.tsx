@@ -87,6 +87,7 @@ interface GameState {
   bullets: Array<{
     id: string;
     shooterId: string;
+    weaponType?: string;
     x: number;
     y: number;
     vx: number;
@@ -114,6 +115,8 @@ interface GameState {
     type: string;
     x: number;
     y: number;
+    currentAmmo?: number;
+    maxAmmo?: number;
   }>;
   obstacles: Array<{
     id: string;
@@ -324,6 +327,28 @@ export default function MiniBattleRoyale({
       fetchLeaderboard(leaderboardSort);
     };
 
+    const onPlayerRespawned = (data: { playerId: string; userId: number; x: number; y: number; hp?: number; shield?: number }) => {
+      if (data && data.userId === currentUserId) {
+        cameraPosRef.current = { x: data.x, y: data.y };
+        if (gameStateRef.current && Array.isArray(gameStateRef.current.players)) {
+          const me = gameStateRef.current.players.find(p => !p.isBot && p.userId === currentUserId);
+          if (me) {
+            me.isAlive = true;
+            me.x = data.x;
+            me.y = data.y;
+            me.hp = data.hp ?? 100;
+            me.shield = data.shield ?? 25;
+            me.respawnAt = null;
+            me.spawnShieldEndTime = Date.now() + 2000;
+            me.activeWeapon = 'pistol';
+            me.activeWeaponSlot = 0;
+            me.weapons = ['pistol'];
+          }
+        }
+        setHudTick(prev => (prev + 1) % 10000);
+      }
+    };
+
     socket.on('royale:rooms_list', onRoomsList);
     socket.on('royale:room_state', onRoomState);
     socket.on('royale:countdown', onCountdown);
@@ -331,6 +356,8 @@ export default function MiniBattleRoyale({
     socket.on('royale:game_state', onGameState);
     socket.on('royale:zone_warning', onZoneWarning);
     socket.on('royale:game_over', onGameOver);
+    socket.on('player:respawned', onPlayerRespawned);
+    socket.on('royale:player_respawned', onPlayerRespawned);
 
     return () => {
       socket.off('royale:rooms_list', onRoomsList);
@@ -340,6 +367,8 @@ export default function MiniBattleRoyale({
       socket.off('royale:game_state', onGameState);
       socket.off('royale:zone_warning', onZoneWarning);
       socket.off('royale:game_over', onGameOver);
+      socket.off('player:respawned', onPlayerRespawned);
+      socket.off('royale:player_respawned', onPlayerRespawned);
     };
   }, [socket, fetchRooms, fetchLeaderboard, leaderboardSort]);
 
@@ -945,10 +974,17 @@ export default function MiniBattleRoyale({
       // Find focused player (self or spectate target)
       let focusedPlayer: PlayerState | undefined;
       if (state && Array.isArray(state.players)) {
-        focusedPlayer = state.players.find(p => !p.isBot && p.userId === currentUserId);
-        const alivePlayers = state.players.filter(p => p.isAlive);
-        if (!focusedPlayer || !focusedPlayer.isAlive) {
-          focusedPlayer = alivePlayers[spectateTargetIndex % Math.max(1, alivePlayers.length)] || state.players[0];
+        focusedPlayer = state.players.find(p => p && !p.isBot && p.userId === currentUserId);
+        const alivePlayers = state.players.filter(p => p && p.isAlive);
+        if (state.mode === 'royale') {
+          if (!focusedPlayer || !focusedPlayer.isAlive) {
+            focusedPlayer = alivePlayers[spectateTargetIndex % Math.max(1, alivePlayers.length)] || state.players[0];
+          }
+        } else {
+          // Deathmatch: Keep camera focused on player even while waiting for respawn
+          if (!focusedPlayer) {
+            focusedPlayer = state.players[0];
+          }
         }
       }
 
@@ -2832,14 +2868,22 @@ export default function MiniBattleRoyale({
             </div>
 
           {/* FLOATING NEARBY LOOT / WEAPON SWAP PROMPT */}
-          {nearbyGroundWeapon && myPlayer?.isAlive && myPlayer.weapons.length >= 2 && (
+          {nearbyGroundWeapon && myPlayer?.isAlive && (
             <div className="absolute bottom-28 left-1/2 -translate-x-1/2 pointer-events-auto z-20 flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-amber-500/80 shadow-2xl text-xs font-bold text-white animate-bounce">
               <button
-                onClick={() => socket?.emit('royale:input', { swapWeapon: true })}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500 text-slate-950 font-black cursor-pointer shadow-md"
+                onClick={() => socket?.emit('royale:input', { pickup: true, swapWeapon: true })}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black cursor-pointer shadow-md transition-all active:scale-95"
               >
-                <kbd className="px-1.5 py-0.5 rounded bg-slate-950/20 font-mono text-[10px]">E</kbd>
-                <span>Silahı Değiştir: {WEAPON_CONFIGS[nearbyGroundWeapon.type.replace('weapon_', '')]?.name}</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-950/20 font-mono text-[10px]">E / F</kbd>
+                <span>
+                  {myPlayer.weapons.length < 2 ? 'Silahı Al (2. Slot): ' : 'Silahı Değiştir: '}
+                  {WEAPON_CONFIGS[nearbyGroundWeapon.type.replace('weapon_', '')]?.name || nearbyGroundWeapon.type}
+                </span>
+                {typeof nearbyGroundWeapon.currentAmmo === 'number' && (
+                  <span className="px-1.5 py-0.5 rounded bg-slate-950/40 text-slate-950 font-mono text-[11px] font-black ml-1">
+                    ({nearbyGroundWeapon.currentAmmo}/{nearbyGroundWeapon.maxAmmo || WEAPON_CONFIGS[nearbyGroundWeapon.type.replace('weapon_', '')]?.magSize || 0} mermi)
+                  </span>
+                )}
               </button>
             </div>
           )}
@@ -2988,13 +3032,16 @@ export default function MiniBattleRoyale({
           )}
 
           {/* DEATHMATCH RESPAWN COUNTDOWN OVERLAY */}
-          {gameStateRef.current?.mode === 'deathmatch' && myPlayer && !myPlayer.isAlive && myPlayer.respawnAt && (
+          {gameStateRef.current?.mode === 'deathmatch' && myPlayer && !myPlayer.isAlive && (
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
-              <div className="text-center space-y-2 p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl">
-                <Skull className="text-red-500 animate-pulse mx-auto" size={40} />
+              <div className="text-center space-y-2 p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl animate-pulse">
+                <Skull className="text-red-500 mx-auto" size={40} />
                 <h3 className="text-lg font-black text-white">Vuruldun!</h3>
                 <p className="text-sm text-cyan-400 font-bold font-mono">
-                  ⚡ {Math.max(1, Math.ceil((myPlayer.respawnAt - Date.now()) / 1000))} saniye içinde yeniden doğuyorsun...
+                  ⚡ {myPlayer.respawnAt ? Math.max(1, Math.ceil((myPlayer.respawnAt - Date.now()) / 1000)) : 3} saniye içinde yeniden doğuyorsun...
+                </p>
+                <p className="text-xs text-slate-400 font-medium">
+                  Yeniden doğduğunda 2 saniyelik altın kalkan koruması aktifleşir
                 </p>
               </div>
             </div>

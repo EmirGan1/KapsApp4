@@ -391,6 +391,30 @@ export function distToSegmentSquared(
   return (px - projX) * (px - projX) + (py - projY) * (py - projY);
 }
 
+export function rayIntersectsCircle(
+  x1: number, y1: number, x2: number, y2: number,
+  cx: number, cy: number, radius: number
+): { hit: boolean; x: number; y: number; t: number } {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) {
+    const dSq = (x1 - cx) * (x1 - cx) + (y1 - cy) * (y1 - cy);
+    return { hit: dSq <= radius * radius, x: x1, y: y1, t: 0 };
+  }
+
+  // Projection of circle center onto segment
+  const t = Math.max(0, Math.min(1, ((cx - x1) * dx + (cy - y1) * dy) / lenSq));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  const distSq = (cx - projX) * (cx - projX) + (cy - projY) * (cy - projY);
+
+  if (distSq <= radius * radius) {
+    return { hit: true, x: projX, y: projY, t };
+  }
+  return { hit: false, x: 0, y: 0, t: 1 };
+}
+
 export const WEAPON_CONFIGS: Record<string, {
   name: string;
   damage: number;
@@ -410,7 +434,7 @@ export const WEAPON_CONFIGS: Record<string, {
 }> = {
   pistol: {
     name: 'Glock 19',
-    damage: 22,
+    damage: 18,
     fireRate: 250,
     magSize: 15,
     reloadTime: 1200,
@@ -421,11 +445,11 @@ export const WEAPON_CONFIGS: Record<string, {
     bulletRadius: 3,
     color: '#94a3b8',
     themeColor: '#64748b',
-    description: 'Yarı otomatik hafif tabanca'
+    description: 'Yarı otomatik dengeli tabanca'
   },
   shotgun: {
     name: 'SPAS-12',
-    damage: 18,
+    damage: 11,
     fireRate: 750,
     magSize: 6,
     reloadTime: 2100,
@@ -436,11 +460,11 @@ export const WEAPON_CONFIGS: Record<string, {
     bulletRadius: 3.5,
     color: '#f97316',
     themeColor: '#ea580c',
-    description: 'Yakın mesafede ölümcül 6 saçmalı pompalı'
+    description: 'Yakın mesafede 6 saçmalı pompalı (Tümü değerse 66 Hasar)'
   },
   smg: {
     name: 'Micro UZI',
-    damage: 15,
+    damage: 12,
     fireRate: 85,
     magSize: 32,
     reloadTime: 1400,
@@ -451,11 +475,11 @@ export const WEAPON_CONFIGS: Record<string, {
     bulletRadius: 2.8,
     color: '#38bdf8',
     themeColor: '#0284c7',
-    description: 'Seri atışlı kompakt hafif makineli'
+    description: 'Seri atışlı kompakt hafif makineli (32 Mermi)'
   },
   rifle: {
     name: 'AK-47 Askeri',
-    damage: 32,
+    damage: 20,
     fireRate: 150,
     magSize: 30,
     reloadTime: 1800,
@@ -466,11 +490,11 @@ export const WEAPON_CONFIGS: Record<string, {
     bulletRadius: 3.5,
     color: '#eab308',
     themeColor: '#ca8a04',
-    description: 'Yüksek hasarlı taarruz tüfeği'
+    description: 'Dengeli taarruz tüfeği (Mermi başı 20 Hasar)'
   },
   sniper: {
     name: 'AWP Ağır Sniper',
-    damage: 92,
+    damage: 70,
     fireRate: 1200,
     magSize: 5,
     reloadTime: 2400,
@@ -481,13 +505,13 @@ export const WEAPON_CONFIGS: Record<string, {
     bulletRadius: 4.5,
     color: '#a855f7',
     themeColor: '#9333ea',
-    description: 'Ultra menzilli ağır keskin nişancı'
+    description: 'Uzun menzilli keskin nişancı (70 Hasar, 5 Mermi)'
   },
   plasma: {
     name: 'Plazma RPG',
-    damage: 85,
-    fireRate: 1400,
-    magSize: 4,
+    damage: 90,
+    fireRate: 1200,
+    magSize: 3,
     reloadTime: 2500,
     speed: 14,
     spread: 0.04,
@@ -498,7 +522,7 @@ export const WEAPON_CONFIGS: Record<string, {
     themeColor: '#db2777',
     isAoE: true,
     aoeRadius: 130,
-    description: 'Düştüğü yerde patlayan plazma roket'
+    description: 'Dengeli plazma roket (Kalkana 50, Saf Cana 90 Hasar, 3 Mermi)'
   }
 };
 
@@ -565,6 +589,7 @@ export interface BulletData {
   aoeRadius?: number;
   distanceTraveled: number;
   maxRange: number;
+  weaponType?: string;
 }
 
 export interface CrateData {
@@ -583,6 +608,8 @@ export interface LootItemData {
   type: string;
   x: number;
   y: number;
+  currentAmmo?: number;
+  maxAmmo?: number;
 }
 
 export interface ObstacleData {
@@ -801,8 +828,8 @@ export class BattleRoyaleManager {
       activeWeapon: 'pistol',
       activeWeaponSlot: 0,
       weapons: ['pistol'],
-      ammo: { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 4 },
-      reserveAmmo: { pistol: 60, shotgun: 24, smg: 120, rifle: 90, sniper: 15, plasma: 8 },
+      ammo: { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 3 },
+      reserveAmmo: { pistol: 60, shotgun: 24, smg: 120, rifle: 90, sniper: 15, plasma: 6 },
       isReloading: false,
       reloadEndTime: 0,
       isAlive: true,
@@ -877,7 +904,7 @@ export class BattleRoyaleManager {
       activeWeapon: 'pistol',
       activeWeaponSlot: 0,
       weapons: ['pistol'],
-      ammo: { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 4 },
+      ammo: { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 3 },
       reserveAmmo: { pistol: 999, shotgun: 999, smg: 999, rifle: 999, sniper: 999, plasma: 999 },
       isReloading: false,
       reloadEndTime: 0,
@@ -1050,8 +1077,8 @@ export class BattleRoyaleManager {
       p.activeWeapon = 'pistol';
       p.activeWeaponSlot = 0;
       p.weapons = ['pistol'];
-      p.ammo = { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 4 };
-      p.reserveAmmo = { pistol: 60, shotgun: 24, smg: 120, rifle: 90, sniper: 15, plasma: 8 };
+      p.ammo = { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 3 };
+      p.reserveAmmo = { pistol: 60, shotgun: 24, smg: 120, rifle: 90, sniper: 15, plasma: 6 };
       p.botStrafeDir = Math.random() < 0.5 ? 1 : -1;
       p.botStrafeTimer = Date.now() + 600;
       p.botStuckCounter = 0;
@@ -1126,9 +1153,13 @@ export class BattleRoyaleManager {
     // 4. Ground Loot
     for (let i = 0; i < 50; i++) {
       const lootType = cratePool[Math.floor(Math.random() * cratePool.length)];
+      const wName = lootType.startsWith('weapon_') ? lootType.replace('weapon_', '') : null;
+      const mag = wName && WEAPON_CONFIGS[wName] ? WEAPON_CONFIGS[wName].magSize : undefined;
       room.loot.push({
         id: `loot_${i}`,
         type: lootType,
+        currentAmmo: mag,
+        maxAmmo: mag,
         x: 200 + Math.random() * (MAP_SIZE - 400),
         y: 200 + Math.random() * (MAP_SIZE - 400)
       });
@@ -1232,22 +1263,45 @@ export class BattleRoyaleManager {
 
     if (item.type.startsWith('weapon_')) {
       const wName = item.type.replace('weapon_', '');
+      const cfg = WEAPON_CONFIGS[wName];
+      if (!cfg) return;
+
+      const itemAmmo = typeof item.currentAmmo === 'number' ? item.currentAmmo : cfg.magSize;
       const oldWeapon = player.activeWeapon;
+      const oldSlot = player.activeWeaponSlot;
 
       if (player.weapons.length < 2 && !player.weapons.includes(wName)) {
         player.weapons.push(wName);
         player.activeWeaponSlot = player.weapons.length - 1;
         player.activeWeapon = wName;
+        player.ammo[wName] = itemAmmo;
+        if (player.reserveAmmo[wName] === undefined) {
+          player.reserveAmmo[wName] = cfg.magSize * 2;
+        }
+        player.isReloading = false;
       } else {
         // Swap with current active weapon slot
-        player.weapons[player.activeWeaponSlot] = wName;
-        player.activeWeapon = wName;
+        const droppedWeapon = player.weapons[oldSlot] || oldWeapon;
+        const droppedCfg = WEAPON_CONFIGS[droppedWeapon];
+        const droppedAmmo = player.ammo[droppedWeapon] !== undefined
+          ? player.ammo[droppedWeapon]
+          : (droppedCfg?.magSize || 15);
 
-        // Drop old weapon
-        if (oldWeapon && oldWeapon !== 'pistol') {
+        player.weapons[oldSlot] = wName;
+        player.activeWeapon = wName;
+        player.ammo[wName] = itemAmmo;
+        if (player.reserveAmmo[wName] === undefined) {
+          player.reserveAmmo[wName] = cfg.magSize * 2;
+        }
+        player.isReloading = false;
+
+        // Drop old weapon with its EXACT remaining ammo on the ground!
+        if (droppedWeapon && droppedWeapon !== 'fists') {
           room.loot.push({
-            id: `loot_swp_${Date.now()}`,
-            type: `weapon_${oldWeapon}`,
+            id: `loot_swp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            type: `weapon_${droppedWeapon}`,
+            currentAmmo: droppedAmmo,
+            maxAmmo: droppedCfg?.magSize || 15,
             x: player.x,
             y: player.y
           });
@@ -1282,43 +1336,47 @@ export class BattleRoyaleManager {
 
   private tickGame(room: GameRoom) {
     if (room.status !== 'playing') return;
-    const now = Date.now();
+    try {
+      const now = Date.now();
 
-    // 1. Match Time decrement (Deathmatch mode)
-    if (room.mode === 'deathmatch') {
-      room.matchTimeRemaining -= 1 / 30;
-      if (room.matchTimeRemaining <= 0) {
-        this.endDeathmatch(room);
-        return;
+      // 1. Match Time decrement (Deathmatch mode)
+      if (room.mode === 'deathmatch') {
+        room.matchTimeRemaining -= 1 / 30;
+        if (room.matchTimeRemaining <= 0) {
+          this.endDeathmatch(room);
+          return;
+        }
       }
-    }
 
-    // 2. Zone progression (Battle Royale mode)
-    if (room.mode === 'royale') {
-      this.updateZone(room);
-    }
-
-    // 3. Update Player Movements, River Drag & Enhanced AI Bots
-    this.updatePlayersAndBots(room, now);
-
-    // 4. Update Bullets & Ray-Cast Collisions
-    this.updateBullets(room, now);
-
-    // 5. Clean Expired Explosions & Popups
-    room.explosions = room.explosions.filter(e => now - e.createdAt < 700);
-    room.damagePopups = room.damagePopups.filter(dp => now - dp.createdAt < 800);
-
-    // 6. Check Battle Royale Elimination & Win
-    if (room.mode === 'royale') {
-      const alivePlayers = room.players.filter(p => p.isAlive);
-      if (alivePlayers.length <= 1 && room.players.length > 1) {
-        this.endBattleRoyale(room, alivePlayers[0] || null);
-        return;
+      // 2. Zone progression (Battle Royale mode)
+      if (room.mode === 'royale') {
+        this.updateZone(room);
       }
-    }
 
-    // Emit 30Hz Optimized Compact Game State update
-    this.io.to(room.id).emit('royale:game_state', this.getPublicGameState(room));
+      // 3. Update Player Movements, River Drag & Enhanced AI Bots
+      this.updatePlayersAndBots(room, now);
+
+      // 4. Update Bullets & Ray-Cast Collisions
+      this.updateBullets(room, now);
+
+      // 5. Clean Expired Explosions & Popups
+      room.explosions = room.explosions.filter(e => now - e.createdAt < 700);
+      room.damagePopups = room.damagePopups.filter(dp => now - dp.createdAt < 800);
+
+      // 6. Check Battle Royale Elimination & Win
+      if (room.mode === 'royale') {
+        const alivePlayers = room.players.filter(p => p.isAlive);
+        if (alivePlayers.length <= 1 && room.players.length > 1) {
+          this.endBattleRoyale(room, alivePlayers[0] || null);
+          return;
+        }
+      }
+
+      // Emit 30Hz Optimized Compact Game State update
+      this.io.to(room.id).emit('royale:game_state', this.getPublicGameState(room));
+    } catch (err) {
+      console.error(`[Royale Room ${room.id} Tick Error]:`, err);
+    }
   }
 
   private isPointInRiver(x: number, y: number): boolean {
@@ -1377,7 +1435,31 @@ export class BattleRoyaleManager {
           p.shield = 25;
           p.isAlive = true;
           p.respawnAt = null;
-          p.spawnShieldEndTime = now + 2500;
+          p.spawnShieldEndTime = now + 2000; // 2 seconds invulnerability as requested
+          p.activeWeapon = 'pistol';
+          p.activeWeaponSlot = 0;
+          p.weapons = ['pistol'];
+          p.ammo = { pistol: WEAPON_CONFIGS.pistol.magSize };
+          p.reserveAmmo = { pistol: WEAPON_CONFIGS.pistol.magSize * 2 };
+          p.isReloading = false;
+
+          // Notify room and client immediately with player:respawned
+          this.io.to(room.id).emit('player:respawned', {
+            playerId: p.id,
+            userId: p.userId,
+            x: Math.round(p.x),
+            y: Math.round(p.y),
+            hp: p.hp,
+            shield: p.shield
+          });
+          this.io.to(room.id).emit('royale:player_respawned', {
+            playerId: p.id,
+            userId: p.userId,
+            x: Math.round(p.x),
+            y: Math.round(p.y),
+            hp: p.hp,
+            shield: p.shield
+          });
         }
         return;
       }
@@ -1670,6 +1752,7 @@ export class BattleRoyaleManager {
               room.bullets.push({
                 id: `b_${p.id}_${now}_${b}`,
                 shooterId: p.id,
+                weaponType: p.activeWeapon,
                 x: p.x + Math.cos(bAngle) * 28,
                 y: p.y + Math.sin(bAngle) * 28,
                 vx: Math.cos(bAngle) * cfg.speed,
@@ -1725,28 +1808,49 @@ export class BattleRoyaleManager {
       // 2. RAY-CAST WALL COLLISION (Zero-ghosting bullet physics)
       const wallRay = checkRaycastWalls(prevX, prevY, nextX, nextY, MAP_BUILDINGS);
       if (wallRay.hit) {
+        // Wall spark/dust effect at exact impact point
+        room.explosions.push({
+          id: `spark_w_${now}_${Math.random().toString(36).substring(2, 6)}`,
+          x: Math.round(wallRay.x),
+          y: Math.round(wallRay.y),
+          radius: 18,
+          createdAt: now
+        });
         if (bullet.isAoE) {
-          this.triggerExplosion(room, wallRay.x, wallRay.y, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
+          this.triggerExplosion(room, wallRay.x, wallRay.y, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId, bullet.weaponType);
         }
         return; // Bullet stops and terminates on the wall
       }
 
       // 2B. Rock Obstacle Swept Collision (Mermiler kayalardan geçemez)
       let hitRock = false;
+      let rockHitX = nextX;
+      let rockHitY = nextY;
       for (const obs of room.obstacles) {
         if (obs.type === 'rock') {
-          const dSq = distToSegmentSquared(obs.x, obs.y, prevX, prevY, nextX, nextY);
-          const hitR = obs.radius + bullet.radius;
-          if (dSq <= hitR * hitR) {
+          const rHit = rayIntersectsCircle(prevX, prevY, nextX, nextY, obs.x, obs.y, obs.radius + bullet.radius);
+          if (rHit.hit) {
             hitRock = true;
-            if (bullet.isAoE) {
-              this.triggerExplosion(room, nextX, nextY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
-            }
+            rockHitX = rHit.x;
+            rockHitY = rHit.y;
             break;
           }
         }
       }
-      if (hitRock) return; // Bullet blocked by solid rock obstacle!
+      if (hitRock) {
+        // Rock dust/spark effect
+        room.explosions.push({
+          id: `spark_r_${now}_${Math.random().toString(36).substring(2, 6)}`,
+          x: Math.round(rockHitX),
+          y: Math.round(rockHitY),
+          radius: 18,
+          createdAt: now
+        });
+        if (bullet.isAoE) {
+          this.triggerExplosion(room, rockHitX, rockHitY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId, bullet.weaponType);
+        }
+        return; // Bullet blocked by solid rock obstacle!
+      }
 
       // 3. TNT Barrel Swept Collision
       let hitBarrel = false;
@@ -1758,7 +1862,7 @@ export class BattleRoyaleManager {
           hitBarrel = true;
           if (barrel.hp <= 0) {
             barrel.hp = 0;
-            this.triggerExplosion(room, barrel.x, barrel.y, 140, 85, bullet.shooterId);
+            this.triggerExplosion(room, barrel.x, barrel.y, 140, 85, bullet.shooterId, 'barrel');
           }
           break;
         }
@@ -1777,9 +1881,13 @@ export class BattleRoyaleManager {
           crate.hp -= bullet.damage;
           hitCrate = true;
           if (crate.hp <= 0) {
+            const wName = crate.lootType.startsWith('weapon_') ? crate.lootType.replace('weapon_', '') : null;
+            const mag = wName && WEAPON_CONFIGS[wName] ? WEAPON_CONFIGS[wName].magSize : undefined;
             room.loot.push({
-              id: `loot_cr_${Date.now()}_${Math.random()}`,
+              id: `loot_cr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               type: crate.lootType,
+              currentAmmo: mag,
+              maxAmmo: mag,
               x: crate.x,
               y: crate.y
             });
@@ -1792,24 +1900,41 @@ export class BattleRoyaleManager {
         return;
       }
 
-      // 5. Player Swept Ray-Collision
+      // 5. Player Swept Ray-Collision (Behind Wall/Rock Protection)
       let hitPlayer = false;
       for (const target of room.players) {
-        if (!target.isAlive || target.id === bullet.shooterId) continue;
+        if (!target || !target.isAlive || target.id === bullet.shooterId) continue;
         if (target.spawnShieldEndTime > now) continue;
 
         const dSq = distToSegmentSquared(target.x, target.y, prevX, prevY, nextX, nextY);
         const hitR = 24 + bullet.radius;
         if (dSq <= hitR * hitR) {
+          // Wall check: wall between bullet origin and player blocks damage!
+          const wallBlock = checkRaycastWalls(prevX, prevY, target.x, target.y, MAP_BUILDINGS);
+          if (wallBlock.hit) continue;
+
+          // Rock check: rock between bullet origin and player blocks damage!
+          let rockBlock = false;
+          for (const obs of room.obstacles) {
+            if (obs.type === 'rock') {
+              const rHit = rayIntersectsCircle(prevX, prevY, target.x, target.y, obs.x, obs.y, obs.radius);
+              if (rHit.hit) {
+                rockBlock = true;
+                break;
+              }
+            }
+          }
+          if (rockBlock) continue;
+
           hitPlayer = true;
-          this.applyDamageToPlayer(room, target, bullet.damage, bullet.shooterId);
+          this.applyDamageToPlayer(room, target, bullet.damage, bullet.shooterId, bullet.weaponType);
           break;
         }
       }
 
       if (hitPlayer) {
         if (bullet.isAoE) {
-          this.triggerExplosion(room, nextX, nextY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
+          this.triggerExplosion(room, nextX, nextY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId, bullet.weaponType);
         }
         return;
       }
@@ -1823,18 +1948,43 @@ export class BattleRoyaleManager {
     room.bullets = remainingBullets;
   }
 
-  private triggerExplosion(room: GameRoom, x: number, y: number, radius: number, maxDamage: number, shooterId: string) {
+  private triggerExplosion(
+    room: GameRoom,
+    x: number,
+    y: number,
+    radius: number,
+    maxDamage: number,
+    shooterId: string,
+    weaponType: string = 'plasma'
+  ) {
     const now = Date.now();
-    room.explosions.push({ id: `exp_${now}_${Math.random()}`, x, y, radius, createdAt: now });
+    room.explosions.push({ id: `exp_${now}_${Math.random().toString(36).substring(2, 6)}`, x, y, radius, createdAt: now });
 
-    // Damage Players
+    // Damage Players with wall-blocking line-of-sight check
     room.players.forEach(p => {
-      if (!p.isAlive || p.spawnShieldEndTime > now) return;
+      if (!p || !p.isAlive || p.spawnShieldEndTime > now) return;
       const d = Math.hypot(p.x - x, p.y - y);
       if (d <= radius) {
+        // Wall between explosion center and player shields the player!
+        const wallBlock = checkRaycastWalls(x, y, p.x, p.y, MAP_BUILDINGS);
+        if (wallBlock.hit) return;
+
+        // Rock between explosion center and player shields the player!
+        let rockBlock = false;
+        for (const obs of room.obstacles) {
+          if (obs.type === 'rock') {
+            const rHit = rayIntersectsCircle(x, y, p.x, p.y, obs.x, obs.y, obs.radius);
+            if (rHit.hit) {
+              rockBlock = true;
+              break;
+            }
+          }
+        }
+        if (rockBlock) return;
+
         const falloff = 1 - (d / radius);
-        const dmg = Math.round(maxDamage * Math.max(0.35, falloff));
-        this.applyDamageToPlayer(room, p, dmg, shooterId);
+        const dmg = Math.round(maxDamage * Math.max(0.4, falloff));
+        this.applyDamageToPlayer(room, p, dmg, shooterId, weaponType);
       }
     });
 
@@ -1846,68 +1996,113 @@ export class BattleRoyaleManager {
     });
     room.barrels = room.barrels.filter(b => b.hp > 0);
 
-    // Destroy Crates
+    // Destroy Crates & drop loot with full ammo
     room.crates.forEach(c => {
       if (Math.hypot(c.x - x, c.y - y) <= radius) {
         c.hp -= maxDamage;
         if (c.hp <= 0) {
-          room.loot.push({ id: `loot_exp_${Date.now()}`, type: c.lootType, x: c.x, y: c.y });
+          const wName = c.lootType.startsWith('weapon_') ? c.lootType.replace('weapon_', '') : null;
+          const mag = wName && WEAPON_CONFIGS[wName] ? WEAPON_CONFIGS[wName].magSize : undefined;
+          room.loot.push({
+            id: `loot_exp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            type: c.lootType,
+            currentAmmo: mag,
+            maxAmmo: mag,
+            x: c.x,
+            y: c.y
+          });
         }
       }
     });
     room.crates = room.crates.filter(c => c.hp > 0);
   }
 
-  private applyDamageToPlayer(room: GameRoom, target: PlayerData, damage: number, attackerId: string) {
+  private applyDamageToPlayer(
+    room: GameRoom,
+    target: PlayerData,
+    damage: number,
+    attackerId: string,
+    weaponType?: string
+  ) {
+    if (!target || !target.isAlive || target.spawnShieldEndTime > Date.now()) return;
+
     let dmg = damage;
-    if (target.shield > 0) {
-      const shieldAbsorb = Math.min(target.shield, Math.round(dmg * 0.65));
-      target.shield -= shieldAbsorb;
-      dmg -= shieldAbsorb;
+    let totalDmg = damage;
+
+    if (weaponType === 'plasma') {
+      if (target.shield > 0) {
+        // Plazma Kalkan Dengesi: Toplam 50 hasar (Önce kalkandan 50 düşsün, kalkan biterse kalanı cana yansısın)
+        const totalPlasma = 50;
+        const shieldAbsorb = Math.min(target.shield, totalPlasma);
+        target.shield -= shieldAbsorb;
+        const remainingHpDmg = totalPlasma - shieldAbsorb;
+        target.hp = Math.max(0, target.hp - remainingHpDmg);
+        totalDmg = totalPlasma;
+      } else {
+        // Plazma Saf Can Dengesi: Tam vuruşta 90 hasar (100 candan 10 can bırakır, doğrudan tek atmaz!)
+        const totalPlasma = 90;
+        target.hp = Math.max(0, target.hp - totalPlasma);
+        totalDmg = totalPlasma;
+      }
+    } else {
+      // Standart Silah Hasar Dağılımı: Önce kalkan absorbe eder, kalkan biterse kalanı cana yansır
+      if (target.shield > 0) {
+        const shieldAbsorb = Math.min(target.shield, dmg);
+        target.shield -= shieldAbsorb;
+        dmg -= shieldAbsorb;
+      }
+      target.hp = Math.max(0, target.hp - dmg);
     }
 
-    target.hp = Math.max(0, target.hp - dmg);
     room.damagePopups.push({
-      id: `dp_${Date.now()}_${Math.random()}`,
+      id: `dp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       x: target.x,
       y: target.y - 20,
-      damage,
+      damage: totalDmg,
       color: target.shield > 0 ? '#06b6d4' : '#ef4444',
       createdAt: Date.now()
     });
 
     if (target.hp <= 0) {
-      this.eliminatePlayer(room, target, attackerId);
+      this.eliminatePlayer(room, target, attackerId, weaponType);
     }
   }
 
-  private eliminatePlayer(room: GameRoom, victim: PlayerData, killerId: string) {
+  private eliminatePlayer(room: GameRoom, victim: PlayerData, killerId: string, weaponType?: string) {
     victim.isAlive = false;
     victim.deaths = (victim.deaths || 0) + 1;
+    victim.hp = 0;
+    victim.shield = 0;
 
     const killer = room.players.find(p => p.id === killerId);
     if (killer) {
       killer.kills = (killer.kills || 0) + 1;
     }
 
+    const usedWeapon = weaponType || (killer ? killer.activeWeapon : 'Gaz');
     room.killfeed.unshift({
       id: Math.random().toString(36).substring(2, 7),
       killer: killer ? killer.username : 'Bölge / Gaz',
       victim: victim.username,
-      weapon: killer ? killer.activeWeapon : 'Gaz',
+      weapon: usedWeapon,
       time: Date.now()
     });
     if (room.killfeed.length > 8) room.killfeed.pop();
 
-    // Drop guaranteed medkit & player's weapon
+    // Drop victim's weapon with its EXACT remaining ammo on ground!
+    if (victim.activeWeapon && victim.activeWeapon !== 'fists') {
+      const curAmmo = victim.ammo[victim.activeWeapon] ?? (WEAPON_CONFIGS[victim.activeWeapon]?.magSize || 10);
+      room.loot.push({
+        id: `loot_drop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        type: `weapon_${victim.activeWeapon}`,
+        currentAmmo: curAmmo,
+        maxAmmo: WEAPON_CONFIGS[victim.activeWeapon]?.magSize || 10,
+        x: victim.x,
+        y: victim.y
+      });
+    }
     room.loot.push({
-      id: `loot_drop_${Date.now()}`,
-      type: `weapon_${victim.activeWeapon}`,
-      x: victim.x,
-      y: victim.y
-    });
-    room.loot.push({
-      id: `loot_med_${Date.now()}`,
+      id: `loot_med_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       type: 'medkit',
       x: victim.x + 20,
       y: victim.y + 20
@@ -2100,7 +2295,7 @@ export class BattleRoyaleManager {
       mode: room.mode,
       matchTimeRemaining: Math.round(room.matchTimeRemaining),
       duration: room.duration,
-      players: room.players.map(p => ({
+      players: (room.players || []).filter(Boolean).map(p => ({
         id: p.id,
         userId: p.userId,
         username: p.username,
@@ -2132,9 +2327,10 @@ export class BattleRoyaleManager {
         speedBuffEndTime: p.speedBuffEndTime,
         rageBuffEndTime: p.rageBuffEndTime
       })),
-      bullets: room.bullets.map(b => ({
+      bullets: (room.bullets || []).filter(Boolean).map(b => ({
         id: b.id,
         shooterId: b.shooterId,
+        weaponType: b.weaponType,
         x: Math.round(b.x),
         y: Math.round(b.y),
         vx: Math.round(b.vx),
@@ -2144,7 +2340,7 @@ export class BattleRoyaleManager {
         radius: b.radius,
         isAoE: b.isAoE
       })),
-      crates: room.crates.map(c => ({
+      crates: (room.crates || []).filter(Boolean).map(c => ({
         id: c.id,
         x: Math.round(c.x),
         y: Math.round(c.y),
@@ -2153,7 +2349,7 @@ export class BattleRoyaleManager {
         tier: c.tier,
         isMilitary: c.isMilitary
       })),
-      barrels: room.barrels.map(b => ({
+      barrels: (room.barrels || []).filter(Boolean).map(b => ({
         id: b.id,
         x: Math.round(b.x),
         y: Math.round(b.y),
@@ -2161,12 +2357,14 @@ export class BattleRoyaleManager {
         maxHp: b.maxHp,
         radius: b.radius
       })),
-      explosions: room.explosions.filter(e => now - e.createdAt < 750),
-      loot: room.loot.map(l => ({
+      explosions: (room.explosions || []).filter(Boolean).filter(e => now - e.createdAt < 750),
+      loot: (room.loot || []).filter(Boolean).map(l => ({
         id: l.id,
         x: Math.round(l.x),
         y: Math.round(l.y),
-        type: l.type
+        type: l.type,
+        currentAmmo: l.currentAmmo,
+        maxAmmo: l.maxAmmo
       })),
       obstacles: room.obstacles,
       zone: {

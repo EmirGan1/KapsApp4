@@ -7507,43 +7507,71 @@ async function startServer() {
     });
 
     socket.on("royale:add_bot", (data: { roomId: string }, cb?: (res: any) => void) => {
-      const res = battleRoyaleManager.addBot(data.roomId, userIdNum);
-      broadcastActiveTables();
-      if (cb) cb(res);
+      try {
+        const res = battleRoyaleManager.addBot(data.roomId, userIdNum);
+        broadcastActiveTables();
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
     });
 
     socket.on("royale:remove_bot", (data: { roomId: string; botId?: string }, cb?: (res: any) => void) => {
-      const res = battleRoyaleManager.removeBot(data.roomId, userIdNum, data.botId);
-      broadcastActiveTables();
-      if (cb) cb(res);
+      try {
+        const res = battleRoyaleManager.removeBot(data.roomId, userIdNum, data.botId);
+        broadcastActiveTables();
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
     });
 
     socket.on("royale:toggle_ready", (data: { roomId: string }, cb?: (res: any) => void) => {
-      const res = battleRoyaleManager.toggleReady(data.roomId, userIdNum);
-      if (cb) cb(res);
+      try {
+        const res = battleRoyaleManager.toggleReady(data.roomId, userIdNum);
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
     });
 
     socket.on("royale:start_game", async (data: { roomId: string }, cb?: (res: any) => void) => {
-      const res = await battleRoyaleManager.startGame(data.roomId, userIdNum);
-      broadcastActiveTables();
-      if (cb) cb(res);
+      try {
+        const res = await battleRoyaleManager.startGame(data.roomId, userIdNum);
+        broadcastActiveTables();
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
     });
 
     socket.on("royale:return_to_lobby", (data: { roomId: string }, cb?: (res: any) => void) => {
-      const res = battleRoyaleManager.returnToLobby(data.roomId, userIdNum);
-      broadcastActiveTables();
-      if (cb) cb(res);
+      try {
+        const res = battleRoyaleManager.returnToLobby(data.roomId, userIdNum);
+        broadcastActiveTables();
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
     });
 
     socket.on("royale:get_leaderboard", async (data: { sortBy?: 'wins' | 'kills' }, cb?: (rows: any[]) => void) => {
-      const rows = await battleRoyaleManager.getLeaderboard(data?.sortBy || 'wins');
-      if (cb) cb(rows);
+      try {
+        const rows = await battleRoyaleManager.getLeaderboard(data?.sortBy || 'wins');
+        if (cb) cb(rows);
+      } catch (err: any) {
+        if (cb) cb([]);
+      }
     });
 
     socket.on("royale:input", (input: any) => {
-      const roomId = input?.roomId || socket.data.currentRoyaleRoom;
-      if (roomId) {
-        battleRoyaleManager.processPlayerInput(roomId, userIdNum, input);
+      try {
+        const roomId = input?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          battleRoyaleManager.processPlayerInput(roomId, userIdNum, input);
+        }
+      } catch (err) {
+        console.error("[Royale Input Error]:", err);
       }
     });
 
