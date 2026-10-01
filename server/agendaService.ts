@@ -247,131 +247,120 @@ export const FMV_ISIK_SEPTEMBER_LUNCH_MENU = [
  * Yalnızca Öğle Yemeği (Çorba, Ana Yemek, Garnitür/Pilav/Makarna, Tatlı/Salata/Yoğurt) kalemleri
  */
 export const FMV_ISIK_OCTOBER_LUNCH_MENU = [
-  // 1 Ekim Perşembe
+  // 1. HAFTA
   {
     day: 1,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Süzme Mercimek Çorbası\n• Fırında İzmir Köfte & Elma Dilim Patates\n• Şehriyeli Pirinç Pilavı\n• Mevsim Salata & Ayran"
+    description: "• Sebze Çorba\n• Orman Kebabı / Hindi Döner Sote / Patates\n• Peynirli Su Böreği\n• Makarna Büfesi (Peynir Sos)\n• Salata Büfesi (Z.Y. Kırmızı Pancar Salatası)\n• Sütlaç & Yoğurt"
   },
-  // 2 Ekim Cuma
   {
     day: 2,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Kaşarlı Domates Çorbası\n• Fırında Çıtır Tavuk Baget\n• Sebzeli Bulgur Pilavı\n• Fırın Sütlaç"
+    description: "• Ezogelin Çorba\n• Hamburger / Elma Dilim Patates\n• Soğan Halkası\n• Makarna Büfesi (Yeşillikli Domates Sos)\n• Salata Büfesi (Tabule / Şalgamlı Kısır)\n• Mevsim Meyve Armut & Ayran"
   },
-  // 5 Ekim Pazartesi
+  // 2. HAFTA
   {
     day: 5,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Yayla Çorbası\n• Etli Kuru Fasulye\n• Sade Pirinç Pilavı\n• Karışık Turşu & Yoğurt"
+    description: "• Domates Çorba\n• Sosyete Mantı / Yoğurt\n• Sebze Buketi\n• Makarna Büfesi (Pesto Sos)\n• Salata Büfesi (Havuç Tarator)\n• Mevsim Meyve Erik & Vişne Komposto"
   },
-  // 6 Ekim Salı
   {
     day: 6,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Ezogelin Çorbası\n• Kıymalı Sebzeli Musakka\n• Soslu Burgu Makarna\n• Taze Yoğurt"
+    description: "• Süzme Mercimek Çorba\n• Hasanpaşa Köfte / Hindi Emense / Elma Dilim Patates\n• Şehriyeli Bulgur Pilavı\n• Makarna Büfesi (Peynir Sos)\n• Salata Büfesi (Yoğurtlu Pırasa Kavurma)\n• Sütlaç & Yoğurt"
   },
-  // 7 Ekim Çarşamba
   {
     day: 7,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Kremalı Mantar Çorbası\n• Fırında Sebzeli Hindi Sote\n• Arpa Şehriyeli Pilav\n• Taze Mevsim Meyvesi"
+    description: "• Düğün Çorba\n• Etli Kuru Fasulye\n• Bolognez Soslu Karnabahar Mantısı\n• Pirinç Pilavı\n• Makarna Büfesi (Napoliten Sos)\n• Salata Büfesi (Ton Balığı)\n• Dondurma & Cacık"
   },
-  // 8 Ekim Perşembe
   {
     day: 8,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Tarhana Çorbası\n• Kadınbudu Köfte & Patates Püresi\n• Domatesli Spagetti\n• Ev Yapımı İncir Tatlısı"
+    description: "• Şehriye Çorba\n• Kabak Dolma / Yoğurt\n• Beşamel Soslu Kıymalı Sebze Graten\n• Peynirli Gül Börek\n• Makarna Büfesi (Arabiatta Sos)\n• Salata Büfesi (Tabule)\n• Mevsim Meyve Üzüm & Çilek Komposto"
   },
-  // 9 Ekim Cuma
   {
     day: 9,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Şifalı Sebze Çorbası\n• Fırında Çipura Fileto\n• Fırın Patates Dilimleri\n• Roka & Havuç Salatası / Tahin Helvası"
+    description: "• Ezogelin Çorba\n• Sebzeli Kıbrıs Köfte / Hindi Sote / Küp Patates Kavurma\n• Arpa Şehriye Pilav\n• Makarna Büfesi (Napoliten Sos)\n• Salata Büfesi (Z.Y. Taze Fasulye)\n• Tahin Helva & Yoğurt"
   },
-  // 12 Ekim Pazartesi
+  // 3. HAFTA
   {
     day: 12,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Şehriye Çorbası\n• Kıymalı Karışık Dolma (Biber & Kabak)\n• Sarımsaklı / Sade Yoğurt\n• Kemalpaşa Tatlısı"
+    description: "• Düğün Çorba\n• Etli Taze Fasulye / Etli Nohut\n• Pirinç Pilavı\n• Makarna Büfesi (Pesto Sos)\n• Salata Büfesi (Z.Y. Fırında Soslu Patlıcan)\n• Mevsim Meyve Armut & Cacık"
   },
-  // 13 Ekim Salı
   {
     day: 13,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Kırmızı Mercimek Çorbası\n• Piliç Külbastı & Biberiyeli Sos\n• Havuçlu Pirinç Pilavı\n• Ayran"
+    description: "• Sebze Çorba\n• Izgara Köfte / Sote Patates / Hindi Gulaş\n• Domatesli Bulgur Pilavı\n• Makarna Büfesi (Beyaz Sebze Sos)\n• Salata Büfesi (Z.Y. Portakallı Pırasa)\n• Spangle Tatlı & Ayran"
   },
-  // 14 Ekim Çarşamba
   {
     day: 14,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Tutmaç Çorbası\n• Tas Kebabı & Havuçlu Bezelye\n• Tereyağlı Bulgur Pilavı\n• Mevsim Çoban Salata"
+    description: "• Alaca Çorba\n• Biber Dolma / Yoğurt\n• Etli Sebzeli Türlü\n• Peynirli Rulo Böreği\n• Makarna Büfesi (Napoliten Sos)\n• Salata Büfesi (Ton Balığı)\n• Yoğurt & Komposto"
   },
-  // 15 Ekim Perşembe
   {
     day: 15,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Fırınlanmış Domates Çorbası\n• Izgara Kasap Köfte & Közlenmiş Biber\n• Fırın Peynirli Makarna\n• Çikolatalı Puding"
+    description: "• Yayla Çorba\n• İsveç Köfte / Sebze Sote / Sebzeli Hindi Sote\n• Erişte\n• Makarna Büfesi (Peynir Sos)\n• Salata Büfesi (Z.Y. Kereviz)\n• Baklava & Yoğurt"
   },
-  // 16 Ekim Cuma
   {
     day: 16,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Balkabağı Çorbası\n• Fırında Ispanaklı Tavuk Rulo\n• Sebzeli Kuskus\n• Üzüm Kompostosu"
+    description: "• Antep Çorba\n• Salçalı Biftek / Patates\n• Nohutlu Pirinç Pilavı\n• Makarna Büfesi (Pesto Sos)\n• Salata Büfesi (Z.Y. Kabak Kalye)\n• Mevsim Meyve Elma & Ayran"
   },
-  // 19 Ekim Pazartesi
+  // 4. HAFTA
   {
     day: 19,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Ezogelin Çorbası\n• Etli Yeşil Mercimek Yemeği\n• Şehriyeli Pirinç Pilavı\n• Ev Yapımı Yoğurt"
+    description: "• Tavuk Suyu Çorba\n• Kıymalı Yeşil Mercimek / Patates Oturtma\n• Pirinç Pilavı\n• Makarna Büfesi (Pesto Sos)\n• Salata Büfesi (Z.Y. Havuçlu Bamya)\n• Mevsim Meyve Mandalina & Yoğurt"
   },
-  // 20 Ekim Salı
   {
     day: 20,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Kremalı Tavuk Çorbası\n• Hasanpaşa Köfte & Patates Püresi\n• Kelebek Makarna\n• İrmik Helvası"
+    description: "• Şefin Çorba\n• Ekşili Köfte / Piliç Haşlama\n• Bulgur Pilavı\n• Makarna Büfesi (Napoliten Sos)\n• Salata Büfesi (Z.Y. Kabak Mücver)\n• Yoğurt & Komposto"
   },
-  // 21 Ekim Çarşamba
   {
     day: 21,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Tel Şehriye Çorbası\n• Fırında Sebzeli Hindi But\n• Nohutlu Pirinç Pilavı\n• Naneli Cacık"
+    description: "• Mercimek Çorba\n• Etli Sebze Kebap / Erişte Kavurma\n• Makarna Büfesi (Beyaz Sebze Sos)\n• Salata Büfesi (Z.Y. Brüksel Lahana)\n• Mevsim Meyve Elma & Cacık"
   },
-  // 22 Ekim Perşembe
   {
     day: 22,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Yoğurtlu Buğday Çorbası\n• Orman Kebabı\n• Domatesli Bulgur Pilavı\n• Mevsim Meyvesi"
+    description: "• Düğün Çorba\n• Bolognez Soslu Sebze Topları / Kıymalı Ispanak / Yoğurt\n• Nohutlu Pirinç Pilavı\n• Makarna Büfesi (Sebzeli Domates Sos)\n• Salata Büfesi (Ton Balığı)\n• Mozaik Pasta & Yoğurt"
   },
-  // 23 Ekim Cuma
   {
     day: 23,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Sebze Çorbası\n• Çıtır Balık Fileto & Tartar Sos\n• Fırınlanmış Patates\n• Akdeniz Yeşillikleri Salatası"
+    description: "• Tarhana Çorba\n• İzmir Köfte / Çıtır Tavuk / Patates\n• Arpa Şehriye Pilav\n• Makarna Büfesi (Yeşillikli Domates Sos)\n• Salata Büfesi (Zeytinyağlı Roka Buketi)\n• Mevsim Meyve Armut & Ayran"
   },
-  // 26 Ekim Pazartesi
+  // 5. HAFTA
   {
     day: 26,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Mercimek Çorbası\n• Kıymalı Karnabahar Graten\n• Domates Soslu Kalem Makarna\n• Yoğurt"
+    description: "• Kesme Sebze Çorba\n• Etli Kuru Fasulye / Kıymalı Sebze Graten\n• Pirinç Pilavı\n• Makarna Büfesi (Domates Sos)\n• Salata Büfesi (Havuç Tarator)\n• Baklava & Cacık"
   },
-  // 27 Ekim Salı
   {
     day: 27,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Yayla Çorbası\n• Piliç Şinitzel\n• Mısırlı Pirinç Pilavı\n• Çoban Salata & Ayran"
+    description: "• Yoğurt Çorba\n• Pilav Üzeri Et Döner / Elma Dilim Patates\n• Makarna Büfesi (Napoliten Sos)\n• Salata Büfesi (Z.Y. Pırasa)\n• Mevsim Meyve Mandalina & Ayran"
   },
-  // 28 Ekim Çarşamba
   {
     day: 28,
-    title: "Günün Öğle Yemeği Menüsü (Cumhuriyet Özel Menüsü)",
-    description: "• Düğün Çorbası\n• Hünkar Beğendi (Dana Etli)\n• Tereyağlı Pirinç Pilavı\n• Trileçe Tatlısı"
+    title: "Günün Öğle Yemeği Menüsü",
+    description: "• Ezogelin Çorba\n• Etli Bezelye / Kıymalı Kabak Sandal Sefası\n• Mısırlı Pirinç Pilavı\n• Makarna Büfesi (Ton Balığı)\n• Salata Büfesi (Tabule)\n• Mevsim Meyve Elma & Yoğurt"
   },
-  // 30 Ekim Cuma
+  {
+    day: 29,
+    title: "Resmi Tatil",
+    description: "🇹🇷 29 Ekim Cumhuriyet Bayramı nedeniyle okulumuz resmi tatildir. Yemek servisi yoktur."
+  },
   {
     day: 30,
     title: "Günün Öğle Yemeği Menüsü",
-    description: "• Domates Çorbası\n• Fırında Köfte Patates\n• Cevizli Erişte\n• Meyve / Ayran"
+    description: "• Domates Çorba\n• Hindi Tandır / Patates Kavurma\n• Yeşil Mercimekli Bulgur Pilavı\n• Makarna Büfesi (Arabiatta Sos)\n• Salata Büfesi (Yoğurtlu Pancar)\n• Çikolatalı Muhallebi & Yoğurt"
   }
 ];
 
@@ -412,24 +401,23 @@ export async function seedOctoberLunchMenu(client: Client) {
       });
     }
 
-    // 2. Seed October Menu
+    // 2. Seed October Menu with clean overwrite
     for (const yr of uniqueYears) {
-      const existing = await client.execute({
-        sql: "SELECT COUNT(*) as cnt FROM agenda_events WHERE event_date LIKE ? AND event_type = 'food'",
+      console.log(`[Agenda] Seeding updated October Lunch Menu for year ${yr}...`);
+      
+      // Delete existing October food entries first to ensure clean replacement
+      await client.execute({
+        sql: "DELETE FROM agenda_events WHERE event_date LIKE ? AND event_type = 'food'",
         args: [`${yr}-10-%`]
       });
 
-      const count = Number(existing.rows[0]?.cnt || 0);
-      if (count === 0) {
-        console.log(`[Agenda] Seeding FMV Özel Işık Okulları October Lunch Menu for year ${yr}...`);
-        for (const item of FMV_ISIK_OCTOBER_LUNCH_MENU) {
-          const dateStr = `${yr}-10-${String(item.day).padStart(2, "0")}`;
-          await client.execute({
-            sql: `INSERT INTO agenda_events (title, event_date, event_time, event_type, description, created_by)
-                  VALUES (?, ?, '12:30', 'food', ?, 'emirgan')`,
-            args: [item.title, dateStr, item.description]
-          });
-        }
+      for (const item of FMV_ISIK_OCTOBER_LUNCH_MENU) {
+        const dateStr = `${yr}-10-${String(item.day).padStart(2, "0")}`;
+        await client.execute({
+          sql: `INSERT INTO agenda_events (title, event_date, event_time, event_type, description, created_by)
+                VALUES (?, ?, '12:30', 'food', ?, 'emirgan')`,
+          args: [item.title, dateStr, item.description]
+        });
       }
     }
     // 3. Seed FMV Ayazağa 12-IB Academic Support (Etüt) Events (Sept 2026 - Jan 2027)

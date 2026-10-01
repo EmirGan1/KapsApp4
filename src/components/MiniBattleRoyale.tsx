@@ -207,7 +207,7 @@ export default function MiniBattleRoyale({
   // Create Room Modal State (100% Free)
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [createTitle, setCreateTitle] = useState<string>(`${username}'ın Arenası`);
-  const [createCapacity, setCreateCapacity] = useState<number>(4);
+  const [createCapacity, setCreateCapacity] = useState<number>(8);
   const [createMode, setCreateMode] = useState<'royale' | 'deathmatch'>('deathmatch');
   const [createDuration, setCreateDuration] = useState<number>(180); // 180s = 3 minutes
 
@@ -410,6 +410,17 @@ export default function MiniBattleRoyale({
   const handleAddBot = () => {
     if (!socket || !currentRoom) return;
     socket.emit('royale:add_bot', { roomId: currentRoom.id });
+  };
+
+  // Fill All Remaining Seats with Bots (Up to 20 Players)
+  const handleFillBots = () => {
+    if (!socket || !currentRoom) return;
+    const needed = (currentRoom.capacity || 20) - (currentRoom.players?.length || 0);
+    for (let i = 0; i < Math.min(needed, 20); i++) {
+      setTimeout(() => {
+        socket.emit('royale:add_bot', { roomId: currentRoom.id });
+      }, i * 35);
+    }
   };
 
   // Remove Bot
@@ -883,6 +894,16 @@ export default function MiniBattleRoyale({
             ctx.fillStyle = '#224a24';
             ctx.fillRect(tx, ty, tileSize, tileSize);
           }
+          // Subtle grass blade tufts (Çim Desenleri)
+          ctx.strokeStyle = '#2d5a31';
+          ctx.lineWidth = 1.5;
+          const gx = tx + 35;
+          const gy = ty + 40;
+          ctx.beginPath();
+          ctx.moveTo(gx, gy); ctx.lineTo(gx - 4, gy - 8);
+          ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 11);
+          ctx.moveTo(gx, gy); ctx.lineTo(gx + 4, gy - 7);
+          ctx.stroke();
         }
       }
 
@@ -901,12 +922,43 @@ export default function MiniBattleRoyale({
         ctx.stroke();
       }
 
-      // 2. DRAW RIVER & WATER RIPPLES
+      // 1B. COBBLESTONE / DIRT PATHWAYS (Connecting Buildings & Bridges)
       ctx.save();
-      ctx.strokeStyle = '#0284c7';
-      ctx.lineWidth = RIVER_WIDTH;
+      ctx.strokeStyle = '#3e362e';
+      ctx.lineWidth = 36;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      ctx.setLineDash([16, 10]);
+      ctx.beginPath();
+      // East-West central road
+      ctx.moveTo(600, 2030);
+      ctx.lineTo(2000, 2030);
+      ctx.lineTo(3350, 2030);
+      // North-South avenue
+      ctx.moveTo(1200, 950);
+      ctx.lineTo(2000, 1920);
+      ctx.lineTo(2000, 3220);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // 2. DRAW RIVER & WATER RIPPLES (with Sandy Shore / Gravel Fringe)
+      ctx.save();
+      // River Sandy Shore Fringe
+      ctx.strokeStyle = '#92400e';
+      ctx.lineWidth = RIVER_WIDTH + 44;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(RIVER_POINTS[0].x, RIVER_POINTS[0].y);
+      for (let i = 1; i < RIVER_POINTS.length; i++) {
+        ctx.lineTo(RIVER_POINTS[i].x, RIVER_POINTS[i].y);
+      }
+      ctx.stroke();
+
+      // River Water Base
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = RIVER_WIDTH;
       ctx.beginPath();
       ctx.moveTo(RIVER_POINTS[0].x, RIVER_POINTS[0].y);
       for (let i = 1; i < RIVER_POINTS.length; i++) {
@@ -956,7 +1008,7 @@ export default function MiniBattleRoyale({
 
         ctx.save();
 
-        // 4A. Building Interior Floor
+        // 4A. Building Interior Floor & Textures
         if (bldg.floorType === 'wood') {
           ctx.fillStyle = '#78350f';
           ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
@@ -967,6 +1019,13 @@ export default function MiniBattleRoyale({
             ctx.moveTo(bldg.x, fy);
             ctx.lineTo(bldg.x + bldg.w, fy);
             ctx.stroke();
+          }
+          // Wood nail details
+          ctx.fillStyle = '#451a03';
+          for (let nx = bldg.x + 25; nx < bldg.x + bldg.w; nx += 70) {
+            for (let ny = bldg.y + 10; ny < bldg.y + bldg.h; ny += 20) {
+              ctx.fillRect(nx, ny, 2, 2);
+            }
           }
         } else if (bldg.floorType === 'concrete') {
           ctx.fillStyle = '#334155';
@@ -979,15 +1038,76 @@ export default function MiniBattleRoyale({
             ctx.lineTo(fx, bldg.y + bldg.h);
             ctx.stroke();
           }
-        } else {
+          for (let fy = bldg.y + 40; fy < bldg.y + bldg.h; fy += 40) {
+            ctx.beginPath();
+            ctx.moveTo(bldg.x, fy);
+            ctx.lineTo(bldg.x + bldg.w, fy);
+            ctx.stroke();
+          }
+        } else if (bldg.floorType === 'tiles') {
           ctx.fillStyle = '#0f766e';
           ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
-          ctx.strokeStyle = '#115e59';
-          ctx.lineWidth = 2;
+          const tSize = 25;
+          for (let cx = bldg.x; cx < bldg.x + bldg.w; cx += tSize) {
+            for (let cy = bldg.y; cy < bldg.y + bldg.h; cy += tSize) {
+              if ((Math.floor((cx - bldg.x) / tSize) + Math.floor((cy - bldg.y) / tSize)) % 2 === 0) {
+                ctx.fillStyle = '#134e4a';
+                ctx.fillRect(cx, cy, Math.min(tSize, bldg.x + bldg.w - cx), Math.min(tSize, bldg.y + bldg.h - cy));
+              }
+            }
+          }
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+          ctx.lineWidth = 1;
           ctx.strokeRect(bldg.x, bldg.y, bldg.w, bldg.h);
+        } else {
+          // Metal Floor
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(bldg.x, bldg.y, bldg.w, bldg.h);
+          ctx.strokeStyle = '#334155';
+          ctx.lineWidth = 1;
+          for (let m = -bldg.h; m < bldg.w; m += 24) {
+            ctx.beginPath();
+            ctx.moveTo(Math.max(bldg.x, bldg.x + m), bldg.y);
+            ctx.lineTo(Math.min(bldg.x + bldg.w, bldg.x + m + bldg.h), bldg.y + bldg.h);
+            ctx.stroke();
+          }
         }
 
-        // 4B. Building Solid Walls
+        // 4B. Visible Doorway Threshold Sills (Görünür Kapı Eşikleri & Renkli Zemin Geçişi)
+        bldg.doorways.forEach(d => {
+          ctx.save();
+          if (bldg.floorType === 'wood') {
+            ctx.fillStyle = '#b45309'; // Warm timber door sill
+            ctx.fillRect(d.x, d.y, d.w, d.h);
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(d.x, d.y, d.w, d.h);
+          } else if (bldg.floorType === 'concrete') {
+            // Concrete step with yellow caution stripes
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(d.x, d.y, d.w, d.h);
+            ctx.strokeStyle = '#eab308';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(d.x, d.y, d.w, d.h);
+            ctx.strokeStyle = '#eab308';
+            ctx.lineWidth = 2.5;
+            for (let sx = d.x + 8; sx < d.x + d.w; sx += 14) {
+              ctx.beginPath();
+              ctx.moveTo(sx, d.y);
+              ctx.lineTo(sx - 6, d.y + d.h);
+              ctx.stroke();
+            }
+          } else {
+            ctx.fillStyle = '#0d9488';
+            ctx.fillRect(d.x, d.y, d.w, d.h);
+            ctx.strokeStyle = '#2dd4bf';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(d.x, d.y, d.w, d.h);
+          }
+          ctx.restore();
+        });
+
+        // 4C. Building Solid Walls
         ctx.fillStyle = '#0f172a';
         ctx.strokeStyle = '#475569';
         ctx.lineWidth = 2;
@@ -1576,6 +1696,116 @@ export default function MiniBattleRoyale({
       });
 
       ctx.restore(); // camera translate restore
+
+      // ============================================================
+      // 10. OFF-SCREEN THREAT INDICATORS (RADAR EDGES FOR SCREEN BORDERS)
+      // ============================================================
+      if (focusedPlayer && state.players) {
+        const threatMaxDist = 950;
+        const edgeMargin = 26;
+        const cx = width / 2;
+        const cy = height / 2;
+
+        state.players.forEach(other => {
+          if (!other.isAlive || other.id === focusedPlayer.id) return;
+
+          const dist = Math.hypot(other.x - focusedPlayer.x, other.y - focusedPlayer.y);
+          if (dist > threatMaxDist || dist < 60) return;
+
+          // Screen position of the enemy
+          const screenX = cx + (other.x - camX) * scale;
+          const screenY = cy + (other.y - camY) * scale;
+
+          // Check if outside screen view with edge margin
+          const isOffScreen =
+            screenX < edgeMargin ||
+            screenX > width - edgeMargin ||
+            screenY < edgeMargin ||
+            screenY > height - edgeMargin;
+
+          if (!isOffScreen) return;
+
+          // Intersect ray from screen center (cx, cy) to (screenX, screenY) with screen bounds
+          const dx = screenX - cx;
+          const dy = screenY - cy;
+          const rayAngle = Math.atan2(dy, dx);
+
+          const minX = edgeMargin;
+          const maxX = width - edgeMargin;
+          const minY = edgeMargin;
+          const maxY = height - edgeMargin;
+
+          let edgeX = cx;
+          let edgeY = cy;
+
+          if (dx > 0) {
+            const t = (maxX - cx) / dx;
+            edgeX = maxX;
+            edgeY = cy + dy * t;
+          } else if (dx < 0) {
+            const t = (minX - cx) / dx;
+            edgeX = minX;
+            edgeY = cy + dy * t;
+          }
+
+          if (edgeY < minY) {
+            const t = (minY - cy) / dy;
+            edgeX = cx + dx * t;
+            edgeY = minY;
+          } else if (edgeY > maxY) {
+            const t = (maxY - cy) / dy;
+            edgeX = cx + dx * t;
+            edgeY = maxY;
+          }
+
+          // Fade out based on distance (closer = brighter and stronger warning)
+          const distFactor = Math.max(0, 1 - dist / threatMaxDist);
+          const alpha = 0.4 + distFactor * 0.6;
+          const isBot = other.isBot;
+          const arrowColor = isBot ? '#f59e0b' : '#ef4444';
+
+          ctx.save();
+          ctx.translate(edgeX, edgeY);
+          ctx.rotate(rayAngle);
+
+          // Threat Chevron / Arrow pointing outward to threat
+          ctx.globalAlpha = alpha;
+          ctx.shadowColor = arrowColor;
+          ctx.shadowBlur = 8 * distFactor;
+
+          ctx.fillStyle = arrowColor;
+          ctx.beginPath();
+          ctx.moveTo(14, 0);     // Front tip
+          ctx.lineTo(-10, -9);   // Wing left
+          ctx.lineTo(-5, 0);     // Notch
+          ctx.lineTo(-10, 9);    // Wing right
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Distance Pill
+          ctx.rotate(-rayAngle); // Unrotate for legible text
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+          const distLabel = `${Math.round(dist / 10)}m`;
+          const textW = ctx.measureText(distLabel).width + 8;
+          ctx.fillRect(-textW / 2, 11, textW, 13);
+          ctx.strokeStyle = arrowColor;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-textW / 2, 11, textW, 13);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(distLabel, 0, 18);
+
+          ctx.restore();
+        });
+      }
+
       ctx.restore(); // dpr scale restore
 
       animFrameRef.current = requestAnimationFrame(render);
@@ -1974,22 +2204,22 @@ export default function MiniBattleRoyale({
               </div>
             )}
 
-            {/* Capacity Selection */}
+            {/* Capacity Selection (Up to 20 Players) */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300">Kişi Kapasitesi</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[2, 3, 4].map(cap => (
+              <label className="text-xs font-bold text-slate-300">Kişi Kapasitesi (Maks 20)</label>
+              <div className="grid grid-cols-5 gap-2">
+                {[4, 8, 12, 16, 20].map(cap => (
                   <button
                     key={cap}
                     type="button"
                     onClick={() => setCreateCapacity(cap)}
                     className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                       createCapacity === cap
-                        ? 'bg-amber-500 text-slate-950 border-amber-400 font-black'
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-md shadow-amber-500/20'
                         : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
-                    {cap} Kişilik
+                    {cap} Kişi
                   </button>
                 ))}
               </div>
@@ -2048,8 +2278,19 @@ export default function MiniBattleRoyale({
               </div>
             </div>
 
-            {/* Mode & Control Switchers */}
+            {/* Mode & Control Switchers + Fill Bots */}
             <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+              {currentRoom.hostId === currentUserId && currentRoom.players.length < currentRoom.capacity && (
+                <button
+                  onClick={handleFillBots}
+                  className="px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500/20 to-yellow-500/20 hover:from-amber-500/30 hover:to-yellow-500/30 border border-amber-500/40 text-xs font-black text-amber-300 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  title="Tüm boş koltukları botlarla doldur"
+                >
+                  <Bot size={14} className="text-amber-400" />
+                  <span>+ Tümünü Doldur ({currentRoom.capacity - currentRoom.players.length} Bot)</span>
+                </button>
+              )}
+
               <button
                 onClick={() => setControlMode(prev => prev === 'touch' ? 'desktop' : 'touch')}
                 className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -2085,8 +2326,8 @@ export default function MiniBattleRoyale({
             </div>
           )}
 
-          {/* Seats Layout (2 to 4 Slots) */}
-          <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {/* Seats Layout (Up to 20 Slots) */}
+          <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
             {Array.from({ length: currentRoom.capacity }).map((_, idx) => {
               const player = currentRoom.players[idx];
 

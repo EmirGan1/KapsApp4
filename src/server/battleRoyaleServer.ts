@@ -284,6 +284,113 @@ export const MAP_BUILDINGS: RoyaleBuilding[] = [
   }
 ];
 
+// ==========================================
+// RAY-CAST COLLISION & LINE INTERSECTION
+// ==========================================
+
+export function lineSegmentsIntersect(
+  x1: number, y1: number, x2: number, y2: number,
+  x3: number, y3: number, x4: number, y4: number
+): { hit: boolean; x: number; y: number; t: number } {
+  const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+  if (denom === 0) return { hit: false, x: 0, y: 0, t: 0 };
+  const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+  const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+  if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+    return {
+      hit: true,
+      x: x1 + ua * (x2 - x1),
+      y: y1 + ua * (y2 - y1),
+      t: ua
+    };
+  }
+  return { hit: false, x: 0, y: 0, t: 0 };
+}
+
+export function rayIntersectsRect(
+  x1: number, y1: number, x2: number, y2: number,
+  rx: number, ry: number, rw: number, rh: number
+): { hit: boolean; x: number; y: number; t: number } {
+  // If start point is inside rect
+  if (x1 >= rx && x1 <= rx + rw && y1 >= ry && y1 <= ry + rh) {
+    return { hit: true, x: x1, y: y1, t: 0 };
+  }
+
+  let minT = 1.0;
+  let hit = false;
+  let hitX = x2;
+  let hitY = y2;
+
+  const edges = [
+    [rx, ry, rx + rw, ry],
+    [rx + rw, ry, rx + rw, ry + rh],
+    [rx + rw, ry + rh, rx, ry + rh],
+    [rx, ry + rh, rx, ry]
+  ];
+
+  for (const [ex1, ey1, ex2, ey2] of edges) {
+    const res = lineSegmentsIntersect(x1, y1, x2, y2, ex1, ey1, ex2, ey2);
+    if (res.hit && res.t <= minT) {
+      minT = res.t;
+      hit = true;
+      hitX = res.x;
+      hitY = res.y;
+    }
+  }
+
+  return { hit, x: hitX, y: hitY, t: minT };
+}
+
+export function checkRaycastWalls(
+  x1: number, y1: number, x2: number, y2: number,
+  buildings: RoyaleBuilding[] = MAP_BUILDINGS
+): { hit: boolean; x: number; y: number; t: number } {
+  let minT = 1.0;
+  let hit = false;
+  let hitX = x2;
+  let hitY = y2;
+
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+
+  for (const bldg of buildings) {
+    if (
+      maxX < bldg.x - 20 || minX > bldg.x + bldg.w + 20 ||
+      maxY < bldg.y - 20 || minY > bldg.y + bldg.h + 20
+    ) {
+      continue;
+    }
+
+    for (const wall of bldg.walls) {
+      const res = rayIntersectsRect(x1, y1, x2, y2, wall.x, wall.y, wall.w, wall.h);
+      if (res.hit && res.t <= minT) {
+        minT = res.t;
+        hit = true;
+        hitX = res.x;
+        hitY = res.y;
+      }
+    }
+  }
+
+  return { hit, x: hitX, y: hitY, t: minT };
+}
+
+export function distToSegmentSquared(
+  px: number, py: number,
+  x1: number, y1: number,
+  x2: number, y2: number
+): number {
+  const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+  if (l2 === 0) return (px - x1) * (px - x1) + (py - y1) * (py - y1);
+  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const projX = x1 + t * (x2 - x1);
+  const projY = y1 + t * (y2 - y1);
+  return (px - projX) * (px - projX) + (py - projY) * (py - projY);
+}
+
 export const WEAPON_CONFIGS: Record<string, {
   name: string;
   damage: number;
@@ -404,6 +511,7 @@ export interface PlayerData {
   isBot: boolean;
   isHost: boolean;
   ready: boolean;
+  platform?: 'pc' | 'mobile';
   x: number;
   y: number;
   angle: number;
@@ -430,6 +538,14 @@ export interface PlayerData {
   vx?: number;
   vy?: number;
   shooting?: boolean;
+  // Enhanced Bot AI Fields
+  botStrafeDir?: number;
+  botStrafeTimer?: number;
+  botReactionUntil?: number;
+  botTargetPlayerId?: string | null;
+  botStuckCounter?: number;
+  botLastX?: number;
+  botLastY?: number;
 }
 
 export interface BulletData {
@@ -480,7 +596,7 @@ export interface GameRoom {
   hostId: number;
   hostName: string;
   hostAvatar: string | null;
-  capacity: number;
+  capacity: number; // 2 to 20
   mode: 'royale' | 'deathmatch';
   duration: number; // in seconds
   status: 'lobby' | 'countdown' | 'playing' | 'gameover';
@@ -524,8 +640,8 @@ export class BattleRoyaleManager {
   }
 
   private initDefaultRooms() {
-    this.createRoomInternal('Genel Ada (Battle Royale)', 0, 'Sistem', null, 8, 'royale', 300);
-    this.createRoomInternal('Hızlı Arena (Ölüm Maçı)', 0, 'Sistem', null, 6, 'deathmatch', 180);
+    this.createRoomInternal('Genel Ada (Battle Royale)', 0, 'Sistem', null, 20, 'royale', 300);
+    this.createRoomInternal('Hızlı Arena (Ölüm Maçı)', 0, 'Sistem', null, 20, 'deathmatch', 180);
   }
 
   private createRoomInternal(
@@ -544,7 +660,7 @@ export class BattleRoyaleManager {
       hostId,
       hostName,
       hostAvatar,
-      capacity: capacity || 6,
+      capacity: Math.min(20, Math.max(2, capacity || 20)),
       mode: mode || 'deathmatch',
       duration: duration || 180,
       status: 'lobby',
@@ -626,15 +742,16 @@ export class BattleRoyaleManager {
   }
 
   public createRoom(
-    user: { id: number; username: string; avatar: string | null; color?: string },
+    user: { id: number; username: string; avatar: string | null; color?: string; platform?: 'pc' | 'mobile' },
     options: { title?: string; capacity?: number; mode?: 'royale' | 'deathmatch'; duration?: number }
   ): GameRoom {
+    const cap = Math.min(20, Math.max(2, Number(options.capacity) || 20));
     const room = this.createRoomInternal(
       options.title || `${user.username}'ın Arenası`,
       user.id,
       user.username,
       user.avatar,
-      options.capacity || 6,
+      cap,
       options.mode || 'deathmatch',
       options.duration || 180
     );
@@ -644,7 +761,7 @@ export class BattleRoyaleManager {
     return room;
   }
 
-  public joinRoom(roomId: string, user: { id: number; username: string; avatar: string | null; color?: string }) {
+  public joinRoom(roomId: string, user: { id: number; username: string; avatar: string | null; color?: string; platform?: 'pc' | 'mobile' }) {
     const room = this.rooms.get(roomId);
     if (!room) return { success: false, error: 'Masa bulunamadı.' };
 
@@ -654,6 +771,7 @@ export class BattleRoyaleManager {
 
     let p = room.players.find(x => x.userId === user.id);
     if (p) {
+      if (user.platform) p.platform = user.platform;
       return { success: true, room };
     }
 
@@ -671,6 +789,7 @@ export class BattleRoyaleManager {
       isBot: false,
       isHost,
       ready: isHost,
+      platform: user.platform || 'pc',
       x: MAP_SIZE / 2,
       y: MAP_SIZE / 2,
       angle: 0,
@@ -733,7 +852,13 @@ export class BattleRoyaleManager {
     if (!room || room.status !== 'lobby') return { error: 'Bot eklenemez.' };
     if (room.players.length >= room.capacity) return { error: 'Masa dolu!' };
 
-    const botNames = ['CyberAlpha', 'SniperGhost', 'ApexStriker', 'TitanWarrior', 'PhantomEye', 'VanguardBot'];
+    const botNames = [
+      'CyberAlpha', 'SniperGhost', 'ApexStriker', 'TitanWarrior', 'PhantomEye',
+      'VanguardBot', 'BordoBere', 'Firtina06', 'GokTug', 'DemirPence',
+      'Yildirim', 'Atmaca', 'Gozcu99', 'Pusucu', 'GölgeAvcı',
+      'Karasancak', 'Bozkurt', 'Pars', 'Karakartal', 'Akrep',
+      'Ejder', 'Kobra', 'Spectre', 'NovaX', 'Vortex', 'Sancak'
+    ];
     const botName = botNames[Math.floor(Math.random() * botNames.length)] + ` [BOT]`;
     const botId = -Math.floor(10000 + Math.random() * 90000);
 
@@ -746,6 +871,7 @@ export class BattleRoyaleManager {
       isBot: true,
       isHost: false,
       ready: true,
+      platform: 'pc',
       x: MAP_SIZE / 2,
       y: MAP_SIZE / 2,
       angle: 0,
@@ -768,7 +894,10 @@ export class BattleRoyaleManager {
       spawnShieldEndTime: 0,
       speedBuffEndTime: 0,
       rageBuffEndTime: 0,
-      lastShootTime: 0
+      lastShootTime: 0,
+      botStrafeDir: Math.random() < 0.5 ? 1 : -1,
+      botStrafeTimer: Date.now() + 600,
+      botStuckCounter: 0
     };
 
     room.players.push(bot);
@@ -928,6 +1057,9 @@ export class BattleRoyaleManager {
       p.weapons = ['pistol'];
       p.ammo = { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 4 };
       p.reserveAmmo = { pistol: 60, shotgun: 24, smg: 120, rifle: 90, sniper: 15, plasma: 8 };
+      p.botStrafeDir = Math.random() < 0.5 ? 1 : -1;
+      p.botStrafeTimer = Date.now() + 600;
+      p.botStuckCounter = 0;
     });
 
     this.io.to(room.id).emit('royale:game_started', this.getPublicGameState(room));
@@ -982,7 +1114,7 @@ export class BattleRoyaleManager {
 
     // 3. Open Area Crates
     const cratePool = ['weapon_shotgun', 'weapon_smg', 'weapon_rifle', 'weapon_sniper', 'weapon_plasma', 'medkit', 'shield', 'heavy_shield', 'adrenaline', 'rage'];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 65; i++) {
       const lootType = cratePool[Math.floor(Math.random() * cratePool.length)];
       const isRare = lootType.includes('sniper') || lootType.includes('plasma') || lootType.includes('heavy') || lootType.includes('rage');
       room.crates.push({
@@ -997,7 +1129,7 @@ export class BattleRoyaleManager {
     }
 
     // 4. Ground Loot
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 50; i++) {
       const lootType = cratePool[Math.floor(Math.random() * cratePool.length)];
       room.loot.push({
         id: `loot_${i}`,
@@ -1026,6 +1158,11 @@ export class BattleRoyaleManager {
 
     const player = room.players.find(p => p.userId === userId);
     if (!player || !player.isAlive) return;
+
+    // Platform detection (for asymmetric AI difficulty)
+    if (input.platform === 'pc' || input.platform === 'mobile') {
+      player.platform = input.platform;
+    }
 
     // Movement Vectors
     if (typeof input.vx === 'number' && typeof input.vy === 'number') {
@@ -1166,10 +1303,10 @@ export class BattleRoyaleManager {
       this.updateZone(room);
     }
 
-    // 3. Update Player Movements, River Drag & AI Bots
+    // 3. Update Player Movements, River Drag & Enhanced AI Bots
     this.updatePlayersAndBots(room, now);
 
-    // 4. Update Bullets & Collisions
+    // 4. Update Bullets & Ray-Cast Collisions
     this.updateBullets(room, now);
 
     // 5. Clean Expired Explosions & Popups
@@ -1185,7 +1322,7 @@ export class BattleRoyaleManager {
       }
     }
 
-    // Emit 30Hz Game State update
+    // Emit 30Hz Optimized Compact Game State update
     this.io.to(room.id).emit('royale:game_state', this.getPublicGameState(room));
   }
 
@@ -1208,8 +1345,14 @@ export class BattleRoyaleManager {
     return MAP_BRIDGES.some(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
   }
 
-  private checkBuildingWallCollision(x: number, y: number, radius: number): boolean {
+  public checkBuildingWallCollision(x: number, y: number, radius: number): boolean {
     for (const bldg of MAP_BUILDINGS) {
+      if (
+        x + radius < bldg.x || x - radius > bldg.x + bldg.w ||
+        y + radius < bldg.y || y - radius > bldg.y + bldg.h
+      ) {
+        continue;
+      }
       for (const wall of bldg.walls) {
         if (
           x + radius > wall.x && x - radius < wall.x + wall.w &&
@@ -1222,6 +1365,9 @@ export class BattleRoyaleManager {
     return false;
   }
 
+  // ============================================================
+  // ENHANCED BOT AI (Pathfinding, Whiskers, Strafing & Platform Adaptation)
+  // ============================================================
   private updatePlayersAndBots(room: GameRoom, now: number) {
     const alivePlayers = room.players.filter(p => p.isAlive);
 
@@ -1255,44 +1401,222 @@ export class BattleRoyaleManager {
         }
       }
 
-      // AI Bot Behavior
+      // ============================================
+      // ADVANCED BOT NAVIGATION & COMBAT LOGIC
+      // ============================================
       if (p.isBot) {
-        let nearestEnemy: PlayerData | null = null;
+        // Find closest visible enemy
+        let targetEnemy: PlayerData | null = null;
         let minD = 99999;
+        let hasClearLOS = false;
+
         alivePlayers.forEach(other => {
           if (other.id === p.id) return;
           const d = Math.hypot(other.x - p.x, other.y - p.y);
-          if (d < minD) {
-            minD = d;
-            nearestEnemy = other;
+          if (d < 1100) {
+            const losCheck = checkRaycastWalls(p.x, p.y, other.x, other.y);
+            const isClear = !losCheck.hit;
+            if (isClear && d < minD) {
+              minD = d;
+              targetEnemy = other;
+              hasClearLOS = true;
+            } else if (!hasClearLOS && d < minD) {
+              minD = d;
+              targetEnemy = other;
+            }
           }
         });
 
-        if (nearestEnemy && minD < 850) {
-          const target: PlayerData = nearestEnemy;
-          const angleToEnemy = Math.atan2(target.y - p.y, target.x - p.x);
-          p.angle = angleToEnemy;
+        // Check Safe Zone Status & Escape Requirement
+        const distToSafeCenter = Math.hypot(room.zone.targetX - p.x, room.zone.targetY - p.y);
+        const distToCurrentCenter = Math.hypot(room.zone.currentX - p.x, room.zone.currentY - p.y);
+        const isOutsideZone = room.mode === 'royale' && distToCurrentCenter > room.zone.currentRadius - 60;
+        const isZoneClosing = room.mode === 'royale' && room.zone.isShrinking && distToSafeCenter > room.zone.targetRadius - 100;
+        const mustEscapeZone = isOutsideZone || isZoneClosing;
 
-          if (minD > 280) {
-            p.vx = Math.cos(angleToEnemy);
-            p.vy = Math.sin(angleToEnemy);
-          } else if (minD < 140) {
-            p.vx = -Math.cos(angleToEnemy);
-            p.vy = -Math.sin(angleToEnemy);
-          } else {
-            p.vx = 0;
-            p.vy = 0;
+        // Doorway Detection for Navigating Buildings
+        let nearestDoor: { x: number; y: number } | null = null;
+        for (const bldg of MAP_BUILDINGS) {
+          if (p.x >= bldg.x - 70 && p.x <= bldg.x + bldg.w + 70 && p.y >= bldg.y - 70 && p.y <= bldg.y + bldg.h + 70) {
+            for (const d of bldg.doorways) {
+              const doorCenterX = d.x + d.w / 2;
+              const doorCenterY = d.y + d.h / 2;
+              const dDist = Math.hypot(doorCenterX - p.x, doorCenterY - p.y);
+              if (dDist < 190) {
+                nearestDoor = { x: doorCenterX, y: doorCenterY };
+                break;
+              }
+            }
+          }
+          if (nearestDoor) break;
+        }
+
+        // Loot scavenging if low on resources and no immediate danger
+        if (!mustEscapeZone && (!targetEnemy || minD > 500) && (p.hp < 70 || p.weapons.length < 2)) {
+          let nearestLoot: LootItemData | null = null;
+          let minLootD = 400;
+          room.loot.forEach(l => {
+            const ld = Math.hypot(l.x - p.x, l.y - p.y);
+            if (ld < minLootD && !checkRaycastWalls(p.x, p.y, l.x, l.y).hit) {
+              minLootD = ld;
+              nearestLoot = l;
+            }
+          });
+          if (nearestLoot) {
+            const toLootAngle = Math.atan2((nearestLoot as LootItemData).y - p.y, (nearestLoot as LootItemData).x - p.x);
+            p.angle = toLootAngle;
+            p.vx = Math.cos(toLootAngle);
+            p.vy = Math.sin(toLootAngle);
+            p.shooting = false;
+            if (minLootD < 60) {
+              this.handlePlayerPickup(room, p, false);
+            }
+          }
+        }
+
+        if (mustEscapeZone) {
+          // ZONE ESCAPE IS TOP PRIORITY: Sprint towards safe zone center
+          const safeAngle = Math.atan2(room.zone.targetY - p.y, room.zone.targetX - p.x);
+          
+          // 5-Ray sensory check to steer around walls while running to safe zone
+          const fWhisker = checkRaycastWalls(p.x, p.y, p.x + Math.cos(safeAngle) * 90, p.y + Math.sin(safeAngle) * 90);
+          let escapeSteer = safeAngle;
+
+          if (fWhisker.hit) {
+            if (nearestDoor) {
+              escapeSteer = Math.atan2(nearestDoor.y - p.y, nearestDoor.x - p.x);
+            } else {
+              const leftR = checkRaycastWalls(p.x, p.y, p.x + Math.cos(safeAngle - 0.8) * 80, p.y + Math.sin(safeAngle - 0.8) * 80);
+              const rightR = checkRaycastWalls(p.x, p.y, p.x + Math.cos(safeAngle + 0.8) * 80, p.y + Math.sin(safeAngle + 0.8) * 80);
+              if (!rightR.hit) escapeSteer = safeAngle + 1.2;
+              else if (!leftR.hit) escapeSteer = safeAngle - 1.2;
+              else escapeSteer = safeAngle + Math.PI * 0.7;
+            }
           }
 
-          p.shooting = true;
+          p.vx = Math.cos(escapeSteer);
+          p.vy = Math.sin(escapeSteer);
+
+          // Shoot while fleeing if enemy is in line of sight
+          if (targetEnemy && hasClearLOS && minD < 700) {
+            const enemyAngle = Math.atan2((targetEnemy as PlayerData).y - p.y, (targetEnemy as PlayerData).x - p.x);
+            p.angle = enemyAngle;
+            p.shooting = true;
+          } else {
+            p.angle = escapeSteer;
+            p.shooting = false;
+          }
+        } else if (targetEnemy) {
+          const enemy: PlayerData = targetEnemy;
+          const distToEnemy = Math.hypot(enemy.x - p.x, enemy.y - p.y);
+          const directAngle = Math.atan2(enemy.y - p.y, enemy.x - p.x);
+
+          // Platform-Aware Dynamic AI Balancing
+          // If the enemy is a touch / mobile player, bot has human reaction delay and aim jitter
+          const isTargetMobile = enemy.platform === 'mobile';
+          const botReactionDelay = isTargetMobile ? 420 : 130;
+          const botSpreadMargin = isTargetMobile ? 0.18 : 0.03;
+
+          // Reaction delay timer
+          if (p.botTargetPlayerId !== enemy.id) {
+            p.botTargetPlayerId = enemy.id;
+            p.botReactionUntil = now + botReactionDelay;
+          }
+
+          const canShootNow = !p.botReactionUntil || now >= p.botReactionUntil;
+
+          // Enhanced Sensory Ray Obstacle Avoidance with Doorway Awareness
+          const forwardWhisker = checkRaycastWalls(p.x, p.y, p.x + Math.cos(directAngle) * 95, p.y + Math.sin(directAngle) * 95);
+          let steerAngle = directAngle;
+
+          if (forwardWhisker.hit) {
+            if (nearestDoor && Math.hypot(nearestDoor.x - p.x, nearestDoor.y - p.y) < 160) {
+              // Direct navigation through doorway
+              steerAngle = Math.atan2(nearestDoor.y - p.y, nearestDoor.x - p.x);
+            } else {
+              const leftW = checkRaycastWalls(p.x, p.y, p.x + Math.cos(directAngle - 0.75) * 80, p.y + Math.sin(directAngle - 0.75) * 80);
+              const rightW = checkRaycastWalls(p.x, p.y, p.x + Math.cos(directAngle + 0.75) * 80, p.y + Math.sin(directAngle + 0.75) * 80);
+              if (!rightW.hit) {
+                steerAngle = directAngle + 1.25;
+              } else if (!leftW.hit) {
+                steerAngle = directAngle - 1.25;
+              } else {
+                steerAngle = directAngle + Math.PI;
+              }
+            }
+          }
+
+          // Strafe & Combat movement
+          if (!p.botStrafeTimer || now > p.botStrafeTimer) {
+            p.botStrafeDir = Math.random() < 0.5 ? 1 : -1;
+            p.botStrafeTimer = now + (isTargetMobile ? 1100 : 480);
+          }
+
+          const strafeOffset = (p.botStrafeDir || 1) * 0.75;
+          let moveVx = 0;
+          let moveVy = 0;
+
+          if (distToEnemy > 280) {
+            // Approach target while strafing slightly
+            moveVx = Math.cos(steerAngle + strafeOffset * 0.3);
+            moveVy = Math.sin(steerAngle + strafeOffset * 0.3);
+          } else if (distToEnemy < 140) {
+            // Kite / Backpedal
+            moveVx = -Math.cos(steerAngle) + Math.cos(steerAngle + Math.PI / 2) * strafeOffset;
+            moveVy = -Math.sin(steerAngle) + Math.sin(steerAngle + Math.PI / 2) * strafeOffset;
+          } else {
+            // Circle strafe
+            moveVx = Math.cos(steerAngle + (Math.PI / 2) * (p.botStrafeDir || 1));
+            moveVy = Math.sin(steerAngle + (Math.PI / 2) * (p.botStrafeDir || 1));
+          }
+
+          p.vx = moveVx;
+          p.vy = moveVy;
+
+          // Apply aim angle with platform-aware error margin
+          const aimJitter = (Math.random() - 0.5) * botSpreadMargin;
+          p.angle = directAngle + aimJitter;
+
+          // Shoot only if LOS is clear and reaction delay has passed
+          p.shooting = hasClearLOS && canShootNow && distToEnemy < 850;
         } else {
-          // Roam toward center
-          const angleToCenter = Math.atan2(MAP_SIZE / 2 - p.y, MAP_SIZE / 2 - p.x);
-          p.angle = angleToCenter;
-          p.vx = Math.cos(angleToCenter) * 0.6;
-          p.vy = Math.sin(angleToCenter) * 0.6;
+          // Wander towards safe zone center with obstacle avoidance
+          const toZoneAngle = Math.atan2(room.zone.targetY - p.y, room.zone.targetX - p.x);
+          const fWhisker = checkRaycastWalls(p.x, p.y, p.x + Math.cos(p.angle) * 80, p.y + Math.sin(p.angle) * 80);
+
+          if (fWhisker.hit) {
+            if (nearestDoor) {
+              p.angle = Math.atan2(nearestDoor.y - p.y, nearestDoor.x - p.x);
+            } else {
+              p.angle += Math.PI * 0.55 * (p.botStrafeDir || 1);
+            }
+          } else {
+            // Gradually steer towards zone center
+            p.angle += (toZoneAngle - p.angle) * 0.05;
+          }
+
+          p.vx = Math.cos(p.angle) * 0.65;
+          p.vy = Math.sin(p.angle) * 0.65;
           p.shooting = false;
         }
+
+        // Anti-stuck detection
+        if (p.botLastX !== undefined && p.botLastY !== undefined) {
+          const moveDist = Math.hypot(p.x - p.botLastX, p.y - p.botLastY);
+          if (moveDist < 0.8) {
+            p.botStuckCounter = (p.botStuckCounter || 0) + 1;
+            if (p.botStuckCounter > 15) {
+              p.angle += Math.PI * 0.8;
+              p.vx = Math.cos(p.angle);
+              p.vy = Math.sin(p.angle);
+              p.botStuckCounter = 0;
+            }
+          } else {
+            p.botStuckCounter = 0;
+          }
+        }
+        p.botLastX = p.x;
+        p.botLastY = p.y;
       }
 
       // Calculate Player Movement Speed
@@ -1354,33 +1678,48 @@ export class BattleRoyaleManager {
     });
   }
 
+  // ============================================================
+  // RAY-CAST BULLET UPDATES (Ghosting & Tunneling Prevention)
+  // ============================================================
   private updateBullets(room: GameRoom, now: number) {
     const remainingBullets: BulletData[] = [];
 
     room.bullets.forEach(bullet => {
-      bullet.x += bullet.vx;
-      bullet.y += bullet.vy;
-      bullet.distanceTraveled += Math.hypot(bullet.vx, bullet.vy);
+      const prevX = bullet.x;
+      const prevY = bullet.y;
+      const nextX = bullet.x + bullet.vx;
+      const nextY = bullet.y + bullet.vy;
+      const stepDist = Math.hypot(bullet.vx, bullet.vy);
 
+      bullet.distanceTraveled += stepDist;
+
+      // 1. Map Boundaries and Range Check
       if (
-        bullet.x < 0 || bullet.x > MAP_SIZE ||
-        bullet.y < 0 || bullet.y > MAP_SIZE ||
+        nextX < 0 || nextX > MAP_SIZE ||
+        nextY < 0 || nextY > MAP_SIZE ||
         bullet.distanceTraveled >= bullet.maxRange
       ) {
-        if (bullet.isAoE) this.triggerExplosion(room, bullet.x, bullet.y, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
+        if (bullet.isAoE) {
+          this.triggerExplosion(room, nextX, nextY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
+        }
         return;
       }
 
-      // 1. Building Wall collision
-      if (this.checkBuildingWallCollision(bullet.x, bullet.y, bullet.radius)) {
-        if (bullet.isAoE) this.triggerExplosion(room, bullet.x, bullet.y, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
-        return;
+      // 2. RAY-CAST WALL COLLISION (Zero-ghosting bullet physics)
+      const wallRay = checkRaycastWalls(prevX, prevY, nextX, nextY, MAP_BUILDINGS);
+      if (wallRay.hit) {
+        if (bullet.isAoE) {
+          this.triggerExplosion(room, wallRay.x, wallRay.y, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
+        }
+        return; // Bullet stops and terminates on the wall
       }
 
-      // 2. TNT Barrel collision
+      // 3. TNT Barrel Swept Collision
       let hitBarrel = false;
       for (const barrel of room.barrels) {
-        if (Math.hypot(bullet.x - barrel.x, bullet.y - barrel.y) <= barrel.radius + bullet.radius) {
+        const dSq = distToSegmentSquared(barrel.x, barrel.y, prevX, prevY, nextX, nextY);
+        const hitR = barrel.radius + bullet.radius;
+        if (dSq <= hitR * hitR) {
           barrel.hp -= bullet.damage;
           hitBarrel = true;
           if (barrel.hp <= 0) {
@@ -1395,15 +1734,17 @@ export class BattleRoyaleManager {
         return;
       }
 
-      // 3. Crate collision
+      // 4. Crate Swept Collision
       let hitCrate = false;
       for (const crate of room.crates) {
-        if (Math.hypot(bullet.x - crate.x, bullet.y - crate.y) <= 24 + bullet.radius) {
+        const dSq = distToSegmentSquared(crate.x, crate.y, prevX, prevY, nextX, nextY);
+        const hitR = 24 + bullet.radius;
+        if (dSq <= hitR * hitR) {
           crate.hp -= bullet.damage;
           hitCrate = true;
           if (crate.hp <= 0) {
             room.loot.push({
-              id: `loot_cr_${Date.now()}`,
+              id: `loot_cr_${Date.now()}_${Math.random()}`,
               type: crate.lootType,
               x: crate.x,
               y: crate.y
@@ -1417,14 +1758,15 @@ export class BattleRoyaleManager {
         return;
       }
 
-      // 4. Player collision
+      // 5. Player Swept Ray-Collision
       let hitPlayer = false;
       for (const target of room.players) {
         if (!target.isAlive || target.id === bullet.shooterId) continue;
-        if (target.spawnShieldEndTime > now) continue; // Immune during spawn shield
+        if (target.spawnShieldEndTime > now) continue;
 
-        const d = Math.hypot(bullet.x - target.x, bullet.y - target.y);
-        if (d <= 24 + bullet.radius) {
+        const dSq = distToSegmentSquared(target.x, target.y, prevX, prevY, nextX, nextY);
+        const hitR = 24 + bullet.radius;
+        if (dSq <= hitR * hitR) {
           hitPlayer = true;
           this.applyDamageToPlayer(room, target, bullet.damage, bullet.shooterId);
           break;
@@ -1432,10 +1774,15 @@ export class BattleRoyaleManager {
       }
 
       if (hitPlayer) {
-        if (bullet.isAoE) this.triggerExplosion(room, bullet.x, bullet.y, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
+        if (bullet.isAoE) {
+          this.triggerExplosion(room, nextX, nextY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
+        }
         return;
       }
 
+      // Bullet advanced safely
+      bullet.x = nextX;
+      bullet.y = nextY;
       remainingBullets.push(bullet);
     });
 
@@ -1669,11 +2016,11 @@ export class BattleRoyaleManager {
   }
 
   private findSafeSpawn(room: GameRoom): { x: number; y: number } {
-    for (let attempt = 0; attempt < 25; attempt++) {
+    for (let attempt = 0; attempt < 35; attempt++) {
       const x = 300 + Math.random() * (MAP_SIZE - 600);
       const y = 300 + Math.random() * (MAP_SIZE - 600);
-      if (!this.checkBuildingWallCollision(x, y, 30)) {
-        return { x, y };
+      if (!this.checkBuildingWallCollision(x, y, 32)) {
+        return { x: Math.round(x), y: Math.round(y) };
       }
     }
     return { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
@@ -1702,11 +2049,15 @@ export class BattleRoyaleManager {
         color: p.color,
         isBot: p.isBot,
         isHost: p.isHost,
-        ready: p.ready
+        ready: p.ready,
+        platform: p.platform
       }))
     };
   }
 
+  // ============================================================
+  // NETCODE OPTIMIZATION: Compact JSON Payload for 20 Players
+  // ============================================================
   public getPublicGameState(room: GameRoom) {
     return {
       id: room.id,
@@ -1722,6 +2073,7 @@ export class BattleRoyaleManager {
         color: p.color,
         isBot: p.isBot,
         isHost: p.isHost,
+        platform: p.platform,
         ready: p.ready,
         x: Math.round(p.x * 10) / 10,
         y: Math.round(p.y * 10) / 10,
@@ -1748,8 +2100,8 @@ export class BattleRoyaleManager {
       bullets: room.bullets.map(b => ({
         id: b.id,
         shooterId: b.shooterId,
-        x: Math.round(b.x),
-        y: Math.round(b.y),
+        x: Math.round(b.x * 10) / 10,
+        y: Math.round(b.y * 10) / 10,
         vx: Math.round(b.vx * 10) / 10,
         vy: Math.round(b.vy * 10) / 10,
         damage: b.damage,
@@ -1762,8 +2114,17 @@ export class BattleRoyaleManager {
       explosions: room.explosions,
       loot: room.loot,
       obstacles: room.obstacles,
-      zone: room.zone,
-      damagePopups: room.damagePopups,
+      zone: {
+        currentX: Math.round(room.zone.currentX),
+        currentY: Math.round(room.zone.currentY),
+        currentRadius: Math.round(room.zone.currentRadius),
+        targetX: Math.round(room.zone.targetX),
+        targetY: Math.round(room.zone.targetY),
+        targetRadius: Math.round(room.zone.targetRadius),
+        isShrinking: room.zone.isShrinking,
+        phase: room.zone.phase
+      },
+      damagePopups: room.damagePopups.slice(-10),
       killfeed: room.killfeed,
       winner: room.winner
     };
