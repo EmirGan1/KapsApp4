@@ -17,7 +17,8 @@ import {
   RIVER_WIDTH,
   RoyaleBuilding,
   RoyaleBarrel,
-  RoyaleExplosionEffect
+  RoyaleExplosionEffect,
+  checkRaycastWalls
 } from '../server/battleRoyaleServer';
 
 interface MiniBattleRoyaleProps {
@@ -227,6 +228,9 @@ export default function MiniBattleRoyale({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gameStateRef = useRef<GameState | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const interpolatedPlayersRef = useRef<Map<string, { x: number; y: number; angle: number }>>(new Map());
+  const cameraPosRef = useRef<{ x: number; y: number }>({ x: MAP_SIZE / 2, y: MAP_SIZE / 2 });
+  const roofOpacitiesRef = useRef<Map<string, number>>(new Map());
 
   // Input Tracking & Arrow Aiming
   const keysPressed = useRef<Record<string, boolean>>({});
@@ -586,7 +590,45 @@ export default function MiniBattleRoyale({
         shooting = true;
       }
 
-      // 4. Pickup / Swap Trigger
+      // 4. SOFT AIM ASSIST (Mobile & Tablet Exclusive - Magnetic Soft Lock on nearest unobstructed target within ±20°)
+      // Platform Restriction: STRICTLY disabled for PC Mouse players! Only active on Touch or Arrow-key modes
+      const isMobileTouchOrArrow = controlMode === 'touch' || isArrowAiming;
+      if (isMobileTouchOrArrow && state.players) {
+        let bestTarget: PlayerState | null = null;
+        let minAngleDiff = 0.35; // ±20 degrees (0.35 rad)
+
+        for (const other of state.players) {
+          if (!other.isAlive || other.id === myPlayer.id) continue;
+          const dist = Math.hypot(other.x - myPlayer.x, other.y - myPlayer.y);
+          if (dist > 700) continue;
+
+          // Check line of sight (not through walls)
+          const los = checkRaycastWalls(myPlayer.x, myPlayer.y, other.x, other.y);
+          if (los.hit) continue;
+
+          const toEnemyAngle = Math.atan2(other.y - myPlayer.y, other.x - myPlayer.x);
+          let aDiff = toEnemyAngle - angle;
+          while (aDiff < -Math.PI) aDiff += Math.PI * 2;
+          while (aDiff > Math.PI) aDiff -= Math.PI * 2;
+
+          if (Math.abs(aDiff) < minAngleDiff) {
+            minAngleDiff = Math.abs(aDiff);
+            bestTarget = other;
+          }
+        }
+
+        if (bestTarget) {
+          const targetAngle = Math.atan2(bestTarget.y - myPlayer.y, bestTarget.x - myPlayer.x);
+          angle = targetAngle;
+          virtualAimAngle.current = targetAngle;
+          virtualCrosshairOffset.current = {
+            x: Math.cos(targetAngle) * 160,
+            y: Math.sin(targetAngle) * 160
+          };
+        }
+      }
+
+      // 5. Pickup / Swap Trigger
       let pickup = false;
       if (
         keysPressed.current['KeyE'] || keysPressed.current['KeyF'] ||
@@ -601,7 +643,8 @@ export default function MiniBattleRoyale({
         vy,
         angle,
         shooting,
-        pickup
+        pickup,
+        platform: controlMode === 'touch' ? 'mobile' : 'pc'
       });
     }, 1000 / 30);
 
@@ -853,6 +896,12 @@ export default function MiniBattleRoyale({
         camY = focusedPlayer.y;
       }
 
+      // Smooth Camera LERP (60 FPS fluid camera movement)
+      cameraPosRef.current.x += (camX - cameraPosRef.current.x) * 0.25;
+      cameraPosRef.current.y += (camY - cameraPosRef.current.y) * 0.25;
+      const renderCamX = cameraPosRef.current.x;
+      const renderCamY = cameraPosRef.current.y;
+
       // Normalized FOV calculation (1280x720 base viewport)
       const baseViewW = 1280;
       const baseViewH = 720;
@@ -862,17 +911,17 @@ export default function MiniBattleRoyale({
       ctx.save();
       ctx.translate(width / 2, height / 2);
       ctx.scale(scale, scale);
-      ctx.translate(-camX, -camY);
+      ctx.translate(-renderCamX, -renderCamY);
 
       // 1. ARENA GROUND & TACTICAL GRID (Viewport Culled)
       ctx.fillStyle = '#1b3b1d';
       ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
       const viewMargin = 220;
-      const cullMinX = camX - (width / scale) / 2 - viewMargin;
-      const cullMaxX = camX + (width / scale) / 2 + viewMargin;
-      const cullMinY = camY - (height / scale) / 2 - viewMargin;
-      const cullMaxY = camY + (height / scale) / 2 + viewMargin;
+      const cullMinX = renderCamX - (width / scale) / 2 - viewMargin;
+      const cullMaxX = renderCamX + (width / scale) / 2 + viewMargin;
+      const cullMinY = renderCamY - (height / scale) / 2 - viewMargin;
+      const cullMaxY = renderCamY + (height / scale) / 2 + viewMargin;
 
       const inView = (x: number, y: number, r: number = 40) => {
         return x + r >= cullMinX && x - r <= cullMaxX && y + r >= cullMinY && y - r <= cullMaxY;

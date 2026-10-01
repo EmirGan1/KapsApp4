@@ -546,6 +546,9 @@ export interface PlayerData {
   botStuckCounter?: number;
   botLastX?: number;
   botLastY?: number;
+  botRoamTargetX?: number;
+  botRoamTargetY?: number;
+  botRoamTimer?: number;
 }
 
 export interface BulletData {
@@ -636,12 +639,6 @@ export class BattleRoyaleManager {
   constructor(io: SocketIOServer, db: LibsqlClient) {
     this.io = io;
     this.db = db;
-    this.initDefaultRooms();
-  }
-
-  private initDefaultRooms() {
-    this.createRoomInternal('Genel Ada (Battle Royale)', 0, 'Sistem', null, 20, 'royale', 300);
-    this.createRoomInternal('Hızlı Arena (Ölüm Maçı)', 0, 'Sistem', null, 20, 'deathmatch', 180);
   }
 
   private createRoomInternal(
@@ -695,37 +692,41 @@ export class BattleRoyaleManager {
   }
 
   public getRoomsList() {
-    return Array.from(this.rooms.values()).map(r => ({
-      id: r.id,
-      title: r.title,
-      hostId: r.hostId,
-      hostName: r.hostName,
-      hostAvatar: r.hostAvatar,
-      playerCount: r.players.length,
-      capacity: r.capacity,
-      mode: r.mode,
-      duration: r.duration,
-      status: r.status,
-      createdAt: r.createdAt
-    }));
+    return Array.from(this.rooms.values())
+      .filter(r => r.players.some(p => !p.isBot))
+      .map(r => ({
+        id: r.id,
+        title: r.title,
+        hostId: r.hostId,
+        hostName: r.hostName,
+        hostAvatar: r.hostAvatar,
+        playerCount: r.players.length,
+        capacity: r.capacity,
+        mode: r.mode,
+        duration: r.duration,
+        status: r.status,
+        createdAt: r.createdAt
+      }));
   }
 
   public getUnifiedTables() {
-    return Array.from(this.rooms.values()).map(r => ({
-      id: r.id,
-      name: r.title,
-      creatorId: r.hostId,
-      creatorName: r.hostName,
-      creatorAvatar: r.hostAvatar,
-      playerCount: r.players.length,
-      maxPlayers: r.capacity,
-      gameType: 'battle_royale',
-      status: r.status === 'playing' ? 'playing' : 'waiting',
-      isPrivate: false,
-      gameMode: r.mode,
-      createdAt: 'Bugün',
-      updatedAt: Date.now()
-    }));
+    return Array.from(this.rooms.values())
+      .filter(r => r.players.some(p => !p.isBot))
+      .map(r => ({
+        id: r.id,
+        name: r.title,
+        creatorId: r.hostId,
+        creatorName: r.hostName,
+        creatorAvatar: r.hostAvatar,
+        playerCount: r.players.length,
+        maxPlayers: r.capacity,
+        gameType: 'battle_royale',
+        status: r.status === 'playing' ? 'playing' : 'waiting',
+        isPrivate: false,
+        gameMode: r.mode,
+        createdAt: 'Bugün',
+        updatedAt: Date.now()
+      }));
   }
 
   public destroyRoom(roomId: string) {
@@ -827,13 +828,13 @@ export class BattleRoyaleManager {
 
     room.players = room.players.filter(p => p.userId !== userId);
 
-    if (room.players.length === 0) {
-      if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
-      if (room.countdownTimer) clearInterval(room.countdownTimer);
-      this.rooms.delete(roomId);
+    const realPlayers = room.players.filter(p => !p.isBot);
+    if (realPlayers.length === 0) {
+      this.destroyRoom(roomId);
+      return;
     } else {
       if (room.hostId === userId) {
-        const nextHost = room.players.find(p => !p.isBot) || room.players[0];
+        const nextHost = realPlayers[0] || room.players[0];
         if (nextHost) {
           room.hostId = nextHost.userId;
           room.hostName = nextHost.username;
@@ -852,14 +853,8 @@ export class BattleRoyaleManager {
     if (!room || room.status !== 'lobby') return { error: 'Bot eklenemez.' };
     if (room.players.length >= room.capacity) return { error: 'Masa dolu!' };
 
-    const botNames = [
-      'CyberAlpha', 'SniperGhost', 'ApexStriker', 'TitanWarrior', 'PhantomEye',
-      'VanguardBot', 'BordoBere', 'Firtina06', 'GokTug', 'DemirPence',
-      'Yildirim', 'Atmaca', 'Gozcu99', 'Pusucu', 'GölgeAvcı',
-      'Karasancak', 'Bozkurt', 'Pars', 'Karakartal', 'Akrep',
-      'Ejder', 'Kobra', 'Spectre', 'NovaX', 'Vortex', 'Sancak'
-    ];
-    const botName = botNames[Math.floor(Math.random() * botNames.length)] + ` [BOT]`;
+    const botNames = ['kapboss', 'kıllıÇ', 'AXELbot', 'EmGaN', 'EE', 'IA', 'TOK', 'CAS', 'IB'];
+    const botName = botNames[Math.floor(Math.random() * botNames.length)];
     const botId = -Math.floor(10000 + Math.random() * 90000);
 
     const bot: PlayerData = {
@@ -1511,11 +1506,9 @@ export class BattleRoyaleManager {
           const distToEnemy = Math.hypot(enemy.x - p.x, enemy.y - p.y);
           const directAngle = Math.atan2(enemy.y - p.y, enemy.x - p.x);
 
-          // Platform-Aware Dynamic AI Balancing
-          // If the enemy is a touch / mobile player, bot has human reaction delay and aim jitter
-          const isTargetMobile = enemy.platform === 'mobile';
-          const botReactionDelay = isTargetMobile ? 420 : 130;
-          const botSpreadMargin = isTargetMobile ? 0.18 : 0.03;
+          // Balanced Combat AI (Nerf & Balance: 350-500ms human reaction time + spread inaccuracy)
+          const botReactionDelay = 380 + Math.floor(Math.random() * 120);
+          const botSpreadMargin = 0.22; // Inaccuracy spread so bots don't laser headshot
 
           // Reaction delay timer
           if (p.botTargetPlayerId !== enemy.id) {
@@ -1549,7 +1542,7 @@ export class BattleRoyaleManager {
           // Strafe & Combat movement
           if (!p.botStrafeTimer || now > p.botStrafeTimer) {
             p.botStrafeDir = Math.random() < 0.5 ? 1 : -1;
-            p.botStrafeTimer = now + (isTargetMobile ? 1100 : 480);
+            p.botStrafeTimer = now + 900;
           }
 
           const strafeOffset = (p.botStrafeDir || 1) * 0.75;
@@ -1573,30 +1566,54 @@ export class BattleRoyaleManager {
           p.vx = moveVx;
           p.vy = moveVy;
 
-          // Apply aim angle with platform-aware error margin
+          // Apply aim angle with human-like inaccuracy spread
           const aimJitter = (Math.random() - 0.5) * botSpreadMargin;
           p.angle = directAngle + aimJitter;
 
           // Shoot only if LOS is clear and reaction delay has passed
-          p.shooting = hasClearLOS && canShootNow && distToEnemy < 850;
+          p.shooting = hasClearLOS && canShootNow && distToEnemy < 800;
         } else {
-          // Wander towards safe zone center with obstacle avoidance
-          const toZoneAngle = Math.atan2(room.zone.targetY - p.y, room.zone.targetX - p.x);
-          const fWhisker = checkRaycastWalls(p.x, p.y, p.x + Math.cos(p.angle) * 80, p.y + Math.sin(p.angle) * 80);
+          // ACTIVE ROAMING & PATHFINDING (Bots constantly patrol and wander across map)
+          if (!p.botRoamTimer || now > p.botRoamTimer || p.botRoamTargetX === undefined || p.botRoamTargetY === undefined) {
+            const roamRadius = Math.min(MAP_SIZE * 0.35, room.zone.targetRadius * 0.85);
+            p.botRoamTargetX = Math.max(200, Math.min(MAP_SIZE - 200, room.zone.targetX + (Math.random() - 0.5) * roamRadius * 2));
+            p.botRoamTargetY = Math.max(200, Math.min(MAP_SIZE - 200, room.zone.targetY + (Math.random() - 0.5) * roamRadius * 2));
+            p.botRoamTimer = now + 4000 + Math.random() * 4000;
+          }
 
-          if (fWhisker.hit) {
+          const targetTx = p.botRoamTargetX ?? room.zone.targetX;
+          const targetTy = p.botRoamTargetY ?? room.zone.targetY;
+          const toTargetAngle = Math.atan2(targetTy - p.y, targetTx - p.x);
+          const fWhisker = checkRaycastWalls(p.x, p.y, p.x + Math.cos(p.angle) * 85, p.y + Math.sin(p.angle) * 85);
+
+          // Also check for rocks ahead
+          let hitRockAhead = false;
+          for (const obs of room.obstacles) {
+            if (obs.type === 'rock') {
+              const d = Math.hypot(obs.x - (p.x + Math.cos(p.angle) * 60), obs.y - (p.y + Math.sin(p.angle) * 60));
+              if (d < obs.radius + 20) {
+                hitRockAhead = true;
+                break;
+              }
+            }
+          }
+
+          if (fWhisker.hit || hitRockAhead) {
             if (nearestDoor) {
               p.angle = Math.atan2(nearestDoor.y - p.y, nearestDoor.x - p.x);
             } else {
               p.angle += Math.PI * 0.55 * (p.botStrafeDir || 1);
             }
           } else {
-            // Gradually steer towards zone center
-            p.angle += (toZoneAngle - p.angle) * 0.05;
+            // Gradually steer towards roam destination
+            let aDiff = toTargetAngle - p.angle;
+            while (aDiff < -Math.PI) aDiff += Math.PI * 2;
+            while (aDiff > Math.PI) aDiff -= Math.PI * 2;
+            p.angle += aDiff * 0.08;
           }
 
-          p.vx = Math.cos(p.angle) * 0.65;
-          p.vy = Math.sin(p.angle) * 0.65;
+          p.vx = Math.cos(p.angle) * 0.7;
+          p.vy = Math.sin(p.angle) * 0.7;
           p.shooting = false;
         }
 
@@ -1713,6 +1730,23 @@ export class BattleRoyaleManager {
         }
         return; // Bullet stops and terminates on the wall
       }
+
+      // 2B. Rock Obstacle Swept Collision (Mermiler kayalardan geçemez)
+      let hitRock = false;
+      for (const obs of room.obstacles) {
+        if (obs.type === 'rock') {
+          const dSq = distToSegmentSquared(obs.x, obs.y, prevX, prevY, nextX, nextY);
+          const hitR = obs.radius + bullet.radius;
+          if (dSq <= hitR * hitR) {
+            hitRock = true;
+            if (bullet.isAoE) {
+              this.triggerExplosion(room, nextX, nextY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
+            }
+            break;
+          }
+        }
+      }
+      if (hitRock) return; // Bullet blocked by solid rock obstacle!
 
       // 3. TNT Barrel Swept Collision
       let hitBarrel = false;
