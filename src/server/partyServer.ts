@@ -6,14 +6,14 @@ export type PartyGameState = 'LOBBY' | 'GAME_REVEAL' | 'PLAYING' | 'SCOREBOARD' 
 export type MiniGameType = 
   | 'tank_trouble'
   | 'micro_racing'
+  | 'hex_a_gone'
+  | 'dodgeball'
+  | 'blackout'
   | 'lava_survival'
   | 'coin_dash'
   | 'sumo_push'
   | 'bomb_tag'
-  | 'sniper_arena'
-  | 'musical_blocks'
-  | 'paint_turf'
-  | 'meteor_dodge';
+  | 'sniper_arena';
 
 export interface MiniGameMeta {
   id: MiniGameType;
@@ -31,10 +31,10 @@ export const MINI_GAMES_CATALOG: Record<MiniGameType, MiniGameMeta> = {
     id: 'tank_trouble',
     title: 'Tank Trouble (Tank Savaşları)',
     category: 'Aksiyon & Taktik',
-    description: 'Labirentte tankını sür, duvarlardan seken mermilerle rakiplerini avla! En son hayatta kalan tank kazanır.',
+    description: 'W/S ile ileri/geri git, A/D ile tankını döndür! Farenle taretini nişan al ve duvarlardan 3 kez seken mermilerle rakiplerini patlat.',
     controls: [
-      { key: 'W/S', desc: 'İleri / Geri Sürüş' },
-      { key: 'A/D', desc: 'Gövde Dönüşü' },
+      { key: 'W / S', desc: 'İleri / Geri Sürüş' },
+      { key: 'A / D', desc: 'Gövdeyi Döndür (Rotasyon)' },
       { key: 'Mouse', desc: 'Taret Nişanı' },
       { key: 'Sol Tık / Space', desc: 'Seken Mermi Ateşle' }
     ],
@@ -44,25 +44,66 @@ export const MINI_GAMES_CATALOG: Record<MiniGameType, MiniGameMeta> = {
   },
   micro_racing: {
     id: 'micro_racing',
-    title: 'Micro Racing (Tepeden Yarış)',
+    title: 'Micro Racing (Araç Yarışı)',
     category: 'Yarış & Hız',
-    description: 'Pistte 3 turu ilk bitiren şampiyon olur! Keskin virajlarda Drift tuşuyla kayarak avantaj sağla.',
+    description: 'Gerçek yönsel sürüş fiziği! W ile gaz ver, S ile fren yap, A/D ile direksiyonu kır, Shift ile drift atarak 3 turu ilk bitir.',
     controls: [
       { key: 'W / S', desc: 'Gaz / Fren & Geri' },
-      { key: 'A / D', desc: 'Sağa / Sola Direksiyon' },
+      { key: 'A / D', desc: 'Direksiyon Dönüşü' },
       { key: 'Shift', desc: 'Drift & Kayma' }
     ],
     durationSec: 60,
     bgGradient: 'from-blue-900/60 to-slate-950',
     iconName: 'Flag'
   },
+  hex_a_gone: {
+    id: 'hex_a_gone',
+    title: 'Hex-A-Gone (Düşen Zeminler)',
+    category: 'Refleks & Platform',
+    description: 'Bastığın altıgen zemin 1 saniye içinde parçalanıp yok olur! Sürekli hareket et, boşluğa düşen elenir.',
+    controls: [
+      { key: 'WASD', desc: 'Koşma & Kaçış' },
+      { key: 'Space', desc: 'Zıplama' }
+    ],
+    durationSec: 45,
+    bgGradient: 'from-purple-900/60 to-slate-950',
+    iconName: 'Layers'
+  },
+  dodgeball: {
+    id: 'dodgeball',
+    title: 'Dodgeball (Yakan Top)',
+    category: 'Spor & Refleks',
+    description: 'Ortadaki topları E ile kap, fareyle nişan alıp rakiplerine fırlat! Duvarlardan seken toplara dikkat et, vurulan elenir.',
+    controls: [
+      { key: 'WASD', desc: 'Hareket & Kaçış' },
+      { key: 'E / Boşluk', desc: 'Yerden Top Al' },
+      { key: 'Sol Tık', desc: 'Topu Fırlat' }
+    ],
+    durationSec: 45,
+    bgGradient: 'from-emerald-900/60 to-slate-950',
+    iconName: 'Zap'
+  },
+  blackout: {
+    id: 'blackout',
+    title: 'Blackout (Zifiri Karanlık)',
+    category: 'Gerilim & Gizlilik',
+    description: 'Arena tamamen karanlık! Yalnızca farenin baktığı yöne el feneri ışığı vurur. Işık konisindeki rakipleri vurarak hayatta kal.',
+    controls: [
+      { key: 'WASD', desc: 'Sessiz Adımlar' },
+      { key: 'Mouse', desc: 'El Feneri & Nişan' },
+      { key: 'Sol Tık', desc: 'Karanlıkta Ateş' }
+    ],
+    durationSec: 45,
+    bgGradient: 'from-slate-950 to-zinc-950',
+    iconName: 'Moon'
+  },
   lava_survival: {
     id: 'lava_survival',
     title: 'Lava Survival (Lavda Hayatta Kalma)',
-    category: 'Refleks & Platform',
-    description: 'Zeminler aniden kızgın lava dönüşür ve merkezden şok dalgaları yayılır! Space ile zıplayarak hayatta kal.',
+    category: 'Platform & Zıplama',
+    description: 'Merkezden genişleyen dev şok dalgaları geliyor! Space ile zıplayarak dalgaların üzerinden atla.',
     controls: [
-      { key: 'WASD', desc: 'Koşma' },
+      { key: 'WASD', desc: 'Pozisyon Alma' },
       { key: 'Space', desc: 'Şok Dalgasından Zıplama' }
     ],
     durationSec: 40,
@@ -73,7 +114,7 @@ export const MINI_GAMES_CATALOG: Record<MiniGameType, MiniGameMeta> = {
     id: 'coin_dash',
     title: 'Coin Dash (Altın Kapmaca)',
     category: 'Hız & Toplama',
-    description: 'Arenada sürekli altınlar yağar! Shift ile atılarak 30 saniyede en çok altını toplayan lider olur.',
+    description: 'Arenaya yağan parlayan altınları topla! Shift ile hızlı atılarak (Dash) rakiplerinden önce altınları kap.',
     controls: [
       { key: 'WASD', desc: 'Hareket' },
       { key: 'Shift / Space', desc: 'Hızlı Atılma (Dash)' }
@@ -86,9 +127,9 @@ export const MINI_GAMES_CATALOG: Record<MiniGameType, MiniGameMeta> = {
     id: 'sumo_push',
     title: 'Sumo Push (Buzlu Sumo)',
     category: 'Fizik & İtme',
-    description: 'Kaygan buz halkasında rakiplerine E ile omuz atarak onları uçurumdan aşağı düşür!',
+    description: 'Kaygan buz halkasında E tuşuyla rakiplere omuz atarak onları uçurumdan aşağı düşür!',
     controls: [
-      { key: 'WASD', desc: 'Buzda Kayma / Yön' },
+      { key: 'WASD', desc: 'Buzda Kayma' },
       { key: 'E / Space', desc: 'Şiddetli Sumo İtmesi' }
     ],
     durationSec: 40,
@@ -99,7 +140,7 @@ export const MINI_GAMES_CATALOG: Record<MiniGameType, MiniGameMeta> = {
     id: 'bomb_tag',
     title: 'Bomb Tag (Bomba Sende)',
     category: 'Panik & Kovalama',
-    description: 'Tıklayan bomba patlamadan önce birine dokunup bombayı devret! 20 saniye sonunda bomba kimdeyse patlar.',
+    description: 'Tıklayan bomba patlamadan önce birine dokunup bombayı devret! Süre bitiminde bomba kimdeyse patlar.',
     controls: [
       { key: 'WASD', desc: 'Kaçma & Kovalama' }
     ],
@@ -110,8 +151,8 @@ export const MINI_GAMES_CATALOG: Record<MiniGameType, MiniGameMeta> = {
   sniper_arena: {
     id: 'sniper_arena',
     title: 'Sniper Arena (Lazerli Düello)',
-    category: 'Nişancılık',
-    description: 'Tek kurşun, tek can! Lazerini gizle veya rakibini şaşırt. Iskalarsan 3 saniye doldurma süren var.',
+    category: 'Keskin Nişancılık',
+    description: 'Tek kurşun, tek can! Renkli lazerinle nişan al ve ateş et. 3 saniyelik doldurma süresinde siper al.',
     controls: [
       { key: 'WASD', desc: 'Siper Alma' },
       { key: 'Mouse', desc: 'Lazer Nişan' },
@@ -120,58 +161,20 @@ export const MINI_GAMES_CATALOG: Record<MiniGameType, MiniGameMeta> = {
     durationSec: 45,
     bgGradient: 'from-emerald-900/60 to-slate-950',
     iconName: 'Crosshair'
-  },
-  musical_blocks: {
-    id: 'musical_blocks',
-    title: 'Musical Blocks (Müzikli Bloklar)',
-    category: 'Müzik & Hız',
-    description: 'Müzik kesildiğinde güvenli parlayan bloklar belirir! Hemen bir bloğa koşup E ile kap, açıkta kalma.',
-    controls: [
-      { key: 'WASD', desc: 'Dans & Koşma' },
-      { key: 'E / Space', desc: 'Güvenli Bloğu Kap' }
-    ],
-    durationSec: 40,
-    bgGradient: 'from-purple-900/60 to-slate-950',
-    iconName: 'Music'
-  },
-  paint_turf: {
-    id: 'paint_turf',
-    title: 'Paint Turf (Boya Savaşı)',
-    category: 'Bölge Hakimiyeti',
-    description: 'Space tuşuna basılı tutarak zemini kendi rengine boya! Süre bitiminde en çok alanı kaplayan kazanır.',
-    controls: [
-      { key: 'WASD', desc: 'Hareket' },
-      { key: 'Space / Sol Tık', desc: 'Boya Fışkırtma' }
-    ],
-    durationSec: 40,
-    bgGradient: 'from-pink-900/60 to-slate-950',
-    iconName: 'Palette'
-  },
-  meteor_dodge: {
-    id: 'meteor_dodge',
-    title: 'Meteor Dodge (Göktaşı Yağmuru)',
-    category: 'Kaos & Kaçış',
-    description: 'Yerdeki kırmızı krater gölgelerinden kaç! Gittikçe sıklaşan meteor yağmurunda son hayatta kalan kazanır.',
-    controls: [
-      { key: 'WASD', desc: 'Gölgelerden Kaçış' }
-    ],
-    durationSec: 40,
-    bgGradient: 'from-rose-950 to-slate-950',
-    iconName: 'Sparkles'
   }
 };
 
 export const ALL_MINI_GAMES_LIST: MiniGameType[] = [
   'tank_trouble',
   'micro_racing',
+  'hex_a_gone',
+  'dodgeball',
+  'blackout',
   'lava_survival',
   'coin_dash',
   'sumo_push',
   'bomb_tag',
-  'sniper_arena',
-  'musical_blocks',
-  'paint_turf',
-  'meteor_dodge'
+  'sniper_arena'
 ];
 
 export interface PartyPlayer {
@@ -187,19 +190,19 @@ export interface PartyPlayer {
   roundScore: number;
   rank: number;
   
-  // Dynamic Game Physics State
+  // Directional Physics
   x: number;
   y: number;
   vx: number;
   vy: number;
-  angle: number;
-  targetAngle: number;
-  speed: number;
+  angle: number;       // Heading / rotation angle (radians)
+  targetAngle: number; // Turret or mouse aim angle
+  speed: number;       // Directional velocity forward/back
   isAlive: boolean;
   isAction: boolean;
   isDash: boolean;
   isShooting: boolean;
-  zHeight: number; // for jumping over shockwaves
+  zHeight: number;
   zVel: number;
 
   // Mini-game specific variables
@@ -208,19 +211,22 @@ export interface PartyPlayer {
   currentCheckpoint: number;
   hasBomb: boolean;
   bombImmunityUntil: number;
-  turfTilesCount: number;
-  claimedBlockId: number | null;
+  hasDodgeball: boolean;
   sniperAmmo: number;
   lastSniperShot: number;
   lastTankShot: number;
-  driftAngle: number;
+  lastDodgeballThrow: number;
   skidmarks: { x: number; y: number; alpha: number }[];
   lastDashTime: number;
   dashEndTime: number;
 
+  // Key states received from client
+  keyUp?: boolean;
+  keyDown?: boolean;
+  keyLeft?: boolean;
+  keyRight?: boolean;
+
   // Bot AI
-  botTargetX?: number;
-  botTargetY?: number;
   botTimer?: number;
 }
 
@@ -249,6 +255,38 @@ export interface RaceCheckpoint {
   index: number;
 }
 
+export interface HexTile {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  state: 'solid' | 'shaking' | 'cracked' | 'void';
+  steppedAt: number;
+  destroyedAt: number;
+}
+
+export interface DodgeballEntity {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  heldBy: string | null;
+  lastThrownBy: string | null;
+  bouncesLeft: number;
+  color: string;
+}
+
+export interface BlackoutBullet {
+  id: string;
+  shooterId: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  color: string;
+}
+
 export interface LavaShockwave {
   id: string;
   x: number;
@@ -264,27 +302,6 @@ export interface PartyCoin {
   y: number;
   value: number;
   createdAt: number;
-}
-
-export interface MusicalBlock {
-  id: number;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  claimedBy: string | null;
-  color: string;
-}
-
-export interface FallingMeteor {
-  id: string;
-  targetX: number;
-  targetY: number;
-  currentHeight: number;
-  radius: number;
-  spawnTime: number;
-  impactTime: number;
-  hasExploded: boolean;
 }
 
 export interface PartyRoom {
@@ -304,18 +321,15 @@ export interface PartyRoom {
   createdAt: number;
   players: PartyPlayer[];
 
-  // Game specific entities
+  // Entities
   tankWalls: TankMazeWall[];
   tankBullets: TankBullet[];
   raceCheckpoints: RaceCheckpoint[];
+  hexTiles: HexTile[];
+  dodgeballs: DodgeballEntity[];
+  blackoutBullets: BlackoutBullet[];
   lavaShockwaves: LavaShockwave[];
-  lavaActiveTiles: Set<string>;
   coins: PartyCoin[];
-  musicalBlocks: MusicalBlock[];
-  musicPlaying: boolean;
-  nextMusicToggleTime: number;
-  turfGrid: Record<string, string>; // "gx,gy" -> playerColor
-  meteors: FallingMeteor[];
   roundWinners: { userId: number; username: string; pointsAwarded: number; rank: number }[];
   gameLoopInterval?: NodeJS.Timeout;
 }
@@ -387,14 +401,11 @@ export class PartyManager {
       tankWalls: [],
       tankBullets: [],
       raceCheckpoints: [],
+      hexTiles: [],
+      dodgeballs: [],
+      blackoutBullets: [],
       lavaShockwaves: [],
-      lavaActiveTiles: new Set(),
       coins: [],
-      musicalBlocks: [],
-      musicPlaying: true,
-      nextMusicToggleTime: 0,
-      turfGrid: {},
-      meteors: [],
       roundWinners: []
     };
 
@@ -528,33 +539,23 @@ export class PartyManager {
     const p = room.players.find(pl => pl.userId === userId);
     if (!p || !p.isAlive) return;
 
-    // Movement Vectors / Keys
-    if (typeof input.vx === 'number' && Number.isFinite(input.vx) &&
-        typeof input.vy === 'number' && Number.isFinite(input.vy)) {
-      p.vx = Math.max(-1, Math.min(1, input.vx));
-      p.vy = Math.max(-1, Math.min(1, input.vy));
-    } else {
-      let vx = 0;
-      let vy = 0;
-      if (input.up || input.w) vy -= 1;
-      if (input.down || input.s) vy += 1;
-      if (input.left || input.a) vx -= 1;
-      if (input.right || input.d) vx += 1;
-      if (vx !== 0 && vy !== 0) {
-        vx *= 0.7071;
-        vy *= 0.7071;
-      }
-      p.vx = vx;
-      p.vy = vy;
-    }
+    // Direct key state capture
+    p.keyUp = Boolean(input.up || input.w);
+    p.keyDown = Boolean(input.down || input.s);
+    p.keyLeft = Boolean(input.left || input.a);
+    p.keyRight = Boolean(input.right || input.d);
 
     // Aim Angle
     if (typeof input.mouseAngle === 'number' && Number.isFinite(input.mouseAngle)) {
       p.targetAngle = input.mouseAngle;
-      p.angle = input.mouseAngle;
+      if (room.activeGameType !== 'tank_trouble' && room.activeGameType !== 'micro_racing') {
+        p.angle = input.mouseAngle;
+      }
     } else if (typeof input.angle === 'number' && Number.isFinite(input.angle)) {
       p.targetAngle = input.angle;
-      p.angle = input.angle;
+      if (room.activeGameType !== 'tank_trouble' && room.activeGameType !== 'micro_racing') {
+        p.angle = input.angle;
+      }
     }
 
     // Action / Dash / Shoot booleans
@@ -562,11 +563,20 @@ export class PartyManager {
     p.isDash = Boolean(input.dash || input.shift);
     p.isShooting = Boolean(input.isShooting || input.shooting || input.mouseDown);
 
-    // Micro Racing Specific Steering
-    if (room.activeGameType === 'micro_racing') {
-      const steerSpeed = 0.07;
-      if (input.left || input.a) p.angle -= steerSpeed;
-      if (input.right || input.d) p.angle += steerSpeed;
+    // Standard Direct Velocity for 2D platformers (hex_a_gone, dodgeball, blackout, etc.)
+    if (room.activeGameType !== 'tank_trouble' && room.activeGameType !== 'micro_racing') {
+      let vx = 0;
+      let vy = 0;
+      if (p.keyUp) vy -= 1;
+      if (p.keyDown) vy += 1;
+      if (p.keyLeft) vx -= 1;
+      if (p.keyRight) vx += 1;
+      if (vx !== 0 && vy !== 0) {
+        vx *= 0.7071;
+        vy *= 0.7071;
+      }
+      p.vx = vx;
+      p.vy = vy;
     }
   }
 
@@ -585,7 +595,7 @@ export class PartyManager {
     room.stateTimer = 5; // 5 seconds intro
     room.gameTimeRemaining = MINI_GAMES_CATALOG[gType].durationSec;
 
-    // Reset player round variables & distribute spawn positions
+    // Reset player round variables
     const numPlayers = room.players.length;
     room.players.forEach((p, idx) => {
       p.isAlive = true;
@@ -600,12 +610,11 @@ export class PartyManager {
       p.currentCheckpoint = 0;
       p.hasBomb = false;
       p.bombImmunityUntil = 0;
-      p.turfTilesCount = 0;
-      p.claimedBlockId = null;
+      p.hasDodgeball = false;
       p.sniperAmmo = 1;
       p.lastSniperShot = 0;
       p.lastTankShot = 0;
-      p.driftAngle = 0;
+      p.lastDodgeballThrow = 0;
       p.skidmarks = [];
       p.lastDashTime = 0;
       p.dashEndTime = 0;
@@ -615,6 +624,7 @@ export class PartyManager {
       p.x = 450 + Math.cos(angle) * 220;
       p.y = 300 + Math.sin(angle) * 160;
       p.angle = angle + Math.PI;
+      p.targetAngle = p.angle;
     });
 
     // Game Specific Setup
@@ -626,16 +636,15 @@ export class PartyManager {
     room.tankWalls = [];
     room.tankBullets = [];
     room.raceCheckpoints = [];
+    room.hexTiles = [];
+    room.dodgeballs = [];
+    room.blackoutBullets = [];
     room.lavaShockwaves = [];
-    room.lavaActiveTiles.clear();
     room.coins = [];
-    room.musicalBlocks = [];
-    room.turfGrid = {};
-    room.meteors = [];
     room.roundWinners = [];
 
     if (gType === 'tank_trouble') {
-      // Generate Symmetric Maze Walls
+      // Maze Walls
       room.tankWalls = [
         { x: 150, y: 120, w: 18, h: 200 },
         { x: 150, y: 320, w: 200, h: 18 },
@@ -646,7 +655,7 @@ export class PartyManager {
         { x: 300, y: 440, w: 300, h: 18 }
       ];
     } else if (gType === 'micro_racing') {
-      // Circular Oval Racetrack Checkpoints (6 waypoints)
+      // Circular Oval Racetrack Checkpoints
       const pts = [
         { x: 450, y: 100 },
         { x: 740, y: 160 },
@@ -657,18 +666,57 @@ export class PartyManager {
       ];
       room.raceCheckpoints = pts.map((pt, i) => ({ ...pt, radius: 80, index: i }));
 
-      // Align players on starting grid
+      // Align players on starting grid facing right (angle = 0)
       room.players.forEach((p, i) => {
         p.x = 420 - (i % 2) * 50;
         p.y = 80 + Math.floor(i / 2) * 35;
-        p.angle = 0; // facing right
+        p.angle = 0;
+        p.speed = 0;
       });
+    } else if (gType === 'hex_a_gone') {
+      // Generate Grid of Hexagon Tiles (11 cols x 7 rows)
+      const hexRadius = 42;
+      const startX = 140;
+      const startY = 100;
+      const dx = hexRadius * 1.732;
+      const dy = hexRadius * 1.5;
+
+      for (let r = 0; r < 7; r++) {
+        const rowOffsetX = (r % 2 === 1) ? dx / 2 : 0;
+        for (let c = 0; c < 9; c++) {
+          const hx = startX + c * dx + rowOffsetX;
+          const hy = startY + r * dy;
+          room.hexTiles.push({
+            id: `hex_${r}_${c}`,
+            x: hx,
+            y: hy,
+            radius: hexRadius - 3,
+            state: 'solid',
+            steppedAt: 0,
+            destroyedAt: 0
+          });
+        }
+      }
+    } else if (gType === 'dodgeball') {
+      // Spawn 6 Neutral Dodgeballs in center
+      const ballColors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
+      for (let i = 0; i < 6; i++) {
+        room.dodgeballs.push({
+          id: `db_${i}`,
+          x: 350 + (i % 3) * 100,
+          y: 250 + Math.floor(i / 3) * 100,
+          vx: 0,
+          vy: 0,
+          heldBy: null,
+          lastThrownBy: null,
+          bouncesLeft: 2,
+          color: ballColors[i % ballColors.length]
+        });
+      }
     } else if (gType === 'bomb_tag') {
-      // Pick random initial bomb carrier
       const carrier = room.players[Math.floor(Math.random() * room.players.length)];
       if (carrier) carrier.hasBomb = true;
     } else if (gType === 'coin_dash') {
-      // Seed initial 18 coins
       for (let c = 0; c < 18; c++) {
         room.coins.push({
           id: `c_${c}`,
@@ -678,29 +726,6 @@ export class PartyManager {
           createdAt: Date.now()
         });
       }
-    } else if (gType === 'musical_blocks') {
-      room.musicPlaying = true;
-      room.nextMusicToggleTime = Date.now() + 6000;
-      this.spawnMusicalBlocks(room);
-    }
-  }
-
-  private spawnMusicalBlocks(room: PartyRoom) {
-    const aliveCount = room.players.filter(p => p.isAlive).length;
-    const safeBlockCount = Math.max(1, aliveCount - 1);
-    room.musicalBlocks = [];
-    const colors = ['#38bdf8', '#fbbf24', '#34d399', '#f472b6', '#a78bfa', '#fb923c'];
-
-    for (let i = 0; i < safeBlockCount; i++) {
-      room.musicalBlocks.push({
-        id: i + 1,
-        x: 150 + Math.random() * 600,
-        y: 120 + Math.random() * 360,
-        w: 65,
-        h: 65,
-        claimedBy: null,
-        color: colors[i % colors.length]
-      });
     }
   }
 
@@ -742,20 +767,29 @@ export class PartyManager {
       return;
     }
 
-    // 3. PLAYING STATE: Execute Active Game Simulation
+    // 3. PLAYING STATE
     if (room.state === 'PLAYING') {
       room.gameTimeRemaining -= dt;
 
       // Update Bot AI
       this.updateBotAI(room);
 
-      // Execute Game-Specific Physics & Rules
+      // Execute Game Physics
       switch (room.activeGameType) {
         case 'tank_trouble':
           this.tickTankTrouble(room, dt);
           break;
         case 'micro_racing':
           this.tickMicroRacing(room, dt);
+          break;
+        case 'hex_a_gone':
+          this.tickHexAGone(room, dt);
+          break;
+        case 'dodgeball':
+          this.tickDodgeball(room, dt);
+          break;
+        case 'blackout':
+          this.tickBlackout(room, dt);
           break;
         case 'lava_survival':
           this.tickLavaSurvival(room, dt);
@@ -772,21 +806,12 @@ export class PartyManager {
         case 'sniper_arena':
           this.tickSniperArena(room, dt);
           break;
-        case 'musical_blocks':
-          this.tickMusicalBlocks(room, dt);
-          break;
-        case 'paint_turf':
-          this.tickPaintTurf(room, dt);
-          break;
-        case 'meteor_dodge':
-          this.tickMeteorDodge(room, dt);
-          break;
       }
 
       // Check Round Completion Condition
       const alivePlayers = room.players.filter(p => p.isAlive);
       const isTimeUp = room.gameTimeRemaining <= 0;
-      const isSurvivalGame = ['tank_trouble', 'lava_survival', 'sumo_push', 'bomb_tag', 'sniper_arena', 'meteor_dodge'].includes(room.activeGameType || '');
+      const isSurvivalGame = ['tank_trouble', 'hex_a_gone', 'dodgeball', 'blackout', 'lava_survival', 'sumo_push', 'bomb_tag', 'sniper_arena'].includes(room.activeGameType || '');
 
       if (isTimeUp || (isSurvivalGame && alivePlayers.length <= 1)) {
         this.concludeRound(room);
@@ -797,34 +822,40 @@ export class PartyManager {
   }
 
   // ============================================================
-  // MINI-GAME 1: TANK TROUBLE (RICOCHET PHYSICS)
+  // MINI-GAME 1: TANK TROUBLE (PERFECT ANGULAR DRIVING & TURRET)
   // ============================================================
   private tickTankTrouble(room: PartyRoom, dt: number) {
     const now = Date.now();
+    const rotationSpeed = 3.0; // radians/sec
+    const forwardAccel = 360;
+    const reverseAccel = 240;
+    const maxForwardSpeed = 175;
+    const maxReverseSpeed = -90;
+    const friction = 0.88;
 
-    // 1. Move Tanks with Wall Collisions
     room.players.forEach(p => {
       if (!p.isAlive) return;
-      const driveSpeed = 160;
-      const turnSpeed = 3.2;
 
-      // Rotate Hull with A/D
-      if (p.vx < -0.3) p.angle -= turnSpeed * dt;
-      if (p.vx > 0.3) p.angle += turnSpeed * dt;
+      // 1. Angular Hull Rotation (A/D rotates hull angle)
+      if (p.keyLeft) p.angle -= rotationSpeed * dt;
+      if (p.keyRight) p.angle += rotationSpeed * dt;
 
-      // Move Forward/Backward with W/S along Hull Angle
-      let moveDir = 0;
-      if (p.vy < -0.3) moveDir = 1;
-      if (p.vy > 0.3) moveDir = -0.6;
+      // 2. Directional Speed (W pushes forward along angle, S pushes backward)
+      if (p.keyUp) {
+        p.speed = Math.min(maxForwardSpeed, p.speed + forwardAccel * dt);
+      } else if (p.keyDown) {
+        p.speed = Math.max(maxReverseSpeed, p.speed - reverseAccel * dt);
+      } else {
+        p.speed *= friction;
+      }
 
-      const nextX = p.x + Math.cos(p.angle) * moveDir * driveSpeed * dt;
-      const nextY = p.y + Math.sin(p.angle) * moveDir * driveSpeed * dt;
+      // 3. Directional Movement: X/Y computed strictly from heading angle!
+      const nextX = p.x + Math.cos(p.angle) * p.speed * dt;
+      const nextY = p.y + Math.sin(p.angle) * p.speed * dt;
 
-      // Arena boundary collision
       const clampedX = Math.max(30, Math.min(870, nextX));
       const clampedY = Math.max(30, Math.min(570, nextY));
 
-      // Wall collision check
       if (!this.checkMazeWallCollision(clampedX, p.y, 20, room.tankWalls)) {
         p.x = clampedX;
       }
@@ -832,17 +863,17 @@ export class PartyManager {
         p.y = clampedY;
       }
 
-      // Firing bullets (Mouse click or Action)
-      if ((p.isShooting || p.isAction) && now - p.lastTankShot > 750) {
+      // 4. Independent Turret Firing (bounces off maze walls 3 times)
+      if ((p.isShooting || p.isAction) && now - p.lastTankShot > 700) {
         p.lastTankShot = now;
         const turretAngle = p.targetAngle !== undefined ? p.targetAngle : p.angle;
-        const bSpeed = 340;
+        const bSpeed = 350;
 
         room.tankBullets.push({
           id: `tb_${p.id}_${now}`,
           shooterId: p.id,
-          x: p.x + Math.cos(turretAngle) * 24,
-          y: p.y + Math.sin(turretAngle) * 24,
+          x: p.x + Math.cos(turretAngle) * 26,
+          y: p.y + Math.sin(turretAngle) * 26,
           vx: Math.cos(turretAngle) * bSpeed,
           vy: Math.sin(turretAngle) * bSpeed,
           bouncesLeft: 3,
@@ -851,24 +882,21 @@ export class PartyManager {
       }
     });
 
-    // 2. Update Bullets & Ricochet off Walls
+    // Bullets update & 3-bounce ricochet
     const activeBullets: TankBullet[] = [];
     room.tankBullets.forEach(b => {
       let nextX = b.x + b.vx * dt;
       let nextY = b.y + b.vy * dt;
 
-      // Arena Boundary Bounces
       if (nextX < 15) { nextX = 15; b.vx = -b.vx; b.bouncesLeft--; }
       else if (nextX > 885) { nextX = 885; b.vx = -b.vx; b.bouncesLeft--; }
 
       if (nextY < 15) { nextY = 15; b.vy = -b.vy; b.bouncesLeft--; }
       else if (nextY > 585) { nextY = 585; b.vy = -b.vy; b.bouncesLeft--; }
 
-      // Maze Wall Bounces
       for (const wall of room.tankWalls) {
         if (nextX >= wall.x - 6 && nextX <= wall.x + wall.w + 6 &&
             nextY >= wall.y - 6 && nextY <= wall.y + wall.h + 6) {
-          // Check collision normal (horizontal vs vertical wall)
           if (b.x < wall.x || b.x > wall.x + wall.w) {
             b.vx = -b.vx;
           } else {
@@ -879,7 +907,6 @@ export class PartyManager {
         }
       }
 
-      // Check Hit against Tanks
       let hitTank = false;
       for (const p of room.players) {
         if (!p.isAlive) continue;
@@ -897,50 +924,49 @@ export class PartyManager {
         activeBullets.push(b);
       }
     });
-
     room.tankBullets = activeBullets;
   }
 
   // ============================================================
-  // MINI-GAME 2: MICRO RACING (TOP-DOWN CAR & DRIFT PHYSICS)
+  // MINI-GAME 2: MICRO RACING (PERFECT CAR ACCEL & DRIFT PHYSICS)
   // ============================================================
   private tickMicroRacing(room: PartyRoom, dt: number) {
-    const maxSpeed = 380;
-    const accel = 320;
-    const friction = 0.95;
+    const steerSpeed = 3.4;
+    const accel = 420;
+    const maxSpeed = 360;
+    const maxReverse = -120;
+    const naturalDamping = 0.96;
 
     room.players.forEach(p => {
-      // Throttle & Brake
-      let throttle = 0;
-      if (p.vy < -0.3) throttle = 1;
-      if (p.vy > 0.3) throttle = -0.6;
+      // 1. Steering (A/D rotates car body angle)
+      if (p.keyLeft) p.angle -= steerSpeed * dt;
+      if (p.keyRight) p.angle += steerSpeed * dt;
 
-      if (throttle !== 0) {
-        p.speed += throttle * accel * dt;
+      // 2. Throttle / Braking along vehicle angle
+      if (p.keyUp) {
+        p.speed = Math.min(maxSpeed, p.speed + accel * dt);
+      } else if (p.keyDown) {
+        p.speed = Math.max(maxReverse, p.speed - accel * 1.2 * dt);
       } else {
-        p.speed *= friction;
+        p.speed *= naturalDamping;
       }
-      p.speed = Math.max(-120, Math.min(maxSpeed, p.speed));
 
-      // Drift Mechanics
+      // 3. Drift Skidmarks when Drift key held
       const isDrifting = p.isDash;
-      const driftMod = isDrifting ? 1.4 : 1.0;
-
-      // Position update based on steering angle
-      p.vx = Math.cos(p.angle) * p.speed;
-      p.vy = Math.sin(p.angle) * p.speed;
-
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-
-      // Skidmarks when drifting
-      if (isDrifting && Math.abs(p.speed) > 150) {
+      if (isDrifting && Math.abs(p.speed) > 130) {
         p.skidmarks.push({ x: p.x, y: p.y, alpha: 1.0 });
         if (p.skidmarks.length > 30) p.skidmarks.shift();
       }
       p.skidmarks.forEach(sm => sm.alpha = Math.max(0, sm.alpha - dt * 0.5));
 
-      // Checkpoint Crossing
+      // 4. Directional Forward Velocity vector
+      p.vx = Math.cos(p.angle) * p.speed;
+      p.vy = Math.sin(p.angle) * p.speed;
+
+      p.x = Math.max(40, Math.min(860, p.x + p.vx * dt));
+      p.y = Math.max(40, Math.min(560, p.y + p.vy * dt));
+
+      // 5. Checkpoint & Lap Detection
       const nextCp = room.raceCheckpoints[p.currentCheckpoint];
       if (nextCp) {
         const d = Math.hypot(p.x - nextCp.x, p.y - nextCp.y);
@@ -949,7 +975,6 @@ export class PartyManager {
           if (p.currentCheckpoint === 0) {
             p.lapsCompleted++;
             if (p.lapsCompleted >= 3) {
-              // Finished Race!
               if (!room.roundWinners.some(rw => rw.userId === p.userId)) {
                 const rank = room.roundWinners.length + 1;
                 const points = rank === 1 ? 5 : rank === 2 ? 3 : rank === 3 ? 2 : 1;
@@ -967,7 +992,6 @@ export class PartyManager {
       }
     });
 
-    // If all players finished 3 laps, conclude early
     const finishCount = room.players.filter(p => p.lapsCompleted >= 3).length;
     if (finishCount >= Math.min(3, room.players.length)) {
       room.gameTimeRemaining = Math.min(room.gameTimeRemaining, 2);
@@ -975,35 +999,221 @@ export class PartyManager {
   }
 
   // ============================================================
-  // MINI-GAME 3: LAVA SURVIVAL (SHOCKWAVES & JUMP)
+  // MINI-GAME 3: HEX-A-GONE (CRUMBLING TILES & FALLING VOID)
+  // ============================================================
+  private tickHexAGone(room: PartyRoom, dt: number) {
+    const now = Date.now();
+
+    // 1. Move players
+    room.players.forEach(p => {
+      if (!p.isAlive) return;
+      p.x = Math.max(80, Math.min(820, p.x + p.vx * 210 * dt));
+      p.y = Math.max(60, Math.min(540, p.y + p.vy * 210 * dt));
+
+      // Check which hex tile the player is currently stepping on
+      let onSolidTile = false;
+      for (const tile of room.hexTiles) {
+        const d = Math.hypot(p.x - tile.x, p.y - tile.y);
+        if (d < tile.radius) {
+          if (tile.state === 'solid') {
+            tile.state = 'shaking';
+            tile.steppedAt = now;
+          }
+          if (tile.state !== 'void') {
+            onSolidTile = true;
+          }
+        }
+      }
+
+      // If not on any solid tile and on ground, player falls into the abyss!
+      if (!onSolidTile && p.zHeight <= 0) {
+        p.isAlive = false;
+      }
+    });
+
+    // 2. Update Hex Tiles lifecycle (solid -> shaking 600ms -> cracked 400ms -> void)
+    room.hexTiles.forEach(tile => {
+      if (tile.state === 'shaking' && now - tile.steppedAt > 600) {
+        tile.state = 'cracked';
+      } else if (tile.state === 'cracked' && now - tile.steppedAt > 1000) {
+        tile.state = 'void';
+        tile.destroyedAt = now;
+      }
+    });
+  }
+
+  // ============================================================
+  // MINI-GAME 4: DODGEBALL (PICKUP, FAST THROW & RICOCHET HITS)
+  // ============================================================
+  private tickDodgeball(room: PartyRoom, dt: number) {
+    const now = Date.now();
+
+    // Move players & Pickup Dodgeball
+    room.players.forEach(p => {
+      if (!p.isAlive) return;
+      p.x = Math.max(50, Math.min(850, p.x + p.vx * 230 * dt));
+      p.y = Math.max(50, Math.min(550, p.y + p.vy * 230 * dt));
+
+      // Pickup neutral dodgeball (E or Action)
+      if (!p.hasDodgeball && (p.isAction || p.isDash)) {
+        for (const ball of room.dodgeballs) {
+          if (ball.heldBy === null && Math.hypot(ball.vx, ball.vy) < 50) {
+            const d = Math.hypot(p.x - ball.x, p.y - ball.y);
+            if (d < 35) {
+              ball.heldBy = p.id;
+              p.hasDodgeball = true;
+              break;
+            }
+          }
+        }
+      }
+
+      // Throw dodgeball (Mouse click / isShooting)
+      if (p.hasDodgeball && (p.isShooting || p.isAction) && now - p.lastDodgeballThrow > 500) {
+        p.lastDodgeballThrow = now;
+        p.hasDodgeball = false;
+
+        const ball = room.dodgeballs.find(b => b.heldBy === p.id);
+        if (ball) {
+          ball.heldBy = null;
+          ball.lastThrownBy = p.id;
+          const throwAngle = p.targetAngle !== undefined ? p.targetAngle : p.angle;
+          const throwSpeed = 620;
+          ball.vx = Math.cos(throwAngle) * throwSpeed;
+          ball.vy = Math.sin(throwAngle) * throwSpeed;
+          ball.bouncesLeft = 2;
+          ball.x = p.x + Math.cos(throwAngle) * 25;
+          ball.y = p.y + Math.sin(throwAngle) * 25;
+        }
+      }
+    });
+
+    // Update Dodgeballs position, bouncing & player elimination
+    room.dodgeballs.forEach(ball => {
+      if (ball.heldBy !== null) {
+        // Ball follows holder
+        const holder = room.players.find(pl => pl.id === ball.heldBy);
+        if (holder && holder.isAlive) {
+          ball.x = holder.x;
+          ball.y = holder.y;
+          ball.vx = 0;
+          ball.vy = 0;
+        } else {
+          ball.heldBy = null;
+        }
+        return;
+      }
+
+      // Move airborne ball
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+
+      // Friction
+      ball.vx *= 0.985;
+      ball.vy *= 0.985;
+
+      // Wall bounce
+      if (ball.x < 20 || ball.x > 880) { ball.vx = -ball.vx; ball.bouncesLeft--; }
+      if (ball.y < 20 || ball.y > 580) { ball.vy = -ball.vy; ball.bouncesLeft--; }
+
+      const ballSpeed = Math.hypot(ball.vx, ball.vy);
+
+      // Hit elimination if fast moving ball
+      if (ballSpeed > 180) {
+        for (const victim of room.players) {
+          if (!victim.isAlive || victim.id === ball.lastThrownBy) continue;
+          const d = Math.hypot(victim.x - ball.x, victim.y - ball.y);
+          if (d < 26) {
+            victim.isAlive = false;
+            // Ball drops dead on impact
+            ball.vx *= 0.2;
+            ball.vy *= 0.2;
+            ball.lastThrownBy = null;
+            break;
+          }
+        }
+      }
+    });
+  }
+
+  // ============================================================
+  // MINI-GAME 5: BLACKOUT (CONICAL FLASHLIGHT & SNEAK SHOOT)
+  // ============================================================
+  private tickBlackout(room: PartyRoom, dt: number) {
+    const now = Date.now();
+
+    room.players.forEach(p => {
+      if (!p.isAlive) return;
+
+      p.x = Math.max(40, Math.min(860, p.x + p.vx * 200 * dt));
+      p.y = Math.max(40, Math.min(560, p.y + p.vy * 200 * dt));
+
+      // Shoot in darkness
+      if ((p.isShooting || p.isAction) && now - p.lastTankShot > 800) {
+        p.lastTankShot = now;
+        const shootAngle = p.targetAngle !== undefined ? p.targetAngle : p.angle;
+        room.blackoutBullets.push({
+          id: `bb_${p.id}_${now}`,
+          shooterId: p.id,
+          x: p.x + Math.cos(shootAngle) * 22,
+          y: p.y + Math.sin(shootAngle) * 22,
+          vx: Math.cos(shootAngle) * 440,
+          vy: Math.sin(shootAngle) * 440,
+          color: p.color
+        });
+      }
+    });
+
+    // Update Blackout Bullets
+    const activeBullets: BlackoutBullet[] = [];
+    room.blackoutBullets.forEach(b => {
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+
+      let hit = false;
+      for (const victim of room.players) {
+        if (!victim.isAlive || victim.id === b.shooterId) continue;
+        const d = Math.hypot(victim.x - b.x, victim.y - b.y);
+        if (d < 22) {
+          victim.isAlive = false;
+          hit = true;
+          break;
+        }
+      }
+
+      if (!hit && b.x > 20 && b.x < 880 && b.y > 20 && b.y < 580) {
+        activeBullets.push(b);
+      }
+    });
+    room.blackoutBullets = activeBullets;
+  }
+
+  // ============================================================
+  // MINI-GAME 6: LAVA SURVIVAL (SHOCKWAVES & JUMP)
   // ============================================================
   private tickLavaSurvival(room: PartyRoom, dt: number) {
     const now = Date.now();
 
-    // 1. Gravity & Jump Physics
     room.players.forEach(p => {
       if (!p.isAlive) return;
 
-      // Jump Trigger (Space or Action)
       if (p.isAction && p.zHeight === 0) {
         p.zVel = 350;
       }
 
       if (p.zHeight > 0 || p.zVel > 0) {
         p.zHeight += p.zVel * dt;
-        p.zVel -= 900 * dt; // Gravity
+        p.zVel -= 900 * dt;
         if (p.zHeight <= 0) {
           p.zHeight = 0;
           p.zVel = 0;
         }
       }
 
-      // Standard movement
       p.x = Math.max(60, Math.min(840, p.x + p.vx * 200 * dt));
       p.y = Math.max(60, Math.min(540, p.y + p.vy * 200 * dt));
     });
 
-    // 2. Spawn Expanding Shockwaves periodically
     if (Math.random() < 0.04) {
       room.lavaShockwaves.push({
         id: `sw_${now}`,
@@ -1015,7 +1225,6 @@ export class PartyManager {
       });
     }
 
-    // 3. Update Shockwaves & Check Hits on Grounded Players
     const activeShockwaves: LavaShockwave[] = [];
     room.lavaShockwaves.forEach(sw => {
       sw.currentRadius += sw.speed * dt;
@@ -1023,7 +1232,6 @@ export class PartyManager {
       room.players.forEach(p => {
         if (!p.isAlive) return;
         const dist = Math.hypot(p.x - sw.x, p.y - sw.y);
-        // If player is on ground (zHeight < 25) and within shockwave ring thickness
         if (p.zHeight < 25 && Math.abs(dist - sw.currentRadius) < 16) {
           p.isAlive = false;
         }
@@ -1037,12 +1245,11 @@ export class PartyManager {
   }
 
   // ============================================================
-  // MINI-GAME 4: COIN DASH
+  // MINI-GAME 7: COIN DASH
   // ============================================================
   private tickCoinDash(room: PartyRoom, dt: number) {
     const now = Date.now();
 
-    // Spawn new coins
     if (room.coins.length < 25 && Math.random() < 0.15) {
       room.coins.push({
         id: `c_${now}_${Math.random()}`,
@@ -1053,7 +1260,6 @@ export class PartyManager {
       });
     }
 
-    // Move players & Check Coin Collisions
     room.players.forEach(p => {
       const isDashing = (p.isDash || p.isAction) && now - p.lastDashTime > 1200;
       if (isDashing) {
@@ -1065,7 +1271,6 @@ export class PartyManager {
       p.x = Math.max(40, Math.min(860, p.x + p.vx * currentSpeed * dt));
       p.y = Math.max(40, Math.min(560, p.y + p.vy * currentSpeed * dt));
 
-      // Coin pickup
       room.coins = room.coins.filter(c => {
         const d = Math.hypot(p.x - c.x, p.y - c.y);
         if (d < 30) {
@@ -1078,7 +1283,7 @@ export class PartyManager {
   }
 
   // ============================================================
-  // MINI-GAME 5: SUMO PUSH
+  // MINI-GAME 8: SUMO PUSH
   // ============================================================
   private tickSumoPush(room: PartyRoom, dt: number) {
     const iceRadius = 260;
@@ -1089,15 +1294,12 @@ export class PartyManager {
     room.players.forEach(p => {
       if (!p.isAlive) return;
 
-      // Inertia on ice
-      p.speed = 220;
       p.vx = p.vx * 0.96;
       p.vy = p.vy * 0.96;
 
       p.x += p.vx * dt * 300;
       p.y += p.vy * dt * 300;
 
-      // Sumo Tackle Pulse (E / Space)
       if (p.isAction && now - p.lastDashTime > 800) {
         p.lastDashTime = now;
         const pushRange = 65;
@@ -1113,7 +1315,6 @@ export class PartyManager {
         });
       }
 
-      // Check boundary fall
       const distFromCenter = Math.hypot(p.x - centerX, p.y - centerY);
       if (distFromCenter > iceRadius) {
         p.isAlive = false;
@@ -1122,18 +1323,17 @@ export class PartyManager {
   }
 
   // ============================================================
-  // MINI-GAME 6: BOMB TAG
+  // MINI-GAME 9: BOMB TAG
   // ============================================================
   private tickBombTag(room: PartyRoom, dt: number) {
     const now = Date.now();
 
     room.players.forEach(p => {
       if (!p.isAlive) return;
-      const speed = p.hasBomb ? 250 : 210; // Bomb holder runs slightly faster
+      const speed = p.hasBomb ? 250 : 210;
       p.x = Math.max(50, Math.min(850, p.x + p.vx * speed * dt));
       p.y = Math.max(50, Math.min(550, p.y + p.vy * speed * dt));
 
-      // Transfer bomb on touch
       if (p.hasBomb && now > p.bombImmunityUntil) {
         for (const other of room.players) {
           if (other.id === p.id || !other.isAlive) continue;
@@ -1141,21 +1341,19 @@ export class PartyManager {
           if (d < 38) {
             p.hasBomb = false;
             other.hasBomb = true;
-            other.bombImmunityUntil = now + 800; // 0.8s grace period
+            other.bombImmunityUntil = now + 800;
             break;
           }
         }
       }
     });
 
-    // Bomb explosion every 15-20s
     if (room.gameTimeRemaining % 15 < dt) {
       const holder = room.players.find(p => p.hasBomb && p.isAlive);
       if (holder) {
         holder.isAlive = false;
         holder.hasBomb = false;
 
-        // Pass bomb to random living player
         const remaining = room.players.filter(p => p.isAlive);
         if (remaining.length > 0) {
           const next = remaining[Math.floor(Math.random() * remaining.length)];
@@ -1167,7 +1365,7 @@ export class PartyManager {
   }
 
   // ============================================================
-  // MINI-GAME 7: SNIPER ARENA
+  // MINI-GAME 10: SNIPER ARENA
   // ============================================================
   private tickSniperArena(room: PartyRoom, dt: number) {
     const now = Date.now();
@@ -1178,25 +1376,21 @@ export class PartyManager {
       p.x = Math.max(50, Math.min(850, p.x + p.vx * 190 * dt));
       p.y = Math.max(50, Math.min(550, p.y + p.vy * 190 * dt));
 
-      // Reload time (3 sec)
       if (p.sniperAmmo === 0 && now - p.lastSniperShot >= 3000) {
         p.sniperAmmo = 1;
       }
 
-      // Shoot Sniper Rifle
       if ((p.isShooting || p.isAction) && p.sniperAmmo > 0) {
         p.sniperAmmo = 0;
         p.lastSniperShot = now;
 
         const aimAngle = p.targetAngle !== undefined ? p.targetAngle : p.angle;
-        // Raycast line check
         const rayLen = 900;
         const targetX = p.x + Math.cos(aimAngle) * rayLen;
         const targetY = p.y + Math.sin(aimAngle) * rayLen;
 
         room.players.forEach(victim => {
           if (victim.id === p.id || !victim.isAlive) return;
-          // Point to segment distance check
           const dist = this.distToSegment(victim.x, victim.y, p.x, p.y, targetX, targetY);
           if (dist < 22) {
             victim.isAlive = false;
@@ -1204,141 +1398,6 @@ export class PartyManager {
         });
       }
     });
-  }
-
-  // ============================================================
-  // MINI-GAME 8: MUSICAL BLOCKS
-  // ============================================================
-  private tickMusicalBlocks(room: PartyRoom, dt: number) {
-    const now = Date.now();
-
-    // Move players
-    room.players.forEach(p => {
-      if (!p.isAlive) return;
-      p.x = Math.max(60, Math.min(840, p.x + p.vx * 220 * dt));
-      p.y = Math.max(60, Math.min(540, p.y + p.vy * 220 * dt));
-
-      // Claim block (E / Space)
-      if (!room.musicPlaying && (p.isAction || p.isDash) && p.claimedBlockId === null) {
-        for (const block of room.musicalBlocks) {
-          if (block.claimedBy === null) {
-            const inX = p.x >= block.x - 10 && p.x <= block.x + block.w + 10;
-            const inY = p.y >= block.y - 10 && p.y <= block.y + block.h + 10;
-            if (inX && inY) {
-              block.claimedBy = p.id;
-              p.claimedBlockId = block.id;
-              break;
-            }
-          }
-        }
-      }
-    });
-
-    // Music toggle cycles
-    if (now >= room.nextMusicToggleTime) {
-      if (room.musicPlaying) {
-        // Music stops! 3.5s to claim a safe block
-        room.musicPlaying = false;
-        room.nextMusicToggleTime = now + 3500;
-      } else {
-        // Elimination check: Unclaimed players are eliminated!
-        room.players.forEach(p => {
-          if (p.isAlive && p.claimedBlockId === null) {
-            p.isAlive = false;
-          }
-          p.claimedBlockId = null;
-        });
-
-        // Resume music and spawn new block set
-        room.musicPlaying = true;
-        room.nextMusicToggleTime = now + 5000 + Math.random() * 3000;
-        this.spawnMusicalBlocks(room);
-      }
-    }
-  }
-
-  // ============================================================
-  // MINI-GAME 9: PAINT TURF
-  // ============================================================
-  private tickPaintTurf(room: PartyRoom, dt: number) {
-    room.players.forEach(p => {
-      p.x = Math.max(40, Math.min(860, p.x + p.vx * 240 * dt));
-      p.y = Math.max(40, Math.min(560, p.y + p.vy * 240 * dt));
-
-      // Paint Spray (Holding Space or Shooting)
-      if (p.isAction || p.isShooting) {
-        const gridCellX = Math.floor(p.x / 25);
-        const gridCellY = Math.floor(p.y / 25);
-
-        for (let gx = -1; gx <= 1; gx++) {
-          for (let gy = -1; gy <= 1; gy++) {
-            const key = `${gridCellX + gx},${gridCellY + gy}`;
-            room.turfGrid[key] = p.color;
-          }
-        }
-      }
-    });
-
-    // Update player tile scores
-    const tileCounts: Record<string, number> = {};
-    Object.values(room.turfGrid).forEach(c => {
-      tileCounts[c] = (tileCounts[c] || 0) + 1;
-    });
-
-    room.players.forEach(p => {
-      p.turfTilesCount = tileCounts[p.color] || 0;
-    });
-  }
-
-  // ============================================================
-  // MINI-GAME 10: METEOR DODGE
-  // ============================================================
-  private tickMeteorDodge(room: PartyRoom, dt: number) {
-    const now = Date.now();
-
-    // Spawn falling meteors (Frequency increases as time passes)
-    const spawnRate = 0.08 + (40 - room.gameTimeRemaining) * 0.01;
-    if (Math.random() < spawnRate) {
-      const radius = 45 + Math.random() * 25;
-      room.meteors.push({
-        id: `met_${now}_${Math.random()}`,
-        targetX: 80 + Math.random() * 740,
-        targetY: 80 + Math.random() * 440,
-        currentHeight: 400,
-        radius,
-        spawnTime: now,
-        impactTime: now + 1200,
-        hasExploded: false
-      });
-    }
-
-    // Move players
-    room.players.forEach(p => {
-      if (!p.isAlive) return;
-      p.x = Math.max(40, Math.min(860, p.x + p.vx * 220 * dt));
-      p.y = Math.max(40, Math.min(560, p.y + p.vy * 220 * dt));
-    });
-
-    // Update Meteors & Impact Damage
-    const activeMeteors: FallingMeteor[] = [];
-    room.meteors.forEach(m => {
-      if (now >= m.impactTime && !m.hasExploded) {
-        m.hasExploded = true;
-        // Impact explosion!
-        room.players.forEach(p => {
-          if (!p.isAlive) return;
-          const d = Math.hypot(p.x - m.targetX, p.y - m.targetY);
-          if (d < m.radius) {
-            p.isAlive = false;
-          }
-        });
-      }
-
-      if (now < m.impactTime + 400) {
-        activeMeteors.push(m);
-      }
-    });
-    room.meteors = activeMeteors;
   }
 
   // ============================================================
@@ -1352,24 +1411,27 @@ export class PartyManager {
       if (!bot.isBot || !bot.isAlive) return;
 
       if (!bot.botTimer || now >= bot.botTimer) {
-        bot.botTimer = now + 400 + Math.random() * 300;
+        bot.botTimer = now + 350 + Math.random() * 250;
 
         switch (gType) {
           case 'tank_trouble': {
-            // Find closest rival tank & aim turret
             const rivals = room.players.filter(p => p.id !== bot.id && p.isAlive);
             if (rivals.length > 0) {
               const target = rivals[Math.floor(Math.random() * rivals.length)];
               bot.targetAngle = Math.atan2(target.y - bot.y, target.x - bot.x);
-              bot.angle = bot.targetAngle;
+              let hullDiff = bot.targetAngle - bot.angle;
+              while (hullDiff < -Math.PI) hullDiff += Math.PI * 2;
+              while (hullDiff > Math.PI) hullDiff -= Math.PI * 2;
+
+              bot.keyLeft = hullDiff < -0.3;
+              bot.keyRight = hullDiff > 0.3;
+              bot.keyUp = Math.random() < 0.75;
+              bot.keyDown = false;
               bot.isShooting = Math.random() < 0.6;
-              bot.vx = Math.random() < 0.5 ? 1 : -1;
-              bot.vy = Math.random() < 0.7 ? -1 : 0;
             }
             break;
           }
           case 'micro_racing': {
-            // Follow race checkpoint curve
             const nextCp = room.raceCheckpoints[bot.currentCheckpoint];
             if (nextCp) {
               const targetAngle = Math.atan2(nextCp.y - bot.y, nextCp.x - bot.x);
@@ -1377,14 +1439,63 @@ export class PartyManager {
               while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
               while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
 
-              bot.angle += Math.sign(angleDiff) * 0.08;
-              bot.vy = -1; // Full gas
-              bot.isDash = Math.abs(angleDiff) > 0.6; // Drift on sharp turns
+              bot.keyLeft = angleDiff < -0.15;
+              bot.keyRight = angleDiff > 0.15;
+              bot.keyUp = true; // Full gas
+              bot.keyDown = false;
+              bot.isDash = Math.abs(angleDiff) > 0.55;
+            }
+            break;
+          }
+          case 'hex_a_gone': {
+            // Find nearest solid tile
+            const solidTiles = room.hexTiles.filter(t => t.state === 'solid' || t.state === 'shaking');
+            if (solidTiles.length > 0) {
+              let closest = solidTiles[0];
+              let minD = 9999;
+              solidTiles.forEach(t => {
+                const d = Math.hypot(t.x - bot.x, t.y - bot.y);
+                if (d < minD) { minD = d; closest = t; }
+              });
+              const ang = Math.atan2(closest.y - bot.y, closest.x - bot.x);
+              bot.vx = Math.cos(ang);
+              bot.vy = Math.sin(ang);
+            }
+            break;
+          }
+          case 'dodgeball': {
+            if (!bot.hasDodgeball) {
+              // Rush to neutral ball
+              const freeBall = room.dodgeballs.find(b => b.heldBy === null);
+              if (freeBall) {
+                const ang = Math.atan2(freeBall.y - bot.y, freeBall.x - bot.x);
+                bot.vx = Math.cos(ang);
+                bot.vy = Math.sin(ang);
+                bot.isAction = true;
+              }
+            } else {
+              // Aim and throw at rival
+              const rivals = room.players.filter(p => p.id !== bot.id && p.isAlive);
+              if (rivals.length > 0) {
+                const target = rivals[0];
+                bot.targetAngle = Math.atan2(target.y - bot.y, target.x - bot.x);
+                bot.isShooting = true;
+              }
+            }
+            break;
+          }
+          case 'blackout': {
+            const rivals = room.players.filter(p => p.id !== bot.id && p.isAlive);
+            if (rivals.length > 0) {
+              const target = rivals[0];
+              bot.targetAngle = Math.atan2(target.y - bot.y, target.x - bot.x);
+              bot.vx = (Math.random() - 0.5) * 2;
+              bot.vy = (Math.random() - 0.5) * 2;
+              bot.isShooting = Math.random() < 0.4;
             }
             break;
           }
           case 'lava_survival': {
-            // Jump when a shockwave approaches
             const nearbyWave = room.lavaShockwaves.find(sw => Math.abs(Math.hypot(bot.x - sw.x, bot.y - sw.y) - sw.currentRadius) < 40);
             bot.isAction = Boolean(nearbyWave);
             bot.vx = (Math.random() - 0.5) * 2;
@@ -1392,7 +1503,6 @@ export class PartyManager {
             break;
           }
           case 'coin_dash': {
-            // Rush towards nearest coin
             if (room.coins.length > 0) {
               let nearestCoin = room.coins[0];
               let minDist = 9999;
@@ -1408,7 +1518,6 @@ export class PartyManager {
             break;
           }
           case 'sumo_push': {
-            // Move toward center & tackle nearby rivals
             const centerDist = Math.hypot(bot.x - 450, bot.y - 300);
             if (centerDist > 180) {
               const ang = Math.atan2(300 - bot.y, 450 - bot.x);
@@ -1427,16 +1536,13 @@ export class PartyManager {
           }
           case 'bomb_tag': {
             if (bot.hasBomb) {
-              // Chase nearest rival
               const victims = room.players.filter(p => p.id !== bot.id && p.isAlive);
               if (victims.length > 0) {
-                const target = victims[0];
-                const ang = Math.atan2(target.y - bot.y, target.x - bot.x);
+                const ang = Math.atan2(victims[0].y - bot.y, victims[0].x - bot.x);
                 bot.vx = Math.cos(ang);
                 bot.vy = Math.sin(ang);
               }
             } else {
-              // Run away from bomb carrier
               const carrier = room.players.find(p => p.hasBomb);
               if (carrier) {
                 const ang = Math.atan2(bot.y - carrier.y, bot.x - carrier.x);
@@ -1457,41 +1563,6 @@ export class PartyManager {
             bot.vy = (Math.random() - 0.5) * 2;
             break;
           }
-          case 'musical_blocks': {
-            if (!room.musicPlaying) {
-              // Rush to an unclaimed block
-              const freeBlock = room.musicalBlocks.find(b => b.claimedBy === null);
-              if (freeBlock) {
-                const ang = Math.atan2(freeBlock.y + 30 - bot.y, freeBlock.x + 30 - bot.x);
-                bot.vx = Math.cos(ang);
-                bot.vy = Math.sin(ang);
-                bot.isAction = true;
-              }
-            } else {
-              bot.vx = (Math.random() - 0.5) * 1.5;
-              bot.vy = (Math.random() - 0.5) * 1.5;
-            }
-            break;
-          }
-          case 'paint_turf': {
-            bot.isAction = true;
-            bot.vx = (Math.random() - 0.5) * 2;
-            bot.vy = (Math.random() - 0.5) * 2;
-            break;
-          }
-          case 'meteor_dodge': {
-            // Dodge nearest meteor shadow
-            const dangerousMeteor = room.meteors.find(m => Math.hypot(bot.x - m.targetX, bot.y - m.targetY) < m.radius + 20);
-            if (dangerousMeteor) {
-              const ang = Math.atan2(bot.y - dangerousMeteor.targetY, bot.x - dangerousMeteor.targetX);
-              bot.vx = Math.cos(ang);
-              bot.vy = Math.sin(ang);
-            } else {
-              bot.vx = (Math.random() - 0.5) * 1.2;
-              bot.vy = (Math.random() - 0.5) * 1.2;
-            }
-            break;
-          }
         }
       }
     });
@@ -1502,27 +1573,22 @@ export class PartyManager {
   // ============================================================
   private concludeRound(room: PartyRoom) {
     room.state = 'SCOREBOARD';
-    room.stateTimer = 5; // 5s podium celebration
+    room.stateTimer = 5;
 
     const gType = room.activeGameType;
     let rankedPlayers = [...room.players];
 
-    // Determine rankings based on game type
     if (gType === 'coin_dash') {
       rankedPlayers.sort((a, b) => b.coinsCollected - a.coinsCollected);
-    } else if (gType === 'paint_turf') {
-      rankedPlayers.sort((a, b) => b.turfTilesCount - a.turfTilesCount);
     } else if (gType === 'micro_racing') {
       rankedPlayers.sort((a, b) => {
         if (b.lapsCompleted !== a.lapsCompleted) return b.lapsCompleted - a.lapsCompleted;
         return b.currentCheckpoint - a.currentCheckpoint;
       });
     } else {
-      // Survival based: Alive players ranked first
       rankedPlayers.sort((a, b) => (b.isAlive ? 1 : 0) - (a.isAlive ? 1 : 0));
     }
 
-    // Award Tournament Points (1st: 5pts, 2nd: 3pts, 3rd: 2pts, Others: 1pt)
     room.roundWinners = [];
     rankedPlayers.forEach((p, idx) => {
       const rank = idx + 1;
@@ -1537,7 +1603,6 @@ export class PartyManager {
       });
     });
 
-    // Update overall tournament rank
     room.players.sort((a, b) => b.totalScore - a.totalScore);
     room.players.forEach((p, i) => p.rank = i + 1);
 
@@ -1549,7 +1614,6 @@ export class PartyManager {
     room.stateTimer = 0;
     if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
 
-    // Save winner records to DB if real user
     const winner = room.players[0];
     if (winner && !winner.isBot && winner.userId > 0 && this.db) {
       this.db.execute({
@@ -1613,7 +1677,6 @@ export class PartyManager {
       activeGameType: room.activeGameType,
       activeGameMeta: room.activeGameType ? MINI_GAMES_CATALOG[room.activeGameType] : null,
       gameTimeRemaining: Math.ceil(room.gameTimeRemaining),
-      musicPlaying: room.musicPlaying,
       roundWinners: room.roundWinners,
       players: room.players.map(p => ({
         id: p.id,
@@ -1629,6 +1692,7 @@ export class PartyManager {
         x: Math.round(p.x),
         y: Math.round(p.y),
         angle: Math.round(p.angle * 100) / 100,
+        targetAngle: Math.round(p.targetAngle * 100) / 100,
         isAlive: p.isAlive,
         isAction: p.isAction,
         isDash: p.isDash,
@@ -1636,8 +1700,7 @@ export class PartyManager {
         coinsCollected: p.coinsCollected,
         lapsCompleted: p.lapsCompleted,
         hasBomb: p.hasBomb,
-        turfTilesCount: p.turfTilesCount,
-        claimedBlockId: p.claimedBlockId,
+        hasDodgeball: p.hasDodgeball,
         sniperAmmo: p.sniperAmmo,
         skidmarks: p.skidmarks
       })),
@@ -1649,23 +1712,33 @@ export class PartyManager {
         color: b.color
       })),
       raceCheckpoints: room.raceCheckpoints,
+      hexTiles: room.hexTiles.map(h => ({
+        id: h.id,
+        x: Math.round(h.x),
+        y: Math.round(h.y),
+        radius: h.radius,
+        state: h.state
+      })),
+      dodgeballs: room.dodgeballs.map(d => ({
+        id: d.id,
+        x: Math.round(d.x),
+        y: Math.round(d.y),
+        heldBy: d.heldBy,
+        color: d.color
+      })),
+      blackoutBullets: room.blackoutBullets.map(b => ({
+        id: b.id,
+        x: Math.round(b.x),
+        y: Math.round(b.y),
+        color: b.color
+      })),
       lavaShockwaves: room.lavaShockwaves.map(sw => ({
         id: sw.id,
         x: sw.x,
         y: sw.y,
         currentRadius: Math.round(sw.currentRadius)
       })),
-      coins: room.coins,
-      musicalBlocks: room.musicalBlocks,
-      turfGrid: room.turfGrid,
-      meteors: room.meteors.map(m => ({
-        id: m.id,
-        targetX: Math.round(m.targetX),
-        targetY: Math.round(m.targetY),
-        radius: Math.round(m.radius),
-        hasExploded: m.hasExploded,
-        progress: Math.min(1, (Date.now() - m.spawnTime) / 1200)
-      }))
+      coins: room.coins
     };
   }
 
@@ -1715,12 +1788,11 @@ export class PartyManager {
       currentCheckpoint: 0,
       hasBomb: false,
       bombImmunityUntil: 0,
-      turfTilesCount: 0,
-      claimedBlockId: null,
+      hasDodgeball: false,
       sniperAmmo: 1,
       lastSniperShot: 0,
       lastTankShot: 0,
-      driftAngle: 0,
+      lastDodgeballThrow: 0,
       skidmarks: [],
       lastDashTime: 0,
       dashEndTime: 0
@@ -1758,7 +1830,6 @@ export function runHeadlessPartyTest(cycles: number = 300) {
   const mgr = new PartyManager(mockIo);
   const room = mgr.createRoom({ id: 1, username: 'HostUser' }, { capacity: 10, totalRounds: 10 });
 
-  // Add 9 bots for full 10-player party
   for (let b = 0; b < 9; b++) {
     mgr.addBot(room.id, 1);
   }
@@ -1767,15 +1838,15 @@ export function runHeadlessPartyTest(cycles: number = 300) {
   try {
     mgr.startTournament(room.id, 1);
 
-    // Simulate all 10 games
     for (let c = 0; c < cycles; c++) {
       mgr['tickRoom'](room);
 
-      // Random bot actions
       room.players.forEach(p => {
         mgr.processPlayerInput(room.id, p.userId, {
-          vx: Math.random() - 0.5,
-          vy: Math.random() - 0.5,
+          up: Math.random() < 0.6,
+          down: Math.random() < 0.2,
+          left: Math.random() < 0.3,
+          right: Math.random() < 0.3,
           mouseAngle: Math.random() * Math.PI * 2,
           isShooting: Math.random() < 0.2,
           action: Math.random() < 0.1,

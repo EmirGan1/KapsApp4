@@ -23,6 +23,7 @@ interface PartyPlayer {
   x: number;
   y: number;
   angle: number;
+  targetAngle?: number;
   isAlive: boolean;
   isAction: boolean;
   isDash: boolean;
@@ -30,8 +31,7 @@ interface PartyPlayer {
   coinsCollected: number;
   lapsCompleted: number;
   hasBomb: boolean;
-  turfTilesCount: number;
-  claimedBlockId: number | null;
+  hasDodgeball?: boolean;
   sniperAmmo: number;
   skidmarks?: { x: number; y: number; alpha: number }[];
 }
@@ -47,17 +47,17 @@ interface PartyPublicState {
   activeGameType: MiniGameType | null;
   activeGameMeta: MiniGameMeta | null;
   gameTimeRemaining: number;
-  musicPlaying: boolean;
+  musicPlaying?: boolean;
   roundWinners: { userId: number; username: string; pointsAwarded: number; rank: number }[];
   players: PartyPlayer[];
   tankWalls?: { x: number; y: number; w: number; h: number }[];
   tankBullets?: { id: string; x: number; y: number; color: string }[];
   raceCheckpoints?: { x: number; y: number; radius: number; index: number }[];
+  hexTiles?: { id: string; x: number; y: number; radius: number; state: 'solid' | 'shaking' | 'cracked' | 'void' }[];
+  dodgeballs?: { id: string; x: number; y: number; heldBy: string | null; color: string }[];
+  blackoutBullets?: { id: string; x: number; y: number; color: string }[];
   lavaShockwaves?: { id: string; x: number; y: number; currentRadius: number }[];
   coins?: { id: string; x: number; y: number; value: number }[];
-  musicalBlocks?: { id: number; x: number; y: number; w: number; h: number; claimedBy: string | null; color: string }[];
-  turfGrid?: Record<string, string>;
-  meteors?: { id: string; targetX: number; targetY: number; radius: number; hasExploded: boolean; progress: number }[];
 }
 
 interface RoomItem {
@@ -283,6 +283,19 @@ export default function PartyMode({
 
     const gType = state.activeGameType;
 
+    // Helper: Draw Hexagon
+    const drawHex = (hx: number, hy: number, rad: number) => {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i + (Math.PI / 6);
+        const px = hx + rad * Math.cos(a);
+        const py = hy + rad * Math.sin(a);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    };
+
     // 2. Specific Game Background Elements
     if (gType === 'tank_trouble' && state.tankWalls) {
       // Maze Walls
@@ -340,6 +353,69 @@ export default function PartyMode({
         ctx.setLineDash([]);
       }
       ctx.restore();
+    } else if (gType === 'hex_a_gone' && state.hexTiles) {
+      // Hexagonal Falling Platform Tiles
+      for (const tile of state.hexTiles) {
+        if (tile.state === 'void') continue;
+        ctx.save();
+        if (tile.state === 'solid') {
+          ctx.fillStyle = '#4338ca';
+          ctx.strokeStyle = '#818cf8';
+        } else if (tile.state === 'shaking') {
+          ctx.fillStyle = '#d97706';
+          ctx.strokeStyle = '#fbbf24';
+        } else {
+          ctx.fillStyle = '#dc2626';
+          ctx.strokeStyle = '#f87171';
+        }
+        ctx.lineWidth = 2;
+        drawHex(tile.x, tile.y, tile.radius);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    } else if (gType === 'dodgeball') {
+      // Dodgeball Court
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(50, 50, W - 100, H - 100);
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 50);
+      ctx.lineTo(W / 2, H - 50);
+      ctx.stroke();
+      ctx.restore();
+
+      // Dodgeball items
+      if (state.dodgeballs) {
+        for (const ball of state.dodgeballs) {
+          ctx.save();
+          ctx.fillStyle = ball.color || '#f97316';
+          ctx.shadowColor = '#f97316';
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    } else if (gType === 'blackout') {
+      // Blackout Bullets
+      if (state.blackoutBullets) {
+        for (const b of state.blackoutBullets) {
+          ctx.save();
+          ctx.fillStyle = b.color || '#38bdf8';
+          ctx.shadowColor = b.color || '#38bdf8';
+          ctx.shadowBlur = 14;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
     } else if (gType === 'lava_survival') {
       // Lava floor ambient
       ctx.fillStyle = '#7f1d1d';
@@ -370,33 +446,14 @@ export default function PartyMode({
       ctx.lineWidth = 6;
       ctx.stroke();
       ctx.restore();
-    } else if (gType === 'paint_turf' && state.turfGrid) {
-      // Paint Grid
-      for (const [key, pColor] of Object.entries(state.turfGrid)) {
-        const [gx, gy] = key.split(',').map(Number);
-        ctx.fillStyle = pColor;
-        ctx.fillRect(gx * 25, gy * 25, 25, 25);
-      }
-    } else if (gType === 'musical_blocks' && state.musicalBlocks) {
-      // Safe Blocks
-      for (const block of state.musicalBlocks) {
-        ctx.save();
-        ctx.fillStyle = block.claimedBy ? '#22c55e' : block.color;
-        ctx.shadowColor = block.color;
-        ctx.shadowBlur = state.musicPlaying ? 4 : 20;
-        ctx.beginPath();
-        ctx.roundRect(block.x, block.y, block.w, block.h, [10]);
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 16px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(block.claimedBy ? '✓' : `E`, block.x + block.w / 2, block.y + block.h / 2 + 6);
-        ctx.restore();
-      }
+    } else if (gType === 'bomb_tag') {
+      // Bomb Tag arena border warning
+      ctx.save();
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([12, 12]);
+      ctx.strokeRect(40, 40, W - 80, H - 80);
+      ctx.restore();
     } else if (gType === 'coin_dash' && state.coins) {
       // Shiny Coins
       for (const c of state.coins) {
@@ -415,27 +472,6 @@ export default function PartyMode({
         ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('$', c.x, c.y + 4);
-        ctx.restore();
-      }
-    } else if (gType === 'meteor_dodge' && state.meteors) {
-      // Falling Meteor Shadows & Impact
-      for (const m of state.meteors) {
-        ctx.save();
-        if (m.hasExploded) {
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
-          ctx.beginPath();
-          ctx.arc(m.targetX, m.targetY, m.radius, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          ctx.strokeStyle = '#ef4444';
-          ctx.lineWidth = 3;
-          ctx.setLineDash([5, 5]);
-          ctx.beginPath();
-          ctx.arc(m.targetX, m.targetY, m.radius * m.progress, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
-          ctx.fill();
-        }
         ctx.restore();
       }
     }
@@ -476,9 +512,10 @@ export default function PartyMode({
         ctx.fillStyle = p.color;
         ctx.fillRect(-12, -10, 24, 20);
 
-        // Turret facing mouse
+        // Turret facing target angle
         ctx.rotate(-p.angle);
-        ctx.rotate(p.angle); // Default turret
+        const turretAngle = typeof p.targetAngle === 'number' ? p.targetAngle : p.angle;
+        ctx.rotate(turretAngle);
         ctx.fillStyle = '#0f172a';
         ctx.beginPath();
         ctx.arc(0, 0, 8, 0, Math.PI * 2);
@@ -520,6 +557,14 @@ export default function PartyMode({
           ctx.fillText('💣', 0, -22);
         }
 
+        // Dodgeball in hand
+        if (p.hasDodgeball) {
+          ctx.fillStyle = '#f97316';
+          ctx.beginPath();
+          ctx.arc(16, -10, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
         // Sniper Laser Line
         if (gType === 'sniper_arena' && p.sniperAmmo > 0) {
           ctx.save();
@@ -527,7 +572,8 @@ export default function PartyMode({
           ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.moveTo(0, 0);
-          ctx.lineTo(Math.cos(p.angle) * 800, Math.sin(p.angle) * 800);
+          const aimAng = typeof p.targetAngle === 'number' ? p.targetAngle : p.angle;
+          ctx.lineTo(Math.cos(aimAng) * 800, Math.sin(aimAng) * 800);
           ctx.stroke();
           ctx.restore();
         }
@@ -556,12 +602,49 @@ export default function PartyMode({
       } else if (gType === 'micro_racing') {
         ctx.fillStyle = '#38bdf8';
         ctx.fillText(`🏁 Tur: ${Math.min(3, p.lapsCompleted + 1)}/3`, p.x, renderY - 34);
-      } else if (gType === 'paint_turf') {
-        ctx.fillStyle = p.color;
-        ctx.fillText(`🎨 ${p.turfTilesCount}`, p.x, renderY - 34);
+      } else if (gType === 'dodgeball' && p.hasDodgeball) {
+        ctx.fillStyle = '#f97316';
+        ctx.fillText(`🏀 Top Sende`, p.x, renderY - 34);
       }
       ctx.restore();
     });
+
+    // 4. Blackout Lighting Fog of War Overlay
+    if (gType === 'blackout') {
+      const myPlayer = state.players.find(p => p.userId === myUserId);
+      if (myPlayer && myPlayer.isAlive) {
+        ctx.save();
+        // Create full dark overlay
+        const darkCanvas = document.createElement('canvas');
+        darkCanvas.width = W;
+        darkCanvas.height = H;
+        const dCtx = darkCanvas.getContext('2d');
+        if (dCtx) {
+          dCtx.fillStyle = 'rgba(5, 5, 10, 0.95)';
+          dCtx.fillRect(0, 0, W, H);
+
+          // Punch hole for player's immediate radius + flashlight cone
+          dCtx.globalCompositeOperation = 'destination-out';
+          
+          // Immediate personal aura
+          dCtx.beginPath();
+          dCtx.arc(myPlayer.x, myPlayer.y, 45, 0, Math.PI * 2);
+          dCtx.fill();
+
+          // Flashlight Cone
+          const aimAngle = typeof myPlayer.targetAngle === 'number' ? myPlayer.targetAngle : myPlayer.angle;
+          const coneAngle = Math.PI / 4; // 45 deg cone
+          dCtx.beginPath();
+          dCtx.moveTo(myPlayer.x, myPlayer.y);
+          dCtx.arc(myPlayer.x, myPlayer.y, 320, aimAngle - coneAngle / 2, aimAngle + coneAngle / 2);
+          dCtx.closePath();
+          dCtx.fill();
+
+          ctx.drawImage(darkCanvas, 0, 0);
+        }
+        ctx.restore();
+      }
+    }
 
     ctx.restore();
   };
