@@ -309,7 +309,56 @@ export default function MiniBattleRoyale({
       setView('game');
     };
 
+    const onPlayerLeft = (data: { userId: number }) => {
+      if (!data || !gameStateRef.current) return;
+      if (Array.isArray(gameStateRef.current.players)) {
+        gameStateRef.current.players = gameStateRef.current.players.filter(p => p && p.userId !== data.userId);
+      }
+    };
+
+    const onPlayerRespawned = (data: { playerId: string; userId: number; x: number; y: number; hp?: number; shield?: number }) => {
+      if (!data) return;
+      if (gameStateRef.current && Array.isArray(gameStateRef.current.players)) {
+        const p = gameStateRef.current.players.find(pl => pl && (pl.id === data.playerId || pl.userId === data.userId));
+        if (p) {
+          p.isAlive = true;
+          p.x = data.x;
+          p.y = data.y;
+          p.hp = data.hp ?? 100;
+          p.shield = data.shield ?? 25;
+          p.respawnAt = null;
+          p.spawnShieldEndTime = Date.now() + 2000;
+          p.activeWeapon = 'pistol';
+          p.activeWeaponSlot = 0;
+          p.weapons = ['pistol'];
+        }
+      }
+
+      if (data.userId === currentUserId) {
+        cameraPosRef.current = { x: data.x, y: data.y };
+        setHudTick(prev => (prev + 1) % 10000);
+      }
+    };
+
     const onGameState = (state: GameState) => {
+      if (!state) return;
+      // Self-healing check on packet loss or respawn
+      if (Array.isArray(state.players)) {
+        const prevMe = gameStateRef.current?.players?.find(p => !p.isBot && p.userId === currentUserId);
+        const newMe = state.players.find(p => !p.isBot && p.userId === currentUserId);
+        if (newMe && newMe.isAlive) {
+          if (!prevMe || !prevMe.isAlive) {
+            // Player just respawned, snap camera!
+            cameraPosRef.current = { x: newMe.x, y: newMe.y };
+          } else {
+            const d = Math.hypot(cameraPosRef.current.x - newMe.x, cameraPosRef.current.y - newMe.y);
+            if (d > 600) {
+              cameraPosRef.current = { x: newMe.x, y: newMe.y };
+            }
+          }
+        }
+      }
+
       gameStateRef.current = state;
       if (state && state.status === 'playing' && viewRef.current !== 'game') {
         setView('game');
@@ -327,28 +376,6 @@ export default function MiniBattleRoyale({
       fetchLeaderboard(leaderboardSort);
     };
 
-    const onPlayerRespawned = (data: { playerId: string; userId: number; x: number; y: number; hp?: number; shield?: number }) => {
-      if (data && data.userId === currentUserId) {
-        cameraPosRef.current = { x: data.x, y: data.y };
-        if (gameStateRef.current && Array.isArray(gameStateRef.current.players)) {
-          const me = gameStateRef.current.players.find(p => !p.isBot && p.userId === currentUserId);
-          if (me) {
-            me.isAlive = true;
-            me.x = data.x;
-            me.y = data.y;
-            me.hp = data.hp ?? 100;
-            me.shield = data.shield ?? 25;
-            me.respawnAt = null;
-            me.spawnShieldEndTime = Date.now() + 2000;
-            me.activeWeapon = 'pistol';
-            me.activeWeaponSlot = 0;
-            me.weapons = ['pistol'];
-          }
-        }
-        setHudTick(prev => (prev + 1) % 10000);
-      }
-    };
-
     socket.on('royale:rooms_list', onRoomsList);
     socket.on('royale:room_state', onRoomState);
     socket.on('royale:countdown', onCountdown);
@@ -358,6 +385,8 @@ export default function MiniBattleRoyale({
     socket.on('royale:game_over', onGameOver);
     socket.on('player:respawned', onPlayerRespawned);
     socket.on('royale:player_respawned', onPlayerRespawned);
+    socket.on('player:left', onPlayerLeft);
+    socket.on('royale:player_left', onPlayerLeft);
 
     return () => {
       socket.off('royale:rooms_list', onRoomsList);
@@ -369,6 +398,8 @@ export default function MiniBattleRoyale({
       socket.off('royale:game_over', onGameOver);
       socket.off('player:respawned', onPlayerRespawned);
       socket.off('royale:player_respawned', onPlayerRespawned);
+      socket.off('player:left', onPlayerLeft);
+      socket.off('royale:player_left', onPlayerLeft);
     };
   }, [socket, fetchRooms, fetchLeaderboard, leaderboardSort]);
 
@@ -384,13 +415,18 @@ export default function MiniBattleRoyale({
     if (!socket) return;
     setErrorMessage('');
 
+    const isTablet = /iPad|Android(?!.*Mobile)|Tablet/i.test(navigator.userAgent) ||
+      (window.innerWidth >= 768 && window.innerWidth <= 1024 && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+    const platform = controlMode === 'touch' ? (isTablet ? 'tablet' : 'mobile') : 'pc';
+
     socket.emit(
       'royale:create_room',
       {
         title: createTitle,
         capacity: createCapacity,
         mode: createMode,
-        duration: createDuration
+        duration: createDuration,
+        platform
       },
       (res: any) => {
         if (res.error) {
@@ -409,7 +445,11 @@ export default function MiniBattleRoyale({
     if (!socket) return;
     setErrorMessage('');
 
-    socket.emit('royale:join_room', { roomId }, (res: any) => {
+    const isTablet = /iPad|Android(?!.*Mobile)|Tablet/i.test(navigator.userAgent) ||
+      (window.innerWidth >= 768 && window.innerWidth <= 1024 && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+    const platform = controlMode === 'touch' ? (isTablet ? 'tablet' : 'mobile') : 'pc';
+
+    socket.emit('royale:join_room', { roomId, platform }, (res: any) => {
       if (res.error) {
         setErrorMessage(res.error);
       } else if (res.room) {
@@ -669,13 +709,17 @@ export default function MiniBattleRoyale({
         pickup = true;
       }
 
+      const isTablet = /iPad|Android(?!.*Mobile)|Tablet/i.test(navigator.userAgent) ||
+        (window.innerWidth >= 768 && window.innerWidth <= 1024 && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+      const platform: 'pc' | 'mobile' | 'tablet' = controlMode === 'touch' ? (isTablet ? 'tablet' : 'mobile') : 'pc';
+
       socket.emit('royale:input', {
         vx,
         vy,
         angle,
         shooting,
         pickup,
-        platform: controlMode === 'touch' ? 'mobile' : 'pc'
+        platform
       });
     }, 1000 / 30);
 
@@ -935,41 +979,57 @@ export default function MiniBattleRoyale({
         return;
       }
       
-      // CALL DRAW MINIMAP
-      if (minimapCanvasRef.current && gameStateRef.current) {
-        const ctx = minimapCanvasRef.current.getContext('2d');
-        if (ctx) drawMinimap(ctx, gameStateRef.current);
-      }
-
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         animFrameRef.current = requestAnimationFrame(render);
         return;
       }
 
-      const state = gameStateRef.current;
-      const rect = canvas.getBoundingClientRect();
-      const parentRect = canvas.parentElement?.getBoundingClientRect();
-      const rawW = rect.width || parentRect?.width || window.innerWidth || 1280;
-      const rawH = rect.height || parentRect?.height || (window.innerHeight - 64) || 720;
-      const width = Math.max(320, Math.floor(rawW));
-      const height = Math.max(240, Math.floor(rawH));
+      try {
+        // Reset transform to identity matrix initially to eliminate any stale transforms
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-      // Handle Retina DPI scaling (cap at 2 for performance)
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const targetCanvasW = Math.floor(width * dpr);
-      const targetCanvasH = Math.floor(height * dpr);
-      if (canvas.width !== targetCanvasW || canvas.height !== targetCanvasH) {
-        canvas.width = targetCanvasW;
-        canvas.height = targetCanvasH;
-      }
+        // CALL DRAW MINIMAP
+        if (minimapCanvasRef.current && gameStateRef.current) {
+          const mCtx = minimapCanvasRef.current.getContext('2d');
+          if (mCtx) {
+            try {
+              mCtx.setTransform(1, 0, 0, 1, 0, 0);
+              drawMinimap(mCtx, gameStateRef.current);
+            } catch {
+              // ignore minimap render glitch
+            }
+          }
+        }
 
-      ctx.save();
-      ctx.scale(dpr, dpr);
+        const state = gameStateRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const parentRect = canvas.parentElement?.getBoundingClientRect();
+        const rawW = rect.width || parentRect?.width || window.innerWidth || 1280;
+        const rawH = rect.height || parentRect?.height || (window.innerHeight - 64) || 720;
+        const width = Math.max(320, Math.floor(rawW));
+        const height = Math.max(240, Math.floor(rawH));
 
-      // Deep space void background
-      ctx.fillStyle = '#090d16';
-      ctx.fillRect(0, 0, width, height);
+        // Handle Retina DPI scaling (cap at 2 for performance)
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const targetCanvasW = Math.floor(width * dpr);
+        const targetCanvasH = Math.floor(height * dpr);
+        if (canvas.width !== targetCanvasW || canvas.height !== targetCanvasH) {
+          canvas.width = targetCanvasW;
+          canvas.height = targetCanvasH;
+        }
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+
+        // Deep space void background
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(0, 0, width, height);
+
+        if (!state) {
+          ctx.restore();
+          return;
+        }
 
       // Find focused player (self or spectate target)
       let focusedPlayer: PlayerState | undefined;
@@ -1020,10 +1080,12 @@ export default function MiniBattleRoyale({
       const cullMaxY = renderCamY + (height / scale) / 2 + viewMargin;
 
       const inView = (x: number, y: number, r: number = 40) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
         return x + r >= cullMinX && x - r <= cullMaxX && y + r >= cullMinY && y - r <= cullMaxY;
       };
 
       const rectInView = (rx: number, ry: number, rw: number, rh: number) => {
+        if (!Number.isFinite(rx) || !Number.isFinite(ry)) return false;
         return rx + rw >= cullMinX && rx <= cullMaxX && ry + rh >= cullMinY && ry <= cullMaxY;
       };
 
@@ -1363,13 +1425,6 @@ export default function MiniBattleRoyale({
       ctx.strokeRect(8, 8, MAP_SIZE - 16, MAP_SIZE - 16);
       ctx.setLineDash([]);
 
-      if (!state) {
-        ctx.restore();
-        ctx.restore();
-        animFrameRef.current = requestAnimationFrame(render);
-        return;
-      }
-
       // 5. STORM ZONE (Battle Royale Mode Only)
       if (state.mode === 'royale' && state.zone && state.zone.currentRadius > 0) {
         const z = state.zone;
@@ -1704,10 +1759,13 @@ export default function MiniBattleRoyale({
 
       // 13. DRAW PLAYERS (Viewport Culled)
       state.players?.forEach(p => {
-        if (!inView(p.x, p.y, 65)) return;
+        if (!p || typeof p !== 'object' || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+        const px = p.x;
+        const py = p.y;
+        if (!inView(px, py, 65)) return;
 
         ctx.save();
-        ctx.translate(p.x, p.y);
+        ctx.translate(px, py);
 
         if (!p.isAlive) {
           // Grave marker
@@ -2007,9 +2065,17 @@ export default function MiniBattleRoyale({
       }
 
       ctx.restore(); // dpr scale restore
-
-      animFrameRef.current = requestAnimationFrame(render);
-    };
+    } catch (err) {
+      console.error('[MiniBattleRoyale Render Safe Catch]:', err);
+      try {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      } catch {}
+    } finally {
+      if (running) {
+        animFrameRef.current = requestAnimationFrame(render);
+      }
+    }
+  };
 
     animFrameRef.current = requestAnimationFrame(render);
 

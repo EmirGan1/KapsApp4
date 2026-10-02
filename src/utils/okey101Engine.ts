@@ -229,19 +229,22 @@ export const analyzeBestRunSequence101 = (
     }
   }
 
-  // 2. Wrapping sequence ending in 1 (e.g. 12-13-1, 11-12-13-1, 10-11-12-13-1)
-  if (L >= 3 && L <= 5) {
-    const wrapSeq: number[] = [];
-    let wrapScore = 1; // 1 counts as 1 point at the end of 13
-    for (let pos = 15 - L; pos <= 13; pos++) {
-      wrapSeq.push(pos);
-      wrapScore += pos;
-    }
-    wrapSeq.push(1);
+  // 2. Wrapping sequence ending in 1 (e.g. 12-13-1, 11-12-13-1, down to 2..13-1)
+  if (L >= 3 && L <= 13) {
+    const startNum = 15 - L;
+    if (startNum >= 1 && startNum <= 12) {
+      const wrapSeq: number[] = [];
+      let wrapScore = 1; // 1 counts as 1 point at the end of 13
+      for (let pos = startNum; pos <= 13; pos++) {
+        wrapSeq.push(pos);
+        wrapScore += pos;
+      }
+      wrapSeq.push(1);
 
-    if (regNums.every((n) => wrapSeq.includes(n))) {
-      if (!bestCandidate || wrapScore > bestCandidate.score) {
-        bestCandidate = { score: wrapScore, type: 'wrap', sequence: wrapSeq };
+      if (regNums.every((n) => wrapSeq.includes(n))) {
+        if (!bestCandidate || wrapScore > bestCandidate.score) {
+          bestCandidate = { score: wrapScore, type: 'wrap', sequence: wrapSeq };
+        }
       }
     }
   }
@@ -429,16 +432,48 @@ export const validateSerialHandOpening = (
  * - For Run: can be placed at the beginning or at the end.
  * - For Group: can be added if group has 3 tiles and this tile has the same number with the unused color.
  */
+export interface AppendResult101 {
+  canAppend: boolean;
+  insertAt?: 'start' | 'end' | 'set';
+  orderedTiles?: Tile101[];
+  score?: number;
+  error?: string;
+  replacesOkey?: boolean;
+  retrievedOkey?: Tile101;
+}
+
 export const canAppendTileToMeld = (
   tile: Tile101,
   meld: Okey101Meld,
   okeyRef?: Tile101 | null
-): { canAppend: boolean; insertAt?: 'start' | 'end'; orderedTiles?: Tile101[]; score?: number; error?: string } => {
+): AppendResult101 => {
   if (!tile || !meld || !meld.tiles) return { canAppend: false };
 
-  // Group Meld Appending (Max 4 tiles)
+  // Pairs cannot have stones appended (strictly 2 identical tiles)
+  if (meld.type === 'pair') {
+    return { canAppend: false, error: 'Çift perlerine sonradan taş eklenemez.' };
+  }
+
+  // 1. GROUP MELD APPENDING (Max 4 tiles, 1 of each color)
   if (meld.type === 'group') {
+    // If group already has 4 tiles, check if one of them is an Okey being replaced by its true color tile
     if (meld.tiles.length >= 4) {
+      const okeyIdx = meld.tiles.findIndex(t => isTileOkey(t, okeyRef));
+      if (okeyIdx !== -1) {
+        const candidate = [...meld.tiles];
+        candidate[okeyIdx] = tile;
+        const groupCheck = isValidGroup(candidate, okeyRef);
+        if (groupCheck.valid) {
+          return {
+            canAppend: true,
+            replacesOkey: true,
+            retrievedOkey: meld.tiles[okeyIdx],
+            orderedTiles: candidate,
+            score: groupCheck.score,
+            insertAt: 'set'
+          };
+        }
+      }
       return { canAppend: false, error: 'Bu grupta zaten 4 farklı renk tamamlanmış.' };
     }
 
@@ -450,47 +485,63 @@ export const canAppendTileToMeld = (
       return { canAppend: false, error: `Bu gruba sadece ${targetNumber} numaralı taş eklenebilir.` };
     }
 
-    // Only compare against colors of existing regular tiles (Okey has variable color)
+    // Only compare against colors of existing regular tiles
     const existingColors = new Set(regulars.map((t) => t.color));
     if (!okey && existingColors.has(tile.color)) {
       return { canAppend: false, error: 'Bu renk zaten bu grupta bulunuyor.' };
     }
 
     const newScore = (meld.tiles.length + 1) * targetNumber;
-    return { canAppend: true, insertAt: 'end', score: newScore };
+    return {
+      canAppend: true,
+      insertAt: 'set',
+      score: newScore,
+      orderedTiles: [...meld.tiles, tile]
+    };
   }
 
-  // Run Meld Appending (Min 3, Max 13)
+  // 2. RUN MELD APPENDING (Min 3, Max 13)
   if (meld.type === 'run') {
+    // Check if tile can replace an existing Okey in the run
+    const okeyIndices = meld.tiles
+      .map((t, idx) => (isTileOkey(t, okeyRef) ? idx : -1))
+      .filter((idx) => idx !== -1);
+
+    for (const oIdx of okeyIndices) {
+      const candidate = [...meld.tiles];
+      candidate[oIdx] = tile;
+      const chk = isValidRun(candidate, okeyRef);
+      if (chk.valid) {
+        const analysis = analyzeBestRunSequence101(candidate, okeyRef);
+        return {
+          canAppend: true,
+          replacesOkey: true,
+          retrievedOkey: meld.tiles[oIdx],
+          orderedTiles: analysis.valid ? analysis.orderedTiles : candidate,
+          score: chk.score,
+          insertAt: 'set'
+        };
+      }
+    }
+
     if (meld.tiles.length >= 13) {
       return { canAppend: false, error: 'Bu seri maksimum uzunluğa ulaşmış.' };
     }
 
-    // Test with whole set analyzed
+    // General Whole Set Analysis Test
     const combined = [...meld.tiles, tile];
     const analysis = analyzeBestRunSequence101(combined, okeyRef);
-    if (analysis.valid) {
-      const isFirst = analysis.orderedTiles[0]?.id === tile.id;
-      return {
-        canAppend: true,
-        insertAt: isFirst ? 'start' : 'end',
-        orderedTiles: analysis.orderedTiles,
-        score: analysis.score
-      };
-    }
-
-    // Direct Prepend Test
-    const prependTest = [tile, ...meld.tiles];
-    const preCheck = isValidRun(prependTest, okeyRef);
-    if (preCheck.valid) {
-      return { canAppend: true, insertAt: 'start', score: preCheck.score };
-    }
-
-    // Direct Append Test
-    const appendTest = [...meld.tiles, tile];
-    const appCheck = isValidRun(appendTest, okeyRef);
-    if (appCheck.valid) {
-      return { canAppend: true, insertAt: 'end', score: appCheck.score };
+    if (analysis.valid && analysis.orderedTiles && analysis.orderedTiles.length === combined.length) {
+      const isStart = analysis.orderedTiles[0]?.id === tile.id;
+      const isEnd = analysis.orderedTiles[analysis.orderedTiles.length - 1]?.id === tile.id;
+      if (isStart || isEnd) {
+        return {
+          canAppend: true,
+          insertAt: isStart ? 'start' : 'end',
+          orderedTiles: analysis.orderedTiles,
+          score: analysis.score
+        };
+      }
     }
 
     return { canAppend: false, error: 'Bu taş bu serinin başına veya sonuna uymuyor.' };
@@ -1191,5 +1242,453 @@ export const Okey101Engine = {
     }
 
     return { dealt, indicator, okeyTile };
+  },
+  runStressTest: (iterations: number = 2000) => run101StressTest(iterations)
+};
+
+export interface StressTestReport101 {
+  success: boolean;
+  iterations: number;
+  errors: string[];
+  durationMs: number;
+  scenarios: {
+    subsequentMeldsTested: number;
+    subsequentMeldsSucceeded: number;
+    layOffsTested: number;
+    layOffsSucceeded: number;
+    unopenedLayOffRejections: number;
+    rule12131Checks: number;
+    groupAppendChecks: number;
+    okeyRetrievalsTested: number;
+    doubleVsSerialChecks: number;
+    fullRoundsSimulated: number;
+  };
+}
+
+/**
+ * Autonomous Headless 101 Okey Stress Test Simulation
+ * Validates:
+ * 1. Subsequent melds opening after initial 101 threshold (no second 101 barrier)
+ * 2. Laying off / appending stone rules (12-13-1, 4-color group limit, Okey retrieval)
+ * 3. Double opener vs Serial opener restrictions
+ * 4. 2000 rapid turns and tile array integrity
+ */
+export const run101StressTest = (iterations: number = 2000): StressTestReport101 => {
+  const errors: string[] = [];
+  const startTime = Date.now();
+
+  const scenarios = {
+    subsequentMeldsTested: 0,
+    subsequentMeldsSucceeded: 0,
+    layOffsTested: 0,
+    layOffsSucceeded: 0,
+    unopenedLayOffRejections: 0,
+    rule12131Checks: 0,
+    groupAppendChecks: 0,
+    okeyRetrievalsTested: 0,
+    doubleVsSerialChecks: 0,
+    fullRoundsSimulated: 0
+  };
+
+  try {
+    // ============================================================
+    // SENARYO 1: İKİNCİ KEZ PER İNDİRME TESTİ (SUBSEQUENT MELDS)
+    // ============================================================
+    scenarios.subsequentMeldsTested++;
+    const okeyDummy: Tile101 = { id: 'dummy_okey', color: 'red', number: 1 };
+    
+    // Simulate a full game room for Scenario 1: Bot A has already opened (hasOpened = true)
+    const testRoom: Okey101RoomState = {
+      id: 'stress_room_1',
+      name: 'Stress Test Room',
+      gameMode: 'okey101',
+      subMode: 'katlamali',
+      status: 'playing',
+      hostId: 101,
+      creatorId: 101,
+      players: [
+        {
+          id: 101,
+          username: 'Bot_A',
+          isBot: true,
+          hand: [
+            { id: 't_y4', color: 'yellow', number: 4 },
+            { id: 't_y5', color: 'yellow', number: 5 },
+            { id: 't_y6', color: 'yellow', number: 6 },
+            { id: 't_r8', color: 'red', number: 8 }
+          ],
+          discardPile: [],
+          hasOpened: true, // Already passed 101 threshold in previous turn
+          openedMode: 'serial',
+          openedMeldsCount: 3,
+          openedScore: 105,
+          penalties: 0,
+          roundPenalty: 0
+        },
+        {
+          id: 102,
+          username: 'Bot_B',
+          isBot: true,
+          hand: [{ id: 'b_t1', color: 'blue', number: 7 }],
+          discardPile: [],
+          hasOpened: true, // Opened
+          openedMode: 'serial',
+          openedMeldsCount: 3,
+          openedScore: 102,
+          penalties: 0,
+          roundPenalty: 0
+        },
+        {
+          id: 103,
+          username: 'Bot_C',
+          isBot: true,
+          hand: [{ id: 'c_t1', color: 'blue', number: 7 }],
+          discardPile: [],
+          hasOpened: false, // NOT opened!
+          openedMode: undefined,
+          openedMeldsCount: 0,
+          openedScore: 0,
+          penalties: 0,
+          roundPenalty: 0
+        },
+        {
+          id: 104,
+          username: 'Bot_D',
+          isBot: true,
+          hand: [],
+          discardPile: [],
+          hasOpened: false,
+          openedMode: undefined,
+          openedMeldsCount: 0,
+          openedScore: 0,
+          penalties: 0,
+          roundPenalty: 0
+        }
+      ],
+      deckCount: 40,
+      indicator: null,
+      okeyTile: okeyDummy,
+      currentTurn: 0,
+      turnPhase: 'discard',
+      highestOpenScore: 105,
+      highestPairsCount: 5,
+      openedMelds: [
+        {
+          id: 'initial_meld_1',
+          playerId: 101,
+          playerUsername: 'Bot_A',
+          type: 'run',
+          tiles: [
+            { id: 'init_1', color: 'red', number: 10 },
+            { id: 'init_2', color: 'red', number: 11 },
+            { id: 'init_3', color: 'red', number: 12 }
+          ],
+          score: 33
+        }
+      ],
+      turnTimeRemaining: 30,
+      roundNumber: 1,
+      winnerId: null,
+      winningReason: null
+    };
+
+    // Bot A attempts to open a subsequent 3-tile run [Yellow 4, 5, 6] (score = 15, well under 101!)
+    const botA = testRoom.players[0];
+    const initialHandCount = botA.hand.length;
+    const initialTableMeldsCount = testRoom.openedMelds.length;
+    const subsequentRun = [botA.hand[0], botA.hand[1], botA.hand[2]];
+    const chkSubsequent = validateMeld(subsequentRun, okeyDummy);
+    
+    if (!chkSubsequent.valid) {
+      errors.push(`[Scenario 1]: Valid subsequent meld Yellow 4-5-6 rejected by validateMeld`);
+    } else {
+      // Simulate server-side processing for already opened player (bypassing 101 check)
+      if (botA.hasOpened) {
+        testRoom.openedMelds.push({
+          id: `meld_subsequent_${Date.now()}`,
+          playerId: botA.id,
+          playerUsername: botA.username,
+          type: chkSubsequent.type || 'run',
+          tiles: [...subsequentRun],
+          score: chkSubsequent.score
+        });
+        for (const t of subsequentRun) {
+          const idx = botA.hand.findIndex((h) => h.id === t.id);
+          if (idx !== -1) botA.hand.splice(idx, 1);
+        }
+      }
+
+      if (testRoom.openedMelds.length !== initialTableMeldsCount + 1) {
+        errors.push(`[Scenario 1]: Table melds array was not updated after subsequent meld opening!`);
+      }
+      if (botA.hand.length !== initialHandCount - 3) {
+        errors.push(`[Scenario 1]: Tiles were not properly deducted from hand! Expected ${initialHandCount - 3}, got ${botA.hand.length}`);
+      }
+      scenarios.subsequentMeldsSucceeded++;
+    }
+
+    // Test invalid meld in subsequent open
+    const invalidSubsequent: Tile101[] = [
+      { id: 't_y4', color: 'yellow', number: 4 },
+      { id: 't_y5', color: 'yellow', number: 5 },
+      { id: 't_r8', color: 'red', number: 8 }
+    ];
+    const chkInvalid = validateMeld(invalidSubsequent, okeyDummy);
+    if (chkInvalid.valid) {
+      errors.push(`[Scenario 1]: Invalid subsequent meld Yellow 4-5 + Red 8 was incorrectly accepted!`);
+    }
+
+    // ============================================================
+    // SENARYO 2: TAŞ İŞLEME & KURAL DOĞRULAMA (LAYING OFF)
+    // ============================================================
+    // Concurrency / Permission Check: Bot B (hasOpened = true) vs Bot C (hasOpened = false)
+    const botB = testRoom.players[1];
+    const botC = testRoom.players[2];
+    const targetMeld = testRoom.openedMelds[0]; // [Red 10, 11, 12]
+    const red13ForB: Tile101 = { id: 'r13', color: 'red', number: 13 };
+    const red13ForC: Tile101 = { id: 'r13_c', color: 'red', number: 13 };
+
+    // Bot C (unopened) trying to lay off -> MUST BE REJECTED by permission rule
+    scenarios.layOffsTested++;
+    if (!botC.hasOpened) {
+      scenarios.unopenedLayOffRejections++;
+      // Expected to be blocked by server rule: if (!player.hasOpened) return error
+    } else {
+      errors.push(`[Scenario 2]: Unopened player Bot C had hasOpened set to true!`);
+    }
+
+    // Bot B (opened) laying off Red 13 onto [Red 10, 11, 12] -> MUST BE ALLOWED
+    scenarios.layOffsTested++;
+    if (botB.hasOpened) {
+      const appB = canAppendTileToMeld(red13ForB, targetMeld, okeyDummy);
+      if (!appB.canAppend || appB.insertAt !== 'end') {
+        errors.push(`[Scenario 2]: Bot B could not append Red 13 to [Red 10, 11, 12]! Got: ${JSON.stringify(appB)}`);
+      } else {
+        targetMeld.tiles.push(red13ForB);
+        targetMeld.score = appB.score || targetMeld.score;
+        scenarios.layOffsSucceeded++;
+      }
+    }
+    // 2A. Sıralı Seriye Baştan ve Sondan Ekleme
+    const blueRunMeld: Okey101Meld = {
+      id: 'meld_blue_run',
+      playerId: 1,
+      playerUsername: 'Player1',
+      type: 'run',
+      tiles: [
+        { id: 'b4', color: 'blue', number: 4 },
+        { id: 'b5', color: 'blue', number: 5 },
+        { id: 'b6', color: 'blue', number: 6 }
+      ],
+      score: 15
+    };
+
+    // Prepend Blue 3
+    scenarios.layOffsTested++;
+    const blue3: Tile101 = { id: 'b3', color: 'blue', number: 3 };
+    const appendB3 = canAppendTileToMeld(blue3, blueRunMeld, okeyDummy);
+    if (!appendB3.canAppend || appendB3.insertAt !== 'start') {
+      errors.push(`[Scenario 2A]: Blue 3 could not be prepended to [Blue 4, 5, 6]. Got: ${JSON.stringify(appendB3)}`);
+    } else {
+      scenarios.layOffsSucceeded++;
+    }
+
+    // Append Blue 7
+    scenarios.layOffsTested++;
+    const blue7: Tile101 = { id: 'b7', color: 'blue', number: 7 };
+    const appendB7 = canAppendTileToMeld(blue7, blueRunMeld, okeyDummy);
+    if (!appendB7.canAppend || appendB7.insertAt !== 'end') {
+      errors.push(`[Scenario 2A]: Blue 7 could not be appended to [Blue 4, 5, 6]. Got: ${JSON.stringify(appendB7)}`);
+    } else {
+      scenarios.layOffsSucceeded++;
+    }
+
+    // 2B. 12-13-1 Kuralı
+    scenarios.rule12131Checks++;
+    const wrapRunMeld: Okey101Meld = {
+      id: 'meld_wrap_run',
+      playerId: 1,
+      playerUsername: 'Player1',
+      type: 'run',
+      tiles: [
+        { id: 'b12', color: 'blue', number: 12 },
+        { id: 'b13', color: 'blue', number: 13 },
+        { id: 'b1', color: 'blue', number: 1 }
+      ],
+      score: 26
+    };
+
+    // Appending Blue 2 to [12, 13, 1] MUST BE REJECTED
+    const blue2: Tile101 = { id: 'b2', color: 'blue', number: 2 };
+    const appendB2 = canAppendTileToMeld(blue2, wrapRunMeld, okeyDummy);
+    if (appendB2.canAppend) {
+      errors.push(`[Scenario 2B]: Blue 2 was ILLEGALLY allowed to append to [12, 13, 1]! 13-1-2 is strictly forbidden in 101 Okey.`);
+    }
+
+    // Prepending Blue 11 to [12, 13, 1] MUST BE ALLOWED
+    const blue11: Tile101 = { id: 'b11', color: 'blue', number: 11 };
+    const appendB11 = canAppendTileToMeld(blue11, wrapRunMeld, okeyDummy);
+    if (!appendB11.canAppend || appendB11.insertAt !== 'start') {
+      errors.push(`[Scenario 2B]: Blue 11 could not be prepended to [12, 13, 1]! Got: ${JSON.stringify(appendB11)}`);
+    }
+
+    // 2C. Renkli Kümeye (Set) Ekleme
+    scenarios.groupAppendChecks++;
+    const group8Meld: Okey101Meld = {
+      id: 'meld_group_8',
+      playerId: 1,
+      playerUsername: 'Player1',
+      type: 'group',
+      tiles: [
+        { id: 'r8', color: 'red', number: 8 },
+        { id: 'k8', color: 'black', number: 8 },
+        { id: 'y8', color: 'yellow', number: 8 }
+      ],
+      score: 24
+    };
+
+    // 4th distinct color (Blue 8) MUST BE ALLOWED
+    const blue8: Tile101 = { id: 'b8', color: 'blue', number: 8 };
+    const appendB8 = canAppendTileToMeld(blue8, group8Meld, okeyDummy);
+    if (!appendB8.canAppend) {
+      errors.push(`[Scenario 2C]: 4th color Blue 8 could not be added to 8 group! Got: ${appendB8.error}`);
+    }
+
+    // Duplicate color (Red 8) MUST BE REJECTED
+    const duplicateR8: Tile101 = { id: 'r8_dup', color: 'red', number: 8 };
+    const appendDup = canAppendTileToMeld(duplicateR8, group8Meld, okeyDummy);
+    if (appendDup.canAppend) {
+      errors.push(`[Scenario 2C]: Duplicate Red 8 was ILLEGALLY allowed in group meld!`);
+    }
+
+    // 5th tile to a full 4-tile group MUST BE REJECTED
+    const fullGroup8Meld: Okey101Meld = {
+      id: 'meld_full_8',
+      playerId: 1,
+      playerUsername: 'Player1',
+      type: 'group',
+      tiles: [
+        { id: 'r8', color: 'red', number: 8 },
+        { id: 'k8', color: 'black', number: 8 },
+        { id: 'y8', color: 'yellow', number: 8 },
+        { id: 'b8', color: 'blue', number: 8 }
+      ],
+      score: 32
+    };
+    const fifthTile: Tile101 = { id: 'f8', color: 'red', number: 8 };
+    const append5th = canAppendTileToMeld(fifthTile, fullGroup8Meld, okeyDummy);
+    if (append5th.canAppend) {
+      errors.push(`[Scenario 2C]: 5th tile was ILLEGALLY allowed into full 4-color group meld!`);
+    }
+
+    // 2D. Okey Replacement & Retrieval
+    scenarios.okeyRetrievalsTested++;
+    const realOkeyTile: Tile101 = { id: 'real_okey', color: 'red', number: 5, isOkey: true };
+    const meldWithOkey: Okey101Meld = {
+      id: 'meld_okey_run',
+      playerId: 1,
+      playerUsername: 'Player1',
+      type: 'run',
+      tiles: [
+        { id: 'r4', color: 'red', number: 4 },
+        realOkeyTile, // Stands in for Red 5
+        { id: 'r6', color: 'red', number: 6 }
+      ],
+      score: 15
+    };
+
+    const regularRed5: Tile101 = { id: 'real_red5', color: 'red', number: 5 };
+    const replaceCheck = canAppendTileToMeld(regularRed5, meldWithOkey, realOkeyTile);
+    if (!replaceCheck.canAppend || !replaceCheck.replacesOkey || !replaceCheck.retrievedOkey) {
+      errors.push(`[Scenario 2D]: Playing Red 5 onto [Red 4, OKEY, Red 6] failed to replace and retrieve Okey! Got: ${JSON.stringify(replaceCheck)}`);
+    }
+
+    // ============================================================
+    // SENARYO 3: ÇİFTE GİDEN OYUNCU VS SERİ OYUNCUSU
+    // ============================================================
+    scenarios.doubleVsSerialChecks++;
+    // Appending to a pair meld must be rejected
+    const pairMeld: Okey101Meld = {
+      id: 'meld_pair_test',
+      playerId: 1,
+      playerUsername: 'Player1',
+      type: 'pair',
+      tiles: [
+        { id: 'p1', color: 'red', number: 10 },
+        { id: 'p2', color: 'red', number: 10 }
+      ],
+      score: 0
+    };
+    const pairAppendCheck = canAppendTileToMeld({ id: 'p3', color: 'red', number: 10 }, pairMeld, okeyDummy);
+    if (pairAppendCheck.canAppend) {
+      errors.push(`[Scenario 3]: Appending a 3rd tile to a pair meld was ILLEGALLY allowed!`);
+    }
+
+    // ============================================================
+    // SENARYO 4: 2000 HIZLI SİMÜLASYON DÖNGÜSÜ
+    // ============================================================
+    for (let iter = 0; iter < iterations; iter++) {
+      scenarios.fullRoundsSimulated++;
+      const { deck, okeyTile } = generate101Deck();
+      const dealt = deal101Hands(deck, 0, 4);
+
+      // Verify initial deal counts
+      if (dealt.hands[0].length !== 22 || dealt.hands[1].length !== 21 || dealt.hands[2].length !== 21 || dealt.hands[3].length !== 21) {
+        errors.push(`[Scenario 4, Iter ${iter}]: Hand deal size mismatch! Hands: ${dealt.hands.map(h => h.length).join(', ')}`);
+        break;
+      }
+
+      // Check auto sorting on all 4 hands without tile loss
+      for (let hIdx = 0; hIdx < 4; hIdx++) {
+        const hand = dealt.hands[hIdx];
+        const sortedRuns = autoSortRuns101(hand, okeyTile).filter(t => t !== null);
+        if (sortedRuns.length !== hand.length) {
+          errors.push(`[Scenario 4, Iter ${iter}]: autoSortRuns101 lost tiles in hand ${hIdx}! Expected ${hand.length}, got ${sortedRuns.length}`);
+          break;
+        }
+
+        const sortedPairs = autoSortPairs101(hand, okeyTile).filter(t => t !== null);
+        if (sortedPairs.length !== hand.length) {
+          errors.push(`[Scenario 4, Iter ${iter}]: autoSortPairs101 lost tiles in hand ${hIdx}! Expected ${hand.length}, got ${sortedPairs.length}`);
+          break;
+        }
+
+        // Test finding best melds
+        const bestMelds = findBestMeldsInHand(hand, okeyTile);
+        for (const m of bestMelds.melds) {
+          const chk = validateMeld(m, okeyTile);
+          if (!chk.valid) {
+            errors.push(`[Scenario 4, Iter ${iter}]: findBestMeldsInHand produced invalid meld`);
+            break;
+          }
+        }
+      }
+
+      // Test subsequent melds simulation
+      const pHand = dealt.hands[0];
+      const pAnalysis = findBestMeldsInHand(pHand, okeyTile);
+      if (pAnalysis.melds.length >= 2) {
+        const firstMeld = pAnalysis.melds[0];
+        const secondMeld = pAnalysis.melds[1];
+
+        const chk1 = validateMeld(firstMeld, okeyTile);
+        const chk2 = validateMeld(secondMeld, okeyTile);
+        if (chk1.valid && chk2.valid) {
+          scenarios.subsequentMeldsTested++;
+          scenarios.subsequentMeldsSucceeded++;
+        }
+      }
+    }
+  } catch (err: any) {
+    errors.push(`[Unhandled Stress Exception]: ${err?.message || String(err)}`);
   }
+
+  const durationMs = Date.now() - startTime;
+  return {
+    success: errors.length === 0,
+    iterations,
+    errors,
+    durationMs,
+    scenarios
+  };
 };

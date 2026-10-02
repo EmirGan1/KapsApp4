@@ -415,6 +415,37 @@ export function rayIntersectsCircle(
   return { hit: false, x: 0, y: 0, t: 1 };
 }
 
+export function checkRaycastLOS(
+  x1: number, y1: number, x2: number, y2: number,
+  buildings: RoyaleBuilding[] = MAP_BUILDINGS,
+  obstacles: { type: string; x: number; y: number; radius?: number }[] = []
+): { hit: boolean; x: number; y: number; t: number } {
+  // 1. Bina duvarları kontrolü
+  const wallHit = checkRaycastWalls(x1, y1, x2, y2, buildings);
+  if (wallHit.hit) return wallHit;
+
+  // 2. Taş engelleri (Rock Obstacles) kontrolü (Mermiler ve görüş hattı kayalardan geçemez)
+  let minT = 1.0;
+  let hit = false;
+  let hitX = x2;
+  let hitY = y2;
+  for (const obs of obstacles) {
+    if (obs && obs.type === 'rock') {
+      const rockRadius = obs.radius || 25;
+      const circHit = rayIntersectsCircle(x1, y1, x2, y2, obs.x, obs.y, rockRadius);
+      if (circHit.hit && circHit.t < minT) {
+        minT = circHit.t;
+        hit = true;
+        hitX = circHit.x;
+        hitY = circHit.y;
+      }
+    }
+  }
+
+  if (hit) return { hit: true, x: hitX, y: hitY, t: minT };
+  return { hit: false, x: x2, y: y2, t: 1.0 };
+}
+
 export const WEAPON_CONFIGS: Record<string, {
   name: string;
   damage: number;
@@ -535,7 +566,7 @@ export interface PlayerData {
   isBot: boolean;
   isHost: boolean;
   ready: boolean;
-  platform?: 'pc' | 'mobile';
+  platform?: 'pc' | 'mobile' | 'tablet';
   x: number;
   y: number;
   angle: number;
@@ -562,6 +593,8 @@ export interface PlayerData {
   vx?: number;
   vy?: number;
   shooting?: boolean;
+  respawnAckReceived?: boolean;
+  lastPickupTime?: number;
   // Enhanced Bot AI Fields
   botStrafeDir?: number;
   botStrafeTimer?: number;
@@ -637,6 +670,7 @@ export interface GameRoom {
   barrels: RoyaleBarrel[];
   explosions: RoyaleExplosionEffect[];
   loot: LootItemData[];
+  lootLocks?: Set<string>;
   obstacles: ObstacleData[];
   zone: {
     currentX: number;
@@ -663,12 +697,12 @@ export class BattleRoyaleManager {
   private db: LibsqlClient;
   public rooms: Map<string, GameRoom> = new Map();
 
-  constructor(io: SocketIOServer, db: LibsqlClient) {
+  constructor(io: SocketIOServer, db?: LibsqlClient) {
     this.io = io;
-    this.db = db;
+    this.db = db as LibsqlClient;
   }
 
-  private createRoomInternal(
+  public createRoomInternal(
     title: string,
     hostId: number,
     hostName: string,
@@ -695,6 +729,7 @@ export class BattleRoyaleManager {
       barrels: [],
       explosions: [],
       loot: [],
+      lootLocks: new Set<string>(),
       obstacles: [],
       zone: {
         currentX: MAP_SIZE / 2,
@@ -770,7 +805,7 @@ export class BattleRoyaleManager {
   }
 
   public createRoom(
-    user: { id: number; username: string; avatar: string | null; color?: string; platform?: 'pc' | 'mobile' },
+    user: { id: number; username: string; avatar: string | null; color?: string; platform?: 'pc' | 'mobile' | 'tablet' },
     options: { title?: string; capacity?: number; mode?: 'royale' | 'deathmatch'; duration?: number }
   ): GameRoom {
     const cap = Math.min(20, Math.max(2, Number(options.capacity) || 20));
@@ -789,7 +824,7 @@ export class BattleRoyaleManager {
     return room;
   }
 
-  public joinRoom(roomId: string, user: { id: number; username: string; avatar: string | null; color?: string; platform?: 'pc' | 'mobile' }) {
+  public joinRoom(roomId: string, user: { id: number; username: string; avatar: string | null; color?: string; platform?: 'pc' | 'mobile' | 'tablet' }) {
     const room = this.rooms.get(roomId);
     if (!room) return { success: false, error: 'Masa bulunamadı.' };
 
@@ -871,6 +906,10 @@ export class BattleRoyaleManager {
         }
       }
       this.broadcastRoomState(room);
+      if (room.status === 'playing') {
+        this.broadcastGameState(room);
+        this.io.to(room.id).emit('player:left', { userId });
+      }
     }
     this.broadcastRoomsList();
   }
@@ -1179,46 +1218,79 @@ export class BattleRoyaleManager {
   }
 
   public processPlayerInput(roomId: string, userId: number, input: any) {
+    if (!input || typeof input !== 'object') return;
     const room = this.rooms.get(roomId);
     if (!room || room.status !== 'playing') return;
 
-    const player = room.players.find(p => p.userId === userId);
-    if (!player || !player.isAlive) return;
+    if (input.requestRespawn) {
+      this.requestRespawn(roomId, userId);
+      return;
+    }
 
-    // Platform detection (for asymmetric AI difficulty)
-    if (input.platform === 'pc' || input.platform === 'mobile') {
+    const player = room.players.find(p => p.userId === userId);
+    // GHOST INPUT DESYNC GUARD: Dead players cannot perform any actions!
+    if (!player || !player.isAlive || player.hp <= 0) {
+      if (player) {
+        player.shooting = false;
+        player.vx = 0;
+        player.vy = 0;
+      }
+      return;
+    }
+
+    // Platform detection (for asymmetric AI difficulty: pc vs mobile/tablet)
+    if (input.platform === 'pc' || input.platform === 'mobile' || input.platform === 'tablet') {
       player.platform = input.platform;
     }
 
-    // Movement Vectors
-    if (typeof input.vx === 'number' && typeof input.vy === 'number') {
+    // Defensive Movement Vectors validation (reject NaN, Infinity, null, clamp to [-1, 1])
+    if (typeof input.vx === 'number' && Number.isFinite(input.vx) &&
+        typeof input.vy === 'number' && Number.isFinite(input.vy)) {
       player.vx = Math.max(-1, Math.min(1, input.vx));
       player.vy = Math.max(-1, Math.min(1, input.vy));
+    } else if (typeof input.up === 'boolean' || typeof input.down === 'boolean' ||
+               typeof input.left === 'boolean' || typeof input.right === 'boolean') {
+      let vx = 0;
+      let vy = 0;
+      if (input.up) vy -= 1;
+      if (input.down) vy += 1;
+      if (input.left) vx -= 1;
+      if (input.right) vx += 1;
+      if (vx !== 0 && vy !== 0) {
+        vx *= 0.7071;
+        vy *= 0.7071;
+      }
+      player.vx = vx;
+      player.vy = vy;
     }
 
-    // Angle
+    // Angle (strictly finite, bounded)
     if (typeof input.angle === 'number' && Number.isFinite(input.angle)) {
       player.angle = input.angle;
     }
 
-    // Shooting
+    // Shooting (support both shooting and isShooting boolean aliases)
     if (typeof input.shooting === 'boolean') {
       player.shooting = input.shooting;
+    } else if (typeof input.isShooting === 'boolean') {
+      player.shooting = input.isShooting;
     }
 
     // Weapon Switch
-    if (typeof input.switchWeapon === 'number') {
-      const targetSlot = input.switchWeapon;
+    if (typeof input.switchWeapon === 'number' && Number.isFinite(input.switchWeapon)) {
+      const targetSlot = Math.floor(input.switchWeapon);
       if (player.weapons[targetSlot]) {
         player.activeWeaponSlot = targetSlot;
         player.activeWeapon = player.weapons[targetSlot];
         player.isReloading = false;
+        player.reloadEndTime = 0;
       }
     } else if (input.switchWeapon === 'next' || input.switchWeapon === 'prev') {
       if (player.weapons.length > 1) {
         player.activeWeaponSlot = (player.activeWeaponSlot + 1) % player.weapons.length;
         player.activeWeapon = player.weapons[player.activeWeaponSlot];
         player.isReloading = false;
+        player.reloadEndTime = 0;
       }
     }
 
@@ -1227,10 +1299,119 @@ export class BattleRoyaleManager {
       this.triggerReload(player);
     }
 
-    // Pickup or Swap Weapon
-    if (input.pickup || input.swapWeapon) {
-      this.handlePlayerPickup(room, player, !!input.swapWeapon);
+    // Drop Weapon action
+    if (input.dropWeapon) {
+      this.dropPlayerWeapon(roomId, userId, input.slot);
     }
+
+    // Pickup or Swap Weapon (support pickup, swapWeapon, and interactLoot)
+    if (input.pickup || input.swapWeapon || input.interactLoot || input.interact_loot) {
+      this.handlePlayerPickup(room, player, !!(input.swapWeapon || input.interactLoot || input.interact_loot));
+    }
+  }
+
+  public requestRespawn(roomId: string, userId: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room || room.status !== 'playing') return false;
+
+    const p = room.players.find(pl => pl.userId === userId);
+    if (!p || p.isAlive) return false;
+
+    const now = Date.now();
+    const spawn = this.findSafeSpawn(room);
+    p.x = spawn.x;
+    p.y = spawn.y;
+    p.hp = 100;
+    p.shield = 25;
+    p.isAlive = true;
+    p.respawnAt = null;
+    p.respawnAckReceived = false;
+    p.spawnShieldEndTime = now + 4000;
+    p.activeWeapon = 'pistol';
+    p.activeWeaponSlot = 0;
+    p.weapons = ['pistol'];
+    p.ammo = { pistol: WEAPON_CONFIGS.pistol.magSize };
+    p.reserveAmmo = { pistol: WEAPON_CONFIGS.pistol.magSize * 2 };
+    p.isReloading = false;
+    p.shooting = false;
+    p.vx = 0;
+    p.vy = 0;
+
+    this.io.to(room.id).emit('player:respawned', {
+      playerId: p.id,
+      userId: p.userId,
+      x: Math.round(p.x),
+      y: Math.round(p.y),
+      hp: p.hp,
+      shield: p.shield
+    });
+    this.io.to(room.id).emit('royale:player_respawned', {
+      playerId: p.id,
+      userId: p.userId,
+      x: Math.round(p.x),
+      y: Math.round(p.y),
+      hp: p.hp,
+      shield: p.shield
+    });
+    this.broadcastGameState(room);
+    return true;
+  }
+
+  public dropPlayerWeapon(roomId: string, userId: number, slotIndex?: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room || room.status !== 'playing') return false;
+
+    const player = room.players.find(p => p.userId === userId);
+    if (!player || !player.isAlive || player.hp <= 0) return false;
+
+    // Cancel ongoing reload immediately to eliminate reload cancel exploit
+    player.isReloading = false;
+    player.reloadEndTime = 0;
+
+    const targetSlot = typeof slotIndex === 'number' && Number.isFinite(slotIndex) ? Math.floor(slotIndex) : player.activeWeaponSlot;
+    const weaponToDrop = player.weapons[targetSlot];
+    if (!weaponToDrop || weaponToDrop === 'fists') return false;
+
+    const cfg = WEAPON_CONFIGS[weaponToDrop];
+    const remainingAmmo = player.ammo[weaponToDrop] !== undefined
+      ? player.ammo[weaponToDrop]
+      : (cfg?.magSize || 15);
+
+    // Place dropped weapon onto ground with exact remaining ammo
+    room.loot.push({
+      id: `loot_drop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: `weapon_${weaponToDrop}`,
+      currentAmmo: remainingAmmo,
+      maxAmmo: cfg?.magSize || 15,
+      x: player.x,
+      y: player.y
+    });
+
+    // Remove from player inventory
+    player.weapons.splice(targetSlot, 1);
+    if (player.weapons.length === 0) {
+      player.weapons = ['fists'];
+      player.activeWeapon = 'fists';
+      player.activeWeaponSlot = 0;
+    } else {
+      player.activeWeaponSlot = 0;
+      player.activeWeapon = player.weapons[0];
+    }
+
+    return true;
+  }
+
+  public confirmRespawnAck(roomId: string, userId: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    const player = room.players.find(p => p.userId === userId);
+    if (!player || !player.isAlive) return false;
+
+    player.respawnAckReceived = true;
+    // Guaranteed 2 full seconds of protection after camera and render confirmation
+    player.spawnShieldEndTime = Date.now() + 2000;
+    return true;
   }
 
   private triggerReload(player: PlayerData) {
@@ -1246,11 +1427,17 @@ export class BattleRoyaleManager {
   }
 
   private handlePlayerPickup(room: GameRoom, player: PlayerData, forceSwap: boolean) {
+    if (!player || !player.isAlive || player.hp <= 0) return;
+    const now = Date.now();
+    if (now - (player.lastPickupTime || 0) < 90) return;
+    player.lastPickupTime = now;
+
     const pickupDist = 65;
     let pickedIdx = -1;
 
     for (let i = 0; i < room.loot.length; i++) {
       const item = room.loot[i];
+      if (!item) continue;
       const d = Math.hypot(player.x - item.x, player.y - item.y);
       if (d <= pickupDist) {
         pickedIdx = i;
@@ -1260,77 +1447,105 @@ export class BattleRoyaleManager {
 
     if (pickedIdx === -1) return;
     const item = room.loot[pickedIdx];
+    if (!item) return;
 
-    if (item.type.startsWith('weapon_')) {
-      const wName = item.type.replace('weapon_', '');
-      const cfg = WEAPON_CONFIGS[wName];
-      if (!cfg) return;
+    // ATOMIC MUTEX TRANSACTION LOCK: Prevents simultaneous loot race condition / cloning
+    if (!room.lootLocks) {
+      room.lootLocks = new Set<string>();
+    }
+    if (room.lootLocks.has(item.id)) {
+      return; // Already locked by another concurrent thread/client!
+    }
+    room.lootLocks.add(item.id);
 
-      const itemAmmo = typeof item.currentAmmo === 'number' ? item.currentAmmo : cfg.magSize;
-      const oldWeapon = player.activeWeapon;
-      const oldSlot = player.activeWeaponSlot;
+    // Helper to safely remove item even if array shifted from a concurrent pickup
+    const consumeItem = () => {
+      const idx = room.loot.indexOf(item);
+      if (idx !== -1) room.loot.splice(idx, 1);
+      room.lootLocks?.delete(item.id);
+    };
 
-      if (player.weapons.length < 2 && !player.weapons.includes(wName)) {
-        player.weapons.push(wName);
-        player.activeWeaponSlot = player.weapons.length - 1;
-        player.activeWeapon = wName;
-        player.ammo[wName] = itemAmmo;
-        if (player.reserveAmmo[wName] === undefined) {
-          player.reserveAmmo[wName] = cfg.magSize * 2;
+    // If player is reloading, unequip/pickup immediately cancels reload
+    player.isReloading = false;
+    player.reloadEndTime = 0;
+
+    try {
+      if (item.type.startsWith('weapon_')) {
+        const wName = item.type.replace('weapon_', '');
+        const cfg = WEAPON_CONFIGS[wName];
+        if (!cfg) {
+          room.lootLocks.delete(item.id);
+          return;
         }
-        player.isReloading = false;
+
+        const itemAmmo = typeof item.currentAmmo === 'number' && Number.isFinite(item.currentAmmo) ? item.currentAmmo : cfg.magSize;
+        const oldWeapon = player.activeWeapon;
+        const oldSlot = player.activeWeaponSlot || 0;
+
+        if (player.weapons.length < 2 && !player.weapons.includes(wName)) {
+          player.weapons.push(wName);
+          player.activeWeaponSlot = player.weapons.length - 1;
+          player.activeWeapon = wName;
+          player.ammo[wName] = itemAmmo;
+          if (player.reserveAmmo[wName] === undefined) {
+            player.reserveAmmo[wName] = cfg.magSize * 2;
+          }
+        } else {
+          // Swap with current active weapon slot
+          const droppedWeapon = player.weapons[oldSlot] || oldWeapon;
+          const droppedCfg = WEAPON_CONFIGS[droppedWeapon];
+          const droppedAmmo = player.ammo[droppedWeapon] !== undefined
+            ? player.ammo[droppedWeapon]
+            : (droppedCfg?.magSize || 15);
+
+          player.weapons[oldSlot] = wName;
+          player.activeWeapon = wName;
+          player.ammo[wName] = itemAmmo;
+          if (player.reserveAmmo[wName] === undefined) {
+            player.reserveAmmo[wName] = cfg.magSize * 2;
+          }
+
+          // Drop old weapon with its EXACT remaining ammo on the ground!
+          if (droppedWeapon && droppedWeapon !== 'fists') {
+            room.loot.push({
+              id: `loot_swp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              type: `weapon_${droppedWeapon}`,
+              currentAmmo: droppedAmmo,
+              maxAmmo: droppedCfg?.magSize || 15,
+              x: player.x,
+              y: player.y
+            });
+          }
+        }
+        consumeItem();
+      } else if (item.type === 'medkit') {
+        player.hp = Math.min(player.maxHp, player.hp + 75);
+        consumeItem();
+      } else if (item.type === 'bandage') {
+        player.hp = Math.min(player.maxHp, player.hp + 25);
+        consumeItem();
+      } else if (item.type === 'shield') {
+        player.shield = Math.min(player.maxShield, player.shield + 50);
+        consumeItem();
+      } else if (item.type === 'heavy_shield') {
+        player.shield = 100;
+        consumeItem();
+      } else if (item.type === 'adrenaline') {
+        player.speedBuffEndTime = Date.now() + 12000;
+        consumeItem();
+      } else if (item.type === 'rage') {
+        player.rageBuffEndTime = Date.now() + 12000;
+        consumeItem();
+      } else if (item.type === 'ammo') {
+        Object.keys(player.reserveAmmo).forEach(k => {
+          player.reserveAmmo[k] = (player.reserveAmmo[k] || 0) + 30;
+        });
+        consumeItem();
       } else {
-        // Swap with current active weapon slot
-        const droppedWeapon = player.weapons[oldSlot] || oldWeapon;
-        const droppedCfg = WEAPON_CONFIGS[droppedWeapon];
-        const droppedAmmo = player.ammo[droppedWeapon] !== undefined
-          ? player.ammo[droppedWeapon]
-          : (droppedCfg?.magSize || 15);
-
-        player.weapons[oldSlot] = wName;
-        player.activeWeapon = wName;
-        player.ammo[wName] = itemAmmo;
-        if (player.reserveAmmo[wName] === undefined) {
-          player.reserveAmmo[wName] = cfg.magSize * 2;
-        }
-        player.isReloading = false;
-
-        // Drop old weapon with its EXACT remaining ammo on the ground!
-        if (droppedWeapon && droppedWeapon !== 'fists') {
-          room.loot.push({
-            id: `loot_swp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            type: `weapon_${droppedWeapon}`,
-            currentAmmo: droppedAmmo,
-            maxAmmo: droppedCfg?.magSize || 15,
-            x: player.x,
-            y: player.y
-          });
-        }
+        consumeItem();
       }
-      room.loot.splice(pickedIdx, 1);
-    } else if (item.type === 'medkit') {
-      player.hp = Math.min(player.maxHp, player.hp + 75);
-      room.loot.splice(pickedIdx, 1);
-    } else if (item.type === 'bandage') {
-      player.hp = Math.min(player.maxHp, player.hp + 25);
-      room.loot.splice(pickedIdx, 1);
-    } else if (item.type === 'shield') {
-      player.shield = Math.min(player.maxShield, player.shield + 50);
-      room.loot.splice(pickedIdx, 1);
-    } else if (item.type === 'heavy_shield') {
-      player.shield = 100;
-      room.loot.splice(pickedIdx, 1);
-    } else if (item.type === 'adrenaline') {
-      player.speedBuffEndTime = Date.now() + 12000;
-      room.loot.splice(pickedIdx, 1);
-    } else if (item.type === 'rage') {
-      player.rageBuffEndTime = Date.now() + 12000;
-      room.loot.splice(pickedIdx, 1);
-    } else if (item.type === 'ammo') {
-      Object.keys(player.reserveAmmo).forEach(k => {
-        player.reserveAmmo[k] += 30;
-      });
-      room.loot.splice(pickedIdx, 1);
+    } catch {
+      room.lootLocks?.delete(item.id);
     }
   }
 
@@ -1338,6 +1553,22 @@ export class BattleRoyaleManager {
     if (room.status !== 'playing') return;
     try {
       const now = Date.now();
+
+      // Defensive memory leak and null object cleaning
+      room.players = (room.players || []).filter(Boolean);
+      room.bullets = (room.bullets || []).filter(b => b && Number.isFinite(b.x) && Number.isFinite(b.y));
+      room.loot = (room.loot || []).filter(Boolean);
+      room.obstacles = (room.obstacles || []).filter(Boolean);
+      room.barrels = (room.barrels || []).filter(Boolean);
+      room.crates = (room.crates || []).filter(Boolean);
+
+      // Coordinate sanity check to prevent NaN corruption
+      for (const p of room.players) {
+        if (!Number.isFinite(p.x)) p.x = MAP_SIZE / 2;
+        if (!Number.isFinite(p.y)) p.y = MAP_SIZE / 2;
+        if (!Number.isFinite(p.hp)) p.hp = 100;
+        if (!Number.isFinite(p.shield)) p.shield = 0;
+      }
 
       // 1. Match Time decrement (Deathmatch mode)
       if (room.mode === 'deathmatch') {
@@ -1418,6 +1649,17 @@ export class BattleRoyaleManager {
     return false;
   }
 
+  public checkObstacleCollision(room: GameRoom, x: number, y: number, radius: number): boolean {
+    if (!room || !Array.isArray(room.obstacles)) return false;
+    for (const obs of room.obstacles) {
+      if (obs && obs.type === 'rock') {
+        const d = Math.hypot(obs.x - x, obs.y - y);
+        if (d < (obs.radius || 25) + radius) return true;
+      }
+    }
+    return false;
+  }
+
   // ============================================================
   // ENHANCED BOT AI (Pathfinding, Whiskers, Strafing & Platform Adaptation)
   // ============================================================
@@ -1435,7 +1677,8 @@ export class BattleRoyaleManager {
           p.shield = 25;
           p.isAlive = true;
           p.respawnAt = null;
-          p.spawnShieldEndTime = now + 2000; // 2 seconds invulnerability as requested
+          p.respawnAckReceived = false;
+          p.spawnShieldEndTime = now + 4000; // Handshake safety cap: 4s default, confirmed 2s on client ack
           p.activeWeapon = 'pistol';
           p.activeWeaponSlot = 0;
           p.weapons = ['pistol'];
@@ -1482,24 +1725,23 @@ export class BattleRoyaleManager {
       // ADVANCED BOT NAVIGATION & COMBAT LOGIC
       // ============================================
       if (p.isBot) {
-        // Find closest visible enemy
+        // 1. GÖRÜŞ VE HEDEF ALMA YARIÇAPI (MAX_VISION_RADIUS = 580px, LOS DUVAR & TAŞ KONTROLÜ)
+        const MAX_VISION_RADIUS = 580; // 550-600px kuralı
         let targetEnemy: PlayerData | null = null;
         let minD = 99999;
         let hasClearLOS = false;
 
         alivePlayers.forEach(other => {
-          if (other.id === p.id) return;
+          if (!other || !other.isAlive || other.id === p.id) return;
           const d = Math.hypot(other.x - p.x, other.y - p.y);
-          if (d < 1100) {
-            const losCheck = checkRaycastWalls(p.x, p.y, other.x, other.y);
-            const isClear = !losCheck.hit;
-            if (isClear && d < minD) {
+          // Yalnızca 580px yarıçap içerisindeki oyuncuları tara
+          if (d <= MAX_VISION_RADIUS && d < minD) {
+            // Görüş hattında duvar veya taş engeli var mı?
+            const losCheck = checkRaycastLOS(p.x, p.y, other.x, other.y, MAP_BUILDINGS, room.obstacles);
+            if (!losCheck.hit) {
               minD = d;
               targetEnemy = other;
               hasClearLOS = true;
-            } else if (!hasClearLOS && d < minD) {
-              minD = d;
-              targetEnemy = other;
             }
           }
         });
@@ -1574,8 +1816,10 @@ export class BattleRoyaleManager {
           p.vx = Math.cos(escapeSteer);
           p.vy = Math.sin(escapeSteer);
 
-          // Shoot while fleeing if enemy is in line of sight
-          if (targetEnemy && hasClearLOS && minD < 700) {
+          // Shoot while fleeing only if enemy is in line of sight and within weapon range (< 500px)
+          const activeCfg = WEAPON_CONFIGS[p.activeWeapon] || WEAPON_CONFIGS.pistol;
+          const maxShootRange = Math.min(500, activeCfg.range || 500);
+          if (targetEnemy && hasClearLOS && minD < maxShootRange) {
             const enemyAngle = Math.atan2((targetEnemy as PlayerData).y - p.y, (targetEnemy as PlayerData).x - p.x);
             p.angle = enemyAngle;
             p.shooting = true;
@@ -1587,15 +1831,21 @@ export class BattleRoyaleManager {
           const enemy: PlayerData = targetEnemy;
           const distToEnemy = Math.hypot(enemy.x - p.x, enemy.y - p.y);
           const directAngle = Math.atan2(enemy.y - p.y, enemy.x - p.x);
+          const activeCfg = WEAPON_CONFIGS[p.activeWeapon] || WEAPON_CONFIGS.pistol;
+          const maxShootRange = Math.min(500, activeCfg.range || 500);
 
-          // Balanced Combat AI (Nerf & Balance: 350-500ms human reaction time + spread inaccuracy)
-          const botReactionDelay = 380 + Math.floor(Math.random() * 120);
-          const botSpreadMargin = 0.22; // Inaccuracy spread so bots don't laser headshot
+          // Asimetrik Bot Dengesi: Hedef Platform Kontrolü (PC vs Mobil/Tablet)
+          const targetPlatform = enemy.platform || 'pc';
+          const isTargetPC = targetPlatform === 'pc';
 
-          // Reaction delay timer
+          // Reaction timer: PC için 50-80ms (EXTREME HARD), Mobil/Tablet için 450-600ms (NORMAL/BALANCED)
+          const reactionDelay = isTargetPC
+            ? (50 + Math.floor(Math.random() * 30))
+            : (450 + Math.floor(Math.random() * 150));
+
           if (p.botTargetPlayerId !== enemy.id) {
             p.botTargetPlayerId = enemy.id;
-            p.botReactionUntil = now + botReactionDelay;
+            p.botReactionUntil = now + reactionDelay;
           }
 
           const canShootNow = !p.botReactionUntil || now >= p.botReactionUntil;
@@ -1621,39 +1871,88 @@ export class BattleRoyaleManager {
             }
           }
 
-          // Strafe & Combat movement
-          if (!p.botStrafeTimer || now > p.botStrafeTimer) {
-            p.botStrafeDir = Math.random() < 0.5 ? 1 : -1;
-            p.botStrafeTimer = now + 900;
-          }
+          if (isTargetPC) {
+            // ============================================
+            // 1. HEDEF PC OYUNCUSU (EXTREME HARD / PRO BOT)
+            // ============================================
+            // Kusursuz Nişan (Near-Aimbot + Predictive Shooting / Leading Target)
+            const bulletSpeed = activeCfg.speed || 14;
+            const timeToHit = distToEnemy / Math.max(1, bulletSpeed);
+            const enemyVx = (typeof enemy.vx === 'number' && Number.isFinite(enemy.vx)) ? enemy.vx : 0;
+            const enemyVy = (typeof enemy.vy === 'number' && Number.isFinite(enemy.vy)) ? enemy.vy : 0;
+            const enemySpeed = (enemy.speedBuffEndTime > now) ? 5.2 : 3.5;
+            const predictedX = enemy.x + enemyVx * enemySpeed * timeToHit * 0.9;
+            const predictedY = enemy.y + enemyVy * enemySpeed * timeToHit * 0.9;
+            p.angle = Math.atan2(predictedY - p.y, predictedX - p.x); // Zero angle spread!
 
-          const strafeOffset = (p.botStrafeDir || 1) * 0.75;
-          let moveVx = 0;
-          let moveVy = 0;
+            // Agresif Dövüş Hareketi: Hızlı A-D dansı (180-280ms)
+            if (!p.botStrafeTimer || now > p.botStrafeTimer) {
+              p.botStrafeDir = Math.random() < 0.5 ? 1 : -1;
+              p.botStrafeTimer = now + 180 + Math.floor(Math.random() * 100);
+            }
+            const strafeOffset = (p.botStrafeDir || 1) * 0.85;
 
-          if (distToEnemy > 280) {
-            // Approach target while strafing slightly
-            moveVx = Math.cos(steerAngle + strafeOffset * 0.3);
-            moveVy = Math.sin(steerAngle + strafeOffset * 0.3);
-          } else if (distToEnemy < 140) {
-            // Kite / Backpedal
-            moveVx = -Math.cos(steerAngle) + Math.cos(steerAngle + Math.PI / 2) * strafeOffset;
-            moveVy = -Math.sin(steerAngle) + Math.sin(steerAngle + Math.PI / 2) * strafeOffset;
+            let moveVx = 0;
+            let moveVy = 0;
+
+            if (p.hp < 45) {
+              // Canı azaldığında engele siper alıp arkasından vursun
+              let bestCoverAngle = steerAngle + Math.PI;
+              let foundCover = false;
+              for (const obs of room.obstacles) {
+                if (obs && obs.type === 'rock') {
+                  const dObs = Math.hypot(obs.x - p.x, obs.y - p.y);
+                  if (dObs < 280) {
+                    const rockToEnemyAngle = Math.atan2(enemy.y - obs.y, enemy.x - obs.x);
+                    const coverPointX = obs.x - Math.cos(rockToEnemyAngle) * (obs.radius + 35);
+                    const coverPointY = obs.y - Math.sin(rockToEnemyAngle) * (obs.radius + 35);
+                    bestCoverAngle = Math.atan2(coverPointY - p.y, coverPointX - p.x);
+                    foundCover = true;
+                    break;
+                  }
+                }
+              }
+              if (!foundCover) {
+                bestCoverAngle = steerAngle + Math.PI * 0.8 * (p.botStrafeDir || 1);
+              }
+              moveVx = Math.cos(bestCoverAngle);
+              moveVy = Math.sin(bestCoverAngle);
+            } else {
+              // Agresif hücum & A-D dansı
+              if (distToEnemy > 220) {
+                moveVx = Math.cos(steerAngle + strafeOffset * 0.4);
+                moveVy = Math.sin(steerAngle + strafeOffset * 0.4);
+              } else if (distToEnemy < 120) {
+                moveVx = -Math.cos(steerAngle) * 0.8 + Math.cos(steerAngle + Math.PI / 2) * strafeOffset;
+                moveVy = -Math.sin(steerAngle) * 0.8 + Math.sin(steerAngle + Math.PI / 2) * strafeOffset;
+              } else {
+                moveVx = Math.cos(steerAngle + (Math.PI / 2) * (p.botStrafeDir || 1));
+                moveVy = Math.sin(steerAngle + (Math.PI / 2) * (p.botStrafeDir || 1));
+              }
+            }
+            p.vx = moveVx;
+            p.vy = moveVy;
           } else {
-            // Circle strafe
-            moveVx = Math.cos(steerAngle + (Math.PI / 2) * (p.botStrafeDir || 1));
-            moveVy = Math.sin(steerAngle + (Math.PI / 2) * (p.botStrafeDir || 1));
+            // ============================================
+            // 2. HEDEF MOBİL VEYA TABLET OYUNCUSU (NORMAL / BALANCED BOT)
+            // ============================================
+            // Belirgin ıskalama payı (inaccuracy / spread margin)
+            const mobileSpreadMargin = 0.28 + Math.random() * 0.12;
+            const aimJitter = (Math.random() - 0.5) * mobileSpreadMargin;
+            p.angle = directAngle + aimJitter;
+
+            // Yavaş ve bağışlayıcı strafe (900-1300ms aralıklarla)
+            if (!p.botStrafeTimer || now > p.botStrafeTimer) {
+              p.botStrafeDir = Math.random() < 0.5 ? 1 : -1;
+              p.botStrafeTimer = now + 900 + Math.floor(Math.random() * 400);
+            }
+            const strafeOffset = (p.botStrafeDir || 1) * 0.5;
+            p.vx = Math.cos(steerAngle + strafeOffset * 0.3) * 0.65;
+            p.vy = Math.sin(steerAngle + strafeOffset * 0.3) * 0.65;
           }
 
-          p.vx = moveVx;
-          p.vy = moveVy;
-
-          // Apply aim angle with human-like inaccuracy spread
-          const aimJitter = (Math.random() - 0.5) * botSpreadMargin;
-          p.angle = directAngle + aimJitter;
-
-          // Shoot only if LOS is clear and reaction delay has passed
-          p.shooting = hasClearLOS && canShootNow && distToEnemy < 800;
+          // Sadece silahın efektif menzilinde (< 500px), görüş hattı açık ve tepki süresi geçmişse ateş et!
+          p.shooting = hasClearLOS && canShootNow && distToEnemy < maxShootRange;
         } else {
           // ACTIVE ROAMING & PATHFINDING (Bots constantly patrol and wander across map)
           if (!p.botRoamTimer || now > p.botRoamTimer || p.botRoamTargetX === undefined || p.botRoamTargetY === undefined) {
@@ -1726,12 +2025,28 @@ export class BattleRoyaleManager {
       if (inWater && !onBridge) speed *= 0.62; // River drag
 
       if (p.vx || p.vy) {
-        const nextX = Math.max(30, Math.min(MAP_SIZE - 30, p.x + (p.vx || 0) * speed));
-        const nextY = Math.max(30, Math.min(MAP_SIZE - 30, p.y + (p.vy || 0) * speed));
+        // Continuous Swept Sub-stepping & Collision Resolution (Anti-Tunneling)
+        const totalDx = (p.vx || 0) * speed;
+        const totalDy = (p.vy || 0) * speed;
+        const moveDist = Math.hypot(totalDx, totalDy);
+        const subSteps = Math.max(1, Math.ceil(moveDist / 4));
+        const stepDx = totalDx / subSteps;
+        const stepDy = totalDy / subSteps;
 
-        // Wall collision check
-        if (!this.checkBuildingWallCollision(nextX, p.y, 22)) p.x = nextX;
-        if (!this.checkBuildingWallCollision(p.x, nextY, 22)) p.y = nextY;
+        for (let s = 0; s < subSteps; s++) {
+          const testX = Math.max(30, Math.min(MAP_SIZE - 30, p.x + stepDx));
+          const testY = Math.max(30, Math.min(MAP_SIZE - 30, p.y + stepDy));
+
+          const rayWallX = checkRaycastWalls(p.x, p.y, testX, p.y);
+          if (!rayWallX.hit && !this.checkBuildingWallCollision(testX, p.y, 22) && !this.checkObstacleCollision(room, testX, p.y, 22)) {
+            p.x = testX;
+          }
+
+          const rayWallY = checkRaycastWalls(p.x, p.y, p.x, testY);
+          if (!rayWallY.hit && !this.checkBuildingWallCollision(p.x, testY, 22) && !this.checkObstacleCollision(room, p.x, testY, 22)) {
+            p.y = testY;
+          }
+        }
       }
 
       // Handle Shooting
@@ -1749,12 +2064,35 @@ export class BattleRoyaleManager {
               const isRage = p.rageBuffEndTime > now;
               const finalDamage = isRage ? Math.round(cfg.damage * 1.5) : cfg.damage;
 
+              const spawnX = p.x + Math.cos(bAngle) * 28;
+              const spawnY = p.y + Math.sin(bAngle) * 28;
+
+              // Corner Peeking & Wall Clipping Defense:
+              // Check if ray from player center to bullet muzzle intersects any building wall
+              const rayMuzzle = checkRaycastWalls(p.x, p.y, spawnX, spawnY, MAP_BUILDINGS);
+              if (rayMuzzle.hit || this.checkBuildingWallCollision(spawnX, spawnY, 4)) {
+                continue; // Muzzle obstructed by wall, cannot shoot through wall!
+              }
+
+              // Rock obstacle muzzle check
+              let muzzleRockBlocked = false;
+              for (const obs of room.obstacles) {
+                if (obs.type === 'rock') {
+                  const rHit = rayIntersectsCircle(p.x, p.y, spawnX, spawnY, obs.x, obs.y, obs.radius);
+                  if (rHit.hit) {
+                    muzzleRockBlocked = true;
+                    break;
+                  }
+                }
+              }
+              if (muzzleRockBlocked) continue;
+
               room.bullets.push({
                 id: `b_${p.id}_${now}_${b}`,
                 shooterId: p.id,
                 weaponType: p.activeWeapon,
-                x: p.x + Math.cos(bAngle) * 28,
-                y: p.y + Math.sin(bAngle) * 28,
+                x: spawnX,
+                y: spawnY,
                 vx: Math.cos(bAngle) * cfg.speed,
                 vy: Math.sin(bAngle) * cfg.speed,
                 damage: finalDamage,
@@ -2073,6 +2411,12 @@ export class BattleRoyaleManager {
     victim.deaths = (victim.deaths || 0) + 1;
     victim.hp = 0;
     victim.shield = 0;
+    // Immediately cut off any actions, ghost inputs or reload loops
+    victim.isReloading = false;
+    victim.reloadEndTime = 0;
+    victim.shooting = false;
+    victim.vx = 0;
+    victim.vy = 0;
 
     const killer = room.players.find(p => p.id === killerId);
     if (killer) {
@@ -2259,6 +2603,10 @@ export class BattleRoyaleManager {
     this.io.to(room.id).emit('royale:room_state', this.getPublicRoomState(room));
   }
 
+  public broadcastGameState(room: GameRoom) {
+    this.io.to(room.id).emit('royale:game_state', this.getPublicGameState(room));
+  }
+
   public getPublicRoomState(room: GameRoom) {
     return {
       id: room.id,
@@ -2382,4 +2730,641 @@ export class BattleRoyaleManager {
       winner: room.winner
     };
   }
+
+  // ============================================================
+  // HEADLESS TEST SIMULATION (20 Bots Autonomous Stress Test)
+  // ============================================================
+  public runHeadlessTest(cycles: number = 1000): {
+    success: boolean;
+    cyclesCompleted: number;
+    errors: string[];
+    durationMs: number;
+    stats: {
+      actionsPerformed: number;
+      pickupsAttempted: number;
+      wallCollisionsChecked: number;
+      weaponsSwapped: number;
+      disconnectsSimulated: number;
+      bulletsFired: number;
+    };
+  } {
+    const errorTracker: string[] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => {
+      const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+      errorTracker.push(msg);
+      originalConsoleError('[HEADLESS TEST CAPTURED ERROR]:', ...args);
+    };
+
+    const startTime = Date.now();
+    const stats = {
+      actionsPerformed: 0,
+      pickupsAttempted: 0,
+      wallCollisionsChecked: 0,
+      weaponsSwapped: 0,
+      disconnectsSimulated: 0,
+      bulletsFired: 0
+    };
+
+    const testRoomId = `headless_test_${Date.now()}`;
+    try {
+      // 1. Create a dedicated Headless Test Room
+      const room = this.createRoomInternal(
+        "Autonomous Headless Test Room",
+        999999,
+        "TestMaster",
+        null,
+        20,
+        "deathmatch",
+        600
+      );
+      room.id = testRoomId;
+      this.rooms.set(testRoomId, room);
+
+      // 2. Spawn 20 bots with asymmetric platforms (10 PC, 5 Mobile, 5 Tablet)
+      const botNames = ['AlphaBot', 'BravoBot', 'CharlieBot', 'DeltaBot', 'EchoBot'];
+      for (let i = 0; i < 20; i++) {
+        const platform: 'pc' | 'mobile' | 'tablet' = i < 10 ? 'pc' : i < 15 ? 'mobile' : 'tablet';
+        const bot: PlayerData = {
+          id: `bot_sim_${i}_${Math.random().toString(36).substring(2, 7)}`,
+          userId: -20000 - i,
+          username: `${botNames[i % botNames.length]}_${i}`,
+          avatar: null,
+          color: '#3b82f6',
+          isBot: true,
+          isHost: i === 0,
+          ready: true,
+          platform,
+          x: 400 + ((i * 140) % (MAP_SIZE - 800)),
+          y: 400 + ((i * 160) % (MAP_SIZE - 800)),
+          angle: (i * Math.PI) / 10,
+          hp: 100,
+          maxHp: 100,
+          shield: 50,
+          maxShield: 100,
+          activeWeapon: 'pistol',
+          activeWeaponSlot: 0,
+          weapons: ['pistol'],
+          ammo: { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 3 },
+          reserveAmmo: { pistol: 60, shotgun: 24, smg: 120, rifle: 90, sniper: 15, plasma: 6 },
+          isReloading: false,
+          reloadEndTime: 0,
+          isAlive: true,
+          kills: 0,
+          deaths: 0,
+          spectating: false,
+          respawnAt: null,
+          spawnShieldEndTime: 0,
+          speedBuffEndTime: 0,
+          rageBuffEndTime: 0,
+          lastShootTime: 0,
+          botStrafeDir: 1,
+          botStrafeTimer: 0
+        };
+        room.players.push(bot);
+      }
+
+      room.status = 'playing';
+
+      // 3. Seed test loot items
+      const weaponTypes = ['shotgun', 'uzi', 'ak47', 'awp', 'plasma'];
+      for (let w = 0; w < 30; w++) {
+        const wType = weaponTypes[w % weaponTypes.length];
+        const wCfg = WEAPON_CONFIGS[wType] || WEAPON_CONFIGS.pistol;
+        room.loot.push({
+          id: `loot_test_${w}`,
+          type: `weapon_${wType}`,
+          currentAmmo: wCfg.magSize,
+          maxAmmo: wCfg.magSize,
+          x: 300 + ((w * 110) % (MAP_SIZE - 600)),
+          y: 300 + ((w * 130) % (MAP_SIZE - 600))
+        });
+      }
+
+      // 4. Run `cycles` simulation iterations
+      for (let c = 0; c < cycles; c++) {
+        stats.actionsPerformed++;
+
+        // A. Race Condition Test: Multiple bots try to pick up the EXACT same loot item at the exact same index
+        if (room.loot.length > 0) {
+          const targetLoot = room.loot[0];
+          for (let b = 0; b < Math.min(5, room.players.length); b++) {
+            const p = room.players[b];
+            if (p && p.isAlive) {
+              p.x = targetLoot.x;
+              p.y = targetLoot.y;
+              this.handlePlayerPickup(room, p, true);
+              stats.pickupsAttempted++;
+            }
+          }
+        }
+
+        // B. Collision Glitch Test: Move bots directly across and along building wall edges and doorways
+        for (const bldg of MAP_BUILDINGS) {
+          for (const wall of bldg.walls) {
+            const res = checkRaycastWalls(wall.x - 10, wall.y - 10, wall.x + wall.w + 10, wall.y + wall.h + 10);
+            stats.wallCollisionsChecked++;
+            if (res.t < 0 || res.t > 1) {
+              errorTracker.push(`[Collision Glitch]: Raycast t out of bounds [0, 1]: ${res.t}`);
+            }
+          }
+        }
+
+        // C. Inventory Desync Test: Rapidly swap slots (0 <-> 1) while reloading and shooting simultaneously
+        for (let b = 0; b < room.players.length; b++) {
+          const p = room.players[b];
+          if (!p || !p.isAlive) continue;
+
+          this.processPlayerInput(room.id, p.userId, {
+            switchWeapon: c % 2 === 0 ? 0 : 1,
+            shooting: true,
+            reload: c % 4 === 0
+          });
+          stats.weaponsSwapped++;
+        }
+
+        // D. Disconnect Edge Case Test: Randomly disconnect and reconnect bots
+        if (c % 30 === 0 && room.players.length > 10) {
+          const dropIdx = Math.floor(Math.random() * room.players.length);
+          const droppedPlayer = room.players[dropIdx];
+          if (droppedPlayer) {
+            this.leaveRoom(room.id, droppedPlayer.userId);
+            stats.disconnectsSimulated++;
+
+            // Re-add bot to maintain simulation population
+            this.addBot(room.id, 999999);
+          }
+        }
+
+        // Run game loop tick
+        this.tickGame(room);
+
+        // Verify serializability and null safety of game state
+        const state = this.getPublicGameState(room);
+        if (!state || !Array.isArray(state.players) || !Array.isArray(state.bullets)) {
+          errorTracker.push(`[State Corruption]: getPublicGameState produced invalid shape on cycle ${c}`);
+        }
+
+        for (const p of state.players) {
+          if (isNaN(p.x) || isNaN(p.y) || isNaN(p.hp)) {
+            errorTracker.push(`[NaN State Error]: Player ${p.username} has NaN values: x=${p.x}, y=${p.y}, hp=${p.hp}`);
+          }
+        }
+
+        stats.bulletsFired += state.bullets?.length || 0;
+      }
+
+      // Cleanup test room
+      this.destroyRoom(testRoomId);
+    } catch (testErr: any) {
+      errorTracker.push(`[Simulation Exception]: ${testErr?.message || String(testErr)}`);
+      originalConsoleError('[Simulation Exception]:', testErr);
+    } finally {
+      console.error = originalConsoleError;
+      if (this.rooms.has(testRoomId)) {
+        this.destroyRoom(testRoomId);
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+    return {
+      success: errorTracker.length === 0,
+      cyclesCompleted: cycles,
+      errors: errorTracker,
+      durationMs,
+      stats
+    };
+  }
+}
+
+// ============================================================
+// VIRTUAL HUMAN CLIENT EMULATOR (MockHumanClient & Chaos Network)
+// ============================================================
+export interface MockClientPacket {
+  event: string;
+  payload: any;
+  deliverAt: number;
+}
+
+export class MockHumanClient {
+  public id: string;
+  public userId: number;
+  public username: string;
+  public platform: 'pc' | 'mobile' | 'tablet';
+  public latency: number; // 20ms - 150ms
+  public packetQueue: MockClientPacket[] = [];
+  public lastAngle: number = 0;
+  public keys: { up: boolean; down: boolean; left: boolean; right: boolean } = { up: false, down: false, left: false, right: false };
+  public isShooting: boolean = false;
+  public receivedStates: any[] = [];
+  public respawnedCount: number = 0;
+  public deathCount: number = 0;
+  public lastSeenAlive: boolean = true;
+  public cameraPos: { x: number; y: number } = { x: 2100, y: 2100 };
+
+  constructor(userId: number, username: string, platform: 'pc' | 'mobile' | 'tablet' = 'pc') {
+    this.userId = userId;
+    this.username = username;
+    this.id = `client_${userId}_${Math.random().toString(36).substring(2, 7)}`;
+    this.platform = platform;
+    this.latency = Math.floor(20 + Math.random() * 130);
+  }
+
+  public queueEmit(event: string, payload: any, currentTime: number, jitter: number = 0) {
+    // 15% random packet drop simulation
+    if (Math.random() < 0.15 && event !== 'royale:join_room') {
+      return;
+    }
+    const delay = Math.max(1, this.latency + (Math.random() - 0.5) * jitter);
+    this.packetQueue.push({
+      event,
+      payload,
+      deliverAt: currentTime + delay
+    });
+  }
+
+  public flushPackets(currentTime: number, manager: BattleRoyaleManager, roomId: string) {
+    const ready = this.packetQueue.filter(p => p.deliverAt <= currentTime);
+    this.packetQueue = this.packetQueue.filter(p => p.deliverAt > currentTime);
+
+    // Simulated out-of-order jitter delivery
+    ready.sort(() => Math.random() - 0.5);
+
+    for (const pkt of ready) {
+      if (pkt.event === 'player:input' || pkt.event === 'royale:input') {
+        manager.processPlayerInput(roomId, this.userId, pkt.payload);
+      } else if (pkt.event === 'player:interact_loot' || pkt.event === 'royale:interact_loot') {
+        manager.processPlayerInput(roomId, this.userId, { pickup: true, swapWeapon: true, ...pkt.payload });
+      } else if (pkt.event === 'player:request_respawn' || pkt.event === 'royale:request_respawn') {
+        manager.requestRespawn(roomId, this.userId);
+      } else if (pkt.event === 'player:drop_weapon' || pkt.event === 'royale:drop_weapon') {
+        manager.dropPlayerWeapon(roomId, this.userId, pkt.payload?.slot);
+      } else if (pkt.event === 'player:respawn_ack' || pkt.event === 'royale:respawn_ack') {
+        manager.confirmRespawnAck(roomId, this.userId);
+      }
+    }
+  }
+
+  public receiveServerEvent(event: string, data: any) {
+    if (event === 'royale:game_state') {
+      this.receivedStates.push(data);
+      if (this.receivedStates.length > 5) this.receivedStates.shift();
+      if (Array.isArray(data?.players)) {
+        const me = data.players.find((p: any) => p && p.userId === this.userId);
+        if (me) {
+          if (me.isAlive && !this.lastSeenAlive) {
+            // Self-healing camera snap on respawn
+            this.cameraPos = { x: me.x, y: me.y };
+          }
+          this.lastSeenAlive = me.isAlive;
+        }
+      }
+    } else if (event === 'player:respawned' || event === 'royale:player_respawned') {
+      if (data?.userId === this.userId) {
+        this.respawnedCount++;
+        this.cameraPos = { x: data.x, y: data.y };
+      }
+    }
+  }
+}
+
+export function runVirtualHumanClientsSimulation(manager?: BattleRoyaleManager, cycles: number = 1000, clientCount: number = 10) {
+  const errorTracker: string[] = [];
+  const originalConsoleError = console.error;
+  console.error = (...args: any[]) => {
+    const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+    errorTracker.push(msg);
+  };
+
+  const startTime = Date.now();
+  const testRoomId = `virtual_human_test_${Date.now()}`;
+  let virtualTime = Date.now();
+
+  const stats = {
+    virtualClients: clientCount,
+    inputPacketsSent: 0,
+    lootSwapsAttempted: 0,
+    respawnsHandled: 0,
+    cornerWallShotsTested: 0,
+    rageQuitDisconnectsHandled: 0,
+    scenariosPassed: 0
+  };
+
+  const mockIo = {
+    to: (targetRoomId: string) => ({
+      emit: (event: string, payload: any) => {
+        clients.forEach(c => c.receiveServerEvent(event, payload));
+      }
+    }),
+    emit: (event: string, payload: any) => {
+      clients.forEach(c => c.receiveServerEvent(event, payload));
+    }
+  } as any;
+
+  const mgr = manager || new BattleRoyaleManager(mockIo);
+  const clients: MockHumanClient[] = [];
+
+  try {
+    // 1. Create Dedicated Test Room (Deathmatch)
+    const room = mgr.createRoomInternal(
+      "Virtual Human Stress Arena",
+      999990,
+      "HumanHost",
+      null,
+      clientCount + 5,
+      "deathmatch",
+      600
+    );
+    room.id = testRoomId;
+    mgr.rooms.set(testRoomId, room);
+
+    // 2. Instantiate 10 Virtual Human Clients
+    for (let i = 0; i < clientCount; i++) {
+      const platform: 'pc' | 'mobile' | 'tablet' = i < 6 ? 'pc' : i < 8 ? 'mobile' : 'tablet';
+      const client = new MockHumanClient(90001 + i, `Human_${i + 1}`, platform);
+      clients.push(client);
+
+      const res = mgr.joinRoom(testRoomId, {
+        id: client.userId,
+        username: client.username,
+        avatar: null,
+        color: '#22c55e'
+      });
+      if (!res.success) {
+        errorTracker.push(`[Client Join Failure]: Client ${client.username} could not join room`);
+      }
+    }
+
+    room.status = 'playing';
+
+    // Seed Ground Loot & Weapons
+    const testWeapons = ['ak47', 'shotgun', 'uzi', 'awp', 'plasma'];
+    for (let w = 0; w < 25; w++) {
+      const wName = testWeapons[w % testWeapons.length];
+      const cfg = WEAPON_CONFIGS[wName] || WEAPON_CONFIGS.pistol;
+      room.loot.push({
+        id: `loot_virtual_${w}`,
+        type: `weapon_${wName}`,
+        currentAmmo: cfg.magSize,
+        maxAmmo: cfg.magSize,
+        x: 1000 + ((w * 130) % (MAP_SIZE - 2000)),
+        y: 1000 + ((w * 150) % (MAP_SIZE - 2000))
+      });
+    }
+
+    // ============================================================
+    // CRISIS SCENARIO 1: DEATH & RESPAWN INVISIBILITY / GHOST INPUT
+    // ============================================================
+    const p1 = room.players.find(p => p.userId === clients[0].userId);
+    const p2 = room.players.find(p => p.userId === clients[1].userId);
+    if (p1 && p2) {
+      // Simulate Player 1 dying
+      p1.hp = 0;
+      p1.isAlive = false;
+      p1.respawnAt = virtualTime + 3000;
+
+      // Player 1 spams rapid movement and shooting packets while dead
+      for (let spam = 0; spam < 40; spam++) {
+        clients[0].queueEmit('player:input', {
+          up: true,
+          right: true,
+          angle: Math.PI / 4,
+          isShooting: true
+        }, virtualTime, 40);
+      }
+      clients[0].flushPackets(virtualTime + 200, mgr, testRoomId);
+
+      // Verify Ghost input prevention: Dead player cannot shoot or spawn bullets
+      if (p1.shooting) {
+        errorTracker.push(`[Scenario 1 Failed]: Dead player was allowed to shoot!`);
+      }
+
+      // Fast forward virtual time to respawn
+      virtualTime += 3100;
+      mgr.processPlayerInput(testRoomId, p1.userId, { requestRespawn: true });
+      if (!p1.isAlive || p1.hp !== 100) {
+        errorTracker.push(`[Scenario 1 Failed]: Player 1 did not respawn properly with 100 HP!`);
+      }
+
+      // Verify visibility in public game state
+      const pState = mgr.getPublicGameState(room);
+      const p1InState = pState.players.find((p: any) => p.userId === p1.userId);
+      if (!p1InState || !p1InState.isAlive) {
+        errorTracker.push(`[Scenario 1 Failed]: Player 1 is not marked isAlive: true in public game state for Player 2!`);
+      } else {
+        stats.scenariosPassed++;
+      }
+    }
+
+    // ============================================================
+    // CRISIS SCENARIO 2: F5 & RAGE QUIT AT EXACT DEATH MOMENT
+    // ============================================================
+    const p3 = room.players.find(p => p.userId === clients[2].userId);
+    if (p3) {
+      p3.hp = 0;
+      p3.isAlive = false;
+      // In the exact same millisecond, socket disconnects
+      mgr.leaveRoom(testRoomId, p3.userId);
+      stats.rageQuitDisconnectsHandled++;
+
+      // Run 30 consecutive ticks to ensure no undefined crashes occur
+      for (let t = 0; t < 30; t++) {
+        mgr['tickGame'](room);
+      }
+
+      // Check room state: p3 must be completely removed without leaving a zombie sprite
+      const stateAfterQuit = mgr.getPublicGameState(room);
+      const zombieFound = stateAfterQuit.players.some((p: any) => p.userId === clients[2].userId);
+      if (zombieFound) {
+        errorTracker.push(`[Scenario 2 Failed]: Rage quit player was not removed and left a zombie sprite!`);
+      } else {
+        stats.scenariosPassed++;
+      }
+    }
+
+    // ============================================================
+    // CRISIS SCENARIO 3: LOOT SWAP SPAM (10 E/SEC AMMO INTEGRITY)
+    // ============================================================
+    const p4 = room.players.find(p => p.userId === clients[3].userId);
+    if (p4 && p4.isAlive) {
+      p4.x = 1500;
+      p4.y = 1500;
+      room.loot.push({
+        id: 'loot_test_shotgun_mag6',
+        type: 'weapon_shotgun',
+        currentAmmo: 6,
+        maxAmmo: 6,
+        x: 1500,
+        y: 1500
+      });
+      room.loot.push({
+        id: 'loot_test_ak47_mag30',
+        type: 'weapon_ak47',
+        currentAmmo: 30,
+        maxAmmo: 30,
+        x: 1500,
+        y: 1500
+      });
+
+      // Spam 15 swap packets within simulated 200ms
+      for (let swap = 0; swap < 15; swap++) {
+        clients[3].queueEmit('player:interact_loot', {}, virtualTime + swap * 15, 10);
+        stats.lootSwapsAttempted++;
+      }
+      clients[3].flushPackets(virtualTime + 500, mgr, testRoomId);
+
+      // Verify weapon ammo integrity: active weapon ammo must be a valid finite number >= 0
+      const curW = p4.activeWeapon;
+      const curAmmo = p4.ammo[curW];
+      if (typeof curAmmo !== 'number' || isNaN(curAmmo) || curAmmo < 0) {
+        errorTracker.push(`[Scenario 3 Failed]: Ammo desync on loot swap spam! ammo=${curAmmo}`);
+      } else {
+        stats.scenariosPassed++;
+      }
+    }
+
+    // ============================================================
+    // CRISIS SCENARIO 4: CORNER PEEKING / WALL CLIPPING DEFENSE
+    // ============================================================
+    const p5 = room.players.find(p => p.userId === clients[4].userId);
+    if (p5 && p5.isAlive) {
+      // Place player right up against building wall at x: 1890, y: 1920
+      p5.x = 1888;
+      p5.y = 1925;
+      p5.angle = 0; // Aiming directly to the right through the wall
+      p5.shooting = true;
+      p5.activeWeapon = 'rifle';
+      p5.ammo['rifle'] = 30;
+      p5.isReloading = false;
+      p5.lastShootTime = 0;
+
+      const bulletsBefore = room.bullets.length;
+      mgr['tickGame'](room);
+      stats.cornerWallShotsTested++;
+
+      // Check if bullet penetrated wall: spawn point raycast checks intercept it
+      const newBullets = room.bullets.slice(bulletsBefore);
+      for (const nb of newBullets) {
+        if (nb.x > 1890 && nb.x < 1920) {
+          errorTracker.push(`[Scenario 4 Failed]: Bullet spawned inside/through building wall! x=${nb.x}, y=${nb.y}`);
+        }
+      }
+      p5.shooting = false;
+      stats.scenariosPassed++;
+    }
+
+    // ============================================================
+    // CRISIS SCENARIO 5: PACKET LOSS ON RESPAWN & SELF-HEALING CAMERA
+    // ============================================================
+    const client6 = clients[5];
+    const p6 = room.players.find(p => p.userId === client6.userId);
+    if (p6) {
+      p6.hp = 0;
+      p6.isAlive = false;
+      client6.lastSeenAlive = false;
+      client6.cameraPos = { x: 500, y: 500 };
+
+      // Respawn at coordinate (3200, 3200)
+      p6.x = 3200;
+      p6.y = 3200;
+      p6.isAlive = true;
+      p6.hp = 100;
+
+      // Simulate 100% packet loss of 'player:respawned' event, but gameState arrives
+      const publicState = mgr.getPublicGameState(room);
+      client6.receiveServerEvent('royale:game_state', publicState);
+
+      // Verify self-healing camera updated to the new coordinates
+      const camDist = Math.hypot(client6.cameraPos.x - p6.x, client6.cameraPos.y - p6.y);
+      if (camDist > 10) {
+        errorTracker.push(`[Scenario 5 Failed]: Client camera did not self-heal on respawn under packet loss! camX=${client6.cameraPos.x}, pX=${p6.x}`);
+      } else {
+        stats.scenariosPassed++;
+      }
+    }
+
+    // 4. Run Main Cycles Simulation with Random Human Inputs & Network Jitter
+    for (let c = 0; c < cycles; c++) {
+      virtualTime += 33; // ~30 FPS
+
+      for (let i = 0; i < clients.length; i++) {
+        const client = clients[i];
+        const p = room.players.find(pl => pl.userId === client.userId);
+        if (!p) continue;
+
+        // Human behavioral emulation
+        if (Math.random() < 0.3) {
+          client.keys.up = Math.random() < 0.4;
+          client.keys.down = Math.random() < 0.4;
+          client.keys.left = Math.random() < 0.4;
+          client.keys.right = Math.random() < 0.4;
+          client.lastAngle += (Math.random() - 0.5) * 0.4;
+          client.isShooting = Math.random() < 0.25;
+
+          client.queueEmit('player:input', {
+            ...client.keys,
+            angle: client.lastAngle,
+            isShooting: client.isShooting,
+            platform: client.platform
+          }, virtualTime, 30);
+          stats.inputPacketsSent++;
+        }
+
+        if (Math.random() < 0.05) {
+          client.queueEmit('player:interact_loot', {}, virtualTime, 20);
+        }
+
+        if (!p.isAlive && Math.random() < 0.1) {
+          client.queueEmit('player:request_respawn', {}, virtualTime, 10);
+          stats.respawnsHandled++;
+        }
+
+        client.flushPackets(virtualTime, mgr, testRoomId);
+      }
+
+      mgr['tickGame'](room);
+    }
+
+    // Clean up test room
+    mgr.destroyRoom(testRoomId);
+  } catch (simErr: any) {
+    errorTracker.push(`[Virtual Human Simulation Exception]: ${simErr?.message || String(simErr)}`);
+  } finally {
+    console.error = originalConsoleError;
+    if (mgr.rooms.has(testRoomId)) {
+      mgr.destroyRoom(testRoomId);
+    }
+  }
+
+  const durationMs = Date.now() - startTime;
+  return {
+    success: errorTracker.length === 0,
+    cyclesCompleted: cycles,
+    errors: errorTracker,
+    durationMs,
+    stats
+  };
+}
+
+export function runHeadlessBattleRoyaleTest(manager?: BattleRoyaleManager, cycles: number = 1000) {
+  const mockIo = {
+    to: () => ({ emit: () => {} }),
+    emit: () => {}
+  } as any;
+  const mgr = manager || new BattleRoyaleManager(mockIo);
+  
+  const headlessRes = mgr.runHeadlessTest(cycles);
+  const virtualRes = runVirtualHumanClientsSimulation(mgr, Math.min(cycles, 500), 10);
+
+  const mergedErrors = [...(headlessRes.errors || []), ...(virtualRes.errors || [])];
+  return {
+    success: mergedErrors.length === 0,
+    cyclesCompleted: headlessRes.cyclesCompleted + virtualRes.cyclesCompleted,
+    errors: mergedErrors,
+    durationMs: headlessRes.durationMs + virtualRes.durationMs,
+    stats: {
+      ...headlessRes.stats,
+      ...virtualRes.stats
+    }
+  };
 }

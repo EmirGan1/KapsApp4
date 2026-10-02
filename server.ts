@@ -36,7 +36,8 @@ import {
   Okey101Meld,
   Okey101Player,
   Okey101RoomState,
-  Okey101Engine
+  Okey101Engine,
+  run101StressTest
 } from "./src/utils/okey101Engine.ts";
 import { 
   createUnoDeck, 
@@ -60,6 +61,8 @@ import {
   startAgendaCronJobs
 } from "./server/agendaService.ts";
 import { BattleRoyaleManager } from "./src/server/battleRoyaleServer.ts";
+import { runBattleRoyaleChaosSimulation } from "./src/server/battleRoyaleChaosTest.ts";
+import { PartyManager, runHeadlessPartyTest } from "./src/server/partyServer.ts";
 
 dotenv.config();
 
@@ -2063,6 +2066,27 @@ async function startServer() {
     }
   });
 
+  // Headless 101 Stress Test Endpoint
+  app.get("/api/okey101/stress-test", (req, res) => {
+    const iters = parseInt(String(req.query.iterations || 2000), 10) || 2000;
+    const report = run101StressTest(iters);
+    res.json(report);
+  });
+
+  // Battle Royale Chaos Engineering & Simulation Endpoint
+  app.get("/api/royale/chaos-simulation", (req, res) => {
+    const clients = parseInt(String(req.query.clients || 20), 10) || 20;
+    const report = runBattleRoyaleChaosSimulation(battleRoyaleManager, clients);
+    res.json(report);
+  });
+
+  // Battle Royale Headless Test Endpoint
+  app.get("/api/royale/headless-test", (req, res) => {
+    const cycles = parseInt(String(req.query.cycles || 1000), 10) || 1000;
+    const report = battleRoyaleManager.runHeadlessTest(cycles);
+    res.json(report);
+  });
+
   // Helper to authenticate user from token in requests
   async function authenticateToken(req: any) {
     try {
@@ -2258,6 +2282,7 @@ async function startServer() {
   const unoRooms = new Map<string, any>();
   const drawGuessRooms = new Map<string, any>();
   const battleRoyaleManager = new BattleRoyaleManager(io, client);
+  const partyManager = new PartyManager(io, client);
   let closeAnyTableAndNotify: (tableId: string) => boolean;
   let refundBlackjackTableBets: (tableId: string, reason: string) => Promise<boolean>;
 
@@ -2823,6 +2848,17 @@ async function startServer() {
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Autonomous Headless Battle Royale Test API
+  app.get(["/api/royale/test-headless", "/api/admin/royale-test"], async (req, res) => {
+    try {
+      const cycles = Math.min(2000, Math.max(10, Number(req.query.cycles) || 1000));
+      const testResult = battleRoyaleManager.runHeadlessTest(cycles);
+      return res.json(testResult);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -4837,7 +4873,18 @@ async function startServer() {
       turnPhase: room.turnPhase || 'draw',
       highestOpenScore: room.highestOpenScore || 101,
       highestPairsCount: room.highestPairsCount || 5,
-      openedMelds: room.openedMelds || [],
+      openedMelds: (room.openedMelds || []).map((m: any, mIdx: number) => ({
+        id: m.id || `meld_${mIdx}`,
+        meldId: m.id || `meld_${mIdx}`,
+        playerId: m.playerId,
+        playerUsername: m.playerUsername,
+        type: m.type || (m.tiles?.length === 2 ? 'pair' : 'run'),
+        tiles: (m.tiles || []).map((t: any, tIdx: number) => ({
+          ...t,
+          index: tIdx
+        })),
+        score: m.score || 0
+      })),
       turnTimeRemaining: room.turnTimeRemaining || 30,
       roundNumber: room.roundNumber || 1,
       winnerId: room.winnerId,
@@ -7564,6 +7611,7 @@ async function startServer() {
       }
     });
 
+    // Mini Battle Royale 2D Socket Handlers & Real Player Aliases
     socket.on("royale:input", (input: any) => {
       try {
         const roomId = input?.roomId || socket.data.currentRoyaleRoom;
@@ -7572,6 +7620,258 @@ async function startServer() {
         }
       } catch (err) {
         console.error("[Royale Input Error]:", err);
+      }
+    });
+
+    socket.on("player:input", (input: any) => {
+      try {
+        const roomId = input?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          battleRoyaleManager.processPlayerInput(roomId, userIdNum, input);
+        }
+      } catch (err) {
+        console.error("[Player Input Error]:", err);
+      }
+    });
+
+    socket.on("royale:interact_loot", (data: any, cb?: (res: any) => void) => {
+      try {
+        const roomId = data?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          battleRoyaleManager.processPlayerInput(roomId, userIdNum, { pickup: true, swapWeapon: true, ...data });
+          if (cb) cb({ success: true });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("player:interact_loot", (data: any, cb?: (res: any) => void) => {
+      try {
+        const roomId = data?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          battleRoyaleManager.processPlayerInput(roomId, userIdNum, { pickup: true, swapWeapon: true, ...data });
+          if (cb) cb({ success: true });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("royale:request_respawn", (data: any, cb?: (res: any) => void) => {
+      try {
+        const roomId = data?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          const success = battleRoyaleManager.requestRespawn(roomId, userIdNum);
+          if (cb) cb({ success });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("player:request_respawn", (data: any, cb?: (res: any) => void) => {
+      try {
+        const roomId = data?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          const success = battleRoyaleManager.requestRespawn(roomId, userIdNum);
+          if (cb) cb({ success });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("royale:drop_weapon", (data: { roomId?: string; slot?: number }, cb?: (res: any) => void) => {
+      try {
+        const roomId = data?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          const success = battleRoyaleManager.dropPlayerWeapon(roomId, userIdNum, data?.slot);
+          if (cb) cb({ success });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("player:drop_weapon", (data: { roomId?: string; slot?: number }, cb?: (res: any) => void) => {
+      try {
+        const roomId = data?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          const success = battleRoyaleManager.dropPlayerWeapon(roomId, userIdNum, data?.slot);
+          if (cb) cb({ success });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("royale:respawn_ack", (data: { roomId?: string }, cb?: (res: any) => void) => {
+      try {
+        const roomId = data?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          const success = battleRoyaleManager.confirmRespawnAck(roomId, userIdNum);
+          if (cb) cb({ success });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("player:respawn_ack", (data: { roomId?: string }, cb?: (res: any) => void) => {
+      try {
+        const roomId = data?.roomId || socket.data.currentRoyaleRoom;
+        if (roomId) {
+          const success = battleRoyaleManager.confirmRespawnAck(roomId, userIdNum);
+          if (cb) cb({ success });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("royale:run_chaos_simulation", (data: { clientCount?: number }, cb?: (res: any) => void) => {
+      try {
+        const count = Math.min(40, Math.max(2, Number(data?.clientCount) || 20));
+        const testRes = runBattleRoyaleChaosSimulation(battleRoyaleManager, count);
+        if (cb) cb(testRes);
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("royale:run_headless_test", (data: { cycles?: number }, cb?: (res: any) => void) => {
+      try {
+        const cycles = Math.min(2000, Math.max(10, Number(data?.cycles) || 1000));
+        const testRes = battleRoyaleManager.runHeadlessTest(cycles);
+        if (cb) cb(testRes);
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    // ============================================================
+    // PARTY MODE TURNUVA SİSTEMİ SOCKET HANDLERS
+    // ============================================================
+    socket.on("party:get_rooms", (cb?: (rooms: any[]) => void) => {
+      const rooms = partyManager.getRoomsList();
+      if (cb) cb(rooms);
+    });
+
+    socket.on("party:create_room", (data: { title?: string; capacity?: number; totalRounds?: number }, cb?: (res: any) => void) => {
+      try {
+        const u = {
+          id: userIdNum,
+          username: user.username || "Oyuncu",
+          avatar: user.avatar || null,
+          color: user.color || "#3b82f6"
+        };
+        const room = partyManager.createRoom(u, data || {});
+        socket.join(room.id);
+        socket.data.currentPartyRoom = room.id;
+        partyManager.broadcastRoomsList();
+        broadcastActiveTables();
+        if (cb) cb({ success: true, room: partyManager.getPublicRoomState(room) });
+      } catch (err: any) {
+        if (cb) cb({ error: err.message || "Oda oluşturulamadı." });
+      }
+    });
+
+    socket.on("party:join_room", (data: { roomId: string }, cb?: (res: any) => void) => {
+      try {
+        const u = {
+          id: userIdNum,
+          username: user.username || "Oyuncu",
+          avatar: user.avatar || null,
+          color: user.color || "#3b82f6"
+        };
+        socket.join(data.roomId);
+        const res = partyManager.joinRoom(data.roomId, u);
+        if (res.success && res.room) {
+          socket.data.currentPartyRoom = data.roomId;
+          broadcastActiveTables();
+          if (cb) cb({ success: true, room: partyManager.getPublicRoomState(res.room) });
+        } else {
+          socket.leave(data.roomId);
+          if (cb) cb({ success: false, error: res.error || "Odaya katılınamadı." });
+        }
+      } catch (err: any) {
+        if (cb) cb({ error: err.message || "Odaya katılınamadı." });
+      }
+    });
+
+    socket.on("party:leave_room", (cb?: (res: any) => void) => {
+      try {
+        const roomId = socket.data.currentPartyRoom;
+        if (roomId) {
+          partyManager.leaveRoom(roomId, userIdNum);
+          socket.leave(roomId);
+          delete socket.data.currentPartyRoom;
+          broadcastActiveTables();
+        }
+        if (cb) cb({ success: true });
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
+    });
+
+    socket.on("party:add_bot", (data: { roomId: string }, cb?: (res: any) => void) => {
+      try {
+        const res = partyManager.addBot(data.roomId, userIdNum);
+        broadcastActiveTables();
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
+    });
+
+    socket.on("party:remove_bot", (data: { roomId: string; botId?: number }, cb?: (res: any) => void) => {
+      try {
+        const res = partyManager.removeBot(data.roomId, userIdNum, data.botId);
+        broadcastActiveTables();
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
+    });
+
+    socket.on("party:toggle_ready", (data: { roomId: string }, cb?: (res: any) => void) => {
+      try {
+        const res = partyManager.toggleReady(data.roomId, userIdNum);
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
+    });
+
+    socket.on("party:start_tournament", (data: { roomId: string }, cb?: (res: any) => void) => {
+      try {
+        const res = partyManager.startTournament(data.roomId, userIdNum);
+        broadcastActiveTables();
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ error: err.message });
+      }
+    });
+
+    socket.on("party:input", (input: any) => {
+      try {
+        const roomId = input?.roomId || socket.data.currentPartyRoom;
+        if (roomId) {
+          partyManager.processPlayerInput(roomId, userIdNum, input);
+        }
+      } catch (err) {
+        console.error("[Party Input Error]:", err);
+      }
+    });
+
+    socket.on("party:run_test", (data: { cycles?: number }, cb?: (res: any) => void) => {
+      try {
+        const cycles = Math.min(1000, Math.max(10, Number(data?.cycles) || 300));
+        const res = runHeadlessPartyTest(cycles);
+        if (cb) cb(res);
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message });
       }
     });
 
@@ -10946,11 +11246,6 @@ async function startServer() {
         return;
       }
       const player = room.players[playerIndex];
-      if (player.hasOpened) {
-        if (cb) cb({ error: "Zaten el açtınız. Kalan taşlarınızı masadaki perlere işleyebilirsiniz." });
-        return;
-      }
-
       // Normalize melds to Tile101[][]
       let melds: Tile101[][] = [];
       if (Array.isArray(rawMelds)) {
@@ -10971,10 +11266,87 @@ async function startServer() {
         return;
       }
 
+      // SUBSEQUENT MELD OPENING (Oyuncu zaten el açmışsa, sonraki turlarında yeni geçerli perler indirebilir)
+      if (player.hasOpened) {
+        if (player.openedMode === 'double') {
+          // Çift açmış oyuncu sonraki turlarında yeni geçerli çiftler indirebilir
+          for (let i = 0; i < melds.length; i++) {
+            const m = melds[i];
+            if (m.length !== 2 || !isValidPair(m[0], m[1], room.okeyTile)) {
+              if (cb) cb({ error: `${i + 1}. çift geçersizdir.` });
+              return;
+            }
+          }
+          for (let i = 0; i < melds.length; i++) {
+            const m = melds[i];
+            room.openedMelds.push({
+              id: `meld_${Date.now()}_${i}_${user.id}`,
+              playerId: player.id,
+              playerUsername: player.username,
+              type: 'pair',
+              tiles: [...m],
+              score: 0
+            });
+            for (const t of m) {
+              const idx = player.hand.findIndex((h: any) => h.id === t.id);
+              if (idx !== -1) player.hand.splice(idx, 1);
+            }
+          }
+          player.openedMeldsCount = (player.openedMeldsCount || 0) + melds.length;
+          room.lastActionMessage = `✨ ${player.username} masaya ${melds.length} yeni çift daha indirdi!`;
+          broadcast101Room(roomId);
+          if (cb) cb({ success: true, subsequent: true });
+          return;
+        }
+
+        // Seri açmış oyuncu: 101 barajı toplamına bakılmaksızın her yeni geçerli per (en az 3'lü) masaya indirilebilir
+        let subScore = 0;
+        const validSubMelds: { type: 'run' | 'group'; score: number; tiles: Tile101[] }[] = [];
+        for (let i = 0; i < melds.length; i++) {
+          const m = melds[i];
+          const check = validateMeld(m, room.okeyTile);
+          if (!check.valid || !check.type) {
+            if (cb) cb({ error: `${i + 1}. per geçersizdir. Geçerli ardışık seri veya grup olmalıdır.` });
+            return;
+          }
+          subScore += check.score;
+          validSubMelds.push({ type: check.type, score: check.score, tiles: m });
+        }
+
+        for (let i = 0; i < validSubMelds.length; i++) {
+          const item = validSubMelds[i];
+          room.openedMelds.push({
+            id: `meld_${Date.now()}_${i}_${user.id}`,
+            playerId: player.id,
+            playerUsername: player.username,
+            type: item.type,
+            tiles: [...item.tiles],
+            score: item.score
+          });
+          for (const t of item.tiles) {
+            const idx = player.hand.findIndex((h: any) => h.id === t.id);
+            if (idx !== -1) player.hand.splice(idx, 1);
+          }
+        }
+
+        player.openedMeldsCount = (player.openedMeldsCount || 0) + validSubMelds.length;
+        player.openedScore = (player.openedScore || 0) + subScore;
+        room.lastActionMessage = `🎉 ${player.username} masaya ${validSubMelds.length} yeni per (${subScore}p) daha indirdi!`;
+        broadcast101Room(roomId);
+        if (cb) cb({ success: true, subsequent: true, addedScore: subScore });
+        return;
+      }
+
+      // FIRST TIME OPENING (İLK KEZ EL AÇMA)
       if (mode === 'double') {
         const minPairsNeeded = room.subMode === 'katlamali' && room.highestPairsCount ? room.highestPairsCount + 1 : 5;
         const validation = validatePairOpening(melds, room.okeyTile, minPairsNeeded);
         if (!validation.valid) {
+          // Ceza: Hatalı çift açmaya çalışma
+          player.penalties = (player.penalties || 0) + 101;
+          player.roundPenalty = (player.roundPenalty || 0) + 101;
+          room.lastActionMessage = `⚠️ ${player.username} hatalı çift açmaya çalıştığı için +101 ceza aldı!`;
+          broadcast101Room(roomId);
           if (cb) cb({ error: validation.error || `Çift açmak için en az ${minPairsNeeded} çift gereklidir.` });
           return;
         }
@@ -11009,11 +11381,16 @@ async function startServer() {
         return;
       }
 
-      // Serial / Group melds opening
+      // Serial / Group melds initial opening (En az 101 puan barajı)
       const minPoints = room.subMode === 'katlamali' ? Math.max(101, room.highestOpenScore + 1) : 101;
       const validation = validateSerialHandOpening(melds, minPoints, room.okeyTile);
 
       if (!validation.valid) {
+        // Ceza: 101 barajı altı veya geçersiz per açmaya çalışma
+        player.penalties = (player.penalties || 0) + 101;
+        player.roundPenalty = (player.roundPenalty || 0) + 101;
+        room.lastActionMessage = `⚠️ ${player.username} barajı geçemeyen (${validation.totalScore || 0}p) per açmaya çalıştığı için +101 ceza aldı!`;
+        broadcast101Room(roomId);
         if (cb) cb({ error: validation.error || `En az ${minPoints} puan değerinde geçerli perler gereklidir.` });
         return;
       }
@@ -11113,31 +11490,45 @@ async function startServer() {
         return;
       }
 
-      if (check.orderedTiles && check.orderedTiles.length > 0) {
-        tableMeld.tiles = check.orderedTiles;
+      if (check.replacesOkey && check.retrievedOkey) {
+        // Player swapped regular tile for wildcard Okey in meld: retrieved Okey goes to player hand
+        tableMeld.tiles = check.orderedTiles || tableMeld.tiles;
         tableMeld.score = check.score || tableMeld.score;
+        player.hand.splice(tileIdx, 1, check.retrievedOkey);
+        room.lastActionMessage = `⭐ ${player.username} masadaki perden Okey'i alıp yerine ${tile.number} işledi!`;
       } else {
-        const insertAt = position || check.insertAt || 'end';
-        if (insertAt === 'start') {
-          tableMeld.tiles.unshift(tile);
+        if (check.orderedTiles && check.orderedTiles.length > 0) {
+          tableMeld.tiles = check.orderedTiles;
+          tableMeld.score = check.score || tableMeld.score;
         } else {
-          tableMeld.tiles.push(tile);
+          const insertAt = position || check.insertAt || 'end';
+          if (insertAt === 'start') {
+            tableMeld.tiles.unshift(tile);
+          } else {
+            tableMeld.tiles.push(tile);
+          }
+          if (check.score) {
+            tableMeld.score = check.score;
+          } else if (tableMeld.type === 'run') {
+            tableMeld.score = (tableMeld.score || 0) + (tile.isOkey ? 10 : tile.number);
+          } else if (tableMeld.type === 'group') {
+            const groupNum = tableMeld.tiles.find((t: any) => !isTileOkey101(t, room.okeyTile))?.number || tile.number;
+            tableMeld.score = tableMeld.tiles.length * groupNum;
+          }
         }
-        if (check.score) {
-          tableMeld.score = check.score;
-        } else if (tableMeld.type === 'run') {
-          tableMeld.score = (tableMeld.score || 0) + (tile.isOkey ? 10 : tile.number);
-        } else if (tableMeld.type === 'group') {
-          const groupNum = tableMeld.tiles.find((t: any) => !isTileOkey101(t, room.okeyTile))?.number || tile.number;
-          tableMeld.score = tableMeld.tiles.length * groupNum;
-        }
+        player.hand.splice(tileIdx, 1);
+        room.lastActionMessage = `${player.username} masadaki pere taş işledi.`;
       }
-
-      player.hand.splice(tileIdx, 1);
-      room.lastActionMessage = `${player.username} masadaki pere taş işledi.`;
       broadcast101Room(roomId);
       socket.emit("okey101_hand", player.hand);
       if (cb) cb({ success: true });
+    });
+
+    socket.on("okey101_run_stress_test", (data: any, cb?: any) => {
+      const iters = typeof data?.iterations === 'number' ? data.iterations : 2000;
+      const report = run101StressTest(iters);
+      if (cb) cb(report);
+      socket.emit("okey101_stress_test_result", report);
     });
 
     socket.on("okey101_declare_finish", (data: any, cb?: any) => {
@@ -11246,8 +11637,24 @@ async function startServer() {
       const royaleRoomId = socket.data.currentRoyaleRoom;
       if (royaleRoomId) {
         battleRoyaleManager.leaveRoom(royaleRoomId, userIdNum);
-        broadcastActiveTables();
       }
+      // Defensive guarantee: check all royale rooms for disconnected player
+      for (const [rId, r] of battleRoyaleManager.rooms.entries()) {
+        if (r.players.some(p => p.userId === userIdNum)) {
+          battleRoyaleManager.leaveRoom(rId, userIdNum);
+        }
+      }
+
+      const partyRoomId = socket.data.currentPartyRoom;
+      if (partyRoomId) {
+        partyManager.leaveRoom(partyRoomId, userIdNum);
+      }
+      for (const [pId, pRoom] of partyManager.rooms.entries()) {
+        if (pRoom.players.some(p => p.userId === userIdNum)) {
+          partyManager.leaveRoom(pId, userIdNum);
+        }
+      }
+      broadcastActiveTables();
 
       const voiceRoomId = socket.data.currentVoiceRoom;
       if (voiceRoomId) {

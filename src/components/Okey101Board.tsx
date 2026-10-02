@@ -322,16 +322,21 @@ export default function Okey101Board({
       : 5
     : 5;
 
-  const canOpenSerial = meldAnalysis.totalScore >= minScoreNeeded;
-  const canOpenPairs = pairAnalysis.pairs.length >= minPairsNeeded;
+  const myPlayer = currentRoom?.players.find((p) => p.id === currentUserId);
+
+  const canOpenSerial = myPlayer?.hasOpened
+    ? (myPlayer.openedMode === 'serial' && meldAnalysis.melds.length > 0)
+    : meldAnalysis.totalScore >= minScoreNeeded;
+
+  const canOpenPairs = myPlayer?.hasOpened
+    ? (myPlayer.openedMode === 'double' && pairAnalysis.pairs.length > 0)
+    : pairAnalysis.pairs.length >= minPairsNeeded;
 
   const isMyTurn = currentRoom && currentRoom.status === 'playing'
     ? currentRoom.players[currentRoom.currentTurn]?.id === currentUserId
     : false;
 
   const canDiscard = isMyTurn && currentRoom?.turnPhase === 'discard';
-
-  const myPlayer = currentRoom?.players.find((p) => p.id === currentUserId);
 
   // --- Hand Actions ---
 
@@ -422,7 +427,11 @@ export default function Okey101Board({
   const handleOpenMelds = () => {
     if (!socket || !isMyTurn || currentRoom?.turnPhase !== 'discard') return;
     if (!canOpenSerial) {
-      setErrorMessage(`Açılabilir per toplamı (${meldAnalysis.totalScore}) barajı (${minScoreNeeded}) geçmiyor.`);
+      if (myPlayer?.hasOpened) {
+        setErrorMessage("Istakanızda masaya indirilebilecek geçerli bir per (en az 3'lü seri/set) bulunamadı.");
+      } else {
+        setErrorMessage(`Açılabilir per toplamı (${meldAnalysis.totalScore}) barajı (${minScoreNeeded}) geçmiyor.`);
+      }
       playSound('penalty');
       return;
     }
@@ -438,7 +447,11 @@ export default function Okey101Board({
   const handleOpenPairs = () => {
     if (!socket || !isMyTurn || currentRoom?.turnPhase !== 'discard') return;
     if (!canOpenPairs) {
-      setErrorMessage(`Çift açmak için en az ${minPairsNeeded} çift gereklidir (Şu an: ${pairAnalysis.pairs.length} çift).`);
+      if (myPlayer?.hasOpened) {
+        setErrorMessage("Istakanızda masaya indirilebilecek geçerli bir çift bulunamadı.");
+      } else {
+        setErrorMessage(`Çift açmak için en az ${minPairsNeeded} çift gereklidir (Şu an: ${pairAnalysis.pairs.length} çift).`);
+      }
       playSound('penalty');
       return;
     }
@@ -488,7 +501,8 @@ export default function Okey101Board({
     socket.emit("okey101_append_tile", {
       roomId: currentRoom?.id,
       meldId: meld.id,
-      tileId: tileToAppend.id
+      tileId: tileToAppend.id,
+      position: check.insertAt || 'end'
     }, (res: any) => {
       if (res?.error) {
         setErrorMessage(res.error);
@@ -1552,15 +1566,21 @@ export default function Okey101Board({
             <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 pb-1.5 mb-1.5 border-b border-amber-900/60 text-xs">
               {/* Live Hand Meld Score Counter */}
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="text-amber-200/90 font-medium text-[11px] sm:text-xs">Seri Barajı:</span>
+                <span className="text-amber-200/90 font-medium text-[11px] sm:text-xs">
+                  {myPlayer?.hasOpened ? (myPlayer.openedMode === 'double' ? 'Yeni Çiftler:' : 'Yeni Perler:') : 'Seri Barajı:'}
+                </span>
                 <span className={`font-mono font-bold px-2 py-0.5 rounded-full text-xs ${
                   canOpenSerial ? 'bg-emerald-500 text-white animate-pulse' : 'bg-black/60 text-amber-400 border border-amber-500/30'
                 }`}>
-                  {meldAnalysis.totalScore} / {minScoreNeeded}
+                  {myPlayer?.hasOpened
+                    ? (myPlayer.openedMode === 'double' ? `${pairAnalysis.pairs.length} Çift` : `${meldAnalysis.melds.length} Per (${meldAnalysis.totalScore}p)`)
+                    : `${meldAnalysis.totalScore} / ${minScoreNeeded}`}
                 </span>
-                <span className="text-slate-400 text-[11px]">
-                  ({pairAnalysis.pairs.length} Çift)
-                </span>
+                {!myPlayer?.hasOpened && (
+                  <span className="text-slate-400 text-[11px]">
+                    ({pairAnalysis.pairs.length} Çift)
+                  </span>
+                )}
               </div>
 
               {/* Quick Action Buttons */}
@@ -1585,33 +1605,39 @@ export default function Okey101Board({
                 </button>
 
                 {/* Open Melds Button */}
-                <button
-                  type="button"
-                  onClick={handleOpenMelds}
-                  disabled={!isMyTurn || currentRoom.turnPhase !== 'discard' || !canOpenSerial || myPlayer?.hasOpened}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer ${
-                    canOpenSerial && isMyTurn && !myPlayer?.hasOpened
-                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 animate-bounce'
-                      : 'bg-black/40 text-slate-500 border border-slate-700/50 disabled:opacity-50'
-                  }`}
-                >
-                  <Sparkles size={13} />
-                  <span>Seri Aç ({meldAnalysis.totalScore}p)</span>
-                </button>
+                {(!myPlayer?.hasOpened || myPlayer?.openedMode === 'serial') && (
+                  <button
+                    type="button"
+                    onClick={handleOpenMelds}
+                    disabled={!isMyTurn || currentRoom.turnPhase !== 'discard' || !canOpenSerial}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer ${
+                      canOpenSerial && isMyTurn
+                        ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 animate-bounce'
+                        : 'bg-black/40 text-slate-500 border border-slate-700/50 disabled:opacity-50'
+                    }`}
+                  >
+                    <Sparkles size={13} />
+                    <span>
+                      {myPlayer?.hasOpened ? `Per İndir (${meldAnalysis.melds.length})` : `Seri Aç (${meldAnalysis.totalScore}p)`}
+                    </span>
+                  </button>
+                )}
 
                 {/* Open Pairs Button */}
-                <button
-                  type="button"
-                  onClick={handleOpenPairs}
-                  disabled={!isMyTurn || currentRoom.turnPhase !== 'discard' || !canOpenPairs || myPlayer?.hasOpened}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer ${
-                    canOpenPairs && isMyTurn && !myPlayer?.hasOpened
-                      ? 'bg-purple-600 hover:bg-purple-500 text-white'
-                      : 'bg-black/40 text-slate-500 border border-slate-700/50 disabled:opacity-50'
-                  }`}
-                >
-                  <span>Çift Aç (5+)</span>
-                </button>
+                {(!myPlayer?.hasOpened || myPlayer?.openedMode === 'double') && (
+                  <button
+                    type="button"
+                    onClick={handleOpenPairs}
+                    disabled={!isMyTurn || currentRoom.turnPhase !== 'discard' || !canOpenPairs}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer ${
+                      canOpenPairs && isMyTurn
+                        ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                        : 'bg-black/40 text-slate-500 border border-slate-700/50 disabled:opacity-50'
+                    }`}
+                  >
+                    <span>{myPlayer?.hasOpened ? `Çift İndir (${pairAnalysis.pairs.length})` : 'Çift Aç (5+)'}</span>
+                  </button>
+                )}
 
                 {/* Toolbar Discard Drop Zone & Action Button */}
                 <button

@@ -13,6 +13,7 @@ import BlackjackGame from './BlackjackGame';
 import BatakGame from './BatakGame';
 import TexasHoldemPokerGame from './TexasHoldemPokerGame';
 import MiniBattleRoyale from './MiniBattleRoyale';
+import PartyMode from './PartyMode';
 import CardTableLobbyModal, { CardTableInfo, CreateTableOptions } from './CardTableLobbyModal';
 import AdminChipManagerModal from './AdminChipManagerModal';
 import KvkkModal from './KvkkModal';
@@ -45,7 +46,7 @@ interface LeaderboardUser {
 }
 
 type GameCategory = 'all' | 'cards' | 'arcade' | 'strategy' | 'active_lobbies';
-type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale';
+type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party';
 
 export default function Games({
   socket,
@@ -359,6 +360,24 @@ export default function Games({
     );
   }
 
+  // Route: Party Mode (2-10 Players Tournament)
+  if (selectedGame === 'party') {
+    return (
+      <PartyMode
+        socket={socket}
+        currentUserId={currentUserId}
+        username={username}
+        avatar={avatar}
+        color={color}
+        onUserClick={onUserClick}
+        onBack={() => {
+          setSelectedGame('hub');
+          setSelectedGameTableId(null);
+        }}
+      />
+    );
+  }
+
   // Games definition list
   const allGames = [
     {
@@ -577,6 +596,37 @@ export default function Games({
       onClick: () => {
         setSelectedGameTableId(null);
         setSelectedGame('battleroyale');
+      }
+    },
+    {
+      id: 'party',
+      title: 'Party Mode Turnuva (10 Mini Oyun)',
+      subtitle: '2-10 Kişilik Çok Oyunculu • Tank Savaşları, Araba Yarışı, Lav & Sumo',
+      category: ['arcade', 'strategy'],
+      badge: '🎉 DEV TURNUVA',
+      badgeColor: 'bg-gradient-to-r from-amber-500 via-pink-500 to-indigo-500 text-white font-black animate-pulse',
+      gradient: 'from-amber-500 via-pink-600 to-indigo-600',
+      icon: '🏆',
+      capacity: '2-10 Kişi & Bot',
+      activeRooms: 0,
+      features: [
+        'Mario & Pummel Party Stili 10 Farklı Mini Oyun Havuzu',
+        'Tank Savaşları (Seken Mermi Fiziği) ve Tepeden Araba Yarışı (Drift)',
+        'Lobi Özelleştirmesi: 2-10 Oyuncu Kapasitesi ve 3/5/7/10 Tur Seçimi',
+        'Gelişmiş Skor Tablosu, Animasyonlu Oyun İntrosu ve Şampiyonluk Kürsüsü'
+      ],
+      preview: (
+        <div className="flex items-center justify-center gap-1.5 py-1 flex-wrap">
+          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">🛡️ Tank</span>
+          <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-mono font-bold border border-blue-500/30">🏎️ Yarış</span>
+          <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 text-[10px] font-mono font-bold border border-orange-500/30">🔥 Lav</span>
+          <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-mono font-bold border border-cyan-500/30">🧊 Sumo</span>
+        </div>
+      ),
+      actionPrimary: 'Parti Lobisine Gir',
+      onClick: () => {
+        setSelectedGameTableId(null);
+        setSelectedGame('party');
       }
     }
   ];
