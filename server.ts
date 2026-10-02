@@ -7612,6 +7612,14 @@ async function startServer() {
     });
 
     // Mini Battle Royale 2D Socket Handlers & Real Player Aliases
+    socket.on("royale:ping", (ts: number, cb?: (ts: number) => void) => {
+      if (typeof cb === "function") cb(ts);
+    });
+
+    socket.on("player:ping", (ts: number, cb?: (ts: number) => void) => {
+      if (typeof cb === "function") cb(ts);
+    });
+
     socket.on("royale:input", (input: any) => {
       try {
         const roomId = input?.roomId || socket.data.currentRoyaleRoom;

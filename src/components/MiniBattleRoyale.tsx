@@ -233,7 +233,9 @@ export default function MiniBattleRoyale({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gameStateRef = useRef<GameState | null>(null);
   const animFrameRef = useRef<number | null>(null);
-  const interpolatedPlayersRef = useRef<Map<string, { x: number; y: number; angle: number }>>(new Map());
+  const interpolatedPlayersRef = useRef<Map<string, { x: number; y: number; angle: number; targetX: number; targetY: number; targetAngle: number }>>(new Map());
+  const predictedPosRef = useRef<{ x: number; y: number }>({ x: MAP_SIZE / 2, y: MAP_SIZE / 2 });
+  const pingRef = useRef<number>(45);
   const cameraPosRef = useRef<{ x: number; y: number }>({ x: MAP_SIZE / 2, y: MAP_SIZE / 2 });
   const roofOpacitiesRef = useRef<Map<string, number>>(new Map());
 
@@ -304,6 +306,13 @@ export default function MiniBattleRoyale({
 
     const onGameStarted = (state: GameState) => {
       gameStateRef.current = state;
+      if (Array.isArray(state.players)) {
+        const myPlayer = state.players.find(p => !p.isBot && p.userId === currentUserId);
+        if (myPlayer) {
+          predictedPosRef.current = { x: myPlayer.x, y: myPlayer.y };
+          cameraPosRef.current = { x: myPlayer.x, y: myPlayer.y };
+        }
+      }
       setCurrentRoom((prev: any) => (prev ? { ...prev, status: 'playing' } : prev));
       setCountdownNum(null);
       setView('game');
@@ -335,6 +344,7 @@ export default function MiniBattleRoyale({
       }
 
       if (data.userId === currentUserId) {
+        predictedPosRef.current = { x: data.x, y: data.y };
         cameraPosRef.current = { x: data.x, y: data.y };
         setHudTick(prev => (prev + 1) % 10000);
       }
@@ -342,21 +352,49 @@ export default function MiniBattleRoyale({
 
     const onGameState = (state: GameState) => {
       if (!state) return;
-      // Self-healing check on packet loss or respawn
       if (Array.isArray(state.players)) {
         const prevMe = gameStateRef.current?.players?.find(p => !p.isBot && p.userId === currentUserId);
         const newMe = state.players.find(p => !p.isBot && p.userId === currentUserId);
         if (newMe && newMe.isAlive) {
           if (!prevMe || !prevMe.isAlive) {
-            // Player just respawned, snap camera!
+            // Player just respawned, snap prediction & camera
+            predictedPosRef.current = { x: newMe.x, y: newMe.y };
             cameraPosRef.current = { x: newMe.x, y: newMe.y };
           } else {
-            const d = Math.hypot(cameraPosRef.current.x - newMe.x, cameraPosRef.current.y - newMe.y);
-            if (d > 600) {
+            // Server Reconciliation: Check discrepancy between local prediction and authoritative server
+            const errDist = Math.hypot(cameraPosRef.current.x - newMe.x, cameraPosRef.current.y - newMe.y);
+            const predDist = Math.hypot(predictedPosRef.current.x - newMe.x, predictedPosRef.current.y - newMe.y);
+            if (predDist > 120 || errDist > 600) {
+              // Huge desync / rubberband / teleport: snap instantly
+              predictedPosRef.current = { x: newMe.x, y: newMe.y };
               cameraPosRef.current = { x: newMe.x, y: newMe.y };
+            } else if (predDist >= 2.0) {
+              // Gentle reconciliation lerp: smoothly pull local position towards server reality
+              predictedPosRef.current.x += (newMe.x - predictedPosRef.current.x) * 0.22;
+              predictedPosRef.current.y += (newMe.y - predictedPosRef.current.y) * 0.22;
             }
           }
         }
+
+        // Entity snapshot target updates for remote players (butter-smooth interpolation)
+        state.players.forEach(p => {
+          if (!p || p.userId === currentUserId) return;
+          const existing = interpolatedPlayersRef.current.get(p.id);
+          if (!existing) {
+            interpolatedPlayersRef.current.set(p.id, {
+              x: p.x,
+              y: p.y,
+              angle: p.angle,
+              targetX: p.x,
+              targetY: p.y,
+              targetAngle: p.angle
+            });
+          } else {
+            existing.targetX = p.x;
+            existing.targetY = p.y;
+            existing.targetAngle = p.angle;
+          }
+        });
       }
 
       gameStateRef.current = state;
@@ -713,18 +751,46 @@ export default function MiniBattleRoyale({
         (window.innerWidth >= 768 && window.innerWidth <= 1024 && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
       const platform: 'pc' | 'mobile' | 'tablet' = controlMode === 'touch' ? (isTablet ? 'tablet' : 'mobile') : 'pc';
 
+      // Client-Side Prediction: Advance local predicted position instantly (Zero Latency Input Feel)
+      if (vx !== 0 || vy !== 0) {
+        let dirX = vx;
+        let dirY = vy;
+        const len = Math.hypot(dirX, dirY);
+        if (len > 1.0) {
+          dirX /= len;
+          dirY /= len;
+        }
+        const speed = 4.8;
+        predictedPosRef.current.x = Math.max(30, Math.min(MAP_SIZE - 30, predictedPosRef.current.x + dirX * speed));
+        predictedPosRef.current.y = Math.max(30, Math.min(MAP_SIZE - 30, predictedPosRef.current.y + dirY * speed));
+      }
+
       socket.emit('royale:input', {
         vx,
         vy,
         angle,
         shooting,
         pickup,
+        ping: pingRef.current,
         platform
       });
     }, 1000 / 30);
 
     return () => clearInterval(inputTimer);
   }, [view, socket, currentUserId, controlMode, arrowAutoFire]);
+
+  // Periodic Latency & Ping Monitor for Lag Compensation (every 2s)
+  useEffect(() => {
+    if (!socket || view !== 'game') return;
+    const pingTimer = setInterval(() => {
+      const start = Date.now();
+      socket.emit('royale:ping', start, (clientTs?: number) => {
+        const roundTrip = Date.now() - (clientTs || start);
+        pingRef.current = Math.max(10, Math.min(500, Math.round(roundTrip / 2)));
+      });
+    }, 2000);
+    return () => clearInterval(pingTimer);
+  }, [socket, view]);
 
   // Desktop Controls Event Listeners (WASD, Arrows, Space, R, Q, E, F, 1-2, Scroll, Click)
   useEffect(() => {
@@ -1048,11 +1114,21 @@ export default function MiniBattleRoyale({
         }
       }
 
+      // Entity Interpolation update (smooth 60fps continuous lerp between server updates)
+      interpolatedPlayersRef.current.forEach(pInterp => {
+        pInterp.x += (pInterp.targetX - pInterp.x) * 0.25;
+        pInterp.y += (pInterp.targetY - pInterp.y) * 0.25;
+        let aDiff = pInterp.targetAngle - pInterp.angle;
+        while (aDiff < -Math.PI) aDiff += Math.PI * 2;
+        while (aDiff > Math.PI) aDiff -= Math.PI * 2;
+        pInterp.angle += aDiff * 0.25;
+      });
+
       let camX = MAP_SIZE / 2;
       let camY = MAP_SIZE / 2;
       if (focusedPlayer && Number.isFinite(focusedPlayer.x) && Number.isFinite(focusedPlayer.y)) {
-        camX = focusedPlayer.x;
-        camY = focusedPlayer.y;
+        camX = focusedPlayer.userId === currentUserId ? predictedPosRef.current.x : focusedPlayer.x;
+        camY = focusedPlayer.userId === currentUserId ? predictedPosRef.current.y : focusedPlayer.y;
       }
 
       // Smooth Camera LERP (60 FPS fluid camera movement)
@@ -1757,11 +1833,16 @@ export default function MiniBattleRoyale({
         ctx.restore();
       }
 
-      // 13. DRAW PLAYERS (Viewport Culled)
+      // 13. DRAW PLAYERS (Viewport Culled & Netcode Interpolated)
       state.players?.forEach(p => {
-        if (!p || typeof p !== 'object' || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
-        const px = p.x;
-        const py = p.y;
+        if (!p || typeof p !== 'object') return;
+        const isLocal = p.userId === currentUserId;
+        const pInterp = !isLocal ? interpolatedPlayersRef.current.get(p.id) : null;
+        const px = isLocal ? predictedPosRef.current.x : (pInterp ? pInterp.x : p.x);
+        const py = isLocal ? predictedPosRef.current.y : (pInterp ? pInterp.y : p.y);
+        const pAngle = isLocal ? p.angle : (pInterp ? pInterp.angle : p.angle);
+
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return;
         if (!inView(px, py, 65)) return;
 
         ctx.save();
@@ -1790,13 +1871,13 @@ export default function MiniBattleRoyale({
         // Bush hiding transparency
         let insideBush = false;
         for (const obs of state.obstacles || []) {
-          if (obs.type === 'bush' && Math.hypot(p.x - obs.x, p.y - obs.y) < obs.radius) {
+          if (obs.type === 'bush' && Math.hypot(px - obs.x, py - obs.y) < obs.radius) {
             insideBush = true;
             break;
           }
         }
         if (insideBush) {
-          ctx.globalAlpha = p.userId === currentUserId ? 0.6 : 0.2;
+          ctx.globalAlpha = isLocal ? 0.6 : 0.2;
         }
 
         // Spawn Protection Shield Ring (Gold glowing aura without blur)
@@ -1830,7 +1911,7 @@ export default function MiniBattleRoyale({
 
         // Weapon & Hands Rotation
         ctx.save();
-        ctx.rotate(p.angle);
+        ctx.rotate(pAngle);
 
         const wCfg = WEAPON_CONFIGS[p.activeWeapon] || WEAPON_CONFIGS.pistol;
         const wLength = p.activeWeapon === 'sniper' ? 38 : p.activeWeapon === 'rifle' ? 30 : p.activeWeapon === 'plasma' ? 32 : 22;

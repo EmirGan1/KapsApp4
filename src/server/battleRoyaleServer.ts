@@ -557,6 +557,14 @@ export const WEAPON_CONFIGS: Record<string, {
   }
 };
 
+export interface PlayerHistorySnapshot {
+  timestamp: number;
+  x: number;
+  y: number;
+  hp: number;
+  isAlive: boolean;
+}
+
 export interface PlayerData {
   id: string;
   userId: number;
@@ -595,6 +603,12 @@ export interface PlayerData {
   shooting?: boolean;
   respawnAckReceived?: boolean;
   lastPickupTime?: number;
+  // Anti-Cheat & Netcode Authoritative Verification
+  lastVerifiedX?: number;
+  lastVerifiedY?: number;
+  lastInputTime?: number;
+  clientPing?: number;
+  speedHackViolations?: number;
   // Enhanced Bot AI Fields
   botStrafeDir?: number;
   botStrafeTimer?: number;
@@ -672,6 +686,8 @@ export interface GameRoom {
   loot: LootItemData[];
   lootLocks?: Set<string>;
   obstacles: ObstacleData[];
+  // Lag Compensation Rolling History Buffer (Last 1000ms snapshots)
+  positionHistory?: Map<string, PlayerHistorySnapshot[]>;
   zone: {
     currentX: number;
     currentY: number;
@@ -1243,6 +1259,12 @@ export class BattleRoyaleManager {
       player.platform = input.platform;
     }
 
+    // Ping / Latency capture for server-authoritative lag compensation rewind
+    if (typeof input.ping === 'number' && Number.isFinite(input.ping)) {
+      player.clientPing = Math.max(0, Math.min(500, Math.round(input.ping)));
+    }
+    player.lastInputTime = Date.now();
+
     // Defensive Movement Vectors validation (reject NaN, Infinity, null, clamp to [-1, 1])
     if (typeof input.vx === 'number' && Number.isFinite(input.vx) &&
         typeof input.vy === 'number' && Number.isFinite(input.vy)) {
@@ -1587,7 +1609,10 @@ export class BattleRoyaleManager {
       // 3. Update Player Movements, River Drag & Enhanced AI Bots
       this.updatePlayersAndBots(room, now);
 
-      // 4. Update Bullets & Ray-Cast Collisions
+      // 3B. Record High-Precision Rolling History Buffer for Lag Compensation
+      this.recordPositionHistory(room, now);
+
+      // 4. Update Bullets & Ray-Cast Collisions with Lag Compensation Rewind
       this.updateBullets(room, now);
 
       // 5. Clean Expired Explosions & Popups
@@ -1608,6 +1633,66 @@ export class BattleRoyaleManager {
     } catch (err) {
       console.error(`[Royale Room ${room.id} Tick Error]:`, err);
     }
+  }
+
+  // ============================================================
+  // LAG COMPENSATION: Rolling Position History & Rewind Buffer
+  // ============================================================
+  private recordPositionHistory(room: GameRoom, now: number) {
+    if (!room.positionHistory) {
+      room.positionHistory = new Map();
+    }
+    const maxHistoryDuration = 1000; // 1 second rolling buffer
+    for (const p of room.players) {
+      if (!p) continue;
+      let history = room.positionHistory.get(p.id);
+      if (!history) {
+        history = [];
+        room.positionHistory.set(p.id, history);
+      }
+      history.push({
+        timestamp: now,
+        x: p.x,
+        y: p.y,
+        hp: p.hp,
+        isAlive: p.isAlive
+      });
+      // Purge snapshots older than 1000ms
+      const cutoff = now - maxHistoryDuration;
+      while (history.length > 0 && history[0].timestamp < cutoff) {
+        history.shift();
+      }
+    }
+  }
+
+  public getHistoricalPlayerPosition(room: GameRoom, playerId: string, targetTime: number): { x: number; y: number } | null {
+    if (!room.positionHistory) return null;
+    const history = room.positionHistory.get(playerId);
+    if (!history || history.length === 0) return null;
+
+    if (targetTime <= history[0].timestamp) {
+      return { x: history[0].x, y: history[0].y };
+    }
+    if (targetTime >= history[history.length - 1].timestamp) {
+      const last = history[history.length - 1];
+      return { x: last.x, y: last.y };
+    }
+
+    // Find the two surrounding snapshots for interpolation
+    for (let i = 0; i < history.length - 1; i++) {
+      const s0 = history[i];
+      const s1 = history[i + 1];
+      if (targetTime >= s0.timestamp && targetTime <= s1.timestamp) {
+        const span = s1.timestamp - s0.timestamp;
+        const ratio = span > 0 ? (targetTime - s0.timestamp) / span : 0;
+        return {
+          x: s0.x + (s1.x - s0.x) * ratio,
+          y: s0.y + (s1.y - s0.y) * ratio
+        };
+      }
+    }
+    const last = history[history.length - 1];
+    return { x: last.x, y: last.y };
   }
 
   private isPointInRiver(x: number, y: number): boolean {
@@ -2017,7 +2102,7 @@ export class BattleRoyaleManager {
         p.botLastY = p.y;
       }
 
-      // Calculate Player Movement Speed
+      // Calculate Player Movement Speed (Authoritative Server Physics)
       let speed = 4.8;
       if (p.speedBuffEndTime > now) speed *= 1.35;
       const inWater = this.isPointInRiver(p.x, p.y);
@@ -2025,9 +2110,18 @@ export class BattleRoyaleManager {
       if (inWater && !onBridge) speed *= 0.62; // River drag
 
       if (p.vx || p.vy) {
+        // Authoritative Anti-Cheat: Clamp unit vector length to 1.0 to prevent diagonal speed boosting
+        let dirX = p.vx || 0;
+        let dirY = p.vy || 0;
+        const dirLen = Math.hypot(dirX, dirY);
+        if (dirLen > 1.0) {
+          dirX /= dirLen;
+          dirY /= dirLen;
+        }
+
         // Continuous Swept Sub-stepping & Collision Resolution (Anti-Tunneling)
-        const totalDx = (p.vx || 0) * speed;
-        const totalDy = (p.vy || 0) * speed;
+        const totalDx = dirX * speed;
+        const totalDy = dirY * speed;
         const moveDist = Math.hypot(totalDx, totalDy);
         const subSteps = Math.max(1, Math.ceil(moveDist / 4));
         const stepDx = totalDx / subSteps;
@@ -2047,6 +2141,9 @@ export class BattleRoyaleManager {
             p.y = testY;
           }
         }
+
+        p.lastVerifiedX = p.x;
+        p.lastVerifiedY = p.y;
       }
 
       // Handle Shooting
@@ -2238,15 +2335,28 @@ export class BattleRoyaleManager {
         return;
       }
 
-      // 5. Player Swept Ray-Collision (Behind Wall/Rock Protection)
+      // 5. Player Swept Ray-Collision (with Lag Compensation & Behind Wall/Rock Protection)
       let hitPlayer = false;
       for (const target of room.players) {
         if (!target || !target.isAlive || target.id === bullet.shooterId) continue;
         if (target.spawnShieldEndTime > now) continue;
 
-        const dSq = distToSegmentSquared(target.x, target.y, prevX, prevY, nextX, nextY);
+        // Retrieve shooter latency for lag compensation rewind
+        const shooter = room.players.find(p => p.id === bullet.shooterId);
+        const shooterPing = shooter?.clientPing ?? 50;
+        const rewindTime = Math.min(350, Math.max(0, shooterPing));
+        const targetTime = now - rewindTime;
+
+        // Check against both current position and lag-compensated historical position
+        const historicalTarget = this.getHistoricalPlayerPosition(room, target.id, targetTime);
+        const targetX = historicalTarget ? historicalTarget.x : target.x;
+        const targetY = historicalTarget ? historicalTarget.y : target.y;
+
+        const dSqCurrent = distToSegmentSquared(target.x, target.y, prevX, prevY, nextX, nextY);
+        const dSqRewind = distToSegmentSquared(targetX, targetY, prevX, prevY, nextX, nextY);
         const hitR = 24 + bullet.radius;
-        if (dSq <= hitR * hitR) {
+
+        if (dSqCurrent <= hitR * hitR || dSqRewind <= hitR * hitR) {
           // Wall check: wall between bullet origin and player blocks damage!
           const wallBlock = checkRaycastWalls(prevX, prevY, target.x, target.y, MAP_BUILDINGS);
           if (wallBlock.hit) continue;
