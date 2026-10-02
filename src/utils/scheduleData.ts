@@ -28,25 +28,55 @@ export interface ResolvedSubject {
   notes?: string;
 }
 
-// 1. Period Standard Bell Times
-export const PERIOD_BELL_TIMES = [
-  { period: 1, start: "08:00", end: "08:40" },
-  { period: 2, start: "08:50", end: "09:30" },
-  { period: 3, start: "09:40", end: "10:20" },
-  { period: 4, start: "10:30", end: "11:10" },
-  { period: 5, start: "11:20", end: "12:00" },
-  // 12:00 - 12:45 Lunch Break
-  { period: 6, start: "12:45", end: "13:25" },
-  { period: 7, start: "13:35", end: "14:15" },
-  { period: 8, start: "14:25", end: "15:05" },
-  { period: 9, start: "15:15", end: "15:55" },
+// 1. Period Standard & Wednesday Bell Times
+export const STANDARD_SCHEDULE_TIMES = [
+  { period: 1, start: '08:00', end: '08:40' },
+  { period: 2, start: '09:00', end: '09:40' },
+  { period: 3, start: '09:50', end: '10:30' },
+  { period: 4, start: '10:40', end: '11:20' },
+  { period: 5, start: '11:30', end: '12:10' },
+  { period: 6, start: '13:10', end: '13:50' },
+  { period: 7, start: '14:00', end: '14:40' },
+  { period: 8, start: '14:50', end: '15:30' }
 ];
+
+export const WEDNESDAY_SCHEDULE_TIMES = [
+  { period: 1, start: '08:00', end: '08:40' },
+  { period: 2, start: '08:50', end: '09:30' },
+  { period: 3, start: '09:40', end: '10:20' },
+  { period: 4, start: '10:30', end: '11:10' },
+  { period: 5, start: '11:20', end: '12:00' },
+  { period: 6, start: '12:45', end: '13:25' },
+  { period: 7, start: '13:35', end: '14:15' },
+  { period: 8, start: '14:25', end: '15:05' },
+  { period: 9, start: '15:15', end: '15:55' }
+];
+
+// Fallback constant to preserve type definition without breaking existing imports
+export const PERIOD_BELL_TIMES = WEDNESDAY_SCHEDULE_TIMES;
 
 export const LUNCH_BREAK = {
   start: "12:00",
   end: "12:45",
   title: "Öğle Yemeği & Dinlenme Arası",
 };
+
+export function getLunchBreakForDay(dayIndex: number) {
+  if (dayIndex === 3) {
+    return {
+      start: "12:00",
+      end: "12:45",
+      title: "Öğle Yemeği & Dinlenme Arası",
+      durationMin: 45
+    };
+  }
+  return {
+    start: "12:10",
+    end: "13:10",
+    title: "Öğle Yemeği & Dinlenme Arası",
+    durationMin: 60
+  };
+}
 
 // 2. Weekly Schedule Master Data (12 G IB - Güncel)
 export const WEEKLY_SCHEDULE: DaySchedule[] = [
@@ -56,13 +86,13 @@ export const WEEKLY_SCHEDULE: DaySchedule[] = [
     dayShort: "Pzt",
     periods: [
       { periodNumber: 1, startTime: "08:00", endTime: "08:40", subjectKey: "tok", defaultName: "TOK" },
-      { periodNumber: 2, startTime: "08:50", endTime: "09:30", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
-      { periodNumber: 3, startTime: "09:40", endTime: "10:20", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
-      { periodNumber: 4, startTime: "10:30", endTime: "11:10", subjectKey: "math", defaultName: "Matematik" },
-      { periodNumber: 5, startTime: "11:20", endTime: "12:00", subjectKey: "math", defaultName: "Matematik" },
-      { periodNumber: 6, startTime: "12:45", endTime: "13:25", subjectKey: "foreign_language", defaultName: "Yabancı Dil" },
-      { periodNumber: 7, startTime: "13:35", endTime: "14:15", subjectKey: "foreign_language", defaultName: "Yabancı Dil" },
-      { periodNumber: 8, startTime: "14:25", endTime: "15:05", subjectKey: "religion", defaultName: "Din Kültürü" },
+      { periodNumber: 2, startTime: "09:00", endTime: "09:40", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
+      { periodNumber: 3, startTime: "09:50", endTime: "10:30", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
+      { periodNumber: 4, startTime: "10:40", endTime: "11:20", subjectKey: "math", defaultName: "Matematik" },
+      { periodNumber: 5, startTime: "11:30", endTime: "12:10", subjectKey: "math", defaultName: "Matematik" },
+      { periodNumber: 6, startTime: "13:10", endTime: "13:50", subjectKey: "foreign_language", defaultName: "Yabancı Dil" },
+      { periodNumber: 7, startTime: "14:00", endTime: "14:40", subjectKey: "foreign_language", defaultName: "Yabancı Dil" },
+      { periodNumber: 8, startTime: "14:50", endTime: "15:30", subjectKey: "religion", defaultName: "Din Kültürü" },
     ],
   },
   {
@@ -71,13 +101,13 @@ export const WEEKLY_SCHEDULE: DaySchedule[] = [
     dayShort: "Sal",
     periods: [
       { periodNumber: 1, startTime: "08:00", endTime: "08:40", subjectKey: "foreign_languages_lit", defaultName: "Yabancı Diller Ed." },
-      { periodNumber: 2, startTime: "08:50", endTime: "09:30", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
-      { periodNumber: 3, startTime: "09:40", endTime: "10:20", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
-      { periodNumber: 4, startTime: "10:30", endTime: "11:10", subjectKey: "classic_ethics", defaultName: "Klasik Ahlak" },
-      { periodNumber: 5, startTime: "11:20", endTime: "12:00", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
-      { periodNumber: 6, startTime: "12:45", endTime: "13:25", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
-      { periodNumber: 7, startTime: "13:35", endTime: "14:15", subjectKey: "math", defaultName: "Matematik" },
-      { periodNumber: 8, startTime: "14:25", endTime: "15:05", subjectKey: "math", defaultName: "Matematik" },
+      { periodNumber: 2, startTime: "09:00", endTime: "09:40", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
+      { periodNumber: 3, startTime: "09:50", endTime: "10:30", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
+      { periodNumber: 4, startTime: "10:40", endTime: "11:20", subjectKey: "classic_ethics", defaultName: "Klasik Ahlak" },
+      { periodNumber: 5, startTime: "11:30", endTime: "12:10", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
+      { periodNumber: 6, startTime: "13:10", endTime: "13:50", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
+      { periodNumber: 7, startTime: "14:00", endTime: "14:40", subjectKey: "math", defaultName: "Matematik" },
+      { periodNumber: 8, startTime: "14:50", endTime: "15:30", subjectKey: "math", defaultName: "Matematik" },
     ],
   },
   {
@@ -102,13 +132,13 @@ export const WEEKLY_SCHEDULE: DaySchedule[] = [
     dayShort: "Per",
     periods: [
       { periodNumber: 1, startTime: "08:00", endTime: "08:40", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
-      { periodNumber: 2, startTime: "08:50", endTime: "09:30", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
-      { periodNumber: 3, startTime: "09:40", endTime: "10:20", subjectKey: "project_guidance", defaultName: "Proje / Rehberlik" },
-      { periodNumber: 4, startTime: "10:30", endTime: "11:10", subjectKey: "history_20th", defaultName: "20. Yy Türkiye" },
-      { periodNumber: 5, startTime: "11:20", endTime: "12:00", subjectKey: "history_20th", defaultName: "20. Yy Türkiye" },
-      { periodNumber: 6, startTime: "12:45", endTime: "13:25", subjectKey: "tok", defaultName: "TOK" },
-      { periodNumber: 7, startTime: "13:35", endTime: "14:15", subjectKey: "literature", defaultName: "Edebiyat" },
-      { periodNumber: 8, startTime: "14:25", endTime: "15:05", subjectKey: "religion", defaultName: "Din Kültürü" },
+      { periodNumber: 2, startTime: "09:00", endTime: "09:40", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
+      { periodNumber: 3, startTime: "09:50", endTime: "10:30", subjectKey: "project_guidance", defaultName: "Proje / Rehberlik" },
+      { periodNumber: 4, startTime: "10:40", endTime: "11:20", subjectKey: "history_20th", defaultName: "20. Yy Türkiye" },
+      { periodNumber: 5, startTime: "11:30", endTime: "12:10", subjectKey: "history_20th", defaultName: "20. Yy Türkiye" },
+      { periodNumber: 6, startTime: "13:10", endTime: "13:50", subjectKey: "tok", defaultName: "TOK" },
+      { periodNumber: 7, startTime: "14:00", endTime: "14:40", subjectKey: "literature", defaultName: "Edebiyat" },
+      { periodNumber: 8, startTime: "14:50", endTime: "15:30", subjectKey: "religion", defaultName: "Din Kültürü" },
     ],
   },
   {
@@ -117,13 +147,13 @@ export const WEEKLY_SCHEDULE: DaySchedule[] = [
     dayShort: "Cum",
     periods: [
       { periodNumber: 1, startTime: "08:00", endTime: "08:40", subjectKey: "literature", defaultName: "Edebiyat" },
-      { periodNumber: 2, startTime: "08:50", endTime: "09:30", subjectKey: "literature", defaultName: "Edebiyat" },
-      { periodNumber: 3, startTime: "09:40", endTime: "10:20", subjectKey: "foreign_language", defaultName: "Yabancı Dil" },
-      { periodNumber: 4, startTime: "10:30", endTime: "11:10", subjectKey: "foreign_language", defaultName: "Yabancı Dil" },
-      { periodNumber: 5, startTime: "11:20", endTime: "12:00", subjectKey: "math", defaultName: "Matematik" },
-      { periodNumber: 6, startTime: "12:45", endTime: "13:25", subjectKey: "math", defaultName: "Matematik" },
-      { periodNumber: 7, startTime: "13:35", endTime: "14:15", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
-      { periodNumber: 8, startTime: "14:25", endTime: "15:05", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
+      { periodNumber: 2, startTime: "09:00", endTime: "09:40", subjectKey: "literature", defaultName: "Edebiyat" },
+      { periodNumber: 3, startTime: "09:50", endTime: "10:30", subjectKey: "foreign_language", defaultName: "Yabancı Dil" },
+      { periodNumber: 4, startTime: "10:40", endTime: "11:20", subjectKey: "foreign_language", defaultName: "Yabancı Dil" },
+      { periodNumber: 5, startTime: "11:30", endTime: "12:10", subjectKey: "math", defaultName: "Matematik" },
+      { periodNumber: 6, startTime: "13:10", endTime: "13:50", subjectKey: "math", defaultName: "Matematik" },
+      { periodNumber: 7, startTime: "14:00", endTime: "14:40", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
+      { periodNumber: 8, startTime: "14:50", endTime: "15:30", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
     ],
   },
 ];

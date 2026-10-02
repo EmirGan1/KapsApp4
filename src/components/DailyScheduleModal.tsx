@@ -22,6 +22,7 @@ import {
   WEEKLY_SCHEDULE,
   PERIOD_BELL_TIMES,
   LUNCH_BREAK,
+  getLunchBreakForDay,
   resolveSubjectByRole,
   getCurrentPeriodStatus,
   DaySchedule,
@@ -397,7 +398,7 @@ export default function DailyScheduleModal({
                   </span>
                 </h4>
                 <span className="text-[11px] font-mono text-slate-400">
-                  {PERIOD_BELL_TIMES[0].start} - {activeDaySchedule.periods[activeDaySchedule.periods.length - 1]?.endTime || "15:55"}
+                  {activeDaySchedule.periods[0]?.startTime || "08:00"} - {activeDaySchedule.periods[activeDaySchedule.periods.length - 1]?.endTime || "15:30"}
                 </span>
               </div>
 
@@ -421,10 +422,10 @@ export default function DailyScheduleModal({
                       <div className="my-3 p-3 rounded-2xl bg-amber-500/10 border border-dashed border-amber-500/30 flex items-center justify-between text-xs text-amber-700 dark:text-amber-300">
                         <div className="flex items-center gap-2 font-bold">
                           <span className="text-base">🍲</span>
-                          <span>{LUNCH_BREAK.title}</span>
+                          <span>{getLunchBreakForDay(activeDaySchedule.dayIndex).title}</span>
                         </div>
                         <span className="font-mono font-black">
-                          {LUNCH_BREAK.start} - {LUNCH_BREAK.end} (45 dk)
+                          {getLunchBreakForDay(activeDaySchedule.dayIndex).start} - {getLunchBreakForDay(activeDaySchedule.dayIndex).end} ({getLunchBreakForDay(activeDaySchedule.dayIndex).durationMin} dk)
                         </span>
                       </div>
                     )}
