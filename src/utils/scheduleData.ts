@@ -1,7 +1,8 @@
 // Weekly Course Schedule Data & Role-Based Subject Resolver (12 G IB)
 
 export interface SchedulePeriod {
-  periodNumber: number;
+  periodNumber: number | number[]; // Allow array for block
+  isBlock?: boolean; // New flag
   startTime: string; // HH:mm
   endTime: string;   // HH:mm
   subjectKey: string;
@@ -48,8 +49,7 @@ export const WEDNESDAY_SCHEDULE_TIMES = [
   { period: 5, start: '11:20', end: '12:00' },
   { period: 6, start: '12:45', end: '13:25' },
   { period: 7, start: '13:35', end: '14:15' },
-  { period: 8, start: '14:25', end: '15:05' },
-  { period: 9, start: '15:15', end: '15:55' }
+  { period: [8, 9], start: '14:25', end: '15:45', isBlock: true }
 ];
 
 // Fallback constant to preserve type definition without breaking existing imports
@@ -110,22 +110,21 @@ export const WEEKLY_SCHEDULE: DaySchedule[] = [
       { periodNumber: 8, startTime: "14:50", endTime: "15:30", subjectKey: "math", defaultName: "Matematik" },
     ],
   },
-  {
-    dayIndex: 3,
-    dayName: "Çarşamba",
-    dayShort: "Çar",
-    periods: [
-      { periodNumber: 1, startTime: "08:00", endTime: "08:40", subjectKey: "history_20th", defaultName: "20. Yy Türkiye" },
-      { periodNumber: 2, startTime: "08:50", endTime: "09:30", subjectKey: "history_20th", defaultName: "20. Yy Türkiye" },
-      { periodNumber: 3, startTime: "09:40", endTime: "10:20", subjectKey: "tok", defaultName: "TOK" },
-      { periodNumber: 4, startTime: "10:30", endTime: "11:10", subjectKey: "math", defaultName: "Matematik" },
-      { periodNumber: 5, startTime: "11:20", endTime: "12:00", subjectKey: "math", defaultName: "Matematik" },
-      { periodNumber: 6, startTime: "12:45", endTime: "13:25", subjectKey: "pe_music", defaultName: "Beden / Müzik" },
-      { periodNumber: 7, startTime: "13:35", endTime: "14:15", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
-      { periodNumber: 8, startTime: "14:25", endTime: "15:05", subjectKey: "literature", defaultName: "Edebiyat" },
-      { periodNumber: 9, startTime: "15:15", endTime: "15:55", subjectKey: "literature", defaultName: "Edebiyat" },
-    ],
-  },
+      {
+        dayIndex: 3,
+        dayName: "Çarşamba",
+        dayShort: "Çar",
+        periods: [
+          { periodNumber: 1, startTime: "08:00", endTime: "08:40", subjectKey: "history_20th", defaultName: "20. Yy Türkiye" },
+          { periodNumber: 2, startTime: "08:50", endTime: "09:30", subjectKey: "history_20th", defaultName: "20. Yy Türkiye" },
+          { periodNumber: 3, startTime: "09:40", endTime: "10:20", subjectKey: "tok", defaultName: "TOK" },
+          { periodNumber: 4, startTime: "10:30", endTime: "11:10", subjectKey: "math", defaultName: "Matematik" },
+          { periodNumber: 5, startTime: "11:20", endTime: "12:00", subjectKey: "math", defaultName: "Matematik" },
+          { periodNumber: 6, startTime: "12:45", endTime: "13:25", subjectKey: "pe_music", defaultName: "Beden / Müzik" },
+          { periodNumber: 7, startTime: "13:35", endTime: "14:15", subjectKey: "chemistry_digsoc_psychology", defaultName: "Kimya / DigSoc / Psikoloji" },
+          { periodNumber: [8, 9], isBlock: true, startTime: "14:25", endTime: "15:45", subjectKey: "literature", defaultName: "Edebiyat" },
+        ],
+      },
   {
     dayIndex: 4,
     dayName: "Perşembe",

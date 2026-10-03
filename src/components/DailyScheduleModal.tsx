@@ -433,7 +433,7 @@ export default function DailyScheduleModal({
                     <div
                       className={`p-3.5 sm:p-4 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
                         isCurrent
-                          ? "bg-blue-500/15 border-blue-500 ring-2 ring-blue-500/40 shadow-lg shadow-blue-500/10 scale-[1.01]"
+                          ? "bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-500/10 scale-[1.01]"
                           : isNext
                           ? "bg-amber-500/10 border-amber-500/50 shadow-sm"
                           : isPast
@@ -454,7 +454,11 @@ export default function DailyScheduleModal({
                               : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                           }`}
                         >
-                          <span className="text-xs leading-none">{period.periodNumber}</span>
+                          <span className="text-xs leading-none">
+                            {Array.isArray(period.periodNumber)
+                              ? period.periodNumber.join('-')
+                              : period.periodNumber}
+                          </span>
                           <span className="text-[9px] uppercase font-bold tracking-tight">Ders</span>
                         </div>
 
