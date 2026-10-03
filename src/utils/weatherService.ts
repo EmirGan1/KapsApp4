@@ -670,3 +670,292 @@ export function saveWeatherLocation(loc: WeatherLocation) {
     localStorage.setItem(WEATHER_LOCATION_KEY, JSON.stringify(loc));
   } catch {}
 }
+
+export interface SmartWeatherAdvice {
+  type: 'rain' | 'temp_drop' | 'tomorrow_cold' | 'tomorrow_warm' | 'uv' | 'wind' | 'calm';
+  title: string;
+  message: string;
+  iconType: 'umbrella' | 'wind' | 'sun' | 'sparkles' | 'thermometer';
+  accentColor: string;
+}
+
+export interface DayAdviceDetail {
+  dayIndex: number;
+  dayName: string;
+  dateLabel: string;
+  weatherLabel: string;
+  emoji: string;
+  weatherCode: number;
+  tempMax: number;
+  tempMin: number;
+  tempDiffText: string;
+  rainProbability: number;
+  rainText: string;
+  windSpeedMax: number;
+  windText: string;
+  clothingAdvice: string;
+  activityAdvice: string;
+  summaryText: string;
+}
+
+export interface ThreeDayWeatherAdvice {
+  todaySummary: SmartWeatherAdvice;
+  tomorrowQuickSummary: string;
+  days: DayAdviceDetail[];
+  disclaimer: string;
+}
+
+export function getSmartWeatherAdvice(weatherData: WeatherData | null): SmartWeatherAdvice {
+  if (!weatherData) {
+    return {
+      type: 'calm',
+      title: 'GÜNÜN TAVSİYESİ',
+      message: 'Bugün hava dengeli ve sakin görünüyor, günün tadını çıkar!',
+      iconType: 'sparkles',
+      accentColor: 'text-amber-400'
+    };
+  }
+
+  const { current, hourly, daily } = weatherData;
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  // 1. Yağmur ve Şemsiye Uyarısı: Önümüzdeki 6 saat içinde yağış ihtimali %45 ve üzerindeyse
+  const next6Hours = (hourly || []).slice(0, 6);
+  const rainHourIndex = next6Hours.findIndex(
+    (h) => (h.precipitationProbability >= 45 || h.precipitation >= 0.4 || [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96].includes(h.weatherCode))
+  );
+
+  if (rainHourIndex !== -1) {
+    const rainItem = next6Hours[rainHourIndex];
+    const hoursAway = rainHourIndex === 0 ? 1 : rainHourIndex + 1;
+    const prob = Math.max(rainItem.precipitationProbability || 50, 45);
+    return {
+      type: 'rain',
+      title: 'GÜNÜN TAVSİYESİ',
+      message: `Yaklaşık ${hoursAway} saat sonra yağmur bekleniyor (%${prob} ihtimal). Çıkarken şemsiyeni yanına almayı unutma!`,
+      iconType: 'umbrella',
+      accentColor: 'text-sky-300'
+    };
+  }
+
+  // 2. Ani Sıcaklık Düşüşü: İlerleyen saatlerde sıcaklık 5°C'den fazla aniden düşüyorsa
+  const minUpcomingTemp = next6Hours.reduce(
+    (min, h) => (h.temperature < min ? h.temperature : min),
+    current.temperature
+  );
+  if (current.temperature - minUpcomingTemp >= 5) {
+    return {
+      type: 'temp_drop',
+      title: 'GÜNÜN TAVSİYESİ',
+      message: `Akşama doğru hava hissedilir şekilde soğuyacak (${minUpcomingTemp}°C). Yanına bir hırka veya ceket alsan iyi olur.`,
+      iconType: 'wind',
+      accentColor: 'text-indigo-300'
+    };
+  }
+
+  // 3. Yarın ile Kıyaslama (Saat 17:00 Sonrası)
+  if (currentHour >= 17 && daily && daily.length >= 2) {
+    const todayAvg = (daily[0].temperatureMax + daily[0].temperatureMin) / 2;
+    const tomorrowAvg = (daily[1].temperatureMax + daily[1].temperatureMin) / 2;
+    const diff = Math.round(todayAvg - tomorrowAvg);
+
+    if (diff >= 3) {
+      return {
+        type: 'tomorrow_cold',
+        title: 'GÜNÜN TAVSİYESİ',
+        message: `Yarın bugüne göre ortalama ${diff}°C daha soğuk olacak, biraz daha kalın giyinmeyi düşünebilirsin.`,
+        iconType: 'thermometer',
+        accentColor: 'text-blue-300'
+      };
+    } else if (tomorrowAvg - todayAvg >= 3) {
+      return {
+        type: 'tomorrow_warm',
+        title: 'GÜNÜN TAVSİYESİ',
+        message: 'Yarın hava bugünden daha ılık geçecek.',
+        iconType: 'sun',
+        accentColor: 'text-amber-300'
+      };
+    }
+  }
+
+  // 4. UV / Güneş Uyarısı: Gündüz saatlerinde UV indeksi >= 6 ise
+  const maxUvUpcoming = next6Hours.reduce((max, h) => (h.uvIndex > max ? h.uvIndex : max), 0);
+  if (current.isDay && (maxUvUpcoming >= 6 || (daily && daily[0]?.uvIndexMax >= 6))) {
+    return {
+      type: 'uv',
+      title: 'GÜNÜN TAVSİYESİ',
+      message: 'Öğle saatlerinde güneş oldukça etkili, güneş gözlüğü veya koruyucu kullanmak faydalı olabilir.',
+      iconType: 'sun',
+      accentColor: 'text-amber-400'
+    };
+  }
+
+  // 5. Rüzgar Uyarısı: Rüzgar hızı 35 km/s üzerindeyse
+  if (current.windSpeed >= 35 || current.windGusts >= 45) {
+    return {
+      type: 'wind',
+      title: 'GÜNÜN TAVSİYESİ',
+      message: 'Bugün sert bir rüzgar var, dışarı çıkarken rüzgarlık tercih edebilirsin.',
+      iconType: 'wind',
+      accentColor: 'text-teal-300'
+    };
+  }
+
+  // 6. Varsayılan Durum: Kritik bir hava olayı yoksa
+  return {
+    type: 'calm',
+    title: 'GÜNÜN TAVSİYESİ',
+    message: 'Bugün hava dengeli ve sakin görünüyor, günün tadını çıkar!',
+    iconType: 'sparkles',
+    accentColor: 'text-amber-400'
+  };
+}
+
+export function getDetailed3DayAdvice(weatherData: WeatherData | null): ThreeDayWeatherAdvice {
+  const todaySummary = getSmartWeatherAdvice(weatherData);
+  const disclaimer = "ⓘ Hava durumu tahminleri meteorolojik modellemelere dayanmaktadır. Özellikle 48 saat sonrasına ait veriler değişkenlik gösterebilir; plan yaparken anlık güncellemeleri kontrol etmeyi unutmayın.";
+
+  if (!weatherData || !weatherData.daily || weatherData.daily.length === 0) {
+    return {
+      todaySummary,
+      tomorrowQuickSummary: "Yarın için hava koşulları değişkenlik gösterebilir; anlık güncellemeleri kontrol edebilirsiniz.",
+      days: [],
+      disclaimer
+    };
+  }
+
+  const daily = weatherData.daily;
+  const today = daily[0];
+  const todayAvg = Math.round((today.temperatureMax + today.temperatureMin) / 2);
+
+  // 1. Gün: Yarın
+  const day1 = daily[1] || today;
+  const day1Avg = Math.round((day1.temperatureMax + day1.temperatureMin) / 2);
+  const diff1 = day1Avg - todayAvg;
+  const diff1Max = Math.round(day1.temperatureMax - today.temperatureMax);
+  const rain1Prob = day1.precipitationProbabilityMax || 0;
+  const meta1 = getWeatherMeta(day1.weatherCode, true);
+
+  const tempDiff1Text = diff1Max < -1 
+    ? `Bugüne göre ${Math.abs(diff1Max)}°C daha soğuk` 
+    : diff1Max > 1 
+      ? `Bugüne göre ${diff1Max}°C daha ılık` 
+      : `Bugünle benzer sıcaklıkta (${day1.temperatureMax}°C)`;
+
+  let clothing1 = "Güneşli ama serin, hafif bir ceket veya hırka yeterli olacaktır.";
+  if (day1.temperatureMax < 13) {
+    clothing1 = "Hissedilir derecede soğuk; kalın bir mont, atkı veya kaban tercih etmelisin.";
+  } else if (day1.temperatureMax > 23) {
+    clothing1 = "Ilık ve ferah; hafif mevsimlik kıyafetler ve güneş gözlüğü ideal.";
+  }
+  if (rain1Prob >= 45) {
+    clothing1 += " Şemsiyeni veya su geçirmez kapüşonlu bir montu yanına almayı unutma.";
+  }
+
+  const rain1Text = rain1Prob >= 50
+    ? `Öğleden sonra yağış ihtimali yüksek (%${rain1Prob})`
+    : rain1Prob >= 25
+      ? `Yer yer hafif yağmur geçişleri olası (%${rain1Prob})`
+      : `Belirgin bir yağış beklenmiyor (%${rain1Prob})`;
+
+  const tomorrowQuickSummary = `Yarın bugüne kıyasla ${Math.abs(diff1Max) > 0 ? `${Math.abs(diff1Max)}°C ${diff1Max < 0 ? 'daha soğuk' : 'daha ılık'}` : 'benzer sıcaklıkta'} (${day1.temperatureMin}° / ${day1.temperatureMax}°C)${rain1Prob >= 45 ? ` ve yağış ihtimali yüksek (%${rain1Prob})` : ', belirgin bir yağış beklenmiyor'}; planlarını buna göre yapabilirsin.`;
+
+  const day1Detail: DayAdviceDetail = {
+    dayIndex: 1,
+    dayName: "Yarın (1. Gün)",
+    dateLabel: day1.dayLabel,
+    weatherLabel: meta1.label,
+    emoji: meta1.emoji,
+    weatherCode: day1.weatherCode,
+    tempMax: day1.temperatureMax,
+    tempMin: day1.temperatureMin,
+    tempDiffText: tempDiff1Text,
+    rainProbability: rain1Prob,
+    rainText: rain1Text,
+    windSpeedMax: Math.round(day1.windSpeedMax || 0),
+    windText: (day1.windSpeedMax || 0) > 30 ? `Sert rüzgarlı (${Math.round(day1.windSpeedMax)} km/s)` : `Hafif rüzgar (${Math.round(day1.windSpeedMax || 10)} km/s)`,
+    clothingAdvice: clothing1,
+    activityAdvice: rain1Prob >= 50 ? "Açık hava aktivitelerinde yağmura hazırlıklı olunmalı." : "Dış mekan yürüyüşleri ve günlük işler için elverişli.",
+    summaryText: `${tempDiff1Text} geçecek. ${rain1Text}. ${clothing1}`
+  };
+
+  // 2. Gün: Sonraki Gün (Yarından Sonra)
+  const day2 = daily[2] || day1;
+  const meta2 = getWeatherMeta(day2.weatherCode, true);
+  const diff2Max = Math.round(day2.temperatureMax - day1.temperatureMax);
+  const rain2Prob = day2.precipitationProbabilityMax || 0;
+
+  const tempDiff2Text = diff2Max > 1
+    ? `Sıcaklık ${diff2Max}°C yükseliyor (${day2.temperatureMax}°C)`
+    : diff2Max < -1
+      ? `Sıcaklık ${Math.abs(diff2Max)}°C düşüyor (${day2.temperatureMax}°C)`
+      : `Sıcaklık dengeli seyrediyor (${day2.temperatureMin}° / ${day2.temperatureMax}°C)`;
+
+  const wind2Text = (day2.windSpeedMax || 0) > 35
+    ? `Kuvvetli rüzgar bekleniyor (${Math.round(day2.windSpeedMax)} km/s)`
+    : (day2.windSpeedMax || 0) > 20
+      ? `Orta şiddette rüzgar (${Math.round(day2.windSpeedMax)} km/s)`
+      : `Rüzgar sakin (${Math.round(day2.windSpeedMax || 8)} km/s)`;
+
+  const day2Detail: DayAdviceDetail = {
+    dayIndex: 2,
+    dayName: "Sonraki Gün (2. Gün)",
+    dateLabel: day2.dayLabel,
+    weatherLabel: meta2.label,
+    emoji: meta2.emoji,
+    weatherCode: day2.weatherCode,
+    tempMax: day2.temperatureMax,
+    tempMin: day2.temperatureMin,
+    tempDiffText: tempDiff2Text,
+    rainProbability: rain2Prob,
+    rainText: rain2Prob >= 40 ? `Aralıklı yağış görülebilir (%${rain2Prob})` : `Yağış beklenmiyor (%${rain2Prob})`,
+    windSpeedMax: Math.round(day2.windSpeedMax || 0),
+    windText: wind2Text,
+    clothingAdvice: day2.temperatureMax < 15 ? "Rüzgarlık veya mevsimlik ceket önerilir." : "Rahat mevsimlik kıyafetler uygun.",
+    activityAdvice: rain2Prob < 35 && (day2.windSpeedMax || 0) < 30 ? "Açık hava planları için dengeli bir gün." : "Rüzgara ve değişken hava şartlarına dikkat edilmeli.",
+    summaryText: `${tempDiff2Text}. ${wind2Text}. ${rain2Prob >= 40 ? 'Aralıklı yağmur geçişleri olası.' : 'Genel olarak açık ve sakin bir gün.'}`
+  };
+
+  // 3. Gün: 2 Gün Sonrası
+  const day3 = daily[3] || day2;
+  const meta3 = getWeatherMeta(day3.weatherCode, true);
+  const rain3Prob = day3.precipitationProbabilityMax || 0;
+
+  let activity3 = "Açık hava etkinlikleri, yürüyüş ve spor için oldukça elverişli bir gün.";
+  if (rain3Prob >= 50) {
+    activity3 = "Açık hava planlarını kapalı mekanlara kaydırmayı düşünebilirsin; yağış ihtimali yüksek.";
+  } else if (day3.temperatureMax < 10) {
+    activity3 = "Soğuk hava dalgası sebebiyle dış mekan aktivitelerinde sıkı giyinilmeli.";
+  } else if ((day3.windSpeedMax || 0) >= 35) {
+    activity3 = "Sert rüzgar nedeniyle açık alanda rüzgarlık ve koruyucu giysiler önerilir.";
+  }
+
+  const day3Detail: DayAdviceDetail = {
+    dayIndex: 3,
+    dayName: "2 Gün Sonrası (3. Gün)",
+    dateLabel: day3.dayLabel,
+    weatherLabel: meta3.label,
+    emoji: meta3.emoji,
+    weatherCode: day3.weatherCode,
+    tempMax: day3.temperatureMax,
+    tempMin: day3.temperatureMin,
+    tempDiffText: `Sıcaklık: ${day3.temperatureMin}° / ${day3.temperatureMax}°C`,
+    rainProbability: rain3Prob,
+    rainText: rain3Prob >= 45 ? `Yağış ihtimali %${rain3Prob}` : `Yağış ihtimali düşük (%${rain3Prob})`,
+    windSpeedMax: Math.round(day3.windSpeedMax || 0),
+    windText: `Maks Rüzgar: ${Math.round(day3.windSpeedMax || 12)} km/s`,
+    clothingAdvice: day3.temperatureMax > 20 ? "Ilık ve güneşli, hafif kıyafetler." : "Mevsim standartlarında giyinilmesi önerilir.",
+    activityAdvice: activity3,
+    summaryText: `Genel hava eğilimi: ${meta3.label}. ${activity3}`
+  };
+
+  return {
+    todaySummary,
+    tomorrowQuickSummary,
+    days: [day1Detail, day2Detail, day3Detail],
+    disclaimer
+  };
+}
+
+

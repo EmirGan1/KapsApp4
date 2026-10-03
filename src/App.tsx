@@ -977,34 +977,6 @@ export default function App() {
               />
             )}
           </nav>
-          
-          <div className="px-6 py-4 mt-4 hidden lg:block">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Folders</h2>
-              <button 
-                onClick={() => handleTabChange('folders')}
-                className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold hover:underline cursor-pointer"
-              >
-                Tümü
-              </button>
-            </div>
-            <div className="space-y-1">
-              {SUBJECTS.map(subject => (
-                <button
-                  key={subject}
-                  onClick={() => handleSubjectClick(subject)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors ${
-                    activeSubject === subject 
-                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' 
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <Folder size={16} className={activeSubject === subject ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'} />
-                  <span className="truncate">{subject}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">

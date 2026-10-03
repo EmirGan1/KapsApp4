@@ -13,6 +13,7 @@ import os from "os";
 import { createClient } from "@libsql/client";
 import dotenv from "dotenv";
 import { initSatDb, setupSatRoutes } from "./src/server/satController";
+import { registerCourseRoutes } from "./src/server/courseController";
 
 import { 
   generateDeck, 
@@ -305,6 +306,7 @@ async function initDb() {
       created_at TEXT
     )`);
   } catch(e) {}
+  try { await client.execute("ALTER TABLE subject_files ADD COLUMN topic_tag TEXT"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN uno_wins INTEGER DEFAULT 0"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN signup_ip TEXT"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN last_ip TEXT"); } catch(e){}
@@ -1346,133 +1348,7 @@ async function startServer() {
   });
 
   // Course / Subject Files Endpoints (PDF, DOCX, PPTX, XLSX, ZIP, etc.)
-  app.get(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], async (req, res) => {
-    try {
-      const folderId = req.params.courseId;
-      const fileRes = await client.execute({
-        sql: `SELECT f.*, u.username as uploader_name, u.avatar as uploader_avatar 
-              FROM subject_files f 
-              LEFT JOIN users u ON f.uploaded_by = u.id 
-              WHERE f.folder_id = ? OR f.course_id = ? 
-              ORDER BY f.id DESC`,
-        args: [folderId, folderId]
-      });
-      res.json({ files: fileRes.rows });
-    } catch (err: any) {
-      res.status(500).json({ error: "Ders dosyaları alınırken hata oluştu." });
-    }
-  });
-
-  app.post(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], (req, res) => {
-    upload.single("file")(req, res, async (err: any) => {
-      if (err) {
-        console.error("Course file upload error:", err);
-        if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {
-          return res.status(413).json({ error: "Dosya boyutu çok büyük (Maksimum 300MB)." });
-        }
-        return res.status(400).json({ error: err.message || "Dosya yüklenemedi." });
-      }
-      try {
-        const token = req.headers.authorization?.replace("Bearer ", "");
-        if (!token) return res.status(401).json({ error: "Giriş yapmalısınız." });
-        const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE token = ?", args: [token] });
-        if (userRes.rows.length === 0) return res.status(401).json({ error: "Geçersiz oturum." });
-        const authUser = userRes.rows[0];
-
-        if (!req.file) return res.status(400).json({ error: "Dosya seçilmedi." });
-        const folderId = req.params.courseId;
-        const filename = req.file.filename;
-        const originalName = req.file.originalname;
-        const mimetype = req.file.mimetype;
-        const size = req.file.size;
-        const filePath = req.file.path;
-        const url = `/uploads/${filename}`;
-
-        console.log(`[Server Upload Debug - Course File] Dosya: ${originalName}, Boyut: ${size} Bytes (${(size / (1024 * 1024)).toFixed(2)} MB), Klasör: ${folderId}`);
-
-        try {
-          if (size <= 25 * 1024 * 1024) {
-            const base64 = fs.readFileSync(filePath).toString("base64");
-            await client.execute({
-              sql: "INSERT OR REPLACE INTO uploaded_files (filename, original_name, mimetype, size, data, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-              args: [filename, originalName, mimetype, size, base64, new Date().toISOString()]
-            });
-          }
-        } catch (err) {}
-
-        const insRes = await client.execute({
-          sql: `INSERT INTO subject_files (folder_id, course_id, filename, original_name, mimetype, size, url, uploaded_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [folderId, folderId, filename, originalName, mimetype, size, url, authUser.id, new Date().toISOString()]
-        });
-
-        const newFile = {
-          id: Number(insRes.lastInsertRowid),
-          folder_id: folderId,
-          filename,
-          original_name: originalName,
-          mimetype,
-          size,
-          url,
-          uploaded_by: authUser.id,
-          uploader_name: authUser.username,
-          created_at: new Date().toISOString()
-        };
-
-        io.emit("subjects_updated");
-        io.emit("folder_files_updated", { folderId });
-        res.json({ success: true, file: newFile });
-      } catch (err: any) {
-        console.error("Course file upload error:", err);
-        res.status(500).json({ error: "Ders dosyası yüklenemedi." });
-      }
-    });
-  });
-
-  app.delete(["/api/courses/files/:fileId", "/api/subjects/files/:fileId"], async (req, res) => {
-    try {
-      const token = req.headers.authorization?.replace("Bearer ", "");
-      if (!token) return res.status(401).json({ error: "Giriş yapmalısınız." });
-      const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE token = ?", args: [token] });
-      if (userRes.rows.length === 0) return res.status(401).json({ error: "Geçersiz oturum." });
-      const authUser = userRes.rows[0];
-
-      const rawId = req.params.fileId;
-      const numId = Number(rawId);
-      const fileId = !isNaN(numId) ? numId : rawId;
-
-      const fileRes = await client.execute({
-        sql: "SELECT * FROM subject_files WHERE id = ? OR filename = ?",
-        args: [fileId, String(rawId)]
-      });
-
-      if (fileRes.rows.length === 0) {
-        return res.status(404).json({ error: "Dosya bulunamadı." });
-      }
-
-      const fileObj = fileRes.rows[0];
-      const ownerId = Number(fileObj.uploaded_by);
-      const usernameStr = authUser.username ? String(authUser.username).trim().toLowerCase() : "";
-      const isEmirgan = usernameStr === "emirgan" || authUser.is_admin === 1 || (authUser as any).role === "admin";
-
-      if (ownerId && ownerId !== Number(authUser.id) && !isEmirgan) {
-        return res.status(403).json({ error: "Bu dosyayı silme yetkiniz bulunmamaktadır." });
-      }
-
-      const filePath = (fileObj.url || fileObj.filename) as string;
-      if (filePath) {
-        await deleteUploadedFile(filePath).catch(() => {});
-      }
-
-      await client.execute({ sql: "DELETE FROM subject_files WHERE id = ?", args: [fileObj.id] });
-      io.emit("subjects_updated");
-      io.emit("folder_files_updated", { folderId: fileObj.folder_id });
-      res.json({ success: true, id: fileObj.id });
-    } catch (err: any) {
-      console.error("Course file delete error:", err);
-      res.status(500).json({ error: "Ders dosyası silinirken hata oluştu." });
-    }
-  });
+  registerCourseRoutes(app, client, upload, io, deleteUploadedFile);
 
   // REST Message Pagination Route (beforeId, limit)
   app.get(["/api/messages/:roomId", "/api/chat/messages/:roomId"], async (req, res) => {

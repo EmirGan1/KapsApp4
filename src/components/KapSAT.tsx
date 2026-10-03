@@ -141,6 +141,7 @@ export default function KapSAT({
   // Review Drawer & Modals
   const [isReviewDrawerOpen, setIsReviewDrawerOpen] = useState(false);
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   // Results State
   const [resultData, setResultData] = useState<{
@@ -541,14 +542,37 @@ export default function KapSAT({
     )
   );
 
+  const handleRequestExit = () => {
+    if (currentView === "testing" && (testMode === "mini_test" || testMode === "full_test")) {
+      setShowExitConfirmModal(true);
+    } else if (currentView === "testing" && testMode === "topic_practice") {
+      setCurrentView("dashboard");
+    } else if (onClose) {
+      onClose();
+    }
+  };
+
   return (
     <div className="flex-1 min-h-0 h-full w-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans overflow-hidden select-none transition-colors duration-200">
       {/* =================================================================== */}
       {/* 1. TOP MAIN HEADER */}
       {/* =================================================================== */}
-      <header className="px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 flex items-center justify-between z-20 shadow-xs">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
+      <header className="px-3 sm:px-4 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 flex items-center justify-between z-20 shadow-xs">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Back to Courses Button */}
+          {onClose && (
+            <button
+              type="button"
+              onClick={handleRequestExit}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 font-bold text-xs transition-all cursor-pointer shadow-2xs shrink-0"
+              title="Dersler Ana Sayfasına Geri Dön"
+            >
+              <ArrowLeft size={15} className="shrink-0 text-indigo-500" />
+              <span className="font-extrabold">Dersler</span>
+            </button>
+          )}
+
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
             <GraduationCap size={20} />
           </div>
           <div>
@@ -885,93 +909,139 @@ export default function KapSAT({
                 </div>
               </div>
 
-              {/* TOPICS GRID */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {filteredTopics.map((topicItem) => {
-                  const isDone = topicItem.answered_count >= topicItem.total_questions && topicItem.total_questions > 0;
-                  const progressPct = topicItem.total_questions > 0
-                    ? Math.round((topicItem.answered_count / topicItem.total_questions) * 100)
-                    : 0;
-
-                  return (
+              {/* TOPICS GRID & SKELETON LOADER */}
+              {loadingStats && !stats ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {[1, 2, 3, 4, 5, 6].map((sk) => (
                     <div
-                      key={topicItem.topic}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs hover:border-indigo-400 dark:hover:border-indigo-600 transition-all flex flex-col justify-between gap-3"
+                      key={`skeleton-${sk}`}
+                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-col justify-between gap-3 animate-pulse"
                     >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                            {topicItem.domain}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
-                              isDone
-                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
-                                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
-                            }`}
-                          >
-                            {topicItem.answered_count} / {topicItem.total_questions} Çözüldü
-                          </span>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="h-3 w-20 bg-slate-200 dark:bg-slate-800 rounded-md" />
+                          <div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded-md" />
                         </div>
+                        <div className="h-5 w-3/4 bg-slate-200 dark:bg-slate-800 rounded-md" />
+                        <div className="space-y-1 mt-2">
+                          <div className="h-2.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full" />
+                          <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full" />
+                        </div>
+                      </div>
+                      <div className="h-8 w-full bg-slate-100 dark:bg-slate-800 rounded-xl" />
+                    </div>
+                  ))}
+                </div>
+              ) : filteredTopics.length === 0 ? (
+                <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+                    <Search size={22} />
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                    Aramanıza uygun konu bulunamadı
+                  </h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    "{searchTopicQuery}" için sonuç yok. Başka bir anahtar kelime deneyebilir veya filtreyi temizleyebilirsiniz.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTopicQuery("");
+                      setSelectedDomainFilter("all");
+                    }}
+                    className="mt-2 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-bold text-xs hover:bg-indigo-100 transition-colors cursor-pointer"
+                  >
+                    Filtreleri Temizle
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {filteredTopics.map((topicItem) => {
+                    const isDone = topicItem.answered_count >= topicItem.total_questions && topicItem.total_questions > 0;
+                    const progressPct = topicItem.total_questions > 0
+                      ? Math.round((topicItem.answered_count / topicItem.total_questions) * 100)
+                      : 0;
 
-                        <h4 className="text-sm font-black text-slate-900 dark:text-slate-100 line-clamp-1">
-                          {topicItem.topic}
-                        </h4>
-
-                        {/* Progress and Accuracy */}
-                        <div className="mt-3 space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px] text-slate-500">
-                            <span>İlerleme (%{progressPct})</span>
-                            <span className="font-bold text-slate-700 dark:text-slate-300">
-                              {topicItem.answered_count > 0 ? `Doğruluk: %${topicItem.accuracy}` : "Henüz başlanmadı"}
+                    return (
+                      <div
+                        key={topicItem.topic}
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs hover:border-indigo-400 dark:hover:border-indigo-600 transition-all flex flex-col justify-between gap-3"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              {topicItem.domain}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                                isDone
+                                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                              }`}
+                            >
+                              {topicItem.answered_count} / {topicItem.total_questions} Çözüldü
                             </span>
                           </div>
-                          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-300 ${
-                                isDone ? "bg-emerald-500" : "bg-indigo-600"
-                              }`}
-                              style={{ width: `${progressPct}%` }}
-                            />
+
+                          <h4 className="text-sm font-black text-slate-900 dark:text-slate-100 line-clamp-1">
+                            {topicItem.topic}
+                          </h4>
+
+                          {/* Progress and Accuracy */}
+                          <div className="mt-3 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] text-slate-500">
+                              <span>İlerleme (%{progressPct})</span>
+                              <span className="font-bold text-slate-700 dark:text-slate-300">
+                                {topicItem.answered_count > 0 ? `Doğruluk: %${topicItem.accuracy}` : "Henüz başlanmadı"}
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  isDone ? "bg-emerald-500" : "bg-indigo-600"
+                                }`}
+                                style={{ width: `${progressPct}%` }}
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                        {isDone ? (
-                          <>
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                          {isDone ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => startTopicPractice(selectedSection, topicItem.topic, true)}
+                                className="flex-1 py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-400 font-bold text-xs transition-colors cursor-pointer text-center"
+                              >
+                                Yanlışları Tekrarla
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleResetTopic(topicItem.topic, false)}
+                                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors cursor-pointer"
+                                title="Konuyu Sıfırla"
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            </>
+                          ) : (
                             <button
                               type="button"
-                              onClick={() => startTopicPractice(selectedSection, topicItem.topic, true)}
-                              className="flex-1 py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-400 font-bold text-xs transition-colors cursor-pointer text-center"
+                              onClick={() => startTopicPractice(selectedSection, topicItem.topic, false)}
+                              className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                             >
-                              Yanlışları Tekrarla
+                              <span>Çalışmaya Başla</span>
+                              <ChevronRight size={14} />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleResetTopic(topicItem.topic, false)}
-                              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors cursor-pointer"
-                              title="Konuyu Sıfırla"
-                            >
-                              <RotateCcw size={14} />
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => startTopicPractice(selectedSection, topicItem.topic, false)}
-                            className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                          >
-                            <span>Çalışmaya Başla</span>
-                            <ChevronRight size={14} />
-                          </button>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1599,6 +1669,51 @@ export default function KapSAT({
                     </div>
                   );
                 })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXIT TEST CONFIRMATION MODAL */}
+      {showExitConfirmModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 mt-0.5">
+                <AlertCircle size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-slate-100">
+                  Sınavdan Çıkmak İstiyor musunuz?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Devam eden bir testiniz var, çıkmak istediğinize emin misiniz? İlerlemeniz kaydedilmeyebilir.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowExitConfirmModal(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                İptal (Teste Devam Et)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExitConfirmModal(false);
+                  if (onClose) {
+                    onClose();
+                  } else {
+                    setCurrentView("dashboard");
+                  }
+                }}
+                className="px-4 py-2.5 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-600/30 transition-all cursor-pointer active:scale-95"
+              >
+                Çıkış Yap
+              </button>
             </div>
           </div>
         </div>

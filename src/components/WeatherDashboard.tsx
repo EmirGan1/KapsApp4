@@ -22,8 +22,11 @@ import {
   Clock,
   Calendar,
   X,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 import WeatherIcon from './WeatherIcon';
+import WeatherAdviceModal from './WeatherAdviceModal';
 import {
   WeatherData,
   WeatherLocation,
@@ -40,6 +43,10 @@ import {
   getWeatherMeta,
   getUVLevelText,
   getWindDirectionText,
+  getSmartWeatherAdvice,
+  getDetailed3DayAdvice,
+  SmartWeatherAdvice,
+  ThreeDayWeatherAdvice,
 } from '../utils/weatherService';
 
 interface WeatherDashboardProps {
@@ -74,6 +81,7 @@ export default function WeatherDashboard({ darkMode, onBackToMain }: WeatherDash
 
   // Selected Day for Detail Pop-up Modal
   const [selectedDay, setSelectedDay] = useState<DailyForecastItem | null>(null);
+  const [isAdviceModalOpen, setIsAdviceModalOpen] = useState<boolean>(false);
 
   // Load weather for location
   const loadWeather = async (loc: WeatherLocation, isSilent = false) => {
@@ -267,6 +275,13 @@ export default function WeatherDashboard({ darkMode, onBackToMain }: WeatherDash
     return getWeatherMeta(weatherData.current.weatherCode, weatherData.current.isDay);
   }, [weatherData]);
 
+  // Smart Weather Advice engine (3-Day & Today)
+  const adviceData = useMemo(() => {
+    return getDetailed3DayAdvice(weatherData);
+  }, [weatherData]);
+
+  const smartAdvice = adviceData.todaySummary;
+
   // Filter 24 hours for selected day in modal
   const selectedDayHourlyList = useMemo(() => {
     if (!selectedDay || !weatherData) return [];
@@ -422,11 +437,58 @@ export default function WeatherDashboard({ darkMode, onBackToMain }: WeatherDash
             <section
               className={`relative rounded-3xl p-6 sm:p-8 overflow-hidden shadow-xl sm:shadow-2xl bg-gradient-to-br ${
                 weatherData.current.isDay ? weatherMeta.bgGradientDay : weatherMeta.bgGradientNight
-              } transition-all duration-700 border border-white/20`}
+              } transition-all duration-700 border border-white/20 space-y-5`}
             >
               {/* Subtle Atmospheric Light Effect */}
               <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none" />
               <div className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full bg-black/20 blur-3xl pointer-events-none" />
+
+              {/* Günün ve Sonraki Günün Tavsiyesi / Akıllı Hava Asistanı */}
+              <div className="relative z-10 bg-white/10 dark:bg-slate-800/40 backdrop-blur-md border border-white/15 rounded-2xl p-3.5 sm:p-4 text-white shadow-xs space-y-2.5">
+                {/* Bugünün tavsiyesi */}
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-xl bg-white/15 backdrop-blur-md shrink-0 mt-0.5 shadow-2xs">
+                    {smartAdvice.iconType === 'umbrella' && <Umbrella size={18} className="text-sky-300" />}
+                    {smartAdvice.iconType === 'wind' && <Wind size={18} className="text-indigo-200" />}
+                    {smartAdvice.iconType === 'sun' && <Sun size={18} className="text-amber-300" />}
+                    {smartAdvice.iconType === 'thermometer' && <Thermometer size={18} className="text-blue-200" />}
+                    {smartAdvice.iconType === 'sparkles' && <Sparkles size={18} className="text-amber-300" />}
+                  </div>
+                  <div className="space-y-0.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-amber-300 drop-shadow-xs">
+                        {smartAdvice.title}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium leading-snug text-white/95">
+                      {smartAdvice.message}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Sonraki Gün (Yarın) için özet ve 3 Günlük Detaylar Butonu */}
+                {adviceData.tomorrowQuickSummary && (
+                  <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                    <div className="flex items-start gap-2 flex-1 min-w-0 text-xs text-white/90 font-medium leading-relaxed">
+                      <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/30 text-[10px] font-black uppercase tracking-wide text-indigo-100 border border-white/10 shrink-0 mt-0.5">
+                        YARIN
+                      </span>
+                      <p className="line-clamp-2">
+                        {adviceData.tomorrowQuickSummary}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsAdviceModalOpen(true)}
+                      className="self-end sm:self-center flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-black text-xs backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+                    >
+                      <span>3 Günlük Detaylar</span>
+                      <ArrowRight size={13} className="text-amber-300" />
+                    </button>
+                  </div>
+                )}
+              </div>
 
               <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
                 {/* Left: Location & Condition */}
@@ -1006,6 +1068,14 @@ export default function WeatherDashboard({ darkMode, onBackToMain }: WeatherDash
           </div>
         </div>
       )}
+
+      {/* 3-Day Smart Weather Advice Modal */}
+      <WeatherAdviceModal
+        isOpen={isAdviceModalOpen}
+        onClose={() => setIsAdviceModalOpen(false)}
+        adviceData={adviceData}
+        locationName={weatherData?.location.name || currentLocation.name}
+      />
     </div>
   );
 }
