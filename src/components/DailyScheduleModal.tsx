@@ -416,7 +416,7 @@ export default function DailyScheduleModal({
                 const isNext = timeStatus.status === "next";
 
                 return (
-                  <React.Fragment key={period.periodNumber}>
+                  <React.Fragment key={Array.isArray(period.periodNumber) ? period.periodNumber.join('-') : period.periodNumber}>
                     {/* Lunch Break Banner between 5th and 6th periods */}
                     {period.periodNumber === 6 && (
                       <div className="my-3 p-3 rounded-2xl bg-amber-500/10 border border-dashed border-amber-500/30 flex items-center justify-between text-xs text-amber-700 dark:text-amber-300">
@@ -597,7 +597,7 @@ export default function DailyScheduleModal({
 
                           return (
                             <div
-                              key={period.periodNumber}
+                              key={Array.isArray(period.periodNumber) ? period.periodNumber.join('-') : period.periodNumber}
                               className={`p-2 rounded-xl border text-xs transition-all ${
                                 isCurrent
                                   ? "bg-blue-500 text-white border-blue-600 font-bold shadow-md shadow-blue-500/20"

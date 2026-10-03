@@ -25,12 +25,18 @@ export const SOCKET_URL = (
 ).replace(/\/$/, "");
 
 /**
- * Returns absolute API URL
+ * Returns API URL (relative on web to avoid CORS/proxy issues, absolute on native apps)
  */
 export function getApiUrl(path: string = ""): string {
-  if (!path) return API_BASE_URL;
+  if (!path) return isNativeApp ? API_BASE_URL : "";
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  return `${API_BASE_URL}${cleanPath}`;
+  if (isNativeApp) {
+    return `${API_BASE_URL}${cleanPath}`;
+  }
+  return cleanPath;
 }
 
 /**
@@ -65,15 +71,19 @@ export function getAuthHeaders(extraHeaders?: HeadersInit): Headers {
 
 /**
  * Safe fetch JSON wrapper with automatic JWT Bearer token, Physical Hardware Fingerprint headers
- * (`X-Hardware-Fingerprint` & `X-Device-Id`), withCredentials support, and instantaneous Device Ban interception.
+ * (`X-Hardware-Fingerprint` & `X-Device-Id`), withCredentials support, retry logic, and instantaneous Device Ban interception.
  */
 export async function safeFetchJson<T = any>(input: string, init?: RequestInit): Promise<T> {
   const targetUrl = getApiUrl(input);
   
-  // Ensure physical hardware fingerprint is ready
+  // Ensure physical hardware fingerprint is ready (non-blocking fallback)
   let hwFingerprint = getCachedHardwareFingerprint();
   if (!hwFingerprint || hwFingerprint === "hw_pending_init") {
-    hwFingerprint = await getHardwareFingerprint();
+    try {
+      hwFingerprint = await getHardwareFingerprint();
+    } catch {
+      hwFingerprint = "hw_fallback_client";
+    }
   }
 
   const headers = getAuthHeaders(init?.headers);
@@ -82,16 +92,29 @@ export async function safeFetchJson<T = any>(input: string, init?: RequestInit):
     headers.set("X-Device-Id", hwFingerprint);
   }
 
-  let res: Response;
-  try {
-    res = await fetch(targetUrl, {
-      credentials: init?.credentials || "include",
-      ...init,
-      headers
-    });
-  } catch (networkErr: any) {
-    console.error(`[API Network Error] Hedef URL: ${targetUrl}`, networkErr);
-    throw new Error(`Sunucuya bağlanılamadı (${API_BASE_URL}). Lütfen internet bağlantınızı veya sunucu erişimini kontrol edin.`);
+  let res: Response | null = null;
+  let lastNetworkErr: any = null;
+  const maxRetries = 2;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      res = await fetch(targetUrl, {
+        credentials: init?.credentials || "include",
+        ...init,
+        headers
+      });
+      break;
+    } catch (networkErr: any) {
+      lastNetworkErr = networkErr;
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+      }
+    }
+  }
+
+  if (!res) {
+    console.error(`[API Network Error] Hedef URL: ${targetUrl}`, lastNetworkErr);
+    throw new Error(`Sunucuya bağlanılamadı (${API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "")}). Lütfen internet bağlantınızı veya sunucu erişimini kontrol edin.`);
   }
 
   const contentType = res.headers.get("content-type");
@@ -99,7 +122,7 @@ export async function safeFetchJson<T = any>(input: string, init?: RequestInit):
   if (!contentType || !contentType.includes("application/json")) {
     const text = await res.text();
     console.error(`Beklenmeyen sunucu yanıtı (${res.status} ${res.statusText}) URL: ${targetUrl}:`, text);
-    throw new Error(`Sunucuya bağlanılamadı (${API_BASE_URL}). Backend servisi henüz uyanmamış veya çevrimdışı olabilir.`);
+    throw new Error(`Sunucuya bağlanılamadı (${API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "")}). Backend servisi henüz uyanmamış veya çevrimdışı olabilir.`);
   }
 
   const data = await res.json();

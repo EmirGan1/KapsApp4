@@ -21,6 +21,7 @@ import DeviceBanScreen from "./components/DeviceBanScreen";
 import Agenda from "./components/Agenda";
 import AdminPanel from "./components/AdminPanel";
 import SubjectsDirectory from "./components/SubjectsDirectory";
+import KapSAT from "./components/KapSAT";
 import { CallProvider } from "./context/CallContext";
 import IncomingCallNotification from "./components/IncomingCallNotification";
 import ActiveCallPanel from "./components/ActiveCallPanel";
@@ -56,7 +57,7 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState<number[]>([]);
   const [currentUserId, setCurrentUserId] = useState<number>(Number(localStorage.getItem("lan_user_id")) || 0);
   
-  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted">("chats");
+  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat">("chats");
   const [activeSubject, setActiveSubject] = useState<string | null>(null);
   const [viewingUserId, setViewingUserId] = useState<number>(currentUserId);
   const [targetChatUserId, setTargetChatUserId] = useState<number | null>(null);
@@ -666,7 +667,7 @@ export default function App() {
     window.location.reload();
   };
 
-  const handleTabChange = (tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted") => {
+  const handleTabChange = (tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat") => {
     if (tab === "predicted" && !isEmirgan && !hasPredictedAccess) {
       return;
     }
@@ -955,6 +956,12 @@ export default function App() {
             <NavItem icon={<MessageSquare />} label="Sohbetler" active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
             <NavItem icon={<LayoutGrid />} label="Akış" active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
             <NavItem icon={<Folder className="text-blue-500" />} label="Ders Klasörleri" active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
+            <NavItem 
+              icon={<GraduationCap className="text-indigo-500 dark:text-indigo-400" />} 
+              label="kapSAT (Digital SAT)" 
+              active={activeTab === 'kapsat'} 
+              onClick={() => handleTabChange('kapsat')} 
+            />
             <NavItem icon={<MapPin className="text-emerald-500" />} label="Canlı Harita" active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
             <NavItem icon={<Users />} label="Arkadaşlar" active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
             <NavItem icon={<Radio />} label="Sesli & Görüntülü" active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
@@ -1069,6 +1076,11 @@ export default function App() {
             subjects={SUBJECTS} 
             onSelectSubject={handleSubjectClick} 
             socket={socket} 
+          />
+        )}
+        {activeTab === 'kapsat' && (
+          <KapSAT 
+            onClose={() => handleTabChange('folders')} 
           />
         )}
         {activeTab === 'subject' && (

@@ -12,6 +12,7 @@ import fs from "fs";
 import os from "os";
 import { createClient } from "@libsql/client";
 import dotenv from "dotenv";
+import { initSatDb, setupSatRoutes } from "./src/server/satController";
 
 import { 
   generateDeck, 
@@ -542,6 +543,13 @@ async function initDb() {
   } catch (agendaInitErr) {
     console.error("Agenda table initialization error:", agendaInitErr);
   }
+
+  // kapSAT (Digital SAT Sınav ve Çalışma Motoru) Table & Seed initialization
+  try {
+    await initSatDb(client);
+  } catch (satInitErr) {
+    console.error("kapSAT table initialization error:", satInitErr);
+  }
 }
 
 async function startServer() {
@@ -798,6 +806,11 @@ async function startServer() {
       return res.status(500).send("Error streaming file");
     }
   };
+
+  // Health & Ping Endpoints
+  app.get(["/api/health", "/api/ping"], (req, res) => {
+    res.json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
+  });
 
   // Register on /uploads/:filename, /api/media/:filename and /api/video/:filename
   app.get(["/uploads/:filename", "/api/media/:filename", "/api/video/:filename"], handleMediaStream);
@@ -2100,6 +2113,9 @@ async function startServer() {
       return null;
     }
   }
+
+  // kapSAT: Digital SAT Çalışma ve Sınav Motoru API Rotaları
+  setupSatRoutes(app, client, authenticateToken);
 
   // Free Virtual Chip Refill (500 Chips when broke)
   app.post("/api/chips/refill", async (req, res) => {

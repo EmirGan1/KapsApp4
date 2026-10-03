@@ -15,9 +15,15 @@ import {
   Layers, 
   Sparkles,
   ArrowRight,
-  FileText
+  FileText,
+  GraduationCap,
+  Zap,
+  Target,
+  Award,
+  Play
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
+import KapSAT from "./KapSAT";
 
 interface SubjectsDirectoryProps {
   subjects: string[];
@@ -136,6 +142,40 @@ export default function SubjectsDirectory({
   const [searchQuery, setSearchQuery] = useState("");
   const [counts, setCounts] = useState<Record<string, number | string>>({});
 
+  // kapSAT Module States
+  const [isKapSatOpen, setIsKapSatOpen] = useState(false);
+  const [kapSatInitialMode, setKapSatInitialMode] = useState<"dashboard" | "mini_test" | "full_test" | "topic_practice">("dashboard");
+  const [kapSatInitialSection, setKapSatInitialSection] = useState<"math" | "reading_writing">("reading_writing");
+  const [satStats, setSatStats] = useState<{
+    today_answered: number;
+    total_answered: number;
+    total_pool: number;
+    accuracy: number;
+  } | null>(null);
+
+  const fetchSatQuickStats = () => {
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    fetch(getApiUrl("/api/sat/stats"), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data) {
+          setSatStats({
+            today_answered: data.today_answered || 0,
+            total_answered: data.total_answered || 0,
+            total_pool: data.total_pool || 0,
+            accuracy: data.accuracy || 0
+          });
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchSatQuickStats();
+  }, []);
+
   useEffect(() => {
     // Optionally fetch counts per folder
     const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
@@ -165,11 +205,152 @@ export default function SubjectsDirectory({
     );
   });
 
+  const openKapSat = (mode: "dashboard" | "mini_test" | "full_test" | "topic_practice" = "dashboard", sec: "math" | "reading_writing" = "reading_writing") => {
+    setKapSatInitialMode(mode);
+    setKapSatInitialSection(sec);
+    setIsKapSatOpen(true);
+  };
+
+  // If KapSAT is open, render full-featured Digital SAT module
+  if (isKapSatOpen) {
+    return (
+      <KapSAT 
+        onClose={() => {
+          setIsKapSatOpen(false);
+          fetchSatQuickStats();
+        }}
+        initialMode={kapSatInitialMode}
+        initialSection={kapSatInitialSection}
+      />
+    );
+  }
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
       <div className="max-w-3xl mx-auto px-4 py-5 sm:py-7 pb-28">
         
-        {/* Header Hero Section */}
+        {/* ========================================================= */}
+        {/* 1. DERSLER SAYFASI EN ÜST ALANI: kapSAT HERO CARD         */}
+        {/* ========================================================= */}
+        <div className="mb-6 rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 border border-indigo-500/30 p-5 sm:p-7 text-white shadow-xl relative overflow-hidden group">
+          {/* Subtle Ambient Glows */}
+          <div className="absolute top-0 right-0 -mr-10 -mt-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none group-hover:bg-indigo-500/30 transition-all duration-500" />
+          <div className="absolute bottom-0 right-20 w-40 h-40 bg-purple-500/20 rounded-full blur-2xl pointer-events-none" />
+
+          <div className="relative z-10">
+            {/* Top Badge */}
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-black text-indigo-300 border border-white/15">
+                <GraduationCap size={14} className="text-amber-400" />
+                <span>kapSAT — Digital SAT Hazırlık Merkezi</span>
+              </div>
+              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                Soru Tekrarı Engelli 🛡️
+              </span>
+            </div>
+
+            {/* Title & Desc */}
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white mb-1.5">
+              Digital SAT Çalışma ve Deneme Motoru
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed mb-4">
+              Konu bazlı akıllı pratik havuzu, süreli 30 soruluk mini denemeler ve resmi Bluebook sınav arayüzü ile eksiklerini kapat.
+            </p>
+
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-3 gap-2.5 mb-5 p-3 rounded-2xl bg-white/5 border border-white/10">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Bugün Çözülen
+                </span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-base sm:text-lg font-black text-white">
+                    {satStats?.today_answered ?? 0}
+                  </span>
+                  <span className="text-[10px] text-slate-400">/ 20</span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden mt-1.5">
+                  <div 
+                    className="bg-indigo-400 h-full rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, (((satStats?.today_answered ?? 0) / 20) * 100))}%` }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Doğruluk Oranı
+                </span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-base sm:text-lg font-black text-emerald-400">
+                    %{satStats?.accuracy ?? 0}
+                  </span>
+                </div>
+                <span className="text-[9px] text-slate-400 mt-1 block truncate">
+                  {satStats?.total_answered ?? 0} soru çözüldü
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Soru Havuzu
+                </span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-base sm:text-lg font-black text-amber-400">
+                    {satStats?.total_pool ?? 0}
+                  </span>
+                  <span className="text-[10px] text-slate-400">soru</span>
+                </div>
+                <span className="text-[9px] text-slate-400 mt-1 block truncate">
+                  Math + R&W
+                </span>
+              </div>
+            </div>
+
+            {/* CTA Button & Quick Mode Shortcuts */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => openKapSat("dashboard")}
+                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-black text-xs shadow-md shadow-indigo-500/25 transition-all cursor-pointer active:scale-95"
+              >
+                <Zap size={14} className="text-amber-300" />
+                <span>Hemen Çalışmaya Başla</span>
+                <ArrowRight size={14} />
+              </button>
+
+              {/* Mode Shortcuts */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => openKapSat("topic_practice", "reading_writing")}
+                  className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/15 text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer"
+                >
+                  Konu Alıştırması
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openKapSat("mini_test")}
+                  className="px-3 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 text-[11px] font-black whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <span>Mini Deneme (30 Soru)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openKapSat("full_test")}
+                  className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/15 text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer"
+                >
+                  Komple Deneme
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================= */}
+        {/* 2. DERS KLASÖRLERİ HERO SECTION & KLASÖRLER LİSTESİ       */}
+        {/* ========================================================= */}
         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 sm:p-8 text-white shadow-xl mb-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 -mr-8 -mt-8 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none" />
           <div className="absolute bottom-0 right-12 w-32 h-32 bg-indigo-400/20 rounded-full blur-xl pointer-events-none" />
