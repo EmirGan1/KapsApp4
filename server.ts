@@ -14,6 +14,7 @@ import { createClient } from "@libsql/client";
 import dotenv from "dotenv";
 import { initSatDb, setupSatRoutes } from "./src/server/satController";
 import { registerCourseRoutes } from "./src/server/courseController";
+import { registerAdminController } from "./src/server/adminController";
 
 import { 
   generateDeck, 
@@ -159,6 +160,22 @@ async function initDb() {
     token TEXT,
     last_seen TEXT
   )`);
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN name TEXT`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN avatar_url TEXT`);
+  } catch (e) {}
+  try {
+    await client.execute(`CREATE TABLE IF NOT EXISTS user_daily_screen_time (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      total_seconds INTEGER DEFAULT 0,
+      last_active_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, date)
+    )`);
+  } catch (e) {}
   try {
     await client.execute(`ALTER TABLE users ADD COLUMN okey_wins INTEGER DEFAULT 0`);
   } catch (e) {}
@@ -2687,6 +2704,9 @@ async function startServer() {
       return res.status(500).json({ error: err.message });
     }
   });
+
+  // Admin and Screen Time Controllers
+  registerAdminController(app, client, requireEmirganAdmin);
 
   // Admin: Overall System Metrics & Health Dashboard
   app.get("/api/admin/overview", requireEmirganAdmin, async (req, res) => {

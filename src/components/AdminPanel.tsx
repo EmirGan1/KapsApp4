@@ -87,7 +87,7 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ socket, currentUsername, onUserClick, onPendingCountChange }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity">("pending");
   const [loading, setLoading] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   
@@ -99,6 +99,11 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
   const [logs, setLogs] = useState<AccessLogItem[]>([]);
   const [activeTables, setActiveTables] = useState<any[]>([]);
   const [rolesList, setRolesList] = useState<CourseRole[]>(COURSE_ROLES);
+
+  // Screen Time Leaderboard States
+  const [screenTimeLeaderboard, setScreenTimeLeaderboard] = useState<any[]>([]);
+  const [screenTimeRange, setScreenTimeRange] = useState<"today" | "week" | "all">("all");
+  const [loadingScreenTime, setLoadingScreenTime] = useState<boolean>(false);
   
   // Role Creator & Manager States
   const [newRoleName, setNewRoleName] = useState<string>("");
@@ -535,8 +540,30 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
     };
   }, [socket, fetchPendingUsers, fetchUsers, fetchOverview, fetchActiveTables, fetchRoles]);
 
+  // Fetch Screen Time Leaderboard from backend
+  const fetchScreenTimeLeaderboard = async (rangeToFetch?: "today" | "week" | "all") => {
+    const targetRange = rangeToFetch || screenTimeRange;
+    setLoadingScreenTime(true);
+    try {
+      const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+      const res = await fetch(getApiUrl(`/api/admin/screen-time-leaderboard?range=${targetRange}`), {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setScreenTimeLeaderboard(data.leaderboard || []);
+      }
+    } catch (e) {
+      console.error("Error fetching screen time leaderboard:", e);
+    } finally {
+      setLoadingScreenTime(false);
+    }
+  };
+
   // Tab change handler
-  const handleTabChange = (tab: "pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs") => {
+  const handleTabChange = (tab: "pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity") => {
     setActiveTab(tab);
     if (tab === "pending") fetchPendingUsers();
     if (tab === "users") fetchUsers();
@@ -544,6 +571,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
     if (tab === "tables") fetchActiveTables();
     if (tab === "hardware") fetchBannedHardware();
     if (tab === "logs") { fetchLogs(); fetchOverview(); }
+    if (tab === "activity") { fetchScreenTimeLeaderboard(); }
   };
 
   // 1. Hesabı Onayla (Approve) - Kesin Çözüm
@@ -1001,6 +1029,18 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
         >
           <Terminal size={16} />
           <span>📊 Sistem Logları</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange("activity")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
+            activeTab === "activity"
+              ? "bg-slate-950 text-purple-400 border-purple-500 shadow-sm"
+              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
+          }`}
+        >
+          <Clock size={16} className="text-purple-400" />
+          <span>⏱️ Ekran Süresi</span>
         </button>
       </div>
 
@@ -2051,7 +2091,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
                   <p className="text-slate-500 text-center py-4">Kayıt bulunamadı.</p>
                 ) : (
                   logs.map((l) => (
-                    <div key={l.id} className="text-slate-400 flex items-center justify-between gap-2 border-b border-slate-900 pb-1">
+                    <div key={l.id} className="text-slate-404 flex items-center justify-between gap-2 border-b border-slate-900 pb-1">
                       <span className="text-slate-300">
                         [{new Date(l.timestamp || "").toLocaleString("tr-TR")}] UID:{l.userId || "anon"} IP:{l.ipAddress}
                       </span>
@@ -2060,6 +2100,199 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
                   ))
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 8: EKRAN SÜRESİ & AKTİFLİK LİDERLİK TABLOSU            */}
+        {/* ========================================================= */}
+        {activeTab === "activity" && (
+          <div className="space-y-4 max-w-4xl mx-auto animate-in fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <div>
+                <h3 className="font-extrabold text-base text-white flex items-center gap-2">
+                  <Clock size={18} className="text-purple-400" />
+                  <span>Ekran Süresi & Aktiflik Liderlik Tablosu</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Kullanıcıların KapsApp üzerinde geçirdikleri aktif ekran sürelerinin liderlik tablosu
+                </p>
+              </div>
+
+              {/* Time Range Selector & Refresh */}
+              <div className="flex items-center gap-2.5">
+                <div className="flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+                  <button
+                    onClick={() => {
+                      setScreenTimeRange("today");
+                      fetchScreenTimeLeaderboard("today");
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      screenTimeRange === "today"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Bugün
+                  </button>
+                  <button
+                    onClick={() => {
+                      setScreenTimeRange("week");
+                      fetchScreenTimeLeaderboard("week");
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      screenTimeRange === "week"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Son 7 Gün
+                  </button>
+                  <button
+                    onClick={() => {
+                      setScreenTimeRange("all");
+                      fetchScreenTimeLeaderboard("all");
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      screenTimeRange === "all"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Tüm Zamanlar
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => fetchScreenTimeLeaderboard()}
+                  disabled={loadingScreenTime}
+                  className="p-2 rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all cursor-pointer flex items-center justify-center"
+                  title="Yenile"
+                >
+                  <RefreshCw size={14} className={loadingScreenTime ? "animate-spin text-purple-400" : ""} />
+                </button>
+              </div>
+            </div>
+
+            {/* Leaderboard Table Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+              {loadingScreenTime && screenTimeLeaderboard.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 space-y-2">
+                  <RefreshCw size={24} className="animate-spin text-purple-500 mx-auto" />
+                  <p className="text-xs">Süre verileri yükleniyor...</p>
+                </div>
+              ) : screenTimeLeaderboard.length === 0 ? (
+                <div className="p-12 text-center text-slate-400">
+                  <p className="text-xs">Bu zaman aralığında kaydedilmiş aktiflik verisi bulunmuyor.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-black uppercase tracking-wider text-slate-400">
+                        <th className="py-4 px-4 text-center w-16">Sıra</th>
+                        <th className="py-4 px-4">Kullanıcı</th>
+                        <th className="py-4 px-4 text-center">Toplam Süre</th>
+                        <th className="py-4 px-4">Son Aktiflik</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {screenTimeLeaderboard.map((item, idx) => {
+                        const rank = idx + 1;
+                        
+                        // Human-readable active time formatter
+                        const formatSeconds = (totalSeconds: number) => {
+                          if (totalSeconds <= 0) return "0sn";
+                          const h = Math.floor(totalSeconds / 3600);
+                          const m = Math.floor((totalSeconds % 3600) / 60);
+                          const s = totalSeconds % 60;
+                          
+                          if (h > 0) return `${h}sa ${m}dk`;
+                          if (m > 0) return `${m}dk ${s}sn`;
+                          return `${s}sn`;
+                        };
+
+                        // Last active date helper
+                        const lastSeenDate = item.last_seen 
+                          ? new Date(item.last_seen).toLocaleString("tr-TR", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            })
+                          : "-";
+
+                        // Ranking style highlight
+                        let rankBadgeClass = "text-slate-400";
+                        if (rank === 1) rankBadgeClass = "bg-amber-500 text-slate-950 font-black";
+                        else if (rank === 2) rankBadgeClass = "bg-slate-300 text-slate-950 font-black";
+                        else if (rank === 3) rankBadgeClass = "bg-amber-700 text-white font-black";
+
+                        return (
+                          <tr
+                            key={item.user_id}
+                            className="hover:bg-slate-800/30 transition-colors text-slate-300 text-xs font-semibold"
+                          >
+                            {/* Rank Column */}
+                            <td className="py-3.5 px-4 text-center">
+                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] ${
+                                rank <= 3 ? rankBadgeClass : "border border-slate-800 text-slate-400"
+                              }`}>
+                                {rank}
+                              </span>
+                            </td>
+
+                            {/* User details */}
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-3">
+                                {item.avatar_url ? (
+                                  <img
+                                    src={item.avatar_url.startsWith("/uploads/") || item.avatar_url.startsWith("http") ? item.avatar_url : `/uploads/${item.avatar_url}`}
+                                    alt={item.username}
+                                    className="w-8 h-8 rounded-full object-cover border border-purple-500/30"
+                                    onError={(e) => {
+                                      (e.target as any).src = "https://www.gravatar.com/avatar?d=mp";
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black text-white"
+                                    style={{ backgroundColor: item.color || "#4F46E5" }}
+                                  >
+                                    {String(item.username || "?").substring(0, 2).toUpperCase()}
+                                  </div>
+                                )}
+                                <div>
+                                  <p className="font-extrabold text-white text-xs flex items-center gap-1.5">
+                                    <span>{item.name || item.username}</span>
+                                    {item.username.toLowerCase() === "emirgan" && (
+                                      <span className="px-1 text-[8px] font-black rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase tracking-wide">
+                                        KURUCU
+                                      </span>
+                                    )}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500">@{item.username}</p>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Total Screen Time */}
+                            <td className="py-3.5 px-4 text-center font-mono font-black text-white text-xs">
+                              {formatSeconds(item.total_seconds)}
+                            </td>
+
+                            {/* Last Activity */}
+                            <td className="py-3.5 px-4 text-slate-400 text-[11px] font-medium">
+                              {lastSeenDate}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}

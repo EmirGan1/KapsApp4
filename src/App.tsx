@@ -141,6 +141,29 @@ export default function App() {
     };
   }, []);
 
+  // Active Screen Time Tracking Heartbeat (Every 15s)
+  useEffect(() => {
+    if (!token) return;
+
+    const intervalSeconds = 15;
+    const interval = setInterval(async () => {
+      try {
+        await fetch(getApiUrl("/api/user/screen-time"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ seconds: intervalSeconds })
+        });
+      } catch (err) {
+        // Silently ignore background tracking failures
+      }
+    }, intervalSeconds * 1000);
+
+    return () => clearInterval(interval);
+  }, [token]);
+
   // Check IB Predicted Access status (Emirgan or Authorized Pool User)
   useEffect(() => {
     if (!token && (username || "").trim().toLowerCase() !== "emirgan") {
