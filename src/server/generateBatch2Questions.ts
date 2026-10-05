@@ -483,7 +483,7 @@ export function generateBatch2Questions(): SatQuestionSeed[] {
   ];
 
   batch2Vocab.forEach((item, idx) => {
-    const o = mcq(item.w, item.dist);
+    const o = mcq(item.w, item.dist as [string, string, string]);
     list.push({
       section: 'reading_writing',
       domain: 'Craft and Structure',
@@ -775,7 +775,7 @@ export function generateBatch2Questions(): SatQuestionSeed[] {
 
   for (let i = 0; i < 25; i++) {
     const item = transitionsBank2[i % transitionsBank2.length];
-    const o = mcq(item.w, item.dist);
+    const o = mcq(item.w, item.dist as [string, string, string]);
     list.push({
       section: 'reading_writing',
       domain: 'Expression of Ideas',

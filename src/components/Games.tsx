@@ -14,6 +14,7 @@ import BatakGame from './BatakGame';
 import TexasHoldemPokerGame from './TexasHoldemPokerGame';
 import MiniBattleRoyale from './MiniBattleRoyale';
 import PartyMode from './PartyMode';
+import BilliardsGame from './BilliardsGame';
 import CardTableLobbyModal, { CardTableInfo, CreateTableOptions } from './CardTableLobbyModal';
 import AdminChipManagerModal from './AdminChipManagerModal';
 import KvkkModal from './KvkkModal';
@@ -46,7 +47,7 @@ interface LeaderboardUser {
 }
 
 type GameCategory = 'all' | 'cards' | 'arcade' | 'strategy' | 'active_lobbies';
-type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party';
+type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party' | 'billiards';
 
 export default function Games({
   socket,
@@ -378,6 +379,23 @@ export default function Games({
     );
   }
 
+  // Route: KapsPool 8-Ball Billiards
+  if (selectedGame === 'billiards') {
+    return (
+      <BilliardsGame
+        socket={socket}
+        currentUserId={currentUserId}
+        username={username}
+        avatar={avatar}
+        color={color}
+        onBack={() => {
+          setSelectedGame('hub');
+          setSelectedGameTableId(null);
+        }}
+      />
+    );
+  }
+
   // Games definition list
   const allGames = [
     {
@@ -628,6 +646,36 @@ export default function Games({
         setSelectedGameTableId(null);
         setSelectedGame('party');
       }
+    },
+    {
+      id: 'billiards',
+      title: 'KapsPool (8-Ball Bilardo)',
+      subtitle: '2 Kişilik • WPA Katı Kuralları, Vektörel Fizik & Lobi',
+      category: ['arcade', 'strategy'],
+      badge: 'YENİ 8-BALL',
+      badgeColor: 'bg-emerald-500 text-slate-950 font-black',
+      gradient: 'from-emerald-800 via-green-700 to-teal-900',
+      icon: '🎱',
+      capacity: '2 Kişilik & İzleyici',
+      activeRooms: activeTables.filter(t => t.gameType === 'billiards').length,
+      features: [
+        'WPA 8-Ball Katı Kural & Faul Motoru (Ball-in-Hand)',
+        '2D Elastik Çarpışma, Bant Yansımaları & Delik Çekim Fiziği',
+        'Lazer Kılavuz Çizgisi, Istaka Gücü & Top Falso Kontrolü'
+      ],
+      preview: (
+        <div className="flex items-center justify-center gap-1.5 py-1">
+          <div className="w-5 h-5 rounded-full bg-white border border-slate-300 shadow flex items-center justify-center text-[9px] font-black text-slate-900">⚪</div>
+          <div className="w-5 h-5 rounded-full bg-amber-500 shadow flex items-center justify-center text-[9px] font-black text-slate-950">1</div>
+          <div className="w-5 h-5 rounded-full bg-slate-950 shadow flex items-center justify-center text-[9px] font-black text-white">8</div>
+          <div className="w-5 h-5 rounded-full bg-blue-600 shadow flex items-center justify-center text-[9px] font-black text-white">10</div>
+        </div>
+      ),
+      actionPrimary: 'Bilardo Oyna',
+      onClick: () => {
+        setSelectedGameTableId(null);
+        setSelectedGame('billiards');
+      }
     }
   ];
 
@@ -732,6 +780,7 @@ export default function Games({
                   t.gameType === 'blackjack' ? { icon: '🃏', label: 'Blackjack 21', badge: 'bg-yellow-500/20 text-yellow-300' } :
                   t.gameType === 'batak' ? { icon: '♠️', label: 'Batak', badge: 'bg-teal-500/20 text-teal-300' } :
                   t.gameType === 'drawguess' ? { icon: '🎨', label: 'Çiz Bakalım', badge: 'bg-fuchsia-500/20 text-fuchsia-300' } :
+                  t.gameType === 'billiards' ? { icon: '🎱', label: '8-Ball Bilardo', badge: 'bg-emerald-500/20 text-emerald-300' } :
                   t.gameType === 'royale' || t.gameType === 'battleroyale' ? { icon: '🎯', label: 'Battle Royale', badge: 'bg-rose-500/20 text-rose-300' } :
                   { icon: '🎮', label: 'Oyun', badge: 'bg-blue-500/20 text-blue-300' };
 
@@ -771,6 +820,7 @@ export default function Games({
                           t.gameType === 'uno' ? 'uno' :
                           t.gameType === 'batak' ? 'batak' :
                           t.gameType === 'drawguess' ? 'drawguess' :
+                          t.gameType === 'billiards' ? 'billiards' :
                           t.gameType === 'royale' || t.gameType === 'battleroyale' ? 'battleroyale' :
                           'blackjack';
                         setSelectedGame(targetRoute);

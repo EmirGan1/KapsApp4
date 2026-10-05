@@ -499,7 +499,7 @@ export function build500Questions(): SatQuestionSeed[] {
   ];
 
   rwVocabBank.forEach((item, idx) => {
-    const o = mcq(item.w, item.dist);
+    const o = mcq(item.w, item.dist as [string, string, string]);
     list.push({
       section: 'reading_writing',
       domain: 'Craft and Structure',
@@ -779,7 +779,7 @@ export function build500Questions(): SatQuestionSeed[] {
 
   for (let i = 0; i < 25; i++) {
     const item = transitionsBank[i % transitionsBank.length];
-    const o = mcq(item.w, item.dist);
+    const o = mcq(item.w, item.dist as [string, string, string]);
     list.push({
       section: 'reading_writing',
       domain: 'Expression of Ideas',

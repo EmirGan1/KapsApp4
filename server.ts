@@ -66,6 +66,7 @@ import {
 import { BattleRoyaleManager } from "./src/server/battleRoyaleServer.ts";
 import { runBattleRoyaleChaosSimulation } from "./src/server/battleRoyaleChaosTest.ts";
 import { PartyManager, runHeadlessPartyTest } from "./src/server/partyServer.ts";
+import { BilliardsManager } from "./src/server/billiardsServer.ts";
 
 dotenv.config();
 
@@ -2192,6 +2193,7 @@ async function startServer() {
   const drawGuessRooms = new Map<string, any>();
   const battleRoyaleManager = new BattleRoyaleManager(io, client);
   const partyManager = new PartyManager(io, client);
+  const billiardsManager = new BilliardsManager(io, client);
   let closeAnyTableAndNotify: (tableId: string) => boolean;
   let refundBlackjackTableBets: (tableId: string, reason: string) => Promise<boolean>;
 
@@ -2351,6 +2353,15 @@ async function startServer() {
       const tid = String(brTable.id);
       if (!addedIds.has(tid)) {
         list.push(brTable as any);
+        addedIds.add(tid);
+      }
+    }
+
+    // 8. Billiards tables (KapsPool)
+    for (const bTable of billiardsManager.getUnifiedTables()) {
+      const tid = String(bTable.id);
+      if (!addedIds.has(tid)) {
+        list.push(bTable as any);
         addedIds.add(tid);
       }
     }
@@ -5800,6 +5811,9 @@ async function startServer() {
     onlineUsers.set(userIdNum, socket.id);
     socket.emit("your_id", userIdNum);
     io.emit("online_users", Array.from(onlineUsers.keys()));
+
+    // Register KapsPool Billiards socket events
+    billiardsManager.registerSocketEvents(socket);
 
     // Immediately send all known locations (active + passive) to newly connected socket
     const initialLocations = Array.from(userLiveLocations.values());
