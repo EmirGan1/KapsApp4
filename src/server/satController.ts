@@ -2,6 +2,7 @@ import { Express, Request, Response } from "express";
 import { SEED_SAT_QUESTIONS } from "./satQuestionsData";
 import { SAT_QUESTIONS_500 } from "./satQuestions500Data";
 import { SAT_QUESTIONS_BATCH2 } from "./satQuestionsBatch2Data";
+import { getOrGenerateQuestions, deduplicateQuestions } from "./satService";
 
 const ALL_SAT_QUESTIONS = [...SEED_SAT_QUESTIONS, ...SAT_QUESTIONS_500, ...SAT_QUESTIONS_BATCH2];
 
@@ -294,28 +295,33 @@ export function setupSatRoutes(
   });
 
   // -------------------------------------------------------------------------
-  // 3. PRACTICE: Topic-based practice (EXCLUDE ANSWERED QUESTIONS)
+  // 3. PRACTICE: Topic-based practice (Central Engine + AI Auto-generation)
   // -------------------------------------------------------------------------
   app.get("/api/sat/practice", async (req: Request, res: Response) => {
     try {
       const authUser = await authenticateToken(req);
       const userId = authUser ? String(authUser.id) : "guest";
 
-      const section = req.query.section as string; // 'math' | 'reading_writing'
+      const section = (req.query.section as string) || "reading_writing";
       const domain = req.query.domain as string;
       const topic = req.query.topic as string;
       const difficulty = req.query.difficulty as string;
-      const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || 10), 10)));
+      const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || 15), 10)));
       const retryIncorrect = req.query.retry_incorrect === "true";
 
-      // Base filters
-      let whereClauses: string[] = [];
-      let args: any[] = [];
+      const questions = await getOrGenerateQuestions(client, {
+        section,
+        domain,
+        topic,
+        difficulty,
+        targetCount: limit,
+        userId,
+        retryIncorrect
+      });
 
-      if (section && section !== "all") {
-        whereClauses.push("section = ?");
-        args.push(section);
-      }
+      // Category count queries
+      let whereClauses: string[] = ["section = ?"];
+      let args: any[] = [section];
       if (domain && domain !== "all") {
         whereClauses.push("domain = ?");
         args.push(domain);
@@ -328,55 +334,21 @@ export function setupSatRoutes(
         whereClauses.push("difficulty = ?");
         args.push(difficulty);
       }
+      const countWhere = "WHERE " + whereClauses.join(" AND ");
 
-      // 1. Check total questions in this category
-      const countWhere = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
       const totalInCategoryRes = await client.execute({
         sql: `SELECT COUNT(*) as count FROM sat_questions ${countWhere}`,
         args: [...args]
       });
       const totalInCategory = Number(totalInCategoryRes.rows[0]?.count || 0);
 
-      // 2. Fetch questions applying exclusion or retry
-      let queryWhereClauses = [...whereClauses];
-      let queryArgs = [...args];
-
-      if (userId !== "guest") {
-        if (retryIncorrect) {
-          // Only fetch questions user previously got wrong
-          queryWhereClauses.push(`id IN (SELECT question_id FROM user_sat_answers WHERE user_id = ? AND is_correct = 0)`);
-          queryArgs.push(userId);
-        } else {
-          // EXCLUDE ANSWERED QUESTIONS
-          queryWhereClauses.push(`id NOT IN (SELECT question_id FROM user_sat_answers WHERE user_id = ?)`);
-          queryArgs.push(userId);
-        }
-      }
-
-      const finalWhere = queryWhereClauses.length > 0 ? "WHERE " + queryWhereClauses.join(" AND ") : "";
-      const query = `
-        SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-        FROM sat_questions
-        ${finalWhere}
-        ORDER BY RANDOM()
-        LIMIT ?
-      `;
-      queryArgs.push(limit);
-
-      const result = await client.execute({ sql: query, args: queryArgs });
-      const questions = result.rows.map((row: any) => ({
-        ...row,
-        options: row.options ? JSON.parse(row.options) : null
-      }));
-
-      // Check how many user has already answered in this category
       let answeredCount = 0;
       if (userId !== "guest") {
         const answeredRes = await client.execute({
           sql: `SELECT COUNT(DISTINCT a.question_id) as answered 
                 FROM user_sat_answers a 
                 JOIN sat_questions q ON a.question_id = q.id 
-                ${countWhere ? countWhere.replace("WHERE", "WHERE a.user_id = ? AND") : "WHERE a.user_id = ?"}`,
+                WHERE a.user_id = ? AND ${whereClauses.join(" AND ")}`,
           args: [userId, ...args]
         });
         answeredCount = Number(answeredRes.rows[0]?.answered || 0);
@@ -406,82 +378,24 @@ export function setupSatRoutes(
       const userId = authUser ? String(authUser.id) : "guest";
       const sessionId = `mini_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-      // 1. Get 15 Reading & Writing questions (prefer unanswered)
-      let rwQuestionsRes: any;
-      if (userId !== "guest") {
-        rwQuestionsRes = await client.execute({
-          sql: `SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-                FROM sat_questions 
-                WHERE section = 'reading_writing' 
-                  AND id NOT IN (SELECT question_id FROM user_sat_answers WHERE user_id = ?)
-                ORDER BY RANDOM() LIMIT 15`,
-          args: [userId]
-        });
-      } else {
-        rwQuestionsRes = await client.execute(`
-          SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-          FROM sat_questions 
-          WHERE section = 'reading_writing' 
-          ORDER BY RANDOM() LIMIT 15
-        `);
-      }
+      // 1. Get 15 Reading & Writing questions via central engine
+      const rwQuestions = await getOrGenerateQuestions(client, {
+        section: "reading_writing",
+        targetCount: 15,
+        userId
+      });
 
-      let rwQuestions = [...rwQuestionsRes.rows];
-      // If fewer than 15 un-answered, fill from remaining pool
-      if (rwQuestions.length < 15) {
-        const remainingNeeded = 15 - rwQuestions.length;
-        const existingIds = rwQuestions.map((q: any) => q.id);
-        const placeholders = existingIds.length > 0 ? existingIds.map(() => "?").join(",") : "0";
-        const fallbackRes = await client.execute({
-          sql: `SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-                FROM sat_questions 
-                WHERE section = 'reading_writing' AND id NOT IN (${placeholders})
-                ORDER BY RANDOM() LIMIT ?`,
-          args: [...existingIds, remainingNeeded]
-        });
-        rwQuestions = [...rwQuestions, ...fallbackRes.rows];
-      }
-
-      // 2. Get 15 Math questions (prefer unanswered)
-      let mathQuestionsRes: any;
-      if (userId !== "guest") {
-        mathQuestionsRes = await client.execute({
-          sql: `SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-                FROM sat_questions 
-                WHERE section = 'math' 
-                  AND id NOT IN (SELECT question_id FROM user_sat_answers WHERE user_id = ?)
-                ORDER BY RANDOM() LIMIT 15`,
-          args: [userId]
-        });
-      } else {
-        mathQuestionsRes = await client.execute(`
-          SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-          FROM sat_questions 
-          WHERE section = 'math' 
-          ORDER BY RANDOM() LIMIT 15
-        `);
-      }
-
-      let mathQuestions = [...mathQuestionsRes.rows];
-      if (mathQuestions.length < 15) {
-        const remainingNeeded = 15 - mathQuestions.length;
-        const existingIds = mathQuestions.map((q: any) => q.id);
-        const placeholders = existingIds.length > 0 ? existingIds.map(() => "?").join(",") : "0";
-        const fallbackRes = await client.execute({
-          sql: `SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-                FROM sat_questions 
-                WHERE section = 'math' AND id NOT IN (${placeholders})
-                ORDER BY RANDOM() LIMIT ?`,
-          args: [...existingIds, remainingNeeded]
-        });
-        mathQuestions = [...mathQuestions, ...fallbackRes.rows];
-      }
+      // 2. Get 15 Math questions via central engine
+      const mathQuestions = await getOrGenerateQuestions(client, {
+        section: "math",
+        targetCount: 15,
+        userId
+      });
 
       // Combine: Section 1 = R&W (1-15), Section 2 = Math (16-30)
-      const combined = [...rwQuestions, ...mathQuestions].map((row: any, idx: number) => ({
+      const combined = deduplicateQuestions([...rwQuestions, ...mathQuestions]).map((row: any, idx: number) => ({
         ...row,
-        question_number: idx + 1,
-        options: row.options ? JSON.parse(row.options) : null
+        question_number: idx + 1
       }));
 
       // Record session in DB
@@ -512,7 +426,7 @@ export function setupSatRoutes(
   });
 
   // -------------------------------------------------------------------------
-  // 5. FULL TEST: Comprehensive Digital SAT Simulation
+  // 5. FULL TEST: Comprehensive Digital SAT Simulation (54 R&W + 44 Math)
   // -------------------------------------------------------------------------
   app.get("/api/sat/full-test", async (req: Request, res: Response) => {
     try {
@@ -520,27 +434,23 @@ export function setupSatRoutes(
       const userId = authUser ? String(authUser.id) : "guest";
       const sessionId = `full_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-      // Fetch all available questions balanced by section
-      const rwRes = await client.execute(`
-        SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-        FROM sat_questions 
-        WHERE section = 'reading_writing' 
-        ORDER BY RANDOM() LIMIT 54
-      `);
+      // 1. Get 54 Reading & Writing questions via central engine
+      const rwQuestions = await getOrGenerateQuestions(client, {
+        section: "reading_writing",
+        targetCount: 54,
+        userId
+      });
 
-      const mathRes = await client.execute(`
-        SELECT id, section, domain, topic, difficulty, question_text, context_passage, question_type, options, explanation
-        FROM sat_questions 
-        WHERE section = 'math' 
-        ORDER BY RANDOM() LIMIT 44
-      `);
+      // 2. Get 44 Math questions via central engine
+      const mathQuestions = await getOrGenerateQuestions(client, {
+        section: "math",
+        targetCount: 44,
+        userId
+      });
 
-      const allRw = rwRes.rows;
-      const allMath = mathRes.rows;
-      const combined = [...allRw, ...allMath].map((row: any, idx: number) => ({
+      const combined = deduplicateQuestions([...rwQuestions, ...mathQuestions]).map((row: any, idx: number) => ({
         ...row,
-        question_number: idx + 1,
-        options: row.options ? JSON.parse(row.options) : null
+        question_number: idx + 1
       }));
 
       if (userId !== "guest") {
@@ -558,8 +468,8 @@ export function setupSatRoutes(
         time_limit_seconds: 4000, // ~66 minutes
         total_questions: combined.length,
         modules: [
-          { name: "Reading and Writing", start_index: 0, count: allRw.length },
-          { name: "Math", start_index: allRw.length, count: allMath.length }
+          { name: "Reading and Writing", start_index: 0, count: rwQuestions.length },
+          { name: "Math", start_index: rwQuestions.length, count: mathQuestions.length }
         ],
         questions: combined
       });

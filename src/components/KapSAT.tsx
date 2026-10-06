@@ -219,6 +219,20 @@ export default function KapSAT({
   };
 
   // -------------------------------------------------------------------------
+  // UNIVERSAL DEDUPLICATION SHIELD
+  // -------------------------------------------------------------------------
+  const deduplicateQuestions = (list: any[]): QuestionItem[] => {
+    const seen = new Set<string>();
+    return (list || []).filter((q) => {
+      if (!q) return false;
+      const key = q.id !== undefined && q.id !== null ? `id_${q.id}` : `text_${String(q.question_text || "").trim()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  // -------------------------------------------------------------------------
   // START MINI TEST (30 Questions, 35 Min)
   // -------------------------------------------------------------------------
   const startMiniTest = async () => {
@@ -230,9 +244,10 @@ export default function KapSAT({
       });
       if (res.ok) {
         const data = await res.json();
+        const uniqueQ = deduplicateQuestions(data.questions || []);
         setTestTitle(data.title || "kapSAT Mini Deneme Sınavı");
         setSessionId(data.session_id);
-        setQuestions(data.questions || []);
+        setQuestions(uniqueQ);
         setTestMode("mini_test");
         setTimeRemaining(data.time_limit_seconds || 2100);
         setCurrentIndex(0);
@@ -261,9 +276,10 @@ export default function KapSAT({
       });
       if (res.ok) {
         const data = await res.json();
+        const uniqueQ = deduplicateQuestions(data.questions || []);
         setTestTitle(data.title || "kapSAT Komple Deneme Sınavı");
         setSessionId(data.session_id);
-        setQuestions(data.questions || []);
+        setQuestions(uniqueQ);
         setTestMode("full_test");
         setTimeRemaining(data.time_limit_seconds || 4000);
         setCurrentIndex(0);
@@ -305,7 +321,9 @@ export default function KapSAT({
 
       if (res.ok) {
         const data = await res.json();
-        if (data.all_completed && (!data.questions || data.questions.length === 0)) {
+        const uniqueQ = deduplicateQuestions(data.questions || []);
+
+        if (data.all_completed && uniqueQ.length === 0) {
           setAllCompletedAlert({
             topic,
             total: data.total_in_category || 0,
@@ -314,10 +332,10 @@ export default function KapSAT({
           return;
         }
 
-        if (data.questions && data.questions.length > 0) {
+        if (uniqueQ.length > 0) {
           setTestTitle(`${topic} — Konu Alıştırması`);
           setSessionId(null);
-          setQuestions(data.questions);
+          setQuestions(uniqueQ);
           setTestMode("topic_practice");
           setCurrentIndex(0);
           setAnswers({});
