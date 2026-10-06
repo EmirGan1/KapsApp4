@@ -1,3 +1,10 @@
 User-agent: *
 Allow: /
+
+# Gizli kalması gereken rotaları hariç tut
+Disallow: /admin
+Disallow: /emirgan
+Disallow: /api/
+
+# Sitemap konumu
 Sitemap: https://kapsapp.online/sitemap.xml
