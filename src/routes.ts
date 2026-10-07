@@ -9,6 +9,7 @@ export interface RouteMeta {
   canonical: string;
   requiresAuth?: boolean;
   adminOnly?: boolean;
+  noindex?: boolean;
 }
 
 export const APP_ROUTES: Record<string, RouteMeta> = {
@@ -39,6 +40,7 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     title: "kapSAT - Digital SAT Hazırlık | KapsApp",
     description: "Matematik ve Reading/Writing pratik testleri, konu bazlı soru bankası ve yapay zeka destekli tam deneme sınavları.",
     canonical: "https://kapsapp.online/kapsat",
+    noindex: true,
   },
   games: {
     path: "/oyunlar",

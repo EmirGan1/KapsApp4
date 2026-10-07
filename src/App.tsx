@@ -109,12 +109,14 @@ export default function App() {
       ? `${activeSubject} dersi için paylaşılan ders notları, çalışma klasörleri ve öğrenci tartışmaları.`
       : "KapsApp; gerçek zamanlı sesli sohbet kanalları, canlı harita ve ders klasörleri platformudur.",
     canonical: `https://kapsapp.online${location.pathname}`,
+    noindex: false,
   };
 
   useSEO({
     title: currentRouteMeta.title,
     description: currentRouteMeta.description,
     canonical: currentRouteMeta.canonical,
+    noindex: !!currentRouteMeta.noindex,
   });
 
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);

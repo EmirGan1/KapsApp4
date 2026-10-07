@@ -6,6 +6,7 @@ export interface SEOProps {
   canonical?: string;
   ogType?: string;
   keywords?: string;
+  noindex?: boolean;
 }
 
 const DEFAULT_TITLE = "KapsApp - Sesli Sohbet, Canlı Harita, Ders Klasörleri ve Sosyal Oyunlar";
@@ -17,7 +18,8 @@ export function useSEO({
   description = DEFAULT_DESC,
   canonical = DEFAULT_CANONICAL,
   ogType = "website",
-  keywords
+  keywords,
+  noindex = false
 }: SEOProps) {
   useEffect(() => {
     // 1. Update Document Title
@@ -74,7 +76,22 @@ export function useSEO({
     if (keywords) {
       setMetaName("keywords", keywords);
     }
-  }, [title, description, canonical, ogType, keywords]);
+
+    // 6. Update Robots Meta Tag
+    let metaRobots = document.querySelector('meta[name="robots"]') as HTMLMetaElement;
+    if (noindex) {
+      if (!metaRobots) {
+        metaRobots = document.createElement("meta");
+        metaRobots.setAttribute("name", "robots");
+        document.head.appendChild(metaRobots);
+      }
+      metaRobots.setAttribute("content", "noindex, nofollow");
+    } else {
+      if (metaRobots && metaRobots.content === "noindex, nofollow") {
+        metaRobots.setAttribute("content", "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1");
+      }
+    }
+  }, [title, description, canonical, ogType, keywords, noindex]);
 }
 
 export default function SEO(props: SEOProps) {

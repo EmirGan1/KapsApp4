@@ -95,6 +95,23 @@ export default function KapSAT({
   initialSection = "reading_writing",
   initialTopic
 }: KapSATProps) {
+  // Sayfaya girildiğinde robots meta etiketini noindex yap (Google indeks ve sitelinks engeli)
+  useEffect(() => {
+    let metaRobots = document.querySelector('meta[name="robots"]') as HTMLMetaElement;
+    if (!metaRobots) {
+      metaRobots = document.createElement('meta');
+      metaRobots.name = 'robots';
+      document.head.appendChild(metaRobots);
+    }
+    const previousContent = metaRobots.content;
+    metaRobots.content = 'noindex, nofollow';
+
+    // Kullanıcı sayfadan çıktığında eski haline döndür
+    return () => {
+      metaRobots.content = previousContent || 'index, follow';
+    };
+  }, []);
+
   // App views: 'dashboard' | 'testing' | 'results'
   const [currentView, setCurrentView] = useState<"dashboard" | "testing" | "results">(
     initialMode === "dashboard" ? "dashboard" : "testing"

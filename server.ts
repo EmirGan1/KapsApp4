@@ -11791,7 +11791,7 @@ async function startServer() {
     if (fs.existsSync(robotsPath)) {
       return res.sendFile(robotsPath);
     }
-    res.send("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /emirgan\nDisallow: /api/\n\nSitemap: https://kapsapp.online/sitemap.xml\n");
+    res.send("User-agent: *\nAllow: /\nDisallow: /kapsat\nDisallow: /admin\nDisallow: /emirgan\nDisallow: /api/\n\nSitemap: https://kapsapp.online/sitemap.xml\n");
   });
 
   app.get("/sitemap.xml", (req, res) => {
@@ -11821,27 +11821,9 @@ async function startServer() {
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://kapsapp.online/kapsat</loc>
-    <lastmod>2026-10-07</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
     <loc>https://kapsapp.online/oyunlar</loc>
     <lastmod>2026-10-07</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://kapsapp.online/hava-durumu</loc>
-    <lastmod>2026-10-07</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://kapsapp.online/ajanda</loc>
-    <lastmod>2026-10-07</lastmod>
-    <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
 </urlset>`);
