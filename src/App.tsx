@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import { App as CapApp } from "@capacitor/app";
 import { MessageSquare, LayoutGrid, Users, UserCircle2, Globe, Bell, Folder, Moon, Sun, Gamepad2, Radio, MapPin, Megaphone, Crown, CalendarDays, CloudSun, GraduationCap } from "lucide-react";
+import { APP_ROUTES, getTabFromPathname, getPathFromTab } from "./routes";
+import { useSEO } from "./components/SEO";
 import Auth from "./components/Auth";
 import Feed from "./components/Feed";
 import Chats from "./components/Chats";
@@ -53,13 +56,18 @@ export default function App() {
     return [];
   });
   
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [socket, setSocket] = useState<Socket | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<number[]>([]);
   const [currentUserId, setCurrentUserId] = useState<number>(Number(localStorage.getItem("lan_user_id")) || 0);
   
-  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat">("chats");
-  const [activeSubject, setActiveSubject] = useState<string | null>(null);
-  const [viewingUserId, setViewingUserId] = useState<number>(currentUserId);
+  // Resolve initial tab & params directly from current URL path
+  const initialResolved = getTabFromPathname(location.pathname);
+  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat">(initialResolved.tab);
+  const [activeSubject, setActiveSubject] = useState<string | null>(initialResolved.subject || null);
+  const [viewingUserId, setViewingUserId] = useState<number>(initialResolved.userId || currentUserId);
   const [targetChatUserId, setTargetChatUserId] = useState<number | null>(null);
   const isEmirgan = (username || "").trim().toLowerCase() === "emirgan";
 
@@ -68,6 +76,47 @@ export default function App() {
     return (localStorage.getItem("lan_username") || "").trim().toLowerCase() === "emirgan";
   });
   
+  // 1. Synchronize URL changes to activeTab and state (Back/Forward or Direct Navigation)
+  useEffect(() => {
+    const resolved = getTabFromPathname(location.pathname);
+    if (resolved.tab === "predicted" && !isEmirgan && !hasPredictedAccess) {
+      navigate("/", { replace: true });
+      return;
+    }
+    if (resolved.tab === "admin" && !isEmirgan) {
+      navigate("/", { replace: true });
+      return;
+    }
+    setActiveTab(resolved.tab);
+    if (resolved.subject) {
+      setActiveSubject(resolved.subject);
+    } else if (resolved.tab !== "subject") {
+      setActiveSubject(null);
+    }
+    if (resolved.userId) {
+      setViewingUserId(resolved.userId);
+    } else if (resolved.tab === "profile") {
+      setViewingUserId(currentUserId);
+    }
+  }, [location.pathname, isEmirgan, hasPredictedAccess, currentUserId, navigate]);
+
+  // 2. Dynamic SEO updates per route (Title, Description, Canonical, OG tags)
+  const currentRouteMeta = Object.values(APP_ROUTES).find(r => r.path === location.pathname) || {
+    title: activeTab === 'subject' && activeSubject 
+      ? `${activeSubject} Ders Notları ve Klasörleri | KapsApp`
+      : "KapsApp - Sesli Sohbet, Canlı Harita, Ders Klasörleri ve Sosyal Oyunlar",
+    description: activeTab === 'subject' && activeSubject
+      ? `${activeSubject} dersi için paylaşılan ders notları, çalışma klasörleri ve öğrenci tartışmaları.`
+      : "KapsApp; gerçek zamanlı sesli sohbet kanalları, canlı harita ve ders klasörleri platformudur.",
+    canonical: `https://kapsapp.online${location.pathname}`,
+  };
+
+  useSEO({
+    title: currentRouteMeta.title,
+    description: currentRouteMeta.description,
+    canonical: currentRouteMeta.canonical,
+  });
+
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [unreadGlobalCount, setUnreadGlobalCount] = useState(0);
   const [unreadDmCount, setUnreadDmCount] = useState(0);
@@ -212,7 +261,7 @@ export default function App() {
       socket.emit("join_voice_room", { roomId: invite.roomId });
     }
     setVoiceInvite(null);
-    setActiveTab("voice");
+    handleTabChange("voice");
   };
 
   const handleRejectVoiceInvite = (invite: VoiceCallInvite) => {
@@ -363,18 +412,17 @@ export default function App() {
       if (senderId) {
         setTargetChatUserId(senderId);
       }
-      setActiveTab("chats");
+      handleTabChange("chats");
     } else if (notif.type === "like" || notif.type === "comment") {
-      setActiveTab("feed");
+      handleTabChange("feed");
     } else if (notif.type === "follow" || notif.type === "friend_request" || notif.type === "friend_accept") {
       if (senderId) {
-        setViewingUserId(senderId);
-        setActiveTab("profile");
+        handleUserClick(senderId);
       }
     } else if (notif.type === "new_group_message" || notif.type === "group_invite") {
-      setActiveTab("chats");
+      handleTabChange("chats");
     } else {
-      setActiveTab("notifications");
+      handleTabChange("notifications");
     }
   };
 
@@ -714,31 +762,43 @@ export default function App() {
     if (tab !== "subject") {
       setActiveSubject(null);
     }
+
+    const targetPath = getPathFromTab(tab, tab === "subject" ? activeSubject : null, null, currentUserId);
+    if (location.pathname !== targetPath) {
+      navigate(targetPath);
+    }
   };
 
   const handleSubjectClick = (subject: string) => {
     setActiveSubject(subject);
     setActiveTab("subject");
+    navigate(`/dersler/${encodeURIComponent(subject)}`);
   };
 
   const handleUserClick = (userId: number) => {
     setViewingUserId(userId);
     setActiveTab("profile");
+    if (userId === currentUserId) {
+      navigate("/profil");
+    } else {
+      navigate(`/profil/${userId}`);
+    }
   };
 
   const handleOpenChat = (targetId: number) => {
     setTargetChatUserId(targetId);
     setActiveTab("chats");
+    navigate("/");
   };
 
   // If user is currently on predicted page but loses access, redirect safely
   useEffect(() => {
     if (activeTab === "predicted" && !isEmirgan && !hasPredictedAccess) {
-      setActiveTab("chats");
+      navigate("/");
     }
-  }, [activeTab, isEmirgan, hasPredictedAccess]);
+  }, [activeTab, isEmirgan, hasPredictedAccess, navigate]);
 
-  // Android Hardware / Software Back Button Handler
+  // Android Hardware Back Button Handler (Capacitor Native)
   const lastBackPressRef = useRef<number>(0);
 
   useEffect(() => {
@@ -780,19 +840,20 @@ export default function App() {
       // 3. Check if inside a Subject / Folder view
       if (activeSubject) {
         setActiveSubject(null);
-        setActiveTab("folders");
+        navigate("/dersler");
         return;
       }
 
       // 4. Check if viewing another user's profile
       if (activeTab === "profile" && viewingUserId !== currentUserId) {
         setViewingUserId(currentUserId);
+        navigate("/profil");
         return;
       }
 
-      // 5. If not on main 'chats' tab, return to main tab
-      if (activeTab !== "chats") {
-        setActiveTab("chats");
+      // 5. If not on root path, navigate back
+      if (location.pathname !== "/") {
+        navigate(-1);
         return;
       }
 
@@ -823,22 +884,12 @@ export default function App() {
       }).catch(() => {});
     } catch (e) {}
 
-    // Listen on window popstate for standard web/PWA/browser back navigation
-    const onPopState = (e: PopStateEvent) => {
-      e.preventDefault();
-      handleHardwareBack();
-      window.history.pushState(null, "", window.location.href);
-    };
-    window.history.pushState(null, "", window.location.href);
-    window.addEventListener("popstate", onPopState);
-
     return () => {
       if (capListener && typeof capListener.remove === "function") {
         capListener.remove();
       }
-      window.removeEventListener("popstate", onPopState);
     };
-  }, [activeAnnouncementModal, activeSubject, activeTab, currentUserId, viewingUserId, isDeviceBanned, token]);
+  }, [activeAnnouncementModal, activeSubject, activeTab, currentUserId, viewingUserId, isDeviceBanned, token, location.pathname, navigate]);
 
   if (isDeviceBanned) {
     return <DeviceBanScreen reason={deviceBanReason} onRetry={() => window.location.reload()} />;
@@ -853,8 +904,7 @@ export default function App() {
       socket={socket}
       currentUserId={currentUserId}
       onOpenChatWithUser={(targetId) => {
-        setTargetChatUserId(targetId);
-        setActiveTab("chats");
+        handleOpenChat(targetId);
       }}
       onShowToast={(msg, type) => {
         addToast({
@@ -941,6 +991,7 @@ export default function App() {
           <nav className="px-4 space-y-2">
             {isEmirgan && (
               <NavItem 
+                to="/emirgan"
                 icon={<Crown className="text-amber-500 animate-pulse" />} 
                 label="👑 Emirgan Panel" 
                 active={activeTab === 'admin'} 
@@ -949,6 +1000,7 @@ export default function App() {
               />
             )}
             <NavItem 
+              to="/duyurular"
               icon={<Megaphone className="text-amber-500 dark:text-amber-400" />} 
               label="Duyurular" 
               active={activeTab === 'announcements'} 
@@ -956,6 +1008,7 @@ export default function App() {
               onClick={() => handleTabChange('announcements')} 
             />
             <NavItem 
+              to="/hava-durumu"
               icon={<CloudSun className="text-sky-500" />} 
               label="Hava Durumu" 
               active={activeTab === 'weather'} 
@@ -970,29 +1023,32 @@ export default function App() {
               onClick={() => handleTabChange('weather')} 
             />
             <NavItem 
+              to="/ajanda"
               icon={<CalendarDays className="text-blue-500 dark:text-blue-400" />} 
               label="Ajanda" 
               active={activeTab === 'agenda'} 
               onClick={() => handleTabChange('agenda')} 
             />
-            <NavItem icon={<Globe />} label="Genel Sohbet" active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
-            <NavItem icon={<MessageSquare />} label="Sohbetler" active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
-            <NavItem icon={<LayoutGrid />} label="Akış" active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
-            <NavItem icon={<Folder className="text-blue-500" />} label="Ders Klasörleri" active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
+            <NavItem to="/genel-sohbet" icon={<Globe />} label="Genel Sohbet" active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
+            <NavItem to="/" icon={<MessageSquare />} label="Sohbetler" active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
+            <NavItem to="/akis" icon={<LayoutGrid />} label="Akış" active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
+            <NavItem to="/dersler" icon={<Folder className="text-blue-500" />} label="Ders Klasörleri" active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
             <NavItem 
+              to="/kapsat"
               icon={<GraduationCap className="text-indigo-500 dark:text-indigo-400" />} 
               label="kapSAT (Digital SAT)" 
               active={activeTab === 'kapsat'} 
               onClick={() => handleTabChange('kapsat')} 
             />
-            <NavItem icon={<MapPin className="text-emerald-500" />} label="Canlı Harita" active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
-            <NavItem icon={<Users />} label="Arkadaşlar" active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
-            <NavItem icon={<Radio />} label="Sesli & Görüntülü" active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
-            <NavItem icon={<Gamepad2 />} label="Oyunlar" active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
-            <NavItem icon={<Bell />} label="Bildirimler" active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
-            <NavItem icon={<UserCircle2 />} label="Profil" active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
+            <NavItem to="/harita" icon={<MapPin className="text-emerald-500" />} label="Canlı Harita" active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
+            <NavItem to="/arkadaslar" icon={<Users />} label="Arkadaşlar" active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
+            <NavItem to="/sesli-sohbet" icon={<Radio />} label="Sesli & Görüntülü" active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
+            <NavItem to="/oyunlar" icon={<Gamepad2 />} label="Oyunlar" active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
+            <NavItem to="/bildirimler" icon={<Bell />} label="Bildirimler" active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
+            <NavItem to="/profil" icon={<UserCircle2 />} label="Profil" active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
             {(isEmirgan || hasPredictedAccess) && (
               <NavItem 
+                to="/tahminler"
                 icon={<GraduationCap className="text-amber-500 dark:text-amber-400" />} 
                 label="IB Predicted" 
                 active={activeTab === 'predicted'} 
@@ -1176,32 +1232,36 @@ export default function App() {
         <nav className="flex items-center justify-around px-1 py-1.5 overflow-x-auto no-scrollbar">
           {isEmirgan && (
             <MobileNavItem 
+              to="/emirgan"
               icon={<Crown size={22} className="text-amber-500 animate-pulse" />} 
               active={activeTab === 'admin'} 
               badge={pendingApprovalsCount}
               onClick={() => handleTabChange('admin')} 
             />
           )}
-          <MobileNavItem icon={<Megaphone size={22} className="text-amber-500" />} active={activeTab === 'announcements'} dotBadge={hasUnreadAnnouncement} onClick={() => handleTabChange('announcements')} />
-          <MobileNavItem icon={<CalendarDays size={22} className="text-blue-500" />} active={activeTab === 'agenda'} onClick={() => handleTabChange('agenda')} />
-          <MobileNavItem icon={<Globe size={22} />} active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
-          <MobileNavItem icon={<MessageSquare size={22} />} active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
-          <MobileNavItem icon={<LayoutGrid size={22} />} active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
+          <MobileNavItem to="/duyurular" icon={<Megaphone size={22} className="text-amber-500" />} active={activeTab === 'announcements'} dotBadge={hasUnreadAnnouncement} onClick={() => handleTabChange('announcements')} />
+          <MobileNavItem to="/ajanda" icon={<CalendarDays size={22} className="text-blue-500" />} active={activeTab === 'agenda'} onClick={() => handleTabChange('agenda')} />
+          <MobileNavItem to="/genel-sohbet" icon={<Globe size={22} />} active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
+          <MobileNavItem to="/" icon={<MessageSquare size={22} />} active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
+          <MobileNavItem to="/akis" icon={<LayoutGrid size={22} />} active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
           <MobileNavItem 
+            to="/hava-durumu"
             icon={<CloudSun size={22} className="text-sky-500" />} 
             active={activeTab === 'weather'} 
             extraBadge={miniWeatherBadge ? `${miniWeatherBadge.temp}°` : undefined} 
             onClick={() => handleTabChange('weather')} 
           />
-          <MobileNavItem icon={<Folder size={22} className="text-blue-500" />} active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
-          <MobileNavItem icon={<MapPin size={22} className="text-emerald-500" />} active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
-          <MobileNavItem icon={<Radio size={22} />} active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
-          <MobileNavItem icon={<Gamepad2 size={22} />} active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
-          <MobileNavItem icon={<Users size={22} />} active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
-          <MobileNavItem icon={<Bell size={22} />} active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
-          <MobileNavItem icon={<UserCircle2 size={22} />} active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
+          <MobileNavItem to="/dersler" icon={<Folder size={22} className="text-blue-500" />} active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
+          <MobileNavItem to="/kapsat" icon={<GraduationCap size={22} className="text-indigo-500" />} active={activeTab === 'kapsat'} onClick={() => handleTabChange('kapsat')} />
+          <MobileNavItem to="/harita" icon={<MapPin size={22} className="text-emerald-500" />} active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
+          <MobileNavItem to="/sesli-sohbet" icon={<Radio size={22} />} active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
+          <MobileNavItem to="/oyunlar" icon={<Gamepad2 size={22} />} active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
+          <MobileNavItem to="/arkadaslar" icon={<Users size={22} />} active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
+          <MobileNavItem to="/bildirimler" icon={<Bell size={22} />} active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
+          <MobileNavItem to="/profil" icon={<UserCircle2 size={22} />} active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
           {(isEmirgan || hasPredictedAccess) && (
             <MobileNavItem 
+              to="/tahminler"
               icon={<GraduationCap size={22} className="text-amber-500" />} 
               active={activeTab === 'predicted'} 
               onClick={() => handleTabChange('predicted')} 
@@ -1228,6 +1288,7 @@ export default function App() {
 function NavItem({ 
   icon, 
   label, 
+  to,
   active, 
   badge, 
   dotBadge, 
@@ -1236,17 +1297,17 @@ function NavItem({
 }: { 
   icon: React.ReactNode; 
   label: string; 
+  to?: string;
   active: boolean; 
   badge?: number; 
   dotBadge?: boolean; 
   extraBadge?: React.ReactNode; 
-  onClick: () => void; 
+  onClick?: () => void; 
 }) {
-  return (
-    <button 
-      onClick={onClick}
-      className={`w-full flex items-center justify-between p-3 lg:px-4 rounded-xl transition-all relative cursor-pointer ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-    >
+  const commonClass = `w-full flex items-center justify-between p-3 lg:px-4 rounded-xl transition-all relative cursor-pointer no-underline ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`;
+
+  const content = (
+    <>
       <div className="flex items-center gap-3">
         <div className={`relative ${active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-500'}`}>
           {icon}
@@ -1266,12 +1327,35 @@ function NavItem({
       ) : dotBadge ? (
         <span className="hidden lg:flex w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm shadow-red-500/50"></span>
       ) : null}
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link 
+        to={to}
+        onClick={onClick}
+        className={commonClass}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <button 
+      type="button"
+      onClick={onClick}
+      className={commonClass}
+    >
+      {content}
     </button>
   );
 }
 
 function MobileNavItem({ 
   icon, 
+  to,
   active, 
   badge, 
   dotBadge, 
@@ -1279,17 +1363,17 @@ function MobileNavItem({
   onClick 
 }: { 
   icon: React.ReactNode; 
+  to?: string;
   active: boolean; 
   badge?: number; 
   dotBadge?: boolean; 
   extraBadge?: string; 
-  onClick: () => void; 
+  onClick?: () => void; 
 }) {
-  return (
-    <button 
-      onClick={onClick}
-      className={`min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 rounded-xl transition-all relative cursor-pointer ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}
-    >
+  const commonClass = `min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 rounded-xl transition-all relative cursor-pointer no-underline shrink-0 ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`;
+
+  const content = (
+    <>
       {icon}
       {badge && badge > 0 ? (
         <span className="absolute top-1 right-1 px-1 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none shadow-sm">
@@ -1302,6 +1386,28 @@ function MobileNavItem({
           {extraBadge}
         </span>
       ) : null}
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        onClick={onClick}
+        className={commonClass}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <button 
+      type="button"
+      onClick={onClick}
+      className={commonClass}
+    >
+      {content}
     </button>
   );
 }

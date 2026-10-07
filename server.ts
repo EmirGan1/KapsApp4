@@ -11787,18 +11787,62 @@ async function startServer() {
   // SEO Endpoints for Search Engine Crawlers & Googlebot
   app.get("/robots.txt", (req, res) => {
     res.type("text/plain");
-    res.send("User-agent: *\nAllow: /\nSitemap: https://kapsapp.online/sitemap.xml\n");
+    const robotsPath = path.join(process.cwd(), "public", "robots.txt");
+    if (fs.existsSync(robotsPath)) {
+      return res.sendFile(robotsPath);
+    }
+    res.send("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /emirgan\nDisallow: /api/\n\nSitemap: https://kapsapp.online/sitemap.xml\n");
   });
 
   app.get("/sitemap.xml", (req, res) => {
     res.type("application/xml");
+    const sitemapPath = path.join(process.cwd(), "public", "sitemap.xml");
+    if (fs.existsSync(sitemapPath)) {
+      return res.sendFile(sitemapPath);
+    }
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://kapsapp.online/</loc>
-    <lastmod>2026-09-21</lastmod>
+    <lastmod>2026-10-07</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://kapsapp.online/genel-sohbet</loc>
+    <lastmod>2026-10-07</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://kapsapp.online/dersler</loc>
+    <lastmod>2026-10-07</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://kapsapp.online/kapsat</loc>
+    <lastmod>2026-10-07</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://kapsapp.online/oyunlar</loc>
+    <lastmod>2026-10-07</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://kapsapp.online/hava-durumu</loc>
+    <lastmod>2026-10-07</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://kapsapp.online/ajanda</loc>
+    <lastmod>2026-10-07</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>`);
   });
