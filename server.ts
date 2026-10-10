@@ -12,7 +12,6 @@ import fs from "fs";
 import os from "os";
 import { createClient } from "@libsql/client";
 import dotenv from "dotenv";
-import { initSatDb, setupSatRoutes } from "./src/server/satController";
 import { registerCourseRoutes } from "./src/server/courseController";
 import { registerAdminController } from "./src/server/adminController";
 
@@ -564,11 +563,38 @@ async function initDb() {
     console.error("Agenda table initialization error:", agendaInitErr);
   }
 
-  // kapSAT (Digital SAT Sınav ve Çalışma Motoru) Table & Seed initialization
+  // Emirgan Yönetimi: Dinamik Günün Sözü Tablosu
   try {
-    await initSatDb(client);
-  } catch (satInitErr) {
-    console.error("kapSAT table initialization error:", satInitErr);
+    await client.execute(`CREATE TABLE IF NOT EXISTS daily_quotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      quote_text TEXT NOT NULL,
+      author TEXT,
+      updated_by TEXT DEFAULT 'emirgan',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );`);
+    
+    // Seed default quote if empty
+    const quoteCountRes = await client.execute("SELECT COUNT(*) as c FROM daily_quotes");
+    if (Number(quoteCountRes.rows[0]?.c || 0) === 0) {
+      await client.execute({
+        sql: "INSERT INTO daily_quotes (quote_text, author, updated_by) VALUES (?, ?, ?)",
+        args: [
+          "Büyük hedeflere giden yol, bugünün küçük adımlarıyla başlar.",
+          "Emirgan",
+          "emirgan"
+        ]
+      });
+    }
+  } catch (quoteErr) {
+    console.error("Daily quote table initialization error:", quoteErr);
+  }
+
+  // kapSAT Modülü Tasfiyesi: Eski SAT tablolarını veritabanından kaldır
+  try {
+    await client.execute("DROP TABLE IF EXISTS user_sat_answers;");
+    await client.execute("DROP TABLE IF EXISTS sat_questions;");
+  } catch (dropSatErr) {
+    console.error("SAT tables drop error:", dropSatErr);
   }
 }
 
@@ -2008,9 +2034,6 @@ async function startServer() {
     }
   }
 
-  // kapSAT: Digital SAT Çalışma ve Sınav Motoru API Rotaları
-  setupSatRoutes(app, client, authenticateToken);
-
   // Free Virtual Chip Refill (500 Chips when broke)
   app.post("/api/chips/refill", async (req, res) => {
     try {
@@ -2716,8 +2739,8 @@ async function startServer() {
     }
   });
 
-  // Admin and Screen Time Controllers
-  registerAdminController(app, client, requireEmirganAdmin);
+  // Admin, Daily Quote and Screen Time Controllers
+  registerAdminController(app, client, requireEmirganAdmin, io);
 
   // Admin: Overall System Metrics & Health Dashboard
   app.get("/api/admin/overview", requireEmirganAdmin, async (req, res) => {
@@ -11791,7 +11814,7 @@ async function startServer() {
     if (fs.existsSync(robotsPath)) {
       return res.sendFile(robotsPath);
     }
-    res.send("User-agent: *\nAllow: /\nDisallow: /kapsat\nDisallow: /admin\nDisallow: /emirgan\nDisallow: /api/\n\nSitemap: https://kapsapp.online/sitemap.xml\n");
+    res.send("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /emirgan\nDisallow: /api/\n\nSitemap: https://kapsapp.online/sitemap.xml\n");
   });
 
   app.get("/sitemap.xml", (req, res) => {
@@ -11807,6 +11830,12 @@ async function startServer() {
     <lastmod>2026-10-07</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://kapsapp.online/sohbetler</loc>
+    <lastmod>2026-10-07</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.9</priority>
   </url>
   <url>
     <loc>https://kapsapp.online/genel-sohbet</loc>

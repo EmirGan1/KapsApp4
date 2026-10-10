@@ -1,8 +1,10 @@
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
+export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted";
+
 export interface RouteMeta {
   path: string;
-  tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat";
+  tab: AppTab;
   title: string;
   description: string;
   keywords?: string;
@@ -15,10 +17,17 @@ export interface RouteMeta {
 export const APP_ROUTES: Record<string, RouteMeta> = {
   home: {
     path: "/",
-    tab: "chats",
-    title: "KapsApp - Sesli Sohbet, Canlı Harita, Ders Klasörleri ve Sosyal Oyunlar",
-    description: "KapsApp; gerçek zamanlı sesli sohbet kanalları, gizlilik korumalı canlı harita takibi, interaktif ders klasörleri/paylaşımı ile Batak, Blackjack 21, Okey, UNO ve Gartic sosyal oyunlarını tek bir çatı altında birleştiren yeni nesil sosyal iletişim ve eğitim platformudur.",
+    tab: "dashboard",
+    title: "KapsApp - Ana Sayfa, Kampüs Paneli ve Sosyal İletişim",
+    description: "KapsApp kampüs paneli; anlık ders programı takibi, kampüs hava durumu, sesli sohbet, canlı harita ve ders klasörlerini birleştiren yeni nesil öğrenci platformudur.",
     canonical: "https://kapsapp.online/",
+  },
+  chats: {
+    path: "/sohbetler",
+    tab: "chats",
+    title: "Sohbetler ve Mesajlar | KapsApp",
+    description: "KapsApp özel mesajlaşma ve grup sohbetleri. Arkadaşlarınızla güvenli, hızlı ve anlık iletişim kurun.",
+    canonical: "https://kapsapp.online/sohbetler",
   },
   globalChat: {
     path: "/genel-sohbet",
@@ -33,14 +42,6 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     title: "Dersler ve Not Paylaşımı | KapsApp",
     description: "IB müfredatına uygun ders materyalleri, çalışma klasörleri, PDF notları ve akademik paylaşım merkezi.",
     canonical: "https://kapsapp.online/dersler",
-  },
-  kapsat: {
-    path: "/kapsat",
-    tab: "kapsat",
-    title: "kapSAT - Digital SAT Hazırlık | KapsApp",
-    description: "Matematik ve Reading/Writing pratik testleri, konu bazlı soru bankası ve yapay zeka destekli tam deneme sınavları.",
-    canonical: "https://kapsapp.online/kapsat",
-    noindex: true,
   },
   games: {
     path: "/oyunlar",
@@ -131,7 +132,7 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
 
 // Map URL pathname to internal Tab name
 export function getTabFromPathname(pathname: string): {
-  tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat";
+  tab: AppTab;
   subject?: string;
   userId?: number;
 } {
@@ -154,13 +155,18 @@ export function getTabFromPathname(pathname: string): {
     return { tab: "profile" };
   }
 
+  // Root path -> Dashboard (Ana Sayfa)
+  if (cleanPath === "/" || cleanPath === "") {
+    return { tab: "dashboard" };
+  }
+
   // Alternate admin path /admin
   if (cleanPath === "/admin" || cleanPath === "/emirgan") {
     return { tab: "admin" };
   }
 
-  // Alternate chats path /sohbetler
-  if (cleanPath === "/sohbetler") {
+  // Chats path /sohbetler and legacy /chats
+  if (cleanPath === "/sohbetler" || cleanPath === "/chats") {
     return { tab: "chats" };
   }
 
@@ -172,13 +178,13 @@ export function getTabFromPathname(pathname: string): {
     }
   }
 
-  // Fallback to chats (home)
-  return { tab: "chats" };
+  // Fallback to dashboard (home)
+  return { tab: "dashboard" };
 }
 
 // Map internal Tab name to primary URL path
 export function getPathFromTab(
-  tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat",
+  tab: AppTab,
   subject?: string | null,
   userId?: number | null,
   currentUserId?: number
@@ -191,10 +197,10 @@ export function getPathFromTab(
   }
 
   switch (tab) {
-    case "chats": return "/";
+    case "dashboard": return "/";
+    case "chats": return "/sohbetler";
     case "global": return "/genel-sohbet";
     case "folders": return "/dersler";
-    case "kapsat": return "/kapsat";
     case "games": return "/oyunlar";
     case "weather": return "/hava-durumu";
     case "profile": return "/profil";

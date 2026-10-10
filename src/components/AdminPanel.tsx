@@ -87,7 +87,7 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ socket, currentUsername, onUserClick, onPendingCountChange }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity" | "quote">("pending");
   const [loading, setLoading] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   
@@ -99,6 +99,13 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
   const [logs, setLogs] = useState<AccessLogItem[]>([]);
   const [activeTables, setActiveTables] = useState<any[]>([]);
   const [rolesList, setRolesList] = useState<CourseRole[]>(COURSE_ROLES);
+
+  // Daily Quote State
+  const [currentQuoteText, setCurrentQuoteText] = useState<string>("");
+  const [currentQuoteAuthor, setCurrentQuoteAuthor] = useState<string>("");
+  const [quoteInputText, setQuoteInputText] = useState<string>("");
+  const [quoteInputAuthor, setQuoteInputAuthor] = useState<string>("");
+  const [isUpdatingQuote, setIsUpdatingQuote] = useState<boolean>(false);
 
   // Screen Time Leaderboard States
   const [screenTimeLeaderboard, setScreenTimeLeaderboard] = useState<any[]>([]);
@@ -276,6 +283,57 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
       console.error("Error fetching roles:", e);
     }
   }, []);
+
+  const fetchDailyQuote = useCallback(async () => {
+    try {
+      const res = await fetch(getApiUrl("/api/public/daily-quote"));
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.quote_text) {
+          setCurrentQuoteText(data.quote_text);
+          setCurrentQuoteAuthor(data.author || "");
+          setQuoteInputText(data.quote_text);
+          setQuoteInputAuthor(data.author || "");
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching daily quote:", e);
+    }
+  }, []);
+
+  const handleUpdateDailyQuote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quoteInputText.trim()) {
+      showToast("Lütfen bir söz metni girin.", "error");
+      return;
+    }
+    setIsUpdatingQuote(true);
+    try {
+      const res = await fetch(getApiUrl("/api/admin/daily-quote"), {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          quote_text: quoteInputText.trim(),
+          author: quoteInputAuthor.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCurrentQuoteText(quoteInputText.trim());
+        setCurrentQuoteAuthor(quoteInputAuthor.trim());
+        showToast("Günün sözü güncellendi ve tüm kullanıcılara canlı yansıtıldı!", "success");
+        if (socket && socket.connected) {
+          socket.emit("quote_updated", data.quote);
+        }
+      } else {
+        showToast(data.error || "Günün sözü güncellenemedi.", "error");
+      }
+    } catch (err: any) {
+      showToast("Hata: " + err.message, "error");
+    } finally {
+      setIsUpdatingQuote(false);
+    }
+  };
 
   const handleCreateRole = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -563,7 +621,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
   };
 
   // Tab change handler
-  const handleTabChange = (tab: "pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity") => {
+  const handleTabChange = (tab: "pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity" | "quote") => {
     setActiveTab(tab);
     if (tab === "pending") fetchPendingUsers();
     if (tab === "users") fetchUsers();
@@ -572,6 +630,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
     if (tab === "hardware") fetchBannedHardware();
     if (tab === "logs") { fetchLogs(); fetchOverview(); }
     if (tab === "activity") { fetchScreenTimeLeaderboard(); }
+    if (tab === "quote") { fetchDailyQuote(); }
   };
 
   // 1. Hesabı Onayla (Approve) - Kesin Çözüm
@@ -1041,6 +1100,18 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
         >
           <Clock size={16} className="text-purple-400" />
           <span>⏱️ Ekran Süresi</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange("quote")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
+            activeTab === "quote"
+              ? "bg-slate-950 text-amber-400 border-amber-500 shadow-sm"
+              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
+          }`}
+        >
+          <Sparkles size={16} className="text-amber-400" />
+          <span>✨ Günün Sözü</span>
         </button>
       </div>
 
@@ -2293,6 +2364,117 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 9: EMİRGAN YÖNETİMİ: GÜNÜN SÖZÜ DÜZENLE              */}
+        {/* ========================================================= */}
+        {activeTab === "quote" && (
+          <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                <div>
+                  <h3 className="text-lg font-black text-white flex items-center gap-2">
+                    <Sparkles className="text-amber-400" size={20} />
+                    <span>Günün Sözünü Düzenle & Yönet</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Burada belirlediğiniz motivasyon veya günün sözü, platformdaki tüm kullanıcıların Ana Sayfa (Dashboard) karşılama alanına canlı olarak yansıtılır.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchDailyQuote}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer transition-colors"
+                >
+                  <RefreshCw size={13} />
+                  <span>Yenile</span>
+                </button>
+              </div>
+
+              {/* Canlı Önizleme Kartı */}
+              <div>
+                <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-2">
+                  👁️ Ana Sayfa Canlı Önizleme
+                </label>
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent border border-amber-500/30 relative overflow-hidden">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                      <Sparkles size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black uppercase tracking-wider text-amber-400 mb-1">
+                        Günün Sözü & Motivasyon
+                      </p>
+                      <p className="text-sm font-semibold text-white italic leading-relaxed">
+                        "{quoteInputText || currentQuoteText || 'Büyük hedeflere giden yol, bugünün küçük adımlarıyla başlar.'}"
+                      </p>
+                      <p className="text-xs text-amber-300/80 font-bold mt-2 flex items-center gap-1">
+                        <span>—</span>
+                        <span>{quoteInputAuthor || currentQuoteAuthor || 'Emirgan'}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleUpdateDailyQuote} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                    Söz Metni <span className="text-amber-400">*</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={quoteInputText}
+                    onChange={(e) => setQuoteInputText(e.target.value)}
+                    placeholder="Örn: Odaklan, öğren, paylaş ve kendi sınırlarını aş."
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500 rounded-2xl p-4 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
+                    required
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Kısa, etkili ve ilham verici motivasyon sözleri tercih edin.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                    Yazar / Kaynak (Opsiyonel)
+                  </label>
+                  <input
+                    type="text"
+                    value={quoteInputAuthor}
+                    onChange={(e) => setQuoteInputAuthor(e.target.value)}
+                    placeholder="Örn: Mustafa Kemal Atatürk, Albert Einstein veya Emirgan"
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-between">
+                  <span className="text-xs text-slate-500">
+                    Kaydedildiğinde Socket.IO üzerinden tüm kullanıcılara reaktif olarak iletilir.
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={isUpdatingQuote || !quoteInputText.trim()}
+                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-black text-sm shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer transition-all"
+                  >
+                    {isUpdatingQuote ? (
+                      <>
+                        <RefreshCw size={16} className="animate-spin" />
+                        <span>Kaydediliyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={16} />
+                        <span>Günün Sözünü Yayınla</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

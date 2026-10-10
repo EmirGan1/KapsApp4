@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import { App as CapApp } from "@capacitor/app";
-import { MessageSquare, LayoutGrid, Users, UserCircle2, Globe, Bell, Folder, Moon, Sun, Gamepad2, Radio, MapPin, Megaphone, Crown, CalendarDays, CloudSun, GraduationCap } from "lucide-react";
-import { APP_ROUTES, getTabFromPathname, getPathFromTab } from "./routes";
+import { MessageSquare, LayoutGrid, Users, UserCircle2, Globe, Bell, Folder, Moon, Sun, Gamepad2, Radio, MapPin, Megaphone, Crown, CalendarDays, CloudSun, GraduationCap, Home } from "lucide-react";
+import { APP_ROUTES, getTabFromPathname, getPathFromTab, AppTab } from "./routes";
 import { useSEO } from "./components/SEO";
 import Auth from "./components/Auth";
+import Dashboard from "./components/Dashboard";
 import Feed from "./components/Feed";
 import Chats from "./components/Chats";
 import Friends from "./components/Friends";
@@ -24,7 +25,6 @@ import DeviceBanScreen from "./components/DeviceBanScreen";
 import Agenda from "./components/Agenda";
 import AdminPanel from "./components/AdminPanel";
 import SubjectsDirectory from "./components/SubjectsDirectory";
-import KapSAT from "./components/KapSAT";
 import { CallProvider } from "./context/CallContext";
 import IncomingCallNotification from "./components/IncomingCallNotification";
 import ActiveCallPanel from "./components/ActiveCallPanel";
@@ -65,7 +65,7 @@ export default function App() {
   
   // Resolve initial tab & params directly from current URL path
   const initialResolved = getTabFromPathname(location.pathname);
-  const [activeTab, setActiveTab] = useState<"announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat">(initialResolved.tab);
+  const [activeTab, setActiveTab] = useState<AppTab>(initialResolved.tab);
   const [activeSubject, setActiveSubject] = useState<string | null>(initialResolved.subject || null);
   const [viewingUserId, setViewingUserId] = useState<number>(initialResolved.userId || currentUserId);
   const [targetChatUserId, setTargetChatUserId] = useState<number | null>(null);
@@ -740,7 +740,7 @@ export default function App() {
     window.location.reload();
   };
 
-  const handleTabChange = (tab: "announcements" | "agenda" | "global" | "chats" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted" | "kapsat") => {
+  const handleTabChange = (tab: AppTab) => {
     if (tab === "predicted" && !isEmirgan && !hasPredictedAccess) {
       return;
     }
@@ -790,7 +790,7 @@ export default function App() {
   const handleOpenChat = (targetId: number) => {
     setTargetChatUserId(targetId);
     setActiveTab("chats");
-    navigate("/");
+    navigate("/sohbetler");
   };
 
   // If user is currently on predicted page but loses access, redirect safely
@@ -991,6 +991,13 @@ export default function App() {
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
           <nav className="px-4 space-y-2">
+            <NavItem 
+              to="/"
+              icon={<Home className="text-blue-600 dark:text-blue-400" />} 
+              label="Ana Sayfa" 
+              active={activeTab === 'dashboard'} 
+              onClick={() => handleTabChange('dashboard')} 
+            />
             {isEmirgan && (
               <NavItem 
                 to="/emirgan"
@@ -1001,6 +1008,14 @@ export default function App() {
                 onClick={() => handleTabChange('admin')} 
               />
             )}
+            <NavItem 
+              to="/sohbetler" 
+              icon={<MessageSquare />} 
+              label="Sohbetler" 
+              active={activeTab === 'chats'} 
+              badge={unreadDmCount} 
+              onClick={() => handleTabChange('chats')} 
+            />
             <NavItem 
               to="/duyurular"
               icon={<Megaphone className="text-amber-500 dark:text-amber-400" />} 
@@ -1032,16 +1047,8 @@ export default function App() {
               onClick={() => handleTabChange('agenda')} 
             />
             <NavItem to="/genel-sohbet" icon={<Globe />} label="Genel Sohbet" active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
-            <NavItem to="/" icon={<MessageSquare />} label="Sohbetler" active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
             <NavItem to="/akis" icon={<LayoutGrid />} label="Akış" active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
             <NavItem to="/dersler" icon={<Folder className="text-blue-500" />} label="Ders Klasörleri" active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
-            <NavItem 
-              to="/kapsat"
-              icon={<GraduationCap className="text-indigo-500 dark:text-indigo-400" />} 
-              label="kapSAT (Digital SAT)" 
-              active={activeTab === 'kapsat'} 
-              onClick={() => handleTabChange('kapsat')} 
-            />
             <NavItem to="/harita" icon={<MapPin className="text-emerald-500" />} label="Canlı Harita" active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
             <NavItem to="/arkadaslar" icon={<Users />} label="Arkadaşlar" active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
             <NavItem to="/sesli-sohbet" icon={<Radio />} label="Sesli & Görüntülü" active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
@@ -1080,6 +1087,26 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-full overflow-hidden">
+        {activeTab === 'dashboard' && (
+          <Dashboard 
+            socket={socket} 
+            currentUserId={currentUserId} 
+            currentUsername={username} 
+            avatar={avatar} 
+            color={color} 
+            currentUserRoles={currentUserRoles} 
+            onlineUsers={onlineUsers} 
+            onNavigate={(tab) => handleTabChange(tab)} 
+            onUserClick={handleUserClick} 
+            onStartChat={(targetId) => handleOpenChat(targetId)} 
+            miniWeatherBadge={miniWeatherBadge} 
+            unreadDmCount={unreadDmCount} 
+            unreadGlobalCount={unreadGlobalCount} 
+            hasUnreadAnnouncement={hasUnreadAnnouncement} 
+            isEmirgan={isEmirgan} 
+            hasPredictedAccess={hasPredictedAccess} 
+          />
+        )}
         {activeTab === 'admin' && isEmirgan && (
           <AdminPanel 
             socket={socket} 
@@ -1131,11 +1158,6 @@ export default function App() {
             socket={socket} 
           />
         )}
-        {activeTab === 'kapsat' && (
-          <KapSAT 
-            onClose={() => handleTabChange('folders')} 
-          />
-        )}
         {activeTab === 'subject' && (
           <Feed 
             socket={socket} 
@@ -1183,7 +1205,7 @@ export default function App() {
         {activeTab === 'weather' && (
           <WeatherDashboard 
             darkMode={darkMode}
-            onBackToMain={() => handleTabChange('chats')} 
+            onBackToMain={() => handleTabChange('dashboard')} 
           />
         )}
 
@@ -1232,6 +1254,7 @@ export default function App() {
       {/* Mobile Bottom Nav */}
       <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe shrink-0 z-30">
         <nav className="flex items-center justify-around px-1 py-1.5 overflow-x-auto no-scrollbar">
+          <MobileNavItem to="/" icon={<Home size={22} className="text-blue-600 dark:text-blue-400" />} active={activeTab === 'dashboard'} onClick={() => handleTabChange('dashboard')} />
           {isEmirgan && (
             <MobileNavItem 
               to="/emirgan"
@@ -1241,10 +1264,10 @@ export default function App() {
               onClick={() => handleTabChange('admin')} 
             />
           )}
+          <MobileNavItem to="/sohbetler" icon={<MessageSquare size={22} />} active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
           <MobileNavItem to="/duyurular" icon={<Megaphone size={22} className="text-amber-500" />} active={activeTab === 'announcements'} dotBadge={hasUnreadAnnouncement} onClick={() => handleTabChange('announcements')} />
           <MobileNavItem to="/ajanda" icon={<CalendarDays size={22} className="text-blue-500" />} active={activeTab === 'agenda'} onClick={() => handleTabChange('agenda')} />
           <MobileNavItem to="/genel-sohbet" icon={<Globe size={22} />} active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
-          <MobileNavItem to="/" icon={<MessageSquare size={22} />} active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
           <MobileNavItem to="/akis" icon={<LayoutGrid size={22} />} active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
           <MobileNavItem 
             to="/hava-durumu"
@@ -1254,7 +1277,6 @@ export default function App() {
             onClick={() => handleTabChange('weather')} 
           />
           <MobileNavItem to="/dersler" icon={<Folder size={22} className="text-blue-500" />} active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
-          <MobileNavItem to="/kapsat" icon={<GraduationCap size={22} className="text-indigo-500" />} active={activeTab === 'kapsat'} onClick={() => handleTabChange('kapsat')} />
           <MobileNavItem to="/harita" icon={<MapPin size={22} className="text-emerald-500" />} active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
           <MobileNavItem to="/sesli-sohbet" icon={<Radio size={22} />} active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
           <MobileNavItem to="/oyunlar" icon={<Gamepad2 size={22} />} active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
