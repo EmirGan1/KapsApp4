@@ -155,6 +155,18 @@ export const WEEKLY_SCHEDULE: DaySchedule[] = [
       { periodNumber: 8, startTime: "14:50", endTime: "15:30", subjectKey: "physics_biology", defaultName: "Fizik / Biyoloji" },
     ],
   },
+  {
+    dayIndex: 6,
+    dayName: "Cumartesi (Etüt)",
+    dayShort: "Cmt",
+    periods: [],
+  },
+  {
+    dayIndex: 0,
+    dayName: "Pazar (Dinlenme)",
+    dayShort: "Paz",
+    periods: [],
+  },
 ];
 
 // Helper: Normalize role string for uniform matching
@@ -448,6 +460,7 @@ export function resolveSubjectByRole(subjectKey: string, rawRoles: string[] = []
     }
 
     // -------------------------------------------------------------
+    // -------------------------------------------------------------
     // PROJECT & GUIDANCE: Proje / Rehberlik
     // -------------------------------------------------------------
     case "project_guidance": {
@@ -460,6 +473,92 @@ export function resolveSubjectByRole(subjectKey: string, rawRoles: string[] = []
         icon: "🎯",
         isElective: false,
         notes: "IB EE / CAS Danışmanlığı & Sınıf Rehberliği",
+      };
+    }
+
+    // -------------------------------------------------------------
+    // CUMARTESİ ETÜT DERSLERİ (SATURDAY STUDY SESSIONS)
+    // -------------------------------------------------------------
+    case "study_math": {
+      return {
+        name: "Matematik Etüdü (TYT/AYT & HL/SL)",
+        group: "Hafta Sonu Etüt",
+        level: "HL",
+        color: "#2563EB",
+        bgColor: "bg-blue-500/10 dark:bg-blue-500/20",
+        borderColor: "border-blue-500/40",
+        icon: "📐",
+        isElective: false,
+        notes: "Matematik soru bankası analizi & hız kazanım etüdü",
+      };
+    }
+
+    case "study_physics": {
+      return {
+        name: "Fizik & Fen Bilimleri Etüdü",
+        group: "Hafta Sonu Etüt",
+        level: "HL",
+        color: "#8B5CF6",
+        bgColor: "bg-purple-500/10 dark:bg-purple-500/20",
+        borderColor: "border-purple-500/40",
+        icon: "⚛️",
+        isElective: false,
+        notes: "Mekanik, Elektrik & Dalgalar problem çözümü",
+      };
+    }
+
+    case "study_chemistry_biology": {
+      return {
+        name: "Kimya & Biyoloji Soru Etüdü",
+        group: "Hafta Sonu Etüt",
+        level: "SL",
+        color: "#10B981",
+        bgColor: "bg-emerald-500/10 dark:bg-emerald-500/20",
+        borderColor: "border-emerald-500/40",
+        icon: "🧪",
+        isElective: false,
+        notes: "Deney soruları & grafik yorumlama",
+      };
+    }
+
+    case "study_literature": {
+      return {
+        name: "Türk Dili & Edebiyat / Paragraf Etüdü",
+        group: "Hafta Sonu Etüt",
+        level: "SL",
+        color: "#F59E0B",
+        bgColor: "bg-amber-500/10 dark:bg-amber-500/20",
+        borderColor: "border-amber-500/40",
+        icon: "📚",
+        isElective: false,
+        notes: "Paragraf hız testi ve edebiyat analizleri",
+      };
+    }
+
+    case "study_english": {
+      return {
+        name: "English B / Yabancı Dil Workshop",
+        group: "Hafta Sonu Etüt",
+        level: "HL",
+        color: "#06B6D4",
+        bgColor: "bg-cyan-500/10 dark:bg-cyan-500/20",
+        borderColor: "border-cyan-500/40",
+        icon: "🌐",
+        isElective: false,
+        notes: "Paper 1 & Paper 2 writing/reading workshop",
+      };
+    }
+
+    case "study_exam": {
+      return {
+        name: "Branş Denemesi & Bireysel Etüt",
+        group: "Hafta Sonu Etüt",
+        color: "#EC4899",
+        bgColor: "bg-pink-500/10 dark:bg-pink-500/20",
+        borderColor: "border-pink-500/40",
+        icon: "📝",
+        isElective: false,
+        notes: "Süre kontrollü branş deneme sınavı & eksik analizi",
       };
     }
 
@@ -492,7 +591,7 @@ export interface PeriodTimeStatus {
 export function getCurrentPeriodStatus(
   startTime: string,
   endTime: string,
-  scheduleDayIndex: number, // 1 = Mon .. 5 = Fri
+  scheduleDayIndex: number, // 0 = Sun, 1 = Mon .. 6 = Sat
   customNow?: Date
 ): PeriodTimeStatus {
   const now = customNow || new Date();
@@ -500,20 +599,19 @@ export function getCurrentPeriodStatus(
   // JavaScript getDay(): 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
   const currentDayOfWeek = now.getDay();
 
-  // If viewing a past day of the current week (e.g. today is Wed, viewing Mon)
-  if (currentDayOfWeek >= 1 && currentDayOfWeek <= 5) {
-    if (scheduleDayIndex < currentDayOfWeek) {
+  // If viewing a different day
+  if (scheduleDayIndex !== currentDayOfWeek) {
+    if (currentDayOfWeek === 0) {
+      // It's Sunday today, any weekday is next week
+      return { status: "future", label: "Pazartesi" };
+    }
+    if (scheduleDayIndex < currentDayOfWeek && scheduleDayIndex !== 0) {
       return { status: "past", label: "Tamamlandı" };
     }
-    if (scheduleDayIndex > currentDayOfWeek) {
-      return { status: "future", label: "Gelecek Gün" };
-    }
-  } else {
-    // Weekend (Sat/Sun): all upcoming for the next school week
-    return { status: "future", label: "Haftaya" };
+    return { status: "future", label: "Gelecek Gün" };
   }
 
-  // Same day: calculate time within day
+  // Same day: calculate time within day (Works for Monday - Saturday)
   const currentHours = now.getHours();
   const currentMinutes = now.getMinutes();
   const nowInMinutes = currentHours * 60 + currentMinutes;

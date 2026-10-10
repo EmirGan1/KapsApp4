@@ -13,6 +13,8 @@ import RoleBadges from "./RoleBadges";
 import ScheduleTimeline from "./ScheduleTimeline";
 import OpenLobbiesWidget from "./OpenLobbiesWidget";
 import CafeteriaMenuWidget from "./CafeteriaMenuWidget";
+import CommunityMiniFeedWidget from "./CommunityMiniFeedWidget";
+import MiniChatWidget from "./MiniChatWidget";
 import { AnnouncementItem, isVisibleToUser } from "../types";
 import { 
   getCachedWeather, 
@@ -172,57 +174,7 @@ export default function Dashboard({
     return getSmartWeatherAdvice(weatherData);
   }, [weatherData]);
 
-  // 3. Mini Global Chat Live Stream
-  const [globalMessages, setGlobalMessages] = useState<GlobalMiniMessage[]>([]);
-  const [miniMsgInput, setMiniMsgInput] = useState<string>("");
-  const [isSendingMiniMsg, setIsSendingMiniMsg] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleInitialGlobal = (msgs: any[]) => {
-      if (Array.isArray(msgs)) {
-        setGlobalMessages(msgs.slice(-5));
-      }
-    };
-
-    socket.on("initial_global_messages", handleInitialGlobal);
-    socket.emit("get_initial_global_messages");
-
-    const handleNewGlobal = (msg: any) => {
-      setGlobalMessages((prev) => {
-        const next = [...prev, msg];
-        return next.slice(-5);
-      });
-    };
-
-    socket.on("new_global_message", handleNewGlobal);
-    socket.on("global_message", handleNewGlobal);
-
-    return () => {
-      socket.off("initial_global_messages", handleInitialGlobal);
-      socket.off("new_global_message", handleNewGlobal);
-      socket.off("global_message", handleNewGlobal);
-    };
-  }, [socket]);
-
-  const handleSendMiniGlobalMsg = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!miniMsgInput.trim() || !socket || isSendingMiniMsg) return;
-
-    const text = miniMsgInput.trim();
-    setIsSendingMiniMsg(true);
-    socket.emit("send_global_message", {
-      content: text,
-      client_id: Date.now().toString(),
-      timestamp: Date.now()
-    }, () => {
-      setIsSendingMiniMsg(false);
-      setMiniMsgInput("");
-    });
-  };
-
-  // 4. Online Friends & Dynamic Status
+  // 3. Online Friends & Dynamic Status
   const [friends, setFriends] = useState<any[]>([]);
   useEffect(() => {
     if (!socket) return;
@@ -388,96 +340,30 @@ export default function Dashboard({
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* SOL PANEL (5 cols): CANLI GENEL SOHBET AKIŞI (MINI FEED WIDGET) */}
-        <div className="lg:col-span-5 bg-white dark:bg-slate-900 rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between h-full min-h-[460px]">
-          <div>
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                  <Globe size={20} />
-                </div>
-                <div>
-                  <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                    <span>Genel Sohbet Akışı</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Canlı topluluk sohbeti</p>
-                </div>
-              </div>
+        {/* SOL PANEL (5 cols): KOMPAKT GENEL SOHBET & TOPLULUK AKIŞI (MINI FEED) */}
+        <div className="lg:col-span-5 flex flex-col gap-5">
+          
+          {/* 1. KOMPAKT GENEL SOHBET WIDGET'I (Socket.IO Çift Taraflı Senkron, Son 2-3 Mesaj) */}
+          <MiniChatWidget 
+            socket={socket}
+            currentUserId={currentUserId}
+            currentUsername={currentUsername}
+            onNavigateChat={() => {
+              onNavigate("chats", "/sohbetler");
+            }}
+          />
 
-              <Link
-                to="/genel-sohbet"
-                onClick={() => onNavigate("global")}
-                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-              >
-                <span>Tam Ekranda Aç</span>
-                <ChevronRight size={13} />
-              </Link>
-            </div>
+          {/* 2. TOPLULUK AKIŞI (MINI FEED WIDGET - SON 2-3 GÖNDERİ) */}
+          <CommunityMiniFeedWidget 
+            onNavigateFeed={() => onNavigate("feed", "/akis")}
+          />
 
-            {/* Mesaj Akışı Listesi */}
-            <div className="space-y-3 my-2">
-              {globalMessages.length > 0 ? (
-                globalMessages.map((msg, i) => (
-                  <div
-                    key={msg.id || i}
-                    className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-start gap-3 transition-all hover:bg-slate-100/70 dark:hover:bg-slate-800"
-                  >
-                    <Avatar 
-                      url={msg.avatar} 
-                      name={msg.sender_name || msg.username || "Kullanıcı"} 
-                      color={msg.color} 
-                      size={8} 
-                      className="shrink-0 mt-0.5"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1 mb-0.5">
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                          {msg.sender_name || msg.username || "Anonim"}
-                        </span>
-                        <span className="text-[10px] text-slate-400 shrink-0 font-mono">
-                          {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) : "Şimdi"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 dark:text-slate-300 break-words line-clamp-2">
-                        {msg.content}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="py-12 text-center text-slate-400 text-xs">
-                  Sohbet odası sessiz, ilk mesajı sen yazabilirsin!
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Hızlı Yanıt Kutusu */}
-          <form onSubmit={handleSendMiniGlobalMsg} className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={miniMsgInput}
-                onChange={(e) => setMiniMsgInput(e.target.value)}
-                placeholder="Genel sohbete anında yaz..."
-                className="flex-1 bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-              <button
-                type="submit"
-                disabled={!miniMsgInput.trim() || isSendingMiniMsg}
-                className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold transition-colors cursor-pointer shrink-0"
-                title="Gönder"
-              >
-                <Send size={15} />
-              </button>
-            </div>
-          </form>
         </div>
 
         {/* SAĞ PANEL (7 cols): DİKEY DERS PROGRAMI (VERTICAL TIMELINE WIDGET) */}
         <div className="lg:col-span-7">
           <ScheduleTimeline 
+            socket={socket}
             currentUserRoles={currentUserRoles}
             onNavigateCourse={(courseId) => {
               onNavigate("folders", `/dersler/${encodeURIComponent(courseId)}`);

@@ -14,6 +14,8 @@ import { createClient } from "@libsql/client";
 import dotenv from "dotenv";
 import { registerCourseRoutes } from "./src/server/courseController";
 import { registerAdminController } from "./src/server/adminController";
+import { registerAgendaController } from "./src/server/agendaController";
+import { setupChatSocketHandlers } from "./src/server/socket";
 
 import { 
   generateDeck, 
@@ -2741,6 +2743,7 @@ async function startServer() {
 
   // Admin, Daily Quote and Screen Time Controllers
   registerAdminController(app, client, requireEmirganAdmin, io);
+  registerAgendaController(app, client);
 
   // Admin: Overall System Metrics & Health Dashboard
   app.get("/api/admin/overview", requireEmirganAdmin, async (req, res) => {
@@ -8300,69 +8303,8 @@ async function startServer() {
       }
     });
 
-    socket.on("send_global_message", async (data) => {
-      let { type, content, reply_to, file_name, file_size } = data;
-      if (type === "text") {
-        if (!content || typeof content !== "string" || !content.trim()) return;
-        content = content.trim();
-        if (content.length > 1000) {
-          content = content.slice(0, 1000);
-        }
-      }
-
-      const sUser = await getUser(user.id);
-      const nowIso = new Date().toISOString();
-      const tempId = `g_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-
-      let replyMsg = null;
-      if (reply_to) {
-        const cachedGlobal = messageRamCache.get("global");
-        const refCached = cachedGlobal?.find(m => String(m.id) === String(reply_to));
-        if (refCached) {
-          replyMsg = { id: refCached.id, sender: refCached.sender, type: refCached.type, content: refCached.content, sender_name: refCached.sender_name };
-        } else {
-          try {
-            const refMsgRes = await client.execute({ sql: `SELECT id, sender, type, content, file_name, file_size FROM global_messages WHERE id = ?`, args: [reply_to] });
-            if (refMsgRes.rows.length > 0) {
-              const rUser = await getUser(refMsgRes.rows[0].sender as number);
-              replyMsg = { ...refMsgRes.rows[0], sender_name: rUser?.username };
-            }
-          } catch(e) {}
-        }
-      }
-
-      const popMsg: any = {
-        id: tempId,
-        sender: user.id,
-        type,
-        content,
-        reply_to: reply_to || null,
-        reactions: [],
-        sender_name: sUser?.username,
-        sender_avatar: sUser?.avatar,
-        sender_color: sUser?.color,
-        reply_message: replyMsg,
-        file_name: file_name || null,
-        file_size: file_size || null,
-        created_at: nowIso
-      };
-
-      // 1. RAM Cache write
-      messageRamCache.push("global", popMsg);
-
-      // 2. Instant real-time broadcast
-      io.emit("new_global_message", popMsg);
-
-      // 3. Asynchronous Turso write
-      client.execute({
-        sql: "INSERT INTO global_messages (sender, type, content, reply_to, reactions, file_name, file_size, created_at) VALUES (?, ?, ?, ?, '[]', ?, ?, ?)",
-        args: [user.id, type, content, reply_to || null, file_name || null, file_size || null, nowIso]
-      }).then(res => {
-        popMsg.id = Number(res.lastInsertRowid);
-      }).catch(err => {
-        console.error("Async global msg error:", err);
-      });
-    });
+    // Global Chat Handlers (Room Join, Dual Broadcast, Fast Response)
+    setupChatSocketHandlers(io, socket, user, client, messageRamCache, getUser);
 
     socket.on("clear_global_chat", async () => {
       try {

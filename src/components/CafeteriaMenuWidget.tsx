@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { 
   UtensilsCrossed, Flame, Calendar, ChevronLeft, 
-  ChevronRight, ArrowRight, Sparkles, Clock, Check
+  ChevronRight, ArrowRight, Sparkles, Clock, Check, AlertCircle, Info
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 
@@ -18,9 +18,9 @@ interface CafeteriaMenuWidgetProps {
   className?: string;
 }
 
-// Fallback high-school lunch menu items
+// Fallback high-school lunch menu items for weekdays & Monday
 const DEFAULT_MENU_DAYS: Record<string, { dateStr: string; meal: string; items: MenuItem[]; totalCalories: number }> = {
-  default: {
+  weekday: {
     dateStr: "Bugün",
     meal: "Öğle Yemeği (12:30 - 13:30)",
     totalCalories: 865,
@@ -30,6 +30,17 @@ const DEFAULT_MENU_DAYS: Record<string, { dateStr: string; meal: string; items: 
       { title: "Şehriyeli Pirinç Pilavı", category: "Garnitür", calories: 220, icon: "🍚" },
       { title: "Mevsim Meyvesi & Ayran", category: "Tatlı/İçecek", calories: 120, icon: "🍎" }
     ]
+  },
+  monday: {
+    dateStr: "Pazartesi",
+    meal: "Pazartesi Öğle Yemeği (12:30 - 13:30)",
+    totalCalories: 850,
+    items: [
+      { title: "Süzme Mercimek Çorbası", category: "Çorba", calories: 135, icon: "🥣" },
+      { title: "İzmir Köfte & Fırın Patates", category: "Ana Yemek", calories: 390, icon: "🥩" },
+      { title: "Tereyağlı Bulgur Pilavı", category: "Garnitür", calories: 205, icon: "🍚" },
+      { title: "Cacık / Mevsim Salatası", category: "Salata/İçecek", calories: 120, icon: "🥗" }
+    ]
   }
 };
 
@@ -37,26 +48,57 @@ export default function CafeteriaMenuWidget({
   onNavigateAgenda,
   className = ""
 }: CafeteriaMenuWidgetProps) {
-  const [activeMealIndex, setActiveMealIndex] = useState<number>(0);
   const [menuData, setMenuData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    // Fetch today's menu from agenda endpoint
-    const today = new Date();
-    const monthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const today = useMemo(() => new Date(), []);
+  const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-    fetch(getApiUrl(`/api/agenda?month=${monthStr}`))
+  // Determine target date (If weekend, target next Monday)
+  const targetDateInfo = useMemo(() => {
+    const target = new Date(today);
+    if (dayOfWeek === 6) {
+      // Saturday -> target Monday (+2 days)
+      target.setDate(today.getDate() + 2);
+    } else if (dayOfWeek === 0) {
+      // Sunday -> target Monday (+1 day)
+      target.setDate(today.getDate() + 1);
+    }
+
+    const year = target.getFullYear();
+    const month = String(target.getMonth() + 1).padStart(2, "0");
+    const day = String(target.getDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
+    const monthStr = `${year}-${month}`;
+
+    const formattedLabel = target.toLocaleDateString("tr-TR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long"
+    });
+
+    return {
+      date: target,
+      dateStr,
+      monthStr,
+      formattedLabel
+    };
+  }, [today, dayOfWeek]);
+
+  useEffect(() => {
+    setIsLoading(true);
+
+    fetch(getApiUrl(`/api/agenda?month=${targetDateInfo.monthStr}`))
       .then((res) => res.json())
       .then((events) => {
         if (Array.isArray(events)) {
           const foodEvents = events.filter((e: any) => e.event_type === "food");
-          const todayFood = foodEvents.find((e: any) => e.event_date === todayStr);
+          const targetFood = foodEvents.find((e: any) => e.event_date === targetDateInfo.dateStr);
 
-          if (todayFood) {
+          if (targetFood) {
             // Parse food items from description
-            const lines = (todayFood.description || "")
+            const lines = (targetFood.description || "")
               .split("\n")
               .map((l: string) => l.replace(/^[•\-\*]\s*/, "").trim())
               .filter(Boolean);
@@ -73,64 +115,70 @@ export default function CafeteriaMenuWidget({
 
                   return { title: line, category: cat, calories: cal, icon: ico };
                 })
-              : DEFAULT_MENU_DAYS.default.items;
+              : (isWeekend ? DEFAULT_MENU_DAYS.monday.items : DEFAULT_MENU_DAYS.weekday.items);
 
             const total = items.reduce((acc, curr) => acc + (curr.calories || 0), 0);
 
             setMenuData({
-              title: todayFood.title || "Günün Menüsü",
-              dateStr: "Bugünün Menüsü",
-              meal: todayFood.event_time ? `Öğle Yemeği (${todayFood.event_time})` : "Öğle Yemeği (12:30)",
+              title: targetFood.title || (isWeekend ? "Pazartesi Menüsü" : "Günün Menüsü"),
+              dateStr: isWeekend ? `En Yakın Menü: ${targetDateInfo.formattedLabel}` : "Bugünün Menüsü",
+              meal: targetFood.event_time ? `Öğle Yemeği (${targetFood.event_time})` : "Öğle Yemeği (12:30)",
               items,
               totalCalories: total
             });
           } else {
+            // Fallback
+            const fallback = isWeekend ? DEFAULT_MENU_DAYS.monday : DEFAULT_MENU_DAYS.weekday;
             setMenuData({
-              title: "FMV Işık Öğle Menüsü",
-              ...DEFAULT_MENU_DAYS.default
+              ...fallback,
+              title: isWeekend ? `Pazartesi Menüsü (${targetDateInfo.formattedLabel})` : "FMV Işık Öğle Menüsü",
+              dateStr: isWeekend ? `En Yakın Menü: ${targetDateInfo.formattedLabel}` : "Bugün"
             });
           }
         }
       })
       .catch(() => {
+        const fallback = isWeekend ? DEFAULT_MENU_DAYS.monday : DEFAULT_MENU_DAYS.weekday;
         setMenuData({
-          title: "FMV Işık Öğle Menüsü",
-          ...DEFAULT_MENU_DAYS.default
+          ...fallback,
+          title: isWeekend ? `Pazartesi Menüsü (${targetDateInfo.formattedLabel})` : "FMV Işık Öğle Menüsü",
+          dateStr: isWeekend ? `En Yakın Menü: ${targetDateInfo.formattedLabel}` : "Bugün"
         });
       })
       .finally(() => {
         setIsLoading(false);
       });
-  }, []);
+  }, [targetDateInfo, isWeekend]);
 
-  const active = menuData || {
-    title: "FMV Işık Öğle Menüsü",
-    ...DEFAULT_MENU_DAYS.default
-  };
+  const active = menuData || (isWeekend ? DEFAULT_MENU_DAYS.monday : DEFAULT_MENU_DAYS.weekday);
 
   return (
     <div className={`aspect-square bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-white dark:to-slate-900 border border-amber-200/60 dark:border-amber-900/40 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden relative group ${className}`}>
       {/* Background Decor */}
-      <div className="absolute -right-6 -bottom-6 w-32 h-32 rounded-full bg-amber-500/10 dark:bg-amber-500/5 blur-2xl pointer-events-none"></div>
+      <div className="absolute -right-6 -bottom-6 w-32 h-32 rounded-full bg-amber-500/10 dark:bg-amber-500/5 blur-2xl pointer-events-none" />
 
       {/* Top Header */}
       <div>
         <div className="flex items-center justify-between pb-2.5 border-b border-amber-100 dark:border-amber-900/30">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-white shadow-md shadow-orange-500/20 shrink-0">
               <UtensilsCrossed size={20} />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <h3 className="font-extrabold text-slate-900 dark:text-white text-sm sm:text-base">
                   Kafeterya Menüsü
                 </h3>
-                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
-                  Bugün
-                </span>
+                
+                {/* Durum Etiketi */}
+                {!isWeekend && (
+                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shrink-0">
+                    Bugün
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {active.meal}
+                {active.meal || "Öğle Yemeği (12:30 - 13:30)"}
               </p>
             </div>
           </div>
@@ -141,8 +189,20 @@ export default function CafeteriaMenuWidget({
           </div>
         </div>
 
+        {/* Hafta Sonu Özel Etiket / Banner (Örn: ℹ️ Hafta Sonu Kapalı — En Yakın Menü: Pazartesi (12 Ekim)) */}
+        {isWeekend && (
+          <div className="mt-2.5 p-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 flex items-center gap-2 text-[11px] leading-tight animate-fade-in">
+            <Info size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
+            <div className="min-w-0 font-bold">
+              <span>Hafta Sonu Kapalı</span>
+              <span className="text-amber-700 dark:text-amber-300 font-medium"> — En Yakın Menü: </span>
+              <span className="underline decoration-amber-400">{targetDateInfo.formattedLabel}</span>
+            </div>
+          </div>
+        )}
+
         {/* Meal Items (1:1 Fit) */}
-        <div className="mt-3 space-y-2">
+        <div className={`space-y-1.5 ${isWeekend ? "mt-2" : "mt-3"}`}>
           {active.items.slice(0, 4).map((item: MenuItem, idx: number) => (
             <div
               key={idx}
@@ -170,19 +230,19 @@ export default function CafeteriaMenuWidget({
         </div>
       </div>
 
-      {/* Footer CTA & Nutrition Note */}
+      {/* Footer CTA & Service Note */}
       <div className="pt-2 border-t border-amber-100 dark:border-amber-900/30 flex items-center justify-between mt-auto">
         <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-medium">
           <Clock size={12} className="text-amber-500" />
-          Servis: 12:30 - 13:30
+          {isWeekend ? "Pzt Servisi: 12:30" : "Servis: 12:30 - 13:30"}
         </span>
 
         <Link
           to="/ajanda"
           onClick={() => onNavigateAgenda?.()}
-          className="inline-flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
+          className="inline-flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer"
         >
-          Haftalık Menü
+          <span>Haftalık Menü</span>
           <ArrowRight size={13} />
         </Link>
       </div>
