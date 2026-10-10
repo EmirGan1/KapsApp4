@@ -54,10 +54,15 @@ export function registerCourseRoutes(
   io: any,
   deleteUploadedFile: (filePath: string) => Promise<void>
 ) {
-  // GET: List files for course / subject
+  // Ensure 'topics' column exists in subject_files
+  client.execute("ALTER TABLE subject_files ADD COLUMN topics TEXT").catch(() => {});
+
+  // GET: List files for course / subject (Supports multi-topic filter & ALL topic)
   app.get(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], async (req: Request, res: Response) => {
     try {
       const folderId = req.params.courseId;
+      const requestedTopic = (req.query.topic || req.query.theme) as string | undefined;
+
       const fileRes = await client.execute({
         sql: `SELECT f.*, u.username as uploader_name, u.avatar as uploader_avatar 
               FROM subject_files f 
@@ -66,13 +71,49 @@ export function registerCourseRoutes(
               ORDER BY f.id DESC`,
         args: [folderId, folderId]
       });
-      res.json({ files: fileRes.rows });
+
+      const parsedFiles = fileRes.rows.map((row: any) => {
+        let topicsArray: string[] = [];
+        if (row.topics) {
+          try {
+            const parsed = typeof row.topics === "string" ? JSON.parse(row.topics) : row.topics;
+            if (Array.isArray(parsed)) topicsArray = parsed;
+            else if (typeof parsed === "string") topicsArray = [parsed];
+          } catch (e) {
+            topicsArray = [String(row.topics)];
+          }
+        }
+        if (topicsArray.length === 0 && row.topic_tag) {
+          topicsArray = [row.topic_tag];
+        }
+
+        return {
+          ...row,
+          topics: topicsArray,
+          topic_tag: row.topic_tag || (topicsArray[0] ?? null)
+        };
+      });
+
+      // Filter by topic if requested
+      let filteredFiles = parsedFiles;
+      if (requestedTopic && requestedTopic !== "all") {
+        filteredFiles = parsedFiles.filter((f: any) => {
+          if (!f.topics || f.topics.length === 0) return true;
+          // Matches if file is for ALL topics OR includes the requested topic
+          const hasAll = f.topics.includes("ALL") || f.topics.includes("Hepsi") || f.topic_tag === "ALL";
+          const hasTopic = f.topics.includes(requestedTopic) || f.topic_tag === requestedTopic;
+          return hasAll || hasTopic;
+        });
+      }
+
+      res.json({ files: filteredFiles });
     } catch (err: any) {
+      console.error("GET /api/courses/:courseId/files error:", err);
       res.status(500).json({ error: "Ders dosyaları alınırken hata oluştu." });
     }
   });
 
-  // POST: Upload file for course
+  // POST: Upload file for course with multi-topic support
   app.post(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], (req: Request, res: Response) => {
     upload.single("file")(req, res, async (err: any) => {
       if (err) {
@@ -107,12 +148,40 @@ export function registerCourseRoutes(
           }
         } catch (err) {}
 
-        const topicTag = req.body.topic_tag || req.body.topic || req.body.ib_theme || null;
+        // Multi-topic resolution
+        const allTopics = req.body.allTopics === true || req.body.allTopics === "true";
+        let topicsList: string[] = [];
+
+        if (allTopics) {
+          topicsList = ["ALL"];
+        } else if (Array.isArray(req.body.topics)) {
+          topicsList = req.body.topics;
+        } else if (typeof req.body.topics === "string") {
+          try {
+            const parsed = JSON.parse(req.body.topics);
+            if (Array.isArray(parsed)) topicsList = parsed;
+            else topicsList = [req.body.topics];
+          } catch (e) {
+            topicsList = req.body.topics.split(",").map((s: string) => s.trim()).filter(Boolean);
+          }
+        } else if (req.body["topics[]"]) {
+          topicsList = Array.isArray(req.body["topics[]"]) ? req.body["topics[]"] : [req.body["topics[]"]];
+        } else if (req.body.topic_tag || req.body.topic || req.body.ib_theme) {
+          const single = req.body.topic_tag || req.body.topic || req.body.ib_theme;
+          topicsList = [single];
+        }
+
+        if (topicsList.length === 0 || topicsList.includes("ALL") || topicsList.includes("Hepsi")) {
+          topicsList = ["ALL"];
+        }
+
+        const topicsJson = JSON.stringify(topicsList);
+        const primaryTopicTag = topicsList.includes("ALL") ? "ALL" : (topicsList[0] || "Genel");
 
         const insRes = await client.execute({
-          sql: `INSERT INTO subject_files (folder_id, course_id, filename, original_name, mimetype, size, url, uploaded_by, topic_tag, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [folderId, folderId, filename, originalName, mimetype, size, url, authUser.id, topicTag, new Date().toISOString()]
+          sql: `INSERT INTO subject_files (folder_id, course_id, filename, original_name, mimetype, size, url, uploaded_by, topic_tag, topics, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [folderId, folderId, filename, originalName, mimetype, size, url, authUser.id, primaryTopicTag, topicsJson, new Date().toISOString()]
         });
 
         const newFile = {
@@ -125,7 +194,8 @@ export function registerCourseRoutes(
           url,
           uploaded_by: authUser.id,
           uploader_name: authUser.username,
-          topic_tag: topicTag,
+          topic_tag: primaryTopicTag,
+          topics: topicsList,
           created_at: new Date().toISOString()
         };
 

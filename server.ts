@@ -13,6 +13,7 @@ import os from "os";
 import { createClient } from "@libsql/client";
 import dotenv from "dotenv";
 import { registerCourseRoutes } from "./src/server/courseController";
+import { registerPostRoutes } from "./src/server/postsController";
 import { registerAdminController } from "./src/server/adminController";
 import { registerAgendaController } from "./src/server/agendaController";
 import { setupChatSocketHandlers } from "./src/server/socket";
@@ -326,6 +327,7 @@ async function initDb() {
     )`);
   } catch(e) {}
   try { await client.execute("ALTER TABLE subject_files ADD COLUMN topic_tag TEXT"); } catch(e){}
+  try { await client.execute("ALTER TABLE subject_files ADD COLUMN topics TEXT"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN uno_wins INTEGER DEFAULT 0"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN signup_ip TEXT"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN last_ip TEXT"); } catch(e){}
@@ -1395,6 +1397,7 @@ async function startServer() {
 
   // Course / Subject Files Endpoints (PDF, DOCX, PPTX, XLSX, ZIP, etc.)
   registerCourseRoutes(app, client, upload, io, deleteUploadedFile);
+  registerPostRoutes(app, client, io);
 
   // REST Message Pagination Route (beforeId, limit)
   app.get(["/api/messages/:roomId", "/api/chat/messages/:roomId"], async (req, res) => {

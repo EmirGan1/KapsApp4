@@ -14,15 +14,13 @@ import {
   File, 
   Loader2, 
   Plus, 
-  ExternalLink,
   GraduationCap,
   Tag,
-  AlertCircle,
   Filter,
-  CheckCircle2
+  Sparkles
 } from 'lucide-react';
 import { getApiUrl, getAuthHeaders } from '../utils/api';
-import Avatar from './Avatar';
+import FileUploadModal from './FileUploadModal';
 
 export interface CourseFileItem {
   id: number;
@@ -36,6 +34,7 @@ export interface CourseFileItem {
   uploader_name?: string;
   uploader_avatar?: string;
   topic_tag?: string | null;
+  topics?: string[];
   created_at: string;
 }
 
@@ -144,9 +143,6 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
   // Upload Modal State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [selectedTheme, setSelectedTheme] = useState<string>('');
-  const [themeValidationError, setThemeValidationError] = useState<string | null>(null);
-  const [fileNote, setFileNote] = useState<string>('');
 
   // Filter State
   const [selectedFilterTheme, setSelectedFilterTheme] = useState<string>('all');
@@ -217,29 +213,30 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     }
 
     setPendingFile(file);
-    setSelectedTheme('');
-    setThemeValidationError(null);
     setIsUploadModalOpen(true);
   };
 
-  // Submit file upload with mandatory IB Theme
-  const handleUploadSubmit = async () => {
-    if (!pendingFile) return;
-
-    if (!selectedTheme || !selectedTheme.trim()) {
-      setThemeValidationError("Lütfen IB müfredatına uygun bir konu/tema seçin.");
-      return;
-    }
-
+  // Submit file upload with multi-topic and allTopics support
+  const handleUploadSubmit = async (payload: {
+    file: File;
+    selectedTopics: string[];
+    allTopics: boolean;
+    note: string;
+  }) => {
     setIsUploading(true);
-    setThemeValidationError(null);
 
     const formData = new FormData();
-    formData.append("file", pendingFile);
-    formData.append("topic_tag", selectedTheme);
-    formData.append("ib_theme", selectedTheme);
-    if (fileNote.trim()) {
-      formData.append("note", fileNote.trim());
+    formData.append("file", payload.file);
+    formData.append("allTopics", payload.allTopics ? "true" : "false");
+    formData.append("topics", JSON.stringify(payload.selectedTopics));
+    payload.selectedTopics.forEach((t) => formData.append("topics[]", t));
+
+    const primaryTag = payload.allTopics ? "ALL" : (payload.selectedTopics[0] || "Genel");
+    formData.append("topic_tag", primaryTag);
+    formData.append("ib_theme", primaryTag);
+
+    if (payload.note) {
+      formData.append("note", payload.note);
     }
 
     try {
@@ -264,8 +261,6 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
       }
       setIsUploadModalOpen(false);
       setPendingFile(null);
-      setSelectedTheme('');
-      setFileNote('');
       loadFiles();
     } catch (err: any) {
       alert(err.message || "Dosya yüklenirken bir hata oluştu.");
@@ -327,6 +322,9 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     if (mimetype.includes('zip') || mimetype.includes('rar') || mimetype.includes('tar') || ['zip', 'rar', '7z'].includes(ext)) {
       return <FileArchive className="w-6 h-6 text-purple-500" />;
     }
+    if (['py', 'js', 'ts', 'html', 'css', 'json', 'cpp', 'java'].includes(ext)) {
+      return <FileCode className="w-6 h-6 text-cyan-500" />;
+    }
     return <File className="w-6 h-6 text-slate-500" />;
   };
 
@@ -335,10 +333,12 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     return mimetype.includes('pdf') || ext === 'pdf';
   };
 
-  // Filtered files list
-  const filteredFiles = files.filter(f => {
+  // Filtered files list: matches specific topic OR file is marked for ALL topics
+  const filteredFiles = files.filter((f) => {
     if (selectedFilterTheme === 'all') return true;
-    return f.topic_tag === selectedFilterTheme;
+    const hasAll = f.topics?.includes('ALL') || f.topics?.includes('Hepsi') || f.topic_tag === 'ALL';
+    const hasSelected = f.topics?.includes(selectedFilterTheme) || f.topic_tag === selectedFilterTheme;
+    return hasAll || hasSelected;
   });
 
   return (
@@ -347,7 +347,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
       {/* Section Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 shadow-inner">
             <UploadCloud size={18} />
           </div>
           <div>
@@ -386,7 +386,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
         </div>
       </div>
 
-      {/* IB Theme Filter Chips (if files exist) */}
+      {/* IB Theme Filter Chips */}
       {files.length > 0 && (
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-3 mb-3 border-b border-slate-100 dark:border-slate-800/60">
           <span className="text-[11px] font-bold text-slate-400 shrink-0 flex items-center gap-1 mr-1">
@@ -398,14 +398,19 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
             onClick={() => setSelectedFilterTheme('all')}
             className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
               selectedFilterTheme === 'all'
-                ? 'bg-blue-600 text-white'
+                ? 'bg-blue-600 text-white shadow-xs'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
             Tüm Konular ({files.length})
           </button>
-          {courseThemes.map(theme => {
-            const count = files.filter(f => f.topic_tag === theme).length;
+          {courseThemes.map((theme) => {
+            const count = files.filter((f) => {
+              const hasAll = f.topics?.includes('ALL') || f.topics?.includes('Hepsi') || f.topic_tag === 'ALL';
+              const hasTheme = f.topics?.includes(theme) || f.topic_tag === theme;
+              return hasAll || hasTheme;
+            }).length;
+
             if (count === 0) return null;
             return (
               <button
@@ -414,7 +419,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                 onClick={() => setSelectedFilterTheme(theme)}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
                   selectedFilterTheme === theme
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-blue-600 text-white shadow-xs'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
               >
@@ -441,12 +446,12 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
             Henüz ders dosyası yüklenmemiş
           </p>
           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-            Buraya tıklayarak IB müfredatı temalı PDF, Word veya özet ders notlarınızı yükleyin
+            Buraya tıklayarak IB müfredatı temalı PDF, Word veya özet ders notlarınızı çoklu konu seçerek yükleyin
           </p>
         </div>
       ) : filteredFiles.length === 0 ? (
         <div className="text-center py-6 text-slate-400 text-xs">
-          Bu temaya ait henüz dosya bulunmuyor.
+          Bu konuya ait henüz özel dosya bulunmuyor.
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -454,6 +459,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
             const isOwner = Number(file.uploaded_by) === Number(currentUserId);
             const canDelete = isOwner || isEmirgan;
             const isPdf = isPdfFile(file.mimetype || '', file.original_name || file.filename);
+            const isAllTopics = file.topics?.includes('ALL') || file.topics?.includes('Hepsi') || file.topic_tag === 'ALL';
 
             return (
               <div
@@ -469,18 +475,35 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                       {file.original_name || file.filename}
                     </p>
                     
-                    {/* IB Theme Badge */}
-                    {file.topic_tag && (
-                      <div className="mt-0.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 max-w-[200px] truncate">
-                          <Tag size={10} className="shrink-0 text-indigo-500" />
-                          <span className="truncate">{file.topic_tag}</span>
+                    {/* Multi-Topic or All Topics Badge */}
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {isAllTopics ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60">
+                          <Sparkles size={10} className="shrink-0 text-amber-500" />
+                          <span>🌟 Tüm Konular (Hepsi)</span>
                         </span>
-                      </div>
-                    )}
+                      ) : (
+                        <>
+                          {(file.topics && file.topics.length > 0 ? file.topics : (file.topic_tag ? [file.topic_tag] : [])).slice(0, 2).map((t) => (
+                            <span 
+                              key={t}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 max-w-[150px] truncate"
+                            >
+                              <Tag size={9} className="shrink-0 text-indigo-500" />
+                              <span className="truncate">{t}</span>
+                            </span>
+                          ))}
+                          {(file.topics && file.topics.length > 2) && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                              +{file.topics.length - 2}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
 
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                      <span>{formatFileSize(file.size)}</span>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
+                      <span className="font-mono">{formatFileSize(file.size)}</span>
                       <span>•</span>
                       <span className="truncate">{file.uploader_name || 'Kullanıcı'}</span>
                     </div>
@@ -495,7 +518,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                         setPreviewPdfUrl(getApiUrl(file.url));
                         setPreviewPdfTitle(file.original_name || file.filename);
                       }}
-                      className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                      className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                       title="PDF Önizle"
                     >
                       <Eye size={15} />
@@ -530,154 +553,19 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
         </div>
       )}
 
-      {/* =================================================================== */}
-      {/* MANDATORY IB THEME UPLOAD MODAL */}
-      {/* =================================================================== */}
-      {isUploadModalOpen && pendingFile && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 max-w-lg w-full shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                  <UploadCloud size={20} />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                    Materyal Yükle & Paylaş
-                  </h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {courseTitle} — IB Müfredat Teması Belirleyin
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsUploadModalOpen(false);
-                  setPendingFile(null);
-                  setSelectedTheme('');
-                }}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Selected File Box */}
-            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shrink-0">
-                {getFileIcon(pendingFile.type, pendingFile.name)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
-                  {pendingFile.name}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  {formatFileSize(pendingFile.size)} • {pendingFile.type || 'Dosya'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline shrink-0"
-              >
-                Değiştir
-              </button>
-            </div>
-
-            {/* MANDATORY IB THEME SELECTOR */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <GraduationCap size={14} className="text-indigo-500" />
-                  <span>İlgili IB Müfredatı Teması / Konusu</span>
-                </span>
-                <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider">
-                  * Zorunlu
-                </span>
-              </label>
-
-              <select
-                value={selectedTheme}
-                onChange={(e) => {
-                  setSelectedTheme(e.target.value);
-                  if (e.target.value) {
-                    setThemeValidationError(null);
-                  }
-                }}
-                className={`w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 transition-all ${
-                  themeValidationError
-                    ? 'border-rose-500 focus:ring-rose-500/20'
-                    : 'border-slate-200 dark:border-slate-700 focus:ring-indigo-500/20 focus:border-indigo-500'
-                }`}
-              >
-                <option value="">-- Lütfen bir IB Teması Seçin (Zorunlu) --</option>
-                {courseThemes.map((theme) => (
-                  <option key={theme} value={theme}>
-                    {theme}
-                  </option>
-                ))}
-              </select>
-
-              {themeValidationError && (
-                <p className="text-[11px] font-bold text-rose-500 flex items-center gap-1 mt-1 animate-in fade-in">
-                  <AlertCircle size={13} />
-                  <span>{themeValidationError}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Optional Note/Description */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Açıklama / Not Başlığı (İsteğe Bağlı)
-              </label>
-              <input
-                type="text"
-                value={fileNote}
-                onChange={(e) => setFileNote(e.target.value)}
-                placeholder="Örn: 2026 Paper 2 Çalışma Soruları ve Formül Listesi..."
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsUploadModalOpen(false);
-                  setPendingFile(null);
-                  setSelectedTheme('');
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                İptal
-              </button>
-
-              <button
-                type="button"
-                onClick={handleUploadSubmit}
-                disabled={!selectedTheme || isUploading}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-md shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    <span>Yükleniyor...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={15} />
-                    <span>Yükle ve Paylaş</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Multi-Topic File Upload Modal */}
+      <FileUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => {
+          setIsUploadModalOpen(false);
+          setPendingFile(null);
+        }}
+        pendingFile={pendingFile}
+        courseTitle={courseTitle}
+        courseThemes={courseThemes}
+        isUploading={isUploading}
+        onUpload={handleUploadSubmit}
+      />
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmFile && (
@@ -760,7 +648,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                 </a>
                 <button
                   onClick={() => setPreviewPdfUrl(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X size={20} />
                 </button>

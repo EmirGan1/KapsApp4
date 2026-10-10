@@ -28,6 +28,8 @@ import AdminModerationMenu from "./AdminModerationMenu";
 import PostMediaFrame from "./PostMediaFrame";
 import MultiMediaPostViewer, { extractPostMediaItems } from "./MultiMediaPostViewer";
 import CourseFilesManager from "./CourseFilesManager";
+import LikesModal from "./LikesModal";
+import PostCard from "./PostCard";
 import { getApiUrl } from "../utils/api";
 import { compressImage } from "../utils/imageCompressor";
 
@@ -72,7 +74,14 @@ export default function Feed({
   const [newComment, setNewComment] = useState("");
 
   const [activeModalData, setActiveModalData] = useState<MediaModalData | null>(null);
+  const [likesModalPostId, setLikesModalPostId] = useState<number | null>(null);
+  const [likesModalCount, setLikesModalCount] = useState<number>(0);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const handleOpenLikesModal = (postId: number, count?: number) => {
+    setLikesModalPostId(postId);
+    setLikesModalCount(count || 0);
+  };
 
   // Initial load or subject change
   useEffect(() => {
@@ -624,6 +633,42 @@ export default function Feed({
     }
   };
 
+  const handleCardCommentSubmit = async (postId: number, content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    const tempCommentId = Date.now();
+    const optimisticComment = {
+      id: tempCommentId,
+      post_id: postId,
+      user_id: currentUserId,
+      username: currentUsername || "Kullanıcı",
+      avatar: null,
+      content: trimmed,
+      created_at: new Date().toISOString()
+    };
+
+    setComments((prev) => [...prev, optimisticComment]);
+
+    const payload = {
+      postId,
+      content: trimmed
+    };
+
+    if (socket && socket.connected) {
+      socket.emit("create_comment", payload);
+    }
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    fetch(getApiUrl(`/api/posts/${postId}/comments`), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(payload)
+    }).catch((e) => console.error("REST comment submit error:", e));
+  };
+
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     const commentContent = newComment.trim();
@@ -718,6 +763,7 @@ export default function Feed({
       comments: comments,
       fileName: activeItem?.name,
       onLike: () => handleLike(post.id),
+      onOpenLikes: () => handleOpenLikesModal(post.id, post.likes_count),
       onAddComment: async (content: string) => {
         const trimmed = content.trim();
         if (!trimmed) return;
@@ -1107,185 +1153,24 @@ export default function Feed({
           /* Standard Posts Feed List */
           <div className="space-y-4 md:px-0 mx-0 md:mx-4 lg:mx-0">
             {posts.map((post) => (
-              <div
+              <PostCard
                 key={post.id}
-                className="bg-white dark:bg-slate-900 border-y md:border border-slate-100 dark:border-slate-800 md:rounded-2xl shadow-sm overflow-hidden transition-colors duration-200"
-              >
-                {/* Post Header */}
-                <div className="p-4 flex items-center gap-3">
-                  <div
-                    className="cursor-pointer"
-                    onClick={() => onUserClick && onUserClick(post.user_id)}
-                  >
-                    <Avatar url={post.avatar} name={post.username} color={post.color} size={10} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3
-                        className="font-bold text-slate-800 dark:text-slate-200 text-[15px] leading-tight cursor-pointer hover:underline truncate"
-                        onClick={() => onUserClick && onUserClick(post.user_id)}
-                      >
-                        {post.username}
-                      </h3>
-                      {post.subject && !activeSubject && (
-                        <span className="text-[11px] px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium rounded-full truncate">
-                          #{post.subject}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                      {new Date(post.created_at).toLocaleString("tr-TR", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {/* Emirgan Moderation Menu */}
-                    {currentUsername?.trim().toLowerCase() === 'emirgan' && post.username?.trim().toLowerCase() !== 'emirgan' && (
-                      <AdminModerationMenu
-                        targetUserId={post.user_id}
-                        targetUsername={post.username}
-                        currentUsername={currentUsername}
-                        variant="dots"
-                        onSuccess={() => {
-                          socket?.emit("get_feed");
-                        }}
-                      />
-                    )}
-
-                    {/* Gönderi Silme Butonu: Sadece gönderinin sahibi VEYA currentUser.username === 'emirgan' */}
-                    {(Number(post.user_id) === Number(currentUserId) || currentUsername?.trim().toLowerCase() === 'emirgan') && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePost(post.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-900/50 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
-                        title={currentUsername?.trim().toLowerCase() === 'emirgan' && Number(post.user_id) !== Number(currentUserId) ? "Yönetici Olarak Sil (emirgan)" : "Gönderiyi Sil"}
-                      >
-                        <Trash2 size={15} className="shrink-0" />
-                        <span className="hidden sm:inline">Gönderiyi Sil</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Caption */}
-                {post.caption && (
-                  <p className="px-4 pb-3 text-slate-800 dark:text-slate-200 text-[15px] leading-relaxed whitespace-pre-wrap">
-                    {post.caption}
-                  </p>
-                )}
-
-                {/* MultiMediaPostViewer: Displays single or multiple (up to 50) photos, videos, and files */}
-                <MultiMediaPostViewer
-                  post={post}
-                  onOpenModal={(p, idx) => openPostModal(p, idx)}
-                />
-
-                {/* Action Bar */}
-                <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors duration-200">
-                  <div className="flex items-center gap-6">
-                    <button
-                      onClick={() => handleLike(post.id)}
-                      className={`flex items-center gap-2 transition-colors cursor-pointer ${
-                        post.is_liked ? "text-red-500" : "text-slate-500 dark:text-slate-400 hover:text-red-500"
-                      }`}
-                    >
-                      <Heart
-                        size={22}
-                        fill={post.is_liked ? "currentColor" : "none"}
-                        className="transition-transform active:scale-125"
-                      />
-                      <span className="font-medium text-sm">{post.likes_count}</span>
-                    </button>
-
-                    <button
-                      onClick={() => toggleComments(post.id)}
-                      className={`flex items-center gap-2 transition-colors cursor-pointer ${
-                        activeCommentsPostId === post.id
-                          ? "text-blue-500"
-                          : "text-slate-500 dark:text-slate-400 hover:text-blue-500"
-                      }`}
-                    >
-                      <MessageCircle size={22} />
-                      <span className="font-medium text-sm">Yorum</span>
-                    </button>
-                  </div>
-
-                  {(post.image || (post.attachments && post.attachments.length > 0)) && (
-                    <button
-                      onClick={() => openPostModal(post, 0)}
-                      className="text-xs text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <Maximize2 size={14} />
-                      <span>Detaylar</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Comments Section */}
-                {activeCommentsPostId === post.id && (
-                  <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-b-2xl transition-colors duration-200">
-                    <div className="space-y-3 mb-4 max-h-48 overflow-y-auto">
-                      {comments.length === 0 ? (
-                        <p className="text-center text-xs text-slate-400 dark:text-slate-500 py-2">
-                          Henüz yorum yok. İlk yorumu sen yap!
-                        </p>
-                      ) : (
-                        comments.map((c) => (
-                          <div key={c.id} className="flex gap-2">
-                            <div
-                              className="cursor-pointer"
-                              onClick={() => onUserClick && onUserClick(c.user_id)}
-                            >
-                              <Avatar url={c.avatar} name={c.username} color={c.color} size={6} />
-                            </div>
-                            <div className="bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex-1 transition-colors duration-200 group relative">
-                              <div className="flex items-center justify-between">
-                                <div
-                                  className="font-semibold text-xs text-slate-800 dark:text-slate-200 cursor-pointer hover:underline inline-block"
-                                  onClick={() => onUserClick && onUserClick(c.user_id)}
-                                >
-                                  {c.username}
-                                </div>
-                                {(c.user_id === currentUserId || isAdmin) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteComment(c.id, post.id)}
-                                    className="text-slate-400 hover:text-red-500 opacity-80 hover:opacity-100 p-0.5 rounded transition-colors"
-                                    title="Yorumu Sil"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                )}
-                              </div>
-                              <div className="text-sm text-slate-600 dark:text-slate-300 break-words leading-relaxed mt-0.5">
-                                {c.content}
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    <form onSubmit={handleAddComment} className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Yorum ekle..."
-                        className="flex-1 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 shadow-sm px-4 py-2 focus:ring-2 focus:ring-blue-500 text-sm outline-none transition-colors duration-200"
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                      />
-                      <button
-                        type="submit"
-                        disabled={!newComment.trim()}
-                        className="bg-blue-600 text-white rounded-full p-2 disabled:opacity-50 hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
-                      >
-                        <Send size={16} />
-                      </button>
-                    </form>
-                  </div>
-                )}
-              </div>
+                post={post}
+                currentUserId={currentUserId}
+                currentUsername={currentUsername || ""}
+                activeSubject={activeSubject}
+                isCommentsOpen={activeCommentsPostId === post.id}
+                comments={comments}
+                onLike={handleLike}
+                onOpenLikes={handleOpenLikesModal}
+                onToggleComments={toggleComments}
+                onOpenModal={openPostModal}
+                onDeletePost={handleDeletePost}
+                onUserClick={onUserClick}
+                onCommentSubmit={handleCardCommentSubmit}
+                onDeleteComment={handleDeleteComment}
+                onModerationSuccess={() => socket?.emit("get_feed")}
+              />
             ))}
 
             {posts.length === 0 && (
@@ -1327,6 +1212,15 @@ export default function Feed({
           onUserClick={onUserClick}
         />
       )}
+
+      {/* Likes List Modal */}
+      <LikesModal
+        isOpen={likesModalPostId !== null}
+        onClose={() => setLikesModalPostId(null)}
+        postId={likesModalPostId}
+        initialCount={likesModalCount}
+        onUserClick={onUserClick}
+      />
     </div>
   );
 }

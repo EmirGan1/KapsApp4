@@ -58,6 +58,7 @@ export interface Post {
   created_at: string;
   likes_count: number;
   is_liked: boolean;
+  comments_count?: number;
   comments?: Comment[];
   likes?: any[];
 }
@@ -179,6 +180,7 @@ export interface MediaModalData {
   fileSize?: string;
   reactions?: MessageReaction[];
   onLike?: () => void;
+  onOpenLikes?: () => void;
   onAddComment?: (text: string) => void;
   onDeleteComment?: (commentId: number) => void;
   onDeletePost?: (postId: number) => void;

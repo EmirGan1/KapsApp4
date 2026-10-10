@@ -423,19 +423,31 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
           <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 transition-colors duration-200">
             {data.onLike && (
               <div className="flex items-center gap-4 mb-3">
-                <button
-                  onClick={data.onLike}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    data.isLiked ? "text-red-500" : "text-slate-600 dark:text-slate-400 hover:text-red-500"
-                  }`}
-                >
-                  <Heart
-                    size={22}
-                    fill={data.isLiked ? "currentColor" : "none"}
-                    className="transition-transform active:scale-125"
-                  />
-                  <span className="font-semibold text-sm">{data.likesCount || 0}</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={data.onLike}
+                    aria-label={data.isLiked ? "Beğenmekten vazgeç" : "Beğen"}
+                    className={`p-1 transition-transform active:scale-125 cursor-pointer ${
+                      data.isLiked ? "text-red-500" : "text-slate-600 dark:text-slate-400 hover:text-red-500"
+                    }`}
+                  >
+                    <Heart
+                      size={22}
+                      fill={data.isLiked ? "currentColor" : "none"}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={data.onOpenLikes ? data.onOpenLikes : data.onLike}
+                    title={data.onOpenLikes ? "Beğenenleri Gör" : undefined}
+                    className={`font-semibold text-sm px-1.5 py-0.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer select-none ${
+                      data.isLiked ? "text-red-600 dark:text-red-400" : "text-slate-700 dark:text-slate-300"
+                    }`}
+                  >
+                    {data.likesCount || 0}
+                    <span className="text-xs font-normal text-slate-400 ml-1">beğeni</span>
+                  </button>
+                </div>
 
                 {data.comments && (
                   <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">

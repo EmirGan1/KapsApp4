@@ -16,14 +16,25 @@ const DEFAULT_CANONICAL = "https://kapsapp.online/";
 export function useSEO({
   title = DEFAULT_TITLE,
   description = DEFAULT_DESC,
-  canonical = DEFAULT_CANONICAL,
+  canonical,
   ogType = "website",
   keywords,
   noindex = false
 }: SEOProps) {
   useEffect(() => {
+    // Determine dynamic canonical if not explicitly provided
+    let canonicalUrl = canonical;
+    if (!canonicalUrl && typeof window !== "undefined") {
+      const cleanPath = window.location.pathname === "/" ? "" : window.location.pathname.replace(/\/+$/, "");
+      canonicalUrl = `https://kapsapp.online${cleanPath || "/"}`;
+    }
+    if (!canonicalUrl) {
+      canonicalUrl = DEFAULT_CANONICAL;
+    }
+
     // 1. Update Document Title
-    document.title = title;
+    const formattedTitle = title.includes("KapsApp") ? title : `${title} | KapsApp`;
+    document.title = formattedTitle;
 
     // 2. Update Meta Description
     let metaDesc = document.querySelector('meta[name="description"]');
@@ -41,7 +52,7 @@ export function useSEO({
       linkCanonical.setAttribute("rel", "canonical");
       document.head.appendChild(linkCanonical);
     }
-    linkCanonical.setAttribute("href", canonical);
+    linkCanonical.setAttribute("href", canonicalUrl);
 
     // 4. Update OpenGraph Tags
     const setMetaProperty = (property: string, content: string) => {
@@ -54,9 +65,9 @@ export function useSEO({
       tag.setAttribute("content", content);
     };
 
-    setMetaProperty("og:title", title);
+    setMetaProperty("og:title", formattedTitle);
     setMetaProperty("og:description", description);
-    setMetaProperty("og:url", canonical);
+    setMetaProperty("og:url", canonicalUrl);
     setMetaProperty("og:type", ogType);
 
     // 5. Update Twitter Card Tags
@@ -94,7 +105,9 @@ export function useSEO({
   }, [title, description, canonical, ogType, keywords, noindex]);
 }
 
-export default function SEO(props: SEOProps) {
+export function SEO(props: SEOProps) {
   useSEO(props);
   return null;
 }
+
+export default SEO;
