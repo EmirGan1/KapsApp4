@@ -26,6 +26,14 @@ import {
   MockExam, 
   CancelledClassInfo 
 } from "../utils/mockExamData";
+import MockExamCard from "./MockExamCard";
+import {
+  insertScheduleGaps,
+  isScheduleGap,
+  ScheduleGap,
+  getGapLiveStatus
+} from "../utils/scheduleGapDetector";
+import ScheduleGapCard from "./ScheduleGapCard";
 
 export interface CourseTimelineItem extends Partial<SchedulePeriod> {
   periodNumber?: number | number[];
@@ -265,6 +273,25 @@ export default function ScheduleTimeline({
     return timelineItems.find((item) => item.statusInfo.status === "next") || null;
   }, [timelineItems, selectedDayIndex, currentDayOfWeek]);
 
+  // Akıllı Boşluk ve Teneffüs Yakalayıcı (Gap Slicing Engine)
+  const timelineWithGaps = useMemo(() => {
+    return insertScheduleGaps(timelineItems, selectedDayIndex, currentUserRoles);
+  }, [timelineItems, selectedDayIndex, currentUserRoles]);
+
+  // Şu an aktif bir boşluk/mola içinde miyiz?
+  const activeGapInfo = useMemo(() => {
+    if (!isTodayView) return null;
+    for (const item of timelineWithGaps) {
+      if (isScheduleGap(item)) {
+        const live = getGapLiveStatus(item, true, now);
+        if (live.isActive) {
+          return { gap: item, live };
+        }
+      }
+    }
+    return null;
+  }, [isTodayView, timelineWithGaps, now]);
+
   // Real-time Countdown to Monday 08:00 (First Period of the Week)
   const mondayCountdown = useMemo(() => {
     const targetMonday = new Date(now);
@@ -422,22 +449,123 @@ export default function ScheduleTimeline({
           </div>
         )}
 
-        {/* Live Break Indicator */}
-        {isTodayView && !isSunday && nextUpcomingPeriod && !currentActivePeriod && (
-          <div className="mb-4 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-3 animate-fade-in">
-            <div className="flex items-center gap-2.5">
-              <span className="text-xl">☕</span>
-              <div>
-                <p className="text-xs font-bold text-amber-800 dark:text-amber-300">TENEFFÜSTESİNİZ</p>
-                <p className="text-xs text-slate-700 dark:text-slate-300">
-                  Sonraki: <strong>{nextUpcomingPeriod.resolved.name}</strong> ({nextUpcomingPeriod.statusInfo.remainingMinutes} dk sonra)
-                </p>
+        {/* Live Break / Sliced Lesson Indicator */}
+        {isTodayView && !isSunday && !currentActivePeriod && (
+          activeGapInfo ? (
+            activeGapInfo.gap.type === "partial_lesson" ? (
+              <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-emerald-100/50 to-emerald-50/90 dark:from-emerald-950/40 dark:via-emerald-900/20 dark:to-emerald-950/40 border border-emerald-400 dark:border-emerald-600/70 flex items-center justify-between gap-3 animate-fade-in shadow-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-xl shrink-0">📐</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs font-black text-emerald-950 dark:text-emerald-100 uppercase tracking-wide">
+                        {activeGapInfo.gap.originalCourse?.name || "Ders"} — Kalan Süre
+                      </p>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[9px] font-black animate-pulse">
+                        <span className="w-1 h-1 rounded-full bg-white animate-ping" />
+                        Ders Devam Ediyor
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200 mt-0.5">
+                      {activeGapInfo.live.liveStatusText}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      {activeGapInfo.gap.subtitle || "Sınıfta normal ders işleniyor olabilir"}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-xs font-mono font-bold text-emerald-800 dark:text-emerald-300 block">
+                    {activeGapInfo.gap.startTime} – {activeGapInfo.gap.endTime}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {activeGapInfo.gap.durationMinutes} dk kalan
+                  </span>
+                </div>
               </div>
+            ) : activeGapInfo.gap.type === "official_recess" ? (
+              <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-sky-50/90 via-sky-100/50 to-sky-50/90 dark:from-sky-950/40 dark:via-sky-900/20 dark:to-sky-950/40 border border-sky-300 dark:border-sky-700/70 flex items-center justify-between gap-3 animate-fade-in shadow-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-xl shrink-0">☕</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs font-black text-sky-950 dark:text-sky-100 uppercase tracking-wide">
+                        TENEFFÜSTESİNİZ
+                      </p>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-sky-500 text-white text-[9px] font-black animate-pulse">
+                        <span className="w-1 h-1 rounded-full bg-white animate-ping" />
+                        Canlı Teneffüs
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-sky-900 dark:text-sky-200 mt-0.5">
+                      {activeGapInfo.live.liveStatusText}
+                    </p>
+                    {activeGapInfo.gap.nextCourse && (
+                      <p className="text-[11px] text-sky-700 dark:text-sky-300 truncate mt-0.5">
+                        👉 Sonraki: <strong>{activeGapInfo.gap.nextCourse.name}</strong> ({activeGapInfo.gap.nextCourse.startTime})
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-xs font-mono font-bold text-sky-800 dark:text-sky-300 block">
+                    {activeGapInfo.gap.startTime} – {activeGapInfo.gap.endTime}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {activeGapInfo.gap.durationMinutes} dk
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-amber-100/50 to-amber-50/90 dark:from-amber-950/40 dark:via-amber-900/20 dark:to-amber-950/40 border border-amber-300 dark:border-amber-700/60 flex items-center justify-between gap-3 animate-fade-in shadow-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-xl shrink-0">🍽️</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs font-black text-amber-900 dark:text-amber-200 uppercase tracking-wide">
+                        {activeGapInfo.gap.title}
+                      </p>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black animate-pulse">
+                        <span className="w-1 h-1 rounded-full bg-white animate-ping" />
+                        Yemek Saati
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-amber-900 dark:text-amber-200 mt-0.5">
+                      {activeGapInfo.live.liveStatusText}
+                    </p>
+                    {activeGapInfo.gap.nextCourse && (
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 truncate mt-0.5">
+                        Sonraki Ders: <strong>{activeGapInfo.gap.nextCourse.name}</strong> ({activeGapInfo.gap.nextCourse.startTime})
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-xs font-mono font-bold text-amber-800 dark:text-amber-300 block">
+                    {activeGapInfo.gap.startTime} – {activeGapInfo.gap.endTime}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {activeGapInfo.gap.durationMinutes} dk
+                  </span>
+                </div>
+              </div>
+            )
+          ) : nextUpcomingPeriod ? (
+            <div className="mb-4 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-3 animate-fade-in">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">☕</span>
+                <div>
+                  <p className="text-xs font-bold text-amber-800 dark:text-amber-300">TENEFFÜSTESİNİZ</p>
+                  <p className="text-xs text-slate-700 dark:text-slate-300">
+                    Sonraki: <strong>{nextUpcomingPeriod.resolved.name}</strong> ({nextUpcomingPeriod.statusInfo.remainingMinutes} dk sonra)
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-mono font-bold text-amber-700 dark:text-amber-400 shrink-0">
+                {nextUpcomingPeriod.startTime}
+              </span>
             </div>
-            <span className="text-xs font-mono font-bold text-amber-700 dark:text-amber-400 shrink-0">
-              {nextUpcomingPeriod.startTime}
-            </span>
-          </div>
+          ) : null
         )}
 
         {/* ========================================================================= */}
@@ -538,14 +666,28 @@ export default function ScheduleTimeline({
         )}
 
         {/* ========================================================================= */}
-        {/* DİKEY ZAMAN ÇİZELGESİ (VERTICAL TIMELINE LIST)                           */}
+        {/* DİKEY ZAMAN ÇİZELGESİ (VERTICAL TIMELINE LIST & GAP FILLER)              */}
         {/* ========================================================================= */}
-        {timelineItems.length > 0 && (
+        {timelineWithGaps.length > 0 && (
           <div className="relative pl-2 sm:pl-4 space-y-3.5 my-2">
             {/* Dikey Bağlayıcı Çizgi */}
             <div className="absolute left-[78px] sm:left-[88px] top-3 bottom-3 w-0.5 bg-slate-200 dark:bg-slate-800 -z-0" />
 
-            {timelineItems.map((period, idx) => {
+            {timelineWithGaps.map((item, idx) => {
+              // Akıllı Boşluk / Teneffüs Kartı
+              if (isScheduleGap(item)) {
+                return (
+                  <ScheduleGapCard
+                    key={item.id}
+                    gap={item}
+                    isToday={isTodayView}
+                    now={now}
+                    variant="timeline"
+                  />
+                );
+              }
+
+              const period = item;
               const isCurrent = isTodayView && period.statusInfo.status === "current";
               const isPast = isTodayView && period.statusInfo.status === "past";
               const isNext = isTodayView && period.statusInfo.status === "next";
@@ -600,103 +742,16 @@ export default function ScheduleTimeline({
 
                   {/* 3. Kart Gösterimi: Mock Sınav veya Normal Ders Kartı */}
                   {isExam && period.overriddenByExam ? (
-                    // --- MOCK SINAV KARTI (BASKIN ÖN PLAN KATMANI) ---
-                    <div
-                      className={`flex-1 rounded-2xl p-4 border transition-all duration-200 relative overflow-hidden ${
-                        isUserExam
-                          ? "border-amber-400/90 ring-2 ring-amber-400/60 shadow-[0_0_20px_rgba(251,191,36,0.35)] bg-gradient-to-r from-amber-500/15 to-amber-600/10 text-slate-900 dark:text-amber-100"
-                          : "border-slate-700 bg-slate-800/60 text-slate-200"
-                      }`}
-                    >
-                      {/* Üst Başlık Satırı */}
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">📝</span>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <h4 className={`text-xs sm:text-sm font-black leading-tight ${
-                                isUserExam ? "text-slate-900 dark:text-white" : "text-slate-200"
-                              }`}>
-                                {period.overriddenByExam.title}
-                              </h4>
-                            </div>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                              {period.overriddenByExam.subject} • Seviye: {period.overriddenByExam.level}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Sağ Üst Rozet */}
-                        <div className="shrink-0 flex flex-col items-end gap-1">
-                          {isCurrent ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black animate-pulse shadow-xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                              SINAV DEVAM EDİYOR
-                            </span>
-                          ) : isUserExam ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black shadow-xs">
-                              ✍️ Gireceğin Sınav
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold">
-                              Diğer Grup Sınavı
-                            </span>
-                          )}
-                          <span className="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-400">
-                            {period.startTime} - {period.endTime}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Salon ve Süre Bilgisi */}
-                      <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-700 dark:text-slate-300 bg-black/5 dark:bg-black/25 px-2.5 py-1.5 rounded-xl mb-2">
-                        <span>🏫 Sınav Salonu: {period.overriddenByExam.room}</span>
-                        {period.overriddenByExam.durationMin && (
-                          <span>⏳ Süre: {period.overriddenByExam.durationMin} dk</span>
-                        )}
-                      </div>
-
-                      {/* Canlı İlerleme Çubuğu */}
-                      {isCurrent && (
-                        <div className="mb-2 pt-1 border-t border-emerald-500/20">
-                          <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 mb-1">
-                            <span>Sınavın bitmesine {period.statusInfo.remainingMinutes} dakika</span>
-                            <span>%{period.statusInfo.progressPercent || 0}</span>
-                          </div>
-                          <div className="w-full bg-emerald-200 dark:bg-emerald-950/60 h-1.5 rounded-full overflow-hidden">
-                            <div 
-                              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                              style={{ width: `${period.statusInfo.progressPercent || 0}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* İkame Edilen Ders Gösterimi (Silik Alt Katman) */}
-                      {period.cancelledClasses && period.cancelledClasses.length > 0 && (
-                        <div className="mt-2.5 pt-2 border-t border-amber-400/20 dark:border-amber-400/15 space-y-1">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300/90 block">
-                            ↳ İptal / Sınav Nedeniyle Yapılmayacak Dersler:
-                          </span>
-                          {period.cancelledClasses.map((cc, cIdx) => (
-                            <div 
-                              key={cIdx} 
-                              className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 bg-black/5 dark:bg-black/25 px-2.5 py-1.5 rounded-xl"
-                            >
-                              <div className="flex items-center gap-1.5 truncate">
-                                <span className="text-amber-500 font-bold">↳</span>
-                                <span className="line-through opacity-70 font-medium truncate">
-                                  (İptal/Sınav Nedeniyle Yapılmayacak: {cc.name} — Derslik: {cc.roomOrNote || "302"})
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-mono shrink-0 text-slate-400">
-                                {cc.startTime} - {cc.endTime}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    // --- MOCK SINAV KARTI (BASKIN ÖN PLAN KATMANI, SL/HL AYRIMI & KOMPAKT ÇİPLER) ---
+                    <MockExamCard
+                      className="flex-1"
+                      exam={period.overriddenByExam}
+                      cancelledClasses={period.cancelledClasses}
+                      currentUserRoles={currentUserRoles}
+                      isEnrolled={isEnrolled}
+                      isCurrent={isCurrent}
+                      statusInfo={period.statusInfo}
+                    />
                   ) : (
                     // --- NORMAL DERS KARTI ---
                     <div 

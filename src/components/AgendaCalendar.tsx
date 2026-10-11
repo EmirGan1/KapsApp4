@@ -13,7 +13,8 @@ import {
   BookOpen,
   Info,
   X,
-  Layers
+  Layers,
+  MapPin
 } from "lucide-react";
 import { 
   OFFICIAL_MOCK_EXAMS, 
@@ -22,9 +23,18 @@ import {
   isUserEnrolledInExam, 
   buildDayScheduleWithOverlay,
   ScheduleEntry,
+  CancelledClassInfo,
+  getUserExamTiming,
   MOCK_EXAM_START_DATE,
   MOCK_EXAM_END_DATE
 } from "../utils/mockExamData";
+import MockExamCard from "./MockExamCard";
+import {
+  insertScheduleGaps,
+  isScheduleGap,
+  ScheduleGap
+} from "../utils/scheduleGapDetector";
+import ScheduleGapCard from "./ScheduleGapCard";
 
 interface AgendaCalendarProps {
   currentUserRoles?: string[];
@@ -50,7 +60,10 @@ export default function AgendaCalendar({
   const [viewDate, setViewDate] = useState(() => new Date("2026-10-12T00:00:00"));
   const [selectedDateStr, setSelectedDateStr] = useState<string>("2026-10-12");
   const [onlyMyExams, setOnlyMyExams] = useState<boolean>(false);
-  const [selectedExamModal, setSelectedExamModal] = useState<MockExam | null>(null);
+  const [selectedExamDetail, setSelectedExamDetail] = useState<{
+    exam: MockExam;
+    cancelledClasses?: CancelledClassInfo[];
+  } | null>(null);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth(); // 0-indexed
@@ -143,6 +156,20 @@ export default function AgendaCalendar({
     return schedule;
   }, [selectedDateStr, currentUserRoles, onlyMyExams]);
 
+  // Akıllı Boşluk ve Teneffüs Yakalayıcı (Gap Slicing Engine)
+  const selectedDayEntriesWithGaps = useMemo(() => {
+    const d = selectedDateStr ? new Date(selectedDateStr) : new Date();
+    const dayOfWeek = d.getDay();
+    return insertScheduleGaps(selectedDayEntries, dayOfWeek, currentUserRoles);
+  }, [selectedDayEntries, selectedDateStr, currentUserRoles]);
+
+  // Seçilen günün bugün olup olmadığını denetle
+  const isTodaySelected = useMemo(() => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return selectedDateStr === todayStr;
+  }, [selectedDateStr]);
+
   const handlePrevMonth = () => {
     setViewDate(new Date(year, month - 1, 1));
   };
@@ -175,7 +202,7 @@ export default function AgendaCalendar({
               </span>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-              Normal ders saatleri sınav saatleriyle ikame edilmiştir. Çakışan dersler sınav kartlarının altında silik olarak listelenir.
+              Normal ders saatleri sınav saatleriyle ikame edilmiştir. SL ve HL seviyelerine göre kesin süreler ve çakışan dersler listelenmektedir.
             </p>
           </div>
         </div>
@@ -216,24 +243,25 @@ export default function AgendaCalendar({
               {MONTH_NAMES_TR[month]} {year}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Sınav günlerine tıklayarak ikame edilen dersleri ve sınav salonunu inceleyin
+              Sınav günlerine tıklayarak seviyene göre sınav süresini ve ikame edilen dersleri inceleyin
             </p>
           </div>
         </div>
 
-        {/* Prev / Next Month Buttons */}
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+        <div className="flex items-center gap-2">
           <button
             onClick={handlePrevMonth}
-            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+            title="Önceki Ay"
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={18} />
           </button>
           <button
             onClick={handleNextMonth}
-            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+            title="Sonraki Ay"
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={18} />
           </button>
         </div>
       </div>
@@ -296,11 +324,17 @@ export default function AgendaCalendar({
                         return (
                           <div
                             key={ex.id}
-                            className={`text-[9px] font-bold px-1 py-0.5 rounded truncate ${
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedDateStr(day.dateStr);
+                              setSelectedExamDetail({ exam: ex });
+                            }}
+                            className={`text-[9px] font-bold px-1 py-0.5 rounded truncate transition-opacity hover:opacity-80 ${
                               isEnrolled
-                                ? "bg-amber-400 text-slate-950"
+                                ? "bg-amber-400 text-slate-950 font-black"
                                 : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
                             }`}
+                            title={`${ex.title} (${ex.startTime} - ${ex.endTime})`}
                           >
                             {ex.subject}
                           </div>
@@ -345,87 +379,45 @@ export default function AgendaCalendar({
               )}
             </div>
 
-            {/* List of Periods & Overlaid Exam Cards */}
-            <div className="space-y-3 overflow-y-auto max-h-[500px] pr-1">
-              {selectedDayEntries.length === 0 ? (
+            {/* List of Periods, Overlaid Exam Cards & Gap Fillers */}
+            <div className="space-y-2.5 overflow-y-auto max-h-[520px] pr-1">
+              {selectedDayEntriesWithGaps.length === 0 ? (
                 <div className="p-8 text-center bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-800">
                   <p className="text-xs text-slate-400">Bu gün için planlanan ders veya sınav bulunmuyor.</p>
                 </div>
               ) : (
-                selectedDayEntries.map((entry) => {
+                selectedDayEntriesWithGaps.map((item) => {
+                  // Akıllı Boşluk / Teneffüs Kartı
+                  if (isScheduleGap(item)) {
+                    return (
+                      <ScheduleGapCard
+                        key={item.id}
+                        gap={item}
+                        isToday={isTodaySelected}
+                        now={new Date()}
+                        variant="calendar"
+                      />
+                    );
+                  }
+
+                  const entry = item;
                   const isExam = Boolean(entry.isExamSlot && entry.overriddenByExam);
-                  const isUserExam = isExam && Boolean(entry.isUserEnrolled);
 
                   if (isExam && entry.overriddenByExam) {
-                    const exam = entry.overriddenByExam;
                     return (
-                      <div
+                      <MockExamCard
                         key={entry.id}
-                        className={`rounded-2xl p-4 transition-all border ${
-                          isUserExam
-                            ? "border-amber-400/90 ring-2 ring-amber-400/60 shadow-[0_0_20px_rgba(251,191,36,0.35)] bg-gradient-to-r from-amber-500/15 to-amber-600/10 text-slate-900 dark:text-amber-100"
-                            : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/60 text-slate-700 dark:text-slate-300"
-                        }`}
-                      >
-                        {/* Top header of Exam Card */}
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">📝</span>
-                            <div>
-                              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight">
-                                {exam.title}
-                              </h4>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                {exam.subject} • Seviye: {exam.level}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="shrink-0 flex flex-col items-end gap-1">
-                            {isUserExam ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950 flex items-center gap-1 shadow-xs">
-                                ✍️ Gireceğin Sınav
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
-                                Diğer Grup
-                              </span>
-                            )}
-                            <span className="font-mono text-xs font-bold text-amber-600 dark:text-amber-400">
-                              {exam.startTime} - {exam.endTime}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Room & duration bar */}
-                        <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-2 bg-black/5 dark:bg-black/25 px-2.5 py-1.5 rounded-xl">
-                          <span>🏫 Salon: {exam.room}</span>
-                          {exam.durationMin && <span>⏳ Süre: {exam.durationMin} dk</span>}
-                        </div>
-
-                        {/* Sub-detail: Overridden / Cancelled Courses */}
-                        {entry.cancelledClasses && entry.cancelledClasses.length > 0 && (
-                          <div className="mt-2.5 pt-2 border-t border-amber-400/20 dark:border-amber-400/15 space-y-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400/90 block">
-                              ↳ İptal / Sınav Nedeniyle Yapılmayacak Dersler:
-                            </span>
-                            {entry.cancelledClasses.map((cc, cIdx) => (
-                              <div
-                                key={cIdx}
-                                className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-black/5 dark:bg-black/20 px-2 py-1 rounded-lg"
-                              >
-                                <span className="text-amber-500 font-bold">↳</span>
-                                <span className="line-through opacity-75 font-medium truncate">
-                                  {cc.name} ({cc.startTime} - {cc.endTime})
-                                </span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 ml-auto shrink-0">
-                                  Derslik: {cc.roomOrNote || "302"}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                        exam={entry.overriddenByExam}
+                        cancelledClasses={entry.cancelledClasses}
+                        currentUserRoles={currentUserRoles}
+                        isEnrolled={entry.isUserEnrolled}
+                        statusInfo={entry.statusInfo}
+                        variant="calendar"
+                        onClick={() => setSelectedExamDetail({
+                          exam: entry.overriddenByExam!,
+                          cancelledClasses: entry.cancelledClasses
+                        })}
+                      />
                     );
                   }
 
@@ -435,19 +427,19 @@ export default function AgendaCalendar({
                       key={entry.id}
                       className="rounded-2xl p-3 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 flex items-center justify-between gap-2 shadow-xs"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base">{entry.resolved?.icon || "📚"}</span>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-base shrink-0">{entry.resolved?.icon || "📚"}</span>
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                             {entry.title}
                           </h4>
-                          <p className="text-[10px] text-slate-400">
+                          <p className="text-[10px] text-slate-400 truncate">
                             {entry.roomOrNote || "Standart Ders"}
                           </p>
                         </div>
                       </div>
 
-                      <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-300">
+                      <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-300 shrink-0">
                         {entry.startTime} - {entry.endTime}
                       </span>
                     </div>
@@ -474,6 +466,114 @@ export default function AgendaCalendar({
           </div>
         </div>
       </div>
+
+      {/* 4. MOCK SINAV VE İKAME DERS DETAY POPUP / MODAL (BÖLÜM 3) */}
+      {selectedExamDetail && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setSelectedExamDetail(null)}
+        >
+          <div 
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 overflow-hidden max-h-[90vh] flex flex-col justify-between"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center text-2xl shadow-sm shrink-0">
+                    📝
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-slate-100 leading-tight">
+                      {selectedExamDetail.exam.title}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {selectedExamDetail.exam.subject} {selectedExamDetail.exam.paper ? `• ${selectedExamDetail.exam.paper}` : ""}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedExamDetail(null)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Timing & Location Info */}
+              {(() => {
+                const t = getUserExamTiming(selectedExamDetail.exam, currentUserRoles);
+                return (
+                  <div className="space-y-3 mb-4">
+                    <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+                        <Clock size={16} className="text-amber-500 shrink-0" />
+                        <span>Sınav Saati ({t.userLevel}):</span>
+                      </div>
+                      <span className="font-mono text-sm font-black text-amber-600 dark:text-amber-400">
+                        {t.userStartTime} - {t.userEndTime} ({t.userDurationMinutes} dk)
+                      </span>
+                    </div>
+
+                    {/* HL Extension Note for SL Students */}
+                    {t.hasDifferentHlExtension && (
+                      <div className="p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-400/30 flex items-center gap-2 text-xs text-sky-800 dark:text-sky-300">
+                        <Info size={16} className="text-sky-500 shrink-0" />
+                        <span className="leading-snug">
+                          Senin sınavın <strong>{t.userEndTime}</strong>'de biter. HL öğrencileri <strong>{t.hlEndTime}</strong>'ye kadar devam eder.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 px-1">
+                      <MapPin size={14} className="text-amber-500 shrink-0" />
+                      <span>Sınav Salonu: <strong>{selectedExamDetail.exam.room}</strong></span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Çakışan Ders Bilgisi & Temiz Uyarı Kutusu */}
+              {selectedExamDetail.cancelledClasses && selectedExamDetail.cancelledClasses.length > 0 && (
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-400/30 space-y-2 mb-4 w-full min-w-0 overflow-hidden">
+                  <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider block">
+                    ↳ İptal Edilen Normal Dersler
+                  </span>
+                  <div className="space-y-2 w-full min-w-0">
+                    {selectedExamDetail.cancelledClasses.map((cc, idx) => (
+                      <div 
+                        key={idx} 
+                        className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-amber-400/20 text-xs text-slate-700 dark:text-slate-300 w-full min-w-0 shadow-2xs"
+                      >
+                        <p className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                          Bu saatteki normal <span className="underline text-amber-600 dark:text-amber-400">{cc.name}</span> dersi yerine yapılmaktadır
+                        </p>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-700">
+                          <span>Derslik: {cc.roomOrNote || "302"}</span>
+                          <span className="font-mono text-amber-700 dark:text-amber-300 font-bold">{cc.startTime} - {cc.endTime}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedExamDetail(null)}
+                className="px-5 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-xs hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Anladım, Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

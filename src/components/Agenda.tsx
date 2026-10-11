@@ -1103,19 +1103,20 @@ export default function Agenda({
                 const cancelled = matchingSlot?.cancelledClasses || [];
                 if (cancelled.length === 0) return null;
                 return (
-                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-400/30 space-y-2">
+                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-400/30 space-y-2 w-full min-w-0 overflow-hidden">
                     <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider block">
-                      ↳ Sınav Nedeniyle Yapılmayacak / İptal Edilen Dersler
+                      ↳ Sınav Nedeniyle İptal Edilen Dersler
                     </span>
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 w-full min-w-0">
                       {cancelled.map((cc, idx) => (
-                        <div key={idx} className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-800/80 p-2 rounded-xl border border-amber-400/20">
-                          <span className="line-through opacity-75 font-medium truncate">
-                            {cc.name} (Derslik: {cc.roomOrNote || "302"})
-                          </span>
-                          <span className="font-mono text-[11px] text-amber-600 dark:text-amber-400 shrink-0 ml-2">
-                            {cc.startTime} - {cc.endTime}
-                          </span>
+                        <div key={idx} className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-amber-400/20 text-xs text-slate-700 dark:text-slate-300 w-full min-w-0 shadow-2xs">
+                          <p className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                            Bu saatteki normal <span className="underline text-amber-600 dark:text-amber-400 font-bold">{cc.name}</span> dersi yerine yapılmaktadır
+                          </p>
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-1 pt-1 border-t border-slate-100 dark:border-slate-700">
+                            <span>Derslik: {cc.roomOrNote || "302"}</span>
+                            <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">{cc.startTime} - {cc.endTime}</span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1457,23 +1458,21 @@ export default function Agenda({
                         {ev.title}
                       </h4>
 
-                      {/* İkame Edilen Ders Gösterimi (Silik Alt Katman) */}
+                      {/* İkame Edilen Ders Gösterimi (Kompakt Taşmayan Çipler) */}
                       {cancelledClassesForExam.length > 0 && (
-                        <div className="mt-2 mb-2 pt-2 border-t border-amber-400/25 space-y-1 pl-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 block">
-                            ↳ İptal / Sınav Nedeniyle Yapılmayacak Dersler:
+                        <div className="mt-2 mb-2 pt-2 border-t border-amber-400/25 flex flex-wrap items-center gap-1.5 w-full min-w-0 overflow-hidden pl-1.5">
+                          <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400/80"></span>
+                            Yerine:
                           </span>
                           {cancelledClassesForExam.map((cc, cIdx) => (
-                            <div key={cIdx} className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 bg-black/5 dark:bg-black/25 px-2.5 py-1.5 rounded-xl">
-                              <div className="flex items-center gap-1.5 truncate">
-                                <span className="text-amber-500 font-bold">↳</span>
-                                <span className="line-through opacity-70 font-medium truncate">
-                                  (İptal/Sınav Nedeniyle Yapılmayacak: {cc.name} — Derslik: {cc.roomOrNote || "302"})
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-mono shrink-0 text-slate-400">
-                                {cc.startTime} - {cc.endTime}
-                              </span>
+                            <div 
+                              key={cIdx} 
+                              className="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/60 text-[11px] text-slate-300 opacity-75 line-through truncate min-w-0 shadow-2xs"
+                              title={`${cc.name} (${cc.roomOrNote || "302"}) • ${cc.startTime} - ${cc.endTime}`}
+                            >
+                              <span className="truncate max-w-[150px] sm:max-w-[200px]">{cc.name}</span>
+                              <span className="text-[10px] text-slate-400 no-underline shrink-0">({cc.roomOrNote || "302"})</span>
                             </div>
                           ))}
                         </div>
