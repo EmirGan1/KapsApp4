@@ -20,12 +20,28 @@ import {
   resolveOfficialSaturdaySubject,
   OfficialSaturdayPeriod
 } from "../utils/saturdayScheduleData";
+import { 
+  isMockExamPeriod, 
+  buildDayScheduleWithOverlay, 
+  MockExam, 
+  CancelledClassInfo 
+} from "../utils/mockExamData";
 
-export interface CourseTimelineItem extends SchedulePeriod {
+export interface CourseTimelineItem extends Partial<SchedulePeriod> {
+  periodNumber?: number | number[];
+  startTime: string;
+  endTime: string;
+  subjectKey?: string;
+  defaultName?: string;
+  roomOrNote?: string;
+  isBlock?: boolean;
   resolved: ResolvedSubject;
   statusInfo: PeriodTimeStatus;
   folderTarget: string;
   isUserEnrolled?: boolean;
+  isExamSlot?: boolean;
+  overriddenByExam?: MockExam;
+  cancelledClasses?: CancelledClassInfo[];
 }
 
 interface ScheduleTimelineProps {
@@ -106,6 +122,31 @@ export default function ScheduleTimeline({
   const isSunday = selectedDayIndex === 0;
   const isTodayView = selectedDayIndex === currentDayOfWeek;
 
+  // Resolve active date for selected day (handles weekends moving to coming weekdays)
+  const activeDateInfo = useMemo(() => {
+    const target = new Date(now);
+    if (selectedDayIndex === 6) {
+      return { date: targetSaturdayInfo.date, dateStr: targetSaturdayInfo.dateStr };
+    }
+    if (currentDayOfWeek === 6 || currentDayOfWeek === 0) {
+      // It's weekend, next weekday is in the upcoming week
+      const diffDays = (selectedDayIndex - currentDayOfWeek + 7) % 7;
+      target.setDate(now.getDate() + (diffDays === 0 ? 7 : diffDays));
+    } else {
+      const diffDays = selectedDayIndex - currentDayOfWeek;
+      target.setDate(now.getDate() + diffDays);
+    }
+    const year = target.getFullYear();
+    const month = String(target.getMonth() + 1).padStart(2, "0");
+    const day = String(target.getDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
+    return { date: target, dateStr };
+  }, [now, selectedDayIndex, currentDayOfWeek, targetSaturdayInfo]);
+
+  const inMockPeriod = useMemo(() => {
+    return isMockExamPeriod(activeDateInfo.dateStr) || isMockExamPeriod(now);
+  }, [activeDateInfo.dateStr, now]);
+
   // 1. Check Official Saturday Schedule Table for target Saturday
   const officialSaturdayEntry = useMemo(() => {
     if (!isSaturday) return null;
@@ -153,13 +194,43 @@ export default function ScheduleTimeline({
           resolved,
           statusInfo,
           folderTarget: resolvedSubject.folderTarget,
-          isUserEnrolled: resolvedSubject.isEnrolled
+          isUserEnrolled: resolvedSubject.isEnrolled,
+          isExamSlot: false
         };
       });
     }
 
-    // B. HAFTA İÇİ (Pazartesi - Cuma): STANDART DERS PROGRAMI
+    // B. HAFTA İÇİ (Pazartesi - Cuma): MOCK SINAV OVERLAY VEYA STANDART DERS PROGRAMI
     if (!activeDaySchedule || !activeDaySchedule.periods) return [];
+
+    // Check if selected date is inside two-week mock exam period (12-26 Ekim 2026)
+    if (isMockExamPeriod(activeDateInfo.dateStr)) {
+      const overlaidEntries = buildDayScheduleWithOverlay(
+        selectedDayIndex,
+        activeDateInfo.dateStr,
+        currentUserRoles,
+        now
+      );
+
+      return overlaidEntries.map((entry) => ({
+        periodNumber: entry.periodNumber,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        subjectKey: entry.subjectKey || entry.id,
+        defaultName: entry.defaultName || entry.title,
+        roomOrNote: entry.roomOrNote,
+        isBlock: entry.isBlock,
+        resolved: entry.resolved!,
+        statusInfo: entry.statusInfo!,
+        folderTarget: entry.folderTarget || "Mathematics",
+        isUserEnrolled: entry.isUserEnrolled,
+        isExamSlot: entry.isExamSlot,
+        overriddenByExam: entry.overriddenByExam,
+        cancelledClasses: entry.cancelledClasses
+      }));
+    }
+
+    // Standard curriculum periods outside mock exam window
     return activeDaySchedule.periods.map((period) => {
       const resolved = resolveSubjectByRole(period.subjectKey, currentUserRoles);
       const statusInfo = getCurrentPeriodStatus(
@@ -174,13 +245,19 @@ export default function ScheduleTimeline({
         resolved,
         statusInfo,
         folderTarget,
+        isExamSlot: false
       };
     });
-  }, [isSaturday, officialSaturdayEntry, activeDaySchedule, currentUserRoles, now]);
+  }, [isSaturday, officialSaturdayEntry, activeDaySchedule, currentUserRoles, now, activeDateInfo.dateStr]);
 
   const currentActivePeriod = useMemo(() => {
     if (selectedDayIndex !== currentDayOfWeek) return null;
     return timelineItems.find((item) => item.statusInfo.status === "current") || null;
+  }, [timelineItems, selectedDayIndex, currentDayOfWeek]);
+
+  const activeOngoingExam = useMemo(() => {
+    if (selectedDayIndex !== currentDayOfWeek) return null;
+    return timelineItems.find((item) => item.isExamSlot && item.statusInfo.status === "current") || null;
   }, [timelineItems, selectedDayIndex, currentDayOfWeek]);
 
   const nextUpcomingPeriod = useMemo(() => {
@@ -295,6 +372,55 @@ export default function ScheduleTimeline({
             })}
           </div>
         </div>
+
+        {/* 12-26 EKİM MOCK SINAV BİLGİLENDİRME BANDI */}
+        {inMockPeriod && (
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-indigo-500/15 border border-amber-400/40 flex items-center justify-between gap-3 mb-4 animate-fade-in shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">ℹ️</span>
+              <div>
+                <h4 className="text-xs font-black text-amber-950 dark:text-amber-200">
+                  12-26 Ekim tarihleri arasında Mock Sınav Takvimi uygulanmaktadır.
+                </h4>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-tight">
+                  Normal ders saatleri sınav düzenine göre güncellenmiştir.
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/ajanda"
+              className="text-xs font-bold text-amber-800 dark:text-amber-300 hover:underline flex items-center gap-1 shrink-0 bg-amber-400/20 px-2.5 py-1 rounded-lg border border-amber-400/30"
+            >
+              <span>Ajandada Gör</span>
+              <ArrowRight size={12} />
+            </Link>
+          </div>
+        )}
+
+        {/* Canlı Devam Eden Sınav Geri Sayımı */}
+        {isTodayView && activeOngoingExam && (
+          <div className="mb-4 p-3.5 rounded-2xl bg-emerald-500/15 border-2 border-emerald-500 ring-4 ring-emerald-500/20 flex items-center justify-between gap-3 animate-pulse shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">✍️</span>
+              <div>
+                <p className="text-xs font-black text-emerald-900 dark:text-emerald-200 uppercase tracking-wider">
+                  MOCK SINAV DEVAM EDİYOR
+                </p>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {activeOngoingExam.overriddenByExam?.title} • Salon: {activeOngoingExam.overriddenByExam?.room}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-xs font-mono font-black text-emerald-700 dark:text-emerald-300 block">
+                Sınavın bitmesine {activeOngoingExam.statusInfo.remainingMinutes} dk kaldı
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">
+                Bitiş: {activeOngoingExam.endTime}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Live Break Indicator */}
         {isTodayView && !isSunday && nextUpcomingPeriod && !currentActivePeriod && (
@@ -424,8 +550,10 @@ export default function ScheduleTimeline({
               const isPast = isTodayView && period.statusInfo.status === "past";
               const isNext = isTodayView && period.statusInfo.status === "next";
 
+              const isExam = Boolean(period.isExamSlot && period.overriddenByExam);
+              const isUserExam = isExam && Boolean(period.isUserEnrolled);
               // Rol Eşleşmesi ve Canlı Vurgu Kuralları (Sarı Parlama / Gold Glow)
-              const isEnrolled = isSaturday ? Boolean(period.isUserEnrolled) : false;
+              const isEnrolled = isSaturday ? Boolean(period.isUserEnrolled) : isUserExam;
 
               return (
                 <div 
@@ -458,7 +586,7 @@ export default function ScheduleTimeline({
                       isCurrent
                         ? "bg-emerald-500 border-white dark:border-slate-900 ring-4 ring-emerald-500/40 scale-110"
                         : isEnrolled
-                        ? "bg-amber-400 border-white dark:border-slate-900 ring-4 ring-amber-400/30"
+                        ? "bg-amber-400 border-white dark:border-slate-900 ring-4 ring-amber-400/40"
                         : isNext
                         ? "bg-amber-400 border-white dark:border-slate-900 ring-2 ring-amber-400/30"
                         : isPast
@@ -470,112 +598,213 @@ export default function ScheduleTimeline({
                     </div>
                   </div>
 
-                  {/* 3. Ders Kartı (Sağ Taraf) */}
-                  <div 
-                    className={`flex-1 rounded-2xl p-3.5 border transition-all duration-200 ${
-                      isCurrent
-                        ? "border-emerald-500 ring-2 ring-emerald-500/80 shadow-lg shadow-emerald-500/20 bg-emerald-500/10 dark:bg-emerald-500/15"
-                        : isEnrolled
-                        ? "border-amber-400 ring-2 ring-amber-400/50 shadow-[0_0_15px_rgba(251,191,36,0.25)] bg-amber-400/10"
-                        : isNext
-                        ? "border-amber-300/80 dark:border-amber-700/60 bg-amber-50/50 dark:bg-amber-950/20"
-                        : isPast
-                        ? "border-slate-200 dark:border-slate-800/80 bg-slate-50/60 dark:bg-slate-800/30 opacity-60 text-slate-400"
-                        : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{period.resolved.icon}</span>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <h4 className={`text-xs sm:text-sm font-bold ${
-                              isPast 
-                                ? "line-through text-slate-400" 
-                                : isCurrent 
-                                ? "text-emerald-950 dark:text-emerald-100 font-black" 
-                                : isEnrolled
-                                ? "text-amber-950 dark:text-amber-100 font-black"
-                                : "text-slate-900 dark:text-slate-100"
-                            }`}>
-                              {period.resolved.name}
-                            </h4>
+                  {/* 3. Kart Gösterimi: Mock Sınav veya Normal Ders Kartı */}
+                  {isExam && period.overriddenByExam ? (
+                    // --- MOCK SINAV KARTI (BASKIN ÖN PLAN KATMANI) ---
+                    <div
+                      className={`flex-1 rounded-2xl p-4 border transition-all duration-200 relative overflow-hidden ${
+                        isUserExam
+                          ? "border-amber-400/90 ring-2 ring-amber-400/60 shadow-[0_0_20px_rgba(251,191,36,0.35)] bg-gradient-to-r from-amber-500/15 to-amber-600/10 text-slate-900 dark:text-amber-100"
+                          : "border-slate-700 bg-slate-800/60 text-slate-200"
+                      }`}
+                    >
+                      {/* Üst Başlık Satırı */}
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">📝</span>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <h4 className={`text-xs sm:text-sm font-black leading-tight ${
+                                isUserExam ? "text-slate-900 dark:text-white" : "text-slate-200"
+                              }`}>
+                                {period.overriddenByExam.title}
+                              </h4>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {period.overriddenByExam.subject} • Seviye: {period.overriddenByExam.level}
+                            </p>
                           </div>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {period.resolved.group} • {period.defaultName}
-                          </p>
+                        </div>
+
+                        {/* Sağ Üst Rozet */}
+                        <div className="shrink-0 flex flex-col items-end gap-1">
+                          {isCurrent ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black animate-pulse shadow-xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                              SINAV DEVAM EDİYOR
+                            </span>
+                          ) : isUserExam ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black shadow-xs">
+                              ✍️ Gireceğin Sınav
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold">
+                              Diğer Grup Sınavı
+                            </span>
+                          )}
+                          <span className="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-400">
+                            {period.startTime} - {period.endTime}
+                          </span>
                         </div>
                       </div>
 
-                      {/* Durum Rozeti */}
-                      <div className="shrink-0">
-                        {isCurrent ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black animate-pulse shadow-xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                            ŞU ANKİ DERS
-                          </span>
-                        ) : isEnrolled ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black shadow-xs">
-                            <Star size={10} className="fill-slate-950" />
-                            Kayıtlı Dersiniz
-                          </span>
-                        ) : isNext ? (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
-                            Sırada
-                          </span>
-                        ) : isPast ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-500">
-                            <CheckCircle2 size={13} />
-                            <span>Bitti</span>
-                          </span>
-                        ) : (
-                          <span className="text-[11px] font-mono text-slate-400 font-semibold">
-                            {Array.isArray(period.periodNumber) ? `${period.periodNumber.join("-")}. Ders` : `${period.periodNumber}. Ders`}
-                          </span>
+                      {/* Salon ve Süre Bilgisi */}
+                      <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-700 dark:text-slate-300 bg-black/5 dark:bg-black/25 px-2.5 py-1.5 rounded-xl mb-2">
+                        <span>🏫 Sınav Salonu: {period.overriddenByExam.room}</span>
+                        {period.overriddenByExam.durationMin && (
+                          <span>⏳ Süre: {period.overriddenByExam.durationMin} dk</span>
                         )}
                       </div>
-                    </div>
 
-                    {/* Canlı İlerleme Çubuğu (Şu anki derste aktif) */}
-                    {isCurrent && (
-                      <div className="mt-2.5 pt-2 border-t border-emerald-500/20">
-                        <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 mb-1">
-                          <span>Dersin bitmesine {period.statusInfo.remainingMinutes} dakika</span>
-                          <span>%{period.statusInfo.progressPercent || 0}</span>
+                      {/* Canlı İlerleme Çubuğu */}
+                      {isCurrent && (
+                        <div className="mb-2 pt-1 border-t border-emerald-500/20">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 mb-1">
+                            <span>Sınavın bitmesine {period.statusInfo.remainingMinutes} dakika</span>
+                            <span>%{period.statusInfo.progressPercent || 0}</span>
+                          </div>
+                          <div className="w-full bg-emerald-200 dark:bg-emerald-950/60 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                              style={{ width: `${period.statusInfo.progressPercent || 0}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="w-full bg-emerald-200 dark:bg-emerald-950/60 h-1.5 rounded-full overflow-hidden">
-                          <div 
-                            className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                            style={{ width: `${period.statusInfo.progressPercent || 0}%` }}
-                          />
+                      )}
+
+                      {/* İkame Edilen Ders Gösterimi (Silik Alt Katman) */}
+                      {period.cancelledClasses && period.cancelledClasses.length > 0 && (
+                        <div className="mt-2.5 pt-2 border-t border-amber-400/20 dark:border-amber-400/15 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300/90 block">
+                            ↳ İptal / Sınav Nedeniyle Yapılmayacak Dersler:
+                          </span>
+                          {period.cancelledClasses.map((cc, cIdx) => (
+                            <div 
+                              key={cIdx} 
+                              className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 bg-black/5 dark:bg-black/25 px-2.5 py-1.5 rounded-xl"
+                            >
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="text-amber-500 font-bold">↳</span>
+                                <span className="line-through opacity-70 font-medium truncate">
+                                  (İptal/Sınav Nedeniyle Yapılmayacak: {cc.name} — Derslik: {cc.roomOrNote || "302"})
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono shrink-0 text-slate-400">
+                                {cc.startTime} - {cc.endTime}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    // --- NORMAL DERS KARTI ---
+                    <div 
+                      className={`flex-1 rounded-2xl p-3.5 border transition-all duration-200 ${
+                        isCurrent
+                          ? "border-emerald-500 ring-2 ring-emerald-500/80 shadow-lg shadow-emerald-500/20 bg-emerald-500/10 dark:bg-emerald-500/15"
+                          : isEnrolled
+                          ? "border-amber-400 ring-2 ring-amber-400/50 shadow-[0_0_15px_rgba(251,191,36,0.25)] bg-amber-400/10"
+                          : isNext
+                          ? "border-amber-300/80 dark:border-amber-700/60 bg-amber-50/50 dark:bg-amber-950/20"
+                          : isPast
+                          ? "border-slate-200 dark:border-slate-800/80 bg-slate-50/60 dark:bg-slate-800/30 opacity-60 text-slate-400"
+                          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{period.resolved.icon}</span>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <h4 className={`text-xs sm:text-sm font-bold ${
+                                isPast 
+                                  ? "line-through text-slate-400" 
+                                  : isCurrent 
+                                  ? "text-emerald-950 dark:text-emerald-100 font-black" 
+                                  : isEnrolled
+                                  ? "text-amber-950 dark:text-amber-100 font-black"
+                                  : "text-slate-900 dark:text-slate-100"
+                              }`}>
+                                {period.resolved.name}
+                              </h4>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {period.resolved.group} • {period.defaultName}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Durum Rozeti */}
+                        <div className="shrink-0">
+                          {isCurrent ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black animate-pulse shadow-xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                              ŞU ANKİ DERS
+                            </span>
+                          ) : isEnrolled ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black shadow-xs">
+                              <Star size={10} className="fill-slate-950" />
+                              Kayıtlı Dersiniz
+                            </span>
+                          ) : isNext ? (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                              Sırada
+                            </span>
+                          ) : isPast ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-500">
+                              <CheckCircle2 size={13} />
+                              <span>Bitti</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-mono text-slate-400 font-semibold">
+                              {Array.isArray(period.periodNumber) ? `${period.periodNumber.join("-")}. Ders` : `${period.periodNumber}. Ders`}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    )}
 
-                    {/* Derslik / Saat ve Notlara Git Butonu */}
-                    <div className="mt-2 flex items-center justify-between gap-2 pt-1.5 text-[11px]">
-                      <span className="text-slate-500 dark:text-slate-400 truncate">
-                        {period.roomOrNote}
-                      </span>
+                      {/* Canlı İlerleme Çubuğu (Şu anki derste aktif) */}
+                      {isCurrent && (
+                        <div className="mt-2.5 pt-2 border-t border-emerald-500/20">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 mb-1">
+                            <span>Dersin bitmesine {period.statusInfo.remainingMinutes} dakika</span>
+                            <span>%{period.statusInfo.progressPercent || 0}</span>
+                          </div>
+                          <div className="w-full bg-emerald-200 dark:bg-emerald-950/60 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                              style={{ width: `${period.statusInfo.progressPercent || 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
 
-                      <Link
-                        to={`/dersler/${encodeURIComponent(period.folderTarget)}`}
-                        onClick={() => onNavigateCourse?.(period.folderTarget)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg font-bold transition-colors cursor-pointer shrink-0 ${
-                          isCurrent 
-                            ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs" 
-                            : isEnrolled
-                            ? "bg-amber-500 hover:bg-amber-600 text-white shadow-xs"
-                            : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
-                        }`}
-                        title={`${period.folderTarget} ders notlarını aç`}
-                      >
-                        <BookOpen size={11} />
-                        <span>Notlara Git</span>
-                        <ArrowRight size={10} />
-                      </Link>
+                      {/* Derslik / Saat ve Notlara Git Butonu */}
+                      <div className="mt-2 flex items-center justify-between gap-2 pt-1.5 text-[11px]">
+                        <span className="text-slate-500 dark:text-slate-400 truncate">
+                          {period.roomOrNote}
+                        </span>
+
+                        <Link
+                          to={`/dersler/${encodeURIComponent(period.folderTarget)}`}
+                          onClick={() => onNavigateCourse?.(period.folderTarget)}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg font-bold transition-colors cursor-pointer shrink-0 ${
+                            isCurrent 
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs" 
+                              : isEnrolled
+                              ? "bg-amber-500 hover:bg-amber-600 text-white shadow-xs"
+                              : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+                          }`}
+                          title={`${period.folderTarget} ders notlarını aç`}
+                        >
+                          <BookOpen size={11} />
+                          <span>Notlara Git</span>
+                          <ArrowRight size={10} />
+                        </Link>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}

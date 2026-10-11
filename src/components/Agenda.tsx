@@ -32,6 +32,14 @@ import { AgendaEvent, isVisibleToUser, parseTargetRoles } from "../types";
 import TargetRoleSelector from "./TargetRoleSelector";
 import TargetRoleBadge from "./TargetRoleBadge";
 import DailyScheduleModal from "./DailyScheduleModal";
+import AgendaCalendar from "./AgendaCalendar";
+import { 
+  isMockExamPeriod, 
+  buildDayScheduleWithOverlay, 
+  CancelledClassInfo,
+  OFFICIAL_MOCK_EXAMS,
+  isUserEnrolledInExam
+} from "../utils/mockExamData";
 
 interface AgendaProps {
   socket: Socket | null;
@@ -74,6 +82,7 @@ export default function Agenda({
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>("all");
   const [onlyMyExams, setOnlyMyExams] = useState<boolean>(false);
+  const [agendaViewMode, setAgendaViewMode] = useState<"calendar" | "mock_overlay">("calendar");
   const [isLoading, setIsLoading] = useState(false);
 
   // Selected Day for Desktop Modal & Mobile Bottom Drawer
@@ -521,7 +530,14 @@ export default function Agenda({
     }
   };
 
-  const selectedDayEvents = selectedDayDate ? eventsByDate[selectedDayDate] || [] : [];
+  const selectedDayEvents = useMemo(() => {
+    if (!selectedDayDate) return [];
+    let list = eventsByDate[selectedDayDate] || [];
+    if (onlyMyExams) {
+      list = list.filter((e) => e.event_type !== "exam" || isEnrolledInEvent(e));
+    }
+    return list;
+  }, [selectedDayDate, eventsByDate, onlyMyExams]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200">
@@ -698,25 +714,63 @@ export default function Agenda({
             ))}
           </div>
 
-          {/* User's Own Enrolled Courses Toggle */}
-          <button
-            onClick={() => setOnlyMyExams(prev => !prev)}
-            className={`px-3.5 py-1 rounded-full text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border shrink-0 ${
-              onlyMyExams
-                ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200"
-            }`}
-            title="Sadece kayıtlı olduğunuz IB derslerinin sınavlarını görüntüler"
-          >
-            <Star size={13} className={onlyMyExams ? "fill-slate-950 text-slate-950" : "text-amber-500"} />
-            <span>Sadece Aldığım Derslerin Sınavları</span>
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            {/* View Mode Switcher: Genel Takvim vs Mock Sınav Çizelgesi */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-full border border-slate-200/80 dark:border-slate-700/80">
+              <button
+                type="button"
+                onClick={() => setAgendaViewMode("calendar")}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  agendaViewMode === "calendar"
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                📅 Genel Takvim
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgendaViewMode("mock_overlay")}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  agendaViewMode === "mock_overlay"
+                    ? "bg-amber-400 text-slate-950 font-black shadow-xs"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <span>📝 Mock Sınav Çizelgesi (12-26 Ekim)</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              </button>
+            </div>
+
+            {/* User's Own Enrolled Courses Toggle */}
+            <button
+              onClick={() => setOnlyMyExams(prev => !prev)}
+              className={`px-3.5 py-1 rounded-full text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border shrink-0 ${
+                onlyMyExams
+                  ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200"
+              }`}
+              title="Sadece kayıtlı olduğunuz IB derslerinin sınavlarını görüntüler"
+            >
+              <Star size={13} className={onlyMyExams ? "fill-slate-950 text-slate-950" : "text-amber-500"} />
+              <span>Yalnızca Sınavlarımı Göster</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* 3. Main Calendar View Area */}
       <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-4 md:p-6 touch-pan-y overscroll-y-contain">
-        <div className="max-w-7xl mx-auto bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col transition-colors duration-200">
+        {agendaViewMode === "mock_overlay" ? (
+          <div className="max-w-7xl mx-auto">
+            <AgendaCalendar
+              currentUserRoles={effectiveRoles}
+              currentUsername={currentUsername}
+              onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
+            />
+          </div>
+        ) : (
+          <div className="max-w-7xl mx-auto bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col transition-colors duration-200">
           
           {/* Weekday Header Row */}
           <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 text-center py-2.5 font-bold text-xs text-slate-600 dark:text-slate-400">
@@ -896,6 +950,7 @@ export default function Agenda({
             })}
           </div>
         </div>
+        )}
       </div>
 
       {/* Desktop Hover Tooltip */}
@@ -1032,6 +1087,41 @@ export default function Agenda({
                   </p>
                 </div>
               )}
+
+              {/* Sınav Nedeniyle İptal Edilen Normal Dersler */}
+              {(() => {
+                if (!selectedExamEvent.event_date || !isMockExamPeriod(selectedExamEvent.event_date)) return null;
+                const dOfWeek = new Date(selectedExamEvent.event_date).getDay();
+                const overlaid = buildDayScheduleWithOverlay(dOfWeek, selectedExamEvent.event_date, effectiveRoles, new Date());
+                const matchingSlot = overlaid.find(
+                  (o) =>
+                    o.isExamSlot &&
+                    o.overriddenByExam &&
+                    (selectedExamEvent.title.toLowerCase().includes(o.overriddenByExam.subject.toLowerCase()) ||
+                     o.overriddenByExam.title.toLowerCase().includes(selectedExamEvent.title.toLowerCase()))
+                );
+                const cancelled = matchingSlot?.cancelledClasses || [];
+                if (cancelled.length === 0) return null;
+                return (
+                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-400/30 space-y-2">
+                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider block">
+                      ↳ Sınav Nedeniyle Yapılmayacak / İptal Edilen Dersler
+                    </span>
+                    <div className="space-y-1.5">
+                      {cancelled.map((cc, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-800/80 p-2 rounded-xl border border-amber-400/20">
+                          <span className="line-through opacity-75 font-medium truncate">
+                            {cc.name} (Derslik: {cc.roomOrNote || "302"})
+                          </span>
+                          <span className="font-mono text-[11px] text-amber-600 dark:text-amber-400 shrink-0 ml-2">
+                            {cc.startTime} - {cc.endTime}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}
@@ -1280,6 +1370,23 @@ export default function Agenda({
                   const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
                   const st = getEventTypeStyles(ev.event_type, isMyExam);
 
+                  const isMockPeriodDate = Boolean(selectedDayDate && isMockExamPeriod(selectedDayDate));
+                  let cancelledClassesForExam: CancelledClassInfo[] = [];
+                  if (ev.event_type === "exam" && isMockPeriodDate && selectedDayDate) {
+                    const dOfWeek = new Date(selectedDayDate).getDay();
+                    const overlaid = buildDayScheduleWithOverlay(dOfWeek, selectedDayDate, effectiveRoles, new Date());
+                    const matchingSlot = overlaid.find(
+                      (o) =>
+                        o.isExamSlot &&
+                        o.overriddenByExam &&
+                        (ev.title.toLowerCase().includes(o.overriddenByExam.subject.toLowerCase()) ||
+                         o.overriddenByExam.title.toLowerCase().includes(ev.title.toLowerCase()))
+                    );
+                    if (matchingSlot && matchingSlot.cancelledClasses) {
+                      cancelledClassesForExam = matchingSlot.cancelledClasses;
+                    }
+                  }
+
                   return (
                     <div
                       key={ev.id}
@@ -1290,14 +1397,16 @@ export default function Agenda({
                           setSelectedFoodEvent(ev);
                         }
                       }}
-                      className={`bg-white dark:bg-slate-800/80 rounded-2xl border p-4 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden group cursor-pointer ${
+                      className={`rounded-2xl border p-4 shadow-xs hover:shadow-md transition-all relative overflow-hidden group cursor-pointer ${
                         isMyExam 
-                          ? "border-amber-400/80 bg-amber-500/5 dark:bg-amber-500/10" 
-                          : "border-slate-200/80 dark:border-slate-700/80"
+                          ? "border-amber-400 ring-2 ring-amber-400/60 shadow-[0_0_20px_rgba(251,191,36,0.35)] bg-gradient-to-r from-amber-500/15 to-amber-600/10 text-amber-100" 
+                          : ev.event_type === "exam"
+                          ? "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/60"
+                          : "border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-800/80"
                       }`}
                     >
                       {/* Left color bar */}
-                      <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${st.dot}`} />
+                      <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${isMyExam ? "bg-amber-400" : st.dot}`} />
 
                       <div className="flex items-start justify-between gap-2 mb-2 pl-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1305,6 +1414,11 @@ export default function Agenda({
                             {st.icon}
                             <span>{st.label}</span>
                           </span>
+                          {isMyExam && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950 flex items-center gap-1 shadow-xs">
+                              ✍️ Gireceğin Sınav
+                            </span>
+                          )}
                           {ev.event_time && (
                             <span className="flex items-center gap-1 text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 px-2 py-0.5 rounded-md">
                               <Clock size={12} />
@@ -1337,9 +1451,33 @@ export default function Agenda({
                         )}
                       </div>
 
-                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm sm:text-base pl-1.5 mb-1.5">
+                      <h4 className={`font-bold text-sm sm:text-base pl-1.5 mb-1.5 ${
+                        isMyExam ? "text-amber-950 dark:text-white font-black" : "text-slate-900 dark:text-slate-100"
+                      }`}>
                         {ev.title}
                       </h4>
+
+                      {/* İkame Edilen Ders Gösterimi (Silik Alt Katman) */}
+                      {cancelledClassesForExam.length > 0 && (
+                        <div className="mt-2 mb-2 pt-2 border-t border-amber-400/25 space-y-1 pl-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 block">
+                            ↳ İptal / Sınav Nedeniyle Yapılmayacak Dersler:
+                          </span>
+                          {cancelledClassesForExam.map((cc, cIdx) => (
+                            <div key={cIdx} className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 bg-black/5 dark:bg-black/25 px-2.5 py-1.5 rounded-xl">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="text-amber-500 font-bold">↳</span>
+                                <span className="line-through opacity-70 font-medium truncate">
+                                  (İptal/Sınav Nedeniyle Yapılmayacak: {cc.name} — Derslik: {cc.roomOrNote || "302"})
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono shrink-0 text-slate-400">
+                                {cc.startTime} - {cc.endTime}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {ev.description && (
                         <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap pl-1.5 bg-slate-50/70 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80">
