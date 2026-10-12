@@ -298,6 +298,27 @@ async function initDb() {
     created_at TEXT,
     UNIQUE(follower_id, following_id)
   )`);
+
+  // Multi-Device Sessions & Token Revocation
+  await client.execute(`CREATE TABLE IF NOT EXISTS user_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    refresh_token_hash TEXT,
+    device_info TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT
+  )`);
+
+  // Secure Password Reset Requests
+  await client.execute(`CREATE TABLE IF NOT EXISTS password_resets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    used INTEGER DEFAULT 0
+  )`);
   
   // Migrations for existing tables
   try { await client.execute("ALTER TABLE messages ADD COLUMN file_name TEXT"); } catch(e){}
@@ -555,6 +576,9 @@ async function initDb() {
     await client.execute("CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id, created_at DESC)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_friends_pair ON friends(user1, user2)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(token)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token)");
   } catch (idxErr) {
     console.error("Index creation notice:", idxErr);
   }
@@ -1147,16 +1171,29 @@ async function startServer() {
 
         if (await bcrypt.compare(password, user.password as string)) {
           const token = crypto.randomUUID();
+          const refreshToken = crypto.randomUUID();
+          const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+          const deviceInfo = (req.headers['user-agent'] || deviceId || 'Web/Mobile Client').toString().slice(0, 255);
+          const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 gün geçerli
+
           let color = user.color;
           if (!color) {
             const colors = ["bg-red-500", "bg-blue-500", "bg-green-500", "bg-yellow-500", "bg-purple-500", "bg-pink-500", "bg-indigo-500", "bg-teal-500"];
             color = colors[Math.floor(Math.random() * colors.length)];
           }
           const clientIp = getClientIp(req);
+
+          // 1. users tablosunu güncelle
           await client.execute({
             sql: "UPDATE users SET token = ?, color = ?, last_ip = ?, device_fingerprint = COALESCE(?, device_fingerprint), last_device_id = COALESCE(?, last_device_id), last_seen = ? WHERE id = ?",
             args: [token, color, clientIp, deviceId || null, deviceId || null, new Date().toISOString(), user.id]
           });
+
+          // 2. Çoklu cihaz oturumu: user_sessions tablosuna ekle
+          await client.execute({
+            sql: "INSERT INTO user_sessions (user_id, token, refresh_token_hash, device_info, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+            args: [user.id, token, refreshTokenHash, deviceInfo, new Date().toISOString(), expiresAt]
+          }).catch((err) => console.error("Session insert error:", err));
 
           // Asynchronously log login traffic for 5651 compliance
           logAccess(Number(user.id), clientIp, 'login');
@@ -1165,6 +1202,7 @@ async function startServer() {
 
           res.json({ 
             token, 
+            refreshToken,
             username: user.username, 
             avatar: user.avatar, 
             id: user.id, 
@@ -1178,6 +1216,137 @@ async function startServer() {
       } else {
         res.status(401).json({ error: "Geçersiz giriş." });
       }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Sunucu Taraflı Güvenli Çıkış (Token Revocation / Logout)
+  app.post(["/api/auth/logout", "/api/logout"], async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization?.replace("Bearer ", "") || req.body?.token;
+      if (authHeader) {
+        // user_sessions tablosundan oturumu revoke et
+        await client.execute({
+          sql: "DELETE FROM user_sessions WHERE token = ?",
+          args: [authHeader]
+        }).catch(() => {});
+
+        // users tablosundaki legacy token eşleşiyorsa temizle
+        await client.execute({
+          sql: "UPDATE users SET token = NULL WHERE token = ?",
+          args: [authHeader]
+        }).catch(() => {});
+      }
+      res.json({ success: true, message: "Oturum başarıyla kapatıldı." });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Şifre Kurtarma: Talep (Forgot Password)
+  app.post(["/api/auth/forgot-password", "/api/forgot-password"], async (req, res) => {
+    try {
+      const { email, username } = req.body;
+      const target = (email || username || "").toString().trim();
+      if (!target) {
+        return res.status(400).json({ error: "Lütfen kayıtlı e-posta adresinizi veya kullanıcı adınızı girin." });
+      }
+
+      const userRes = await client.execute({
+        sql: "SELECT id, username, email FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)",
+        args: [target, target]
+      });
+
+      if (userRes.rows.length === 0) {
+        // Kullanıcı ifşasını (user enumeration) engellemek için başarı mesajı döndür
+        return res.json({ 
+          success: true, 
+          message: "Eğer sistemde kayıtlı böyle bir hesap varsa, şifre sıfırlama bağlantısı oluşturuldu." 
+        });
+      }
+
+      const foundUser = userRes.rows[0];
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 dakika
+
+      await client.execute({
+        sql: "INSERT INTO password_resets (user_id, token, expires_at, created_at, used) VALUES (?, ?, ?, ?, 0)",
+        args: [foundUser.id, resetToken, expiresAt, new Date().toISOString()]
+      });
+
+      const resetUrl = `/sifre-sifirla?token=${resetToken}`;
+      console.log(`[PASSWORD RESET] User: ${foundUser.username}, Reset URL: ${resetUrl}`);
+
+      return res.json({
+        success: true,
+        message: "Şifre sıfırlama bağlantısı oluşturuldu. Bağlantı 30 dakika boyunca geçerlidir.",
+        resetToken,
+        resetUrl
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Şifre Kurtarma: Yeni Şifre Belirleme (Reset Password)
+  app.post(["/api/auth/reset-password", "/api/reset-password"], async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
+        return res.status(400).json({ error: "Geçersiz istek. Şifre en az 6 karakter olmalıdır." });
+      }
+
+      const resetRes = await client.execute({
+        sql: "SELECT id, user_id, expires_at, used FROM password_resets WHERE token = ?",
+        args: [token]
+      });
+
+      if (resetRes.rows.length === 0) {
+        return res.status(400).json({ error: "Geçersiz veya bulunamayan şifre sıfırlama bağlantısı." });
+      }
+
+      const resetRecord = resetRes.rows[0];
+      if (Number(resetRecord.used) === 1) {
+        return res.status(400).json({ error: "Bu şifre sıfırlama bağlantısı daha önce kullanılmış." });
+      }
+
+      if (new Date(resetRecord.expires_at as string).getTime() < Date.now()) {
+        return res.status(400).json({ error: "Şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir bağlantı talep edin." });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const userId = Number(resetRecord.user_id);
+
+      // Şifreyi güncelle ve ana token'ı temizle
+      await client.execute({
+        sql: "UPDATE users SET password = ?, token = NULL WHERE id = ?",
+        args: [hashedPassword, userId]
+      });
+
+      // Token'ı kullanıldı olarak işaretle
+      await client.execute({
+        sql: "UPDATE password_resets SET used = 1 WHERE id = ?",
+        args: [resetRecord.id]
+      });
+
+      // Güvenlik: Eski tüm cihaz oturumlarını sonlandır (revocation)
+      await client.execute({
+        sql: "DELETE FROM user_sessions WHERE user_id = ?",
+        args: [userId]
+      });
+
+      // Bağlı socketleri sonlandırarak tekrar giriş yapmaya zorla
+      const activeSocketId = onlineUsers.get(userId);
+      if (activeSocketId) {
+        const s = io.sockets.sockets.get(activeSocketId);
+        if (s) s.disconnect(true);
+      }
+
+      return res.json({
+        success: true,
+        message: "Şifreniz başarıyla güncellendi. Yeni şifrenizle giriş yapabilirsiniz."
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -5724,9 +5893,13 @@ async function startServer() {
     if (!token) return next(new Error("No token"));
     
     try {
+      const nowIso = new Date().toISOString();
       const userRes = await client.execute({
-        sql: "SELECT id, username, avatar, color, isBanned, is_banned, is_admin FROM users WHERE token = ?",
-        args: [token]
+        sql: `SELECT u.id, u.username, u.avatar, u.color, u.isBanned, u.is_banned, u.is_admin 
+              FROM users u 
+              WHERE u.token = ? 
+                 OR u.id IN (SELECT user_id FROM user_sessions WHERE token = ? AND (expires_at IS NULL OR expires_at > ?))`,
+        args: [token, token, nowIso]
       });
       if (userRes.rows.length === 0) return next(new Error("Invalid token"));
       const userObj = userRes.rows[0];
@@ -8458,9 +8631,10 @@ async function startServer() {
           const members = JSON.parse(group.members as string || "[]");
           members.forEach((memberId: number) => {
             const targetSocket = onlineUsers.get(memberId);
-            if (targetSocket) io.to(targetSocket).emit("new_group_message", popMsg);
+            const groupMsgPayload = { ...popMsg, chatId: group_id, groupId: group_id };
+            if (targetSocket) io.to(targetSocket).emit("new_group_message", groupMsgPayload);
             if (memberId !== user.id) {
-              addNotification(memberId, "new_group_message", `${group.name} grubuna yeni bir mesaj geldi.`).catch(() => {});
+              addNotification(memberId, "new_group_message", `${group.name} grubuna yeni bir mesaj geldi.`, user.id, group_id).catch(() => {});
             }
           });
         }

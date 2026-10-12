@@ -800,29 +800,35 @@ export default function LiveMap({
   return (
     <div className="relative w-full h-full min-h-0 flex-1 flex flex-col bg-slate-950 overflow-hidden select-none touch-pan-x touch-pan-y">
       {/* Top Floating Control Bar */}
-      <div className="absolute top-3 inset-x-3 z-[1000] flex items-center justify-between gap-2 pointer-events-none">
+      <div className="absolute top-3 inset-x-3 z-[1000] flex flex-col sm:flex-row sm:items-center justify-between gap-2 pointer-events-none">
         
         {/* Brand & Online Stats */}
-        <div className="flex items-center gap-2.5 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl px-3.5 py-2 rounded-2xl shadow-xl pointer-events-auto">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30">
-            <MapPin size={18} />
-          </div>
-          <div>
-            <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
-              Canlı Harita
-              <span className="flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold px-2 py-0.5 rounded-full border border-emerald-500/30" title="Tam ev/bina gizliliği için konum 50-150m hata payıyla gösterilir">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                Gizlilik Korumalı (50-150m)
-              </span>
-            </h2>
-            <p className="text-[10px] sm:text-[11px] text-slate-400">
-              {activeCount} Aktif · {totalCount} Toplam Pin
-            </p>
+        <div className="flex items-center justify-between sm:justify-start gap-2.5 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl shadow-xl pointer-events-auto">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30 shrink-0">
+              <MapPin size={18} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h2 className="text-xs sm:text-sm font-bold text-white">Canlı Harita</h2>
+                <span 
+                  className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold px-2 py-0.5 rounded-full border border-emerald-500/30 cursor-help" 
+                  title="Tam ev/bina gizliliği için konum 50-150m hata payıyla gösterilir"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="hidden sm:inline">Gizlilik Korumalı (50-150m)</span>
+                  <span className="sm:hidden">Tam Konum Gizli 🔒</span>
+                </span>
+              </div>
+              <p className="text-[10px] sm:text-[11px] text-slate-400">
+                {activeCount} Aktif · {totalCount} Toplam Pin
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Actions (Users Drawer & Sharing Toggle) */}
-        <div className="flex items-center gap-2 pointer-events-auto">
+        <div className="flex items-center justify-end gap-2 pointer-events-auto shrink-0">
           {/* Active Users List Drawer Toggle */}
           <button
             onClick={() => setShowUsersPanel(!showUsersPanel)}
@@ -831,9 +837,10 @@ export default function LiveMap({
                 ? "bg-indigo-600 border-indigo-500 text-white"
                 : "bg-slate-900/90 border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
+            aria-label={`Haritadaki Kişiler (${totalCount})`}
           >
             <Users size={15} />
-            <span className="hidden sm:inline">Kişiler</span>
+            <span>Kişiler</span>
             <span className="px-1.5 py-0.2 bg-white/20 rounded-full text-[10px]">
               {totalCount}
             </span>
@@ -845,9 +852,10 @@ export default function LiveMap({
               onClick={() => stopLocationSharing(false)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold shadow-xl shadow-red-600/30 border border-red-500 transition-all hover:scale-105 active:scale-95 cursor-pointer"
               title="Konumunuzu başkalarından gizleyin"
+              aria-label="Konum paylaşımını kapat"
             >
               <EyeOff size={15} />
-              <span className="hidden sm:inline">Konumu Kapat</span>
+              <span>Konumu Kapat</span>
             </button>
           ) : (
             <button
@@ -855,6 +863,7 @@ export default function LiveMap({
               disabled={isLocating}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-xl shadow-blue-600/30 border border-blue-500 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer"
               title="Konumunuzu diğer kullanıcılara gösterin"
+              aria-label="Konum paylaşımını aç"
             >
               <Navigation size={15} className={isLocating ? "animate-spin" : ""} />
               <span>{isLocating ? "Alınıyor..." : "Konumu Aç"}</span>

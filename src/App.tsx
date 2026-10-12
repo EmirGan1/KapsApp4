@@ -2,10 +2,36 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import { App as CapApp } from "@capacitor/app";
-import { MessageSquare, LayoutGrid, Users, UserCircle2, Globe, Bell, Folder, Moon, Sun, Gamepad2, Radio, MapPin, Megaphone, Crown, CalendarDays, CloudSun, GraduationCap, Home } from "lucide-react";
+import { 
+  MessageSquare, 
+  LayoutGrid, 
+  Users, 
+  UserCircle2, 
+  Globe, 
+  Bell, 
+  Folder, 
+  Moon, 
+  Sun, 
+  Gamepad2, 
+  Radio, 
+  MapPin, 
+  Megaphone, 
+  Crown, 
+  CalendarDays, 
+  CloudSun, 
+  GraduationCap, 
+  Home,
+  MoreHorizontal,
+  Menu,
+  X,
+  FolderX,
+  LogOut,
+  KeyRound
+} from "lucide-react";
 import { APP_ROUTES, getTabFromPathname, getPathFromTab, AppTab } from "./routes";
 import { useSEO } from "./components/SEO";
 import Auth from "./components/Auth";
+import ResetPasswordView from "./components/ResetPasswordView";
 import Dashboard from "./components/Dashboard";
 import Feed from "./components/Feed";
 import Chats from "./components/Chats";
@@ -69,6 +95,9 @@ export default function App() {
   const [activeSubject, setActiveSubject] = useState<string | null>(initialResolved.subject || null);
   const [viewingUserId, setViewingUserId] = useState<number>(initialResolved.userId || currentUserId);
   const [targetChatUserId, setTargetChatUserId] = useState<number | null>(null);
+  const [targetGroupId, setTargetGroupId] = useState<number | string | null>(null);
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState<boolean>(false);
+  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const isEmirgan = (username || "").trim().toLowerCase() === "emirgan";
 
   // IB Predicted Access State (Emirgan or Authorized Pool Members only)
@@ -98,7 +127,25 @@ export default function App() {
     } else if (resolved.tab === "profile") {
       setViewingUserId(currentUserId);
     }
-  }, [location.pathname, isEmirgan, hasPredictedAccess, currentUserId, navigate]);
+
+    // URL Search Params (Query string) handling
+    try {
+      const searchParams = new URLSearchParams(location.search);
+      const roomParam = searchParams.get("room") || searchParams.get("group");
+      const dmParam = searchParams.get("dm") || searchParams.get("user");
+      const tokenParam = searchParams.get("token");
+
+      if (roomParam) {
+        setTargetGroupId(roomParam);
+      }
+      if (dmParam) {
+        setTargetChatUserId(Number(dmParam));
+      }
+      if ((location.pathname === "/sifre-sifirla" || location.pathname === "/reset-password") && tokenParam) {
+        setResetPasswordToken(tokenParam);
+      }
+    } catch (e) {}
+  }, [location.pathname, location.search, isEmirgan, hasPredictedAccess, currentUserId, navigate]);
 
   // 2. Dynamic SEO updates per route (Title, Description, Canonical, OG tags)
   const currentRouteMeta = Object.values(APP_ROUTES).find(r => r.path === location.pathname) || {
@@ -410,20 +457,25 @@ export default function App() {
     setUnreadNotificationsCount((prev) => Math.max(0, prev - 1));
 
     const senderId = notif.senderId || notif.sender_id;
-    if (notif.type === "new_message" || notif.type === "dm") {
+    const groupId = notif.chatId || notif.groupId || notif.group_id || (notif.type === "new_group_message" ? notif.target_id : null);
+
+    if (notif.type === "new_group_message" || notif.type === "group_invite" || groupId) {
+      if (groupId) {
+        setTargetGroupId(groupId);
+        navigate(`/sohbetler?room=${groupId}`);
+      } else {
+        navigate("/sohbetler");
+      }
+      handleTabChange("chats");
+    } else if (notif.type === "new_message" || notif.type === "dm") {
       if (senderId) {
         setTargetChatUserId(senderId);
+        navigate(`/sohbetler?dm=${senderId}`);
+      } else {
+        navigate("/sohbetler");
       }
       handleTabChange("chats");
     } else if (notif.type === "like" || notif.type === "comment") {
-      handleTabChange("feed");
-    } else if (notif.type === "follow" || notif.type === "friend_request" || notif.type === "friend_accept") {
-      if (senderId) {
-        handleUserClick(senderId);
-      }
-    } else if (notif.type === "new_group_message" || notif.type === "group_invite") {
-      handleTabChange("chats");
-    } else {
       handleTabChange("notifications");
     }
   };
@@ -730,14 +782,34 @@ export default function App() {
     setAvatar(newAvatar);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const curToken = token || localStorage.getItem("lan_token") || localStorage.getItem("token");
+    if (curToken) {
+      try {
+        await fetch(getApiUrl("/api/auth/logout"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${curToken}`
+          },
+          body: JSON.stringify({ token: curToken })
+        }).catch(() => {});
+      } catch (e) {}
+    }
     localStorage.removeItem("lan_token");
     localStorage.removeItem("lan_username");
     localStorage.removeItem("lan_avatar");
+    localStorage.removeItem("lan_color");
     localStorage.removeItem("lan_user_id");
+    localStorage.removeItem("lan_user_roles");
+    localStorage.removeItem("token");
     setToken(null);
+    setCurrentUserRoles([]);
+    setUsername("");
+    setAvatar(null);
+    setColor(undefined);
     if (socket) socket.disconnect();
-    window.location.reload();
+    window.location.href = "/";
   };
 
   const handleTabChange = (tab: AppTab) => {
@@ -897,8 +969,36 @@ export default function App() {
     return <DeviceBanScreen reason={deviceBanReason} onRetry={() => window.location.reload()} />;
   }
 
+  // Password Reset View (Deep-link /sifre-sifirla?token=...)
+  const isResetPasswordRoute = location.pathname === "/sifre-sifirla" || location.pathname === "/reset-password";
+  const resetTokenFromUrl = new URLSearchParams(location.search).get("token") || resetPasswordToken;
+
+  if (isResetPasswordRoute && resetTokenFromUrl) {
+    return (
+      <ResetPasswordView
+        token={resetTokenFromUrl}
+        onSuccess={() => {
+          setResetPasswordToken(null);
+          navigate("/", { replace: true });
+        }}
+        onCancel={() => {
+          setResetPasswordToken(null);
+          navigate("/", { replace: true });
+        }}
+      />
+    );
+  }
+
   if (!token) {
-    return <Auth onAuthSuccess={handleAuthSuccess} />;
+    return (
+      <Auth 
+        onAuthSuccess={handleAuthSuccess} 
+        onNavigateToReset={(tok) => {
+          setResetPasswordToken(tok);
+          navigate(`/sifre-sifirla?token=${tok}`);
+        }}
+      />
+    );
   }
 
   return (
@@ -1147,6 +1247,8 @@ export default function App() {
             onUnreadDMsChange={setUnreadDmCount}
             targetUserId={targetChatUserId}
             onTargetUserHandled={() => setTargetChatUserId(null)}
+            targetGroupId={targetGroupId}
+            onTargetGroupHandled={() => setTargetGroupId(null)}
             onActiveChatUserChange={setActiveDmChatUserId}
           />
         )}
@@ -1159,14 +1261,37 @@ export default function App() {
           />
         )}
         {activeTab === 'subject' && (
-          <Feed 
-            socket={socket} 
-            currentUserId={currentUserId} 
-            currentUsername={username} 
-            onUserClick={handleUserClick} 
-            activeSubject={activeSubject} 
-            onBackToFolders={() => handleTabChange('folders')}
-          />
+          !activeSubject || (!SUBJECTS.includes(activeSubject) && !SUBJECTS.some(s => s.toLowerCase() === (activeSubject || '').toLowerCase())) ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-slate-50 dark:bg-slate-950">
+              <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-xl space-y-4">
+                <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-500 border border-amber-200 dark:border-amber-800 flex items-center justify-center mx-auto">
+                  <FolderX size={32} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Ders Bulunamadı (404)</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Aradığınız ders klasörü ({activeSubject || "Geçersiz Adres"}) mevcut değil veya adı hatalı girilmiş.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleTabChange('folders')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+                >
+                  Tüm Ders Klasörlerine Dön
+                </button>
+              </div>
+            </div>
+          ) : (
+            <Feed 
+              socket={socket} 
+              currentUserId={currentUserId} 
+              currentUsername={username} 
+              onUserClick={handleUserClick} 
+              activeSubject={activeSubject} 
+              onBackToFolders={() => handleTabChange('folders')}
+            />
+          )
         )}
         {activeTab === 'friends' && (
           <Friends 
@@ -1251,48 +1376,198 @@ export default function App() {
         </div>
       </div>
 
-      {/* Mobile Bottom Nav */}
+      {/* Mobile Bottom Nav (4 Ana Sekme + 1 'Daha Fazla' Menüsü) */}
       <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe shrink-0 z-30">
-        <nav className="flex items-center justify-around px-1 py-1.5 overflow-x-auto no-scrollbar">
-          <MobileNavItem to="/" icon={<Home size={22} className="text-blue-600 dark:text-blue-400" />} active={activeTab === 'dashboard'} onClick={() => handleTabChange('dashboard')} />
-          {isEmirgan && (
-            <MobileNavItem 
-              to="/emirgan"
-              icon={<Crown size={22} className="text-amber-500 animate-pulse" />} 
-              active={activeTab === 'admin'} 
-              badge={pendingApprovalsCount}
-              onClick={() => handleTabChange('admin')} 
-            />
-          )}
-          <MobileNavItem to="/sohbetler" icon={<MessageSquare size={22} />} active={activeTab === 'chats'} badge={unreadDmCount} onClick={() => handleTabChange('chats')} />
-          <MobileNavItem to="/duyurular" icon={<Megaphone size={22} className="text-amber-500" />} active={activeTab === 'announcements'} dotBadge={hasUnreadAnnouncement} onClick={() => handleTabChange('announcements')} />
-          <MobileNavItem to="/ajanda" icon={<CalendarDays size={22} className="text-blue-500" />} active={activeTab === 'agenda'} onClick={() => handleTabChange('agenda')} />
-          <MobileNavItem to="/genel-sohbet" icon={<Globe size={22} />} active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
-          <MobileNavItem to="/akis" icon={<LayoutGrid size={22} />} active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
+        <nav 
+          aria-label="Mobil alt gezinti menüsü"
+          className="grid grid-cols-5 items-center px-1 py-1.5 h-14"
+        >
           <MobileNavItem 
-            to="/hava-durumu"
-            icon={<CloudSun size={22} className="text-sky-500" />} 
-            active={activeTab === 'weather'} 
-            extraBadge={miniWeatherBadge ? `${miniWeatherBadge.temp}°` : undefined} 
-            onClick={() => handleTabChange('weather')} 
+            to="/" 
+            icon={<Home size={20} className={activeTab === 'dashboard' ? 'text-blue-600 dark:text-blue-400' : ''} />} 
+            label="Ana Sayfa"
+            active={activeTab === 'dashboard'} 
+            onClick={() => handleTabChange('dashboard')} 
           />
-          <MobileNavItem to="/dersler" icon={<Folder size={22} className="text-blue-500" />} active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
-          <MobileNavItem to="/harita" icon={<MapPin size={22} className="text-emerald-500" />} active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
-          <MobileNavItem to="/sesli-sohbet" icon={<Radio size={22} />} active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
-          <MobileNavItem to="/oyunlar" icon={<Gamepad2 size={22} />} active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
-          <MobileNavItem to="/arkadaslar" icon={<Users size={22} />} active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
-          <MobileNavItem to="/bildirimler" icon={<Bell size={22} />} active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
-          <MobileNavItem to="/profil" icon={<UserCircle2 size={22} />} active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
-          {(isEmirgan || hasPredictedAccess) && (
-            <MobileNavItem 
-              to="/tahminler"
-              icon={<GraduationCap size={22} className="text-amber-500" />} 
-              active={activeTab === 'predicted'} 
-              onClick={() => handleTabChange('predicted')} 
-            />
-          )}
+          <MobileNavItem 
+            to="/akis" 
+            icon={<LayoutGrid size={20} className={activeTab === 'feed' ? 'text-blue-600 dark:text-blue-400' : ''} />} 
+            label="Akış"
+            active={activeTab === 'feed'} 
+            onClick={() => handleTabChange('feed')} 
+          />
+          <MobileNavItem 
+            to="/sohbetler" 
+            icon={<MessageSquare size={20} className={activeTab === 'chats' ? 'text-blue-600 dark:text-blue-400' : ''} />} 
+            label="Sohbetler"
+            active={activeTab === 'chats'} 
+            badge={unreadDmCount} 
+            onClick={() => handleTabChange('chats')} 
+          />
+          <MobileNavItem 
+            to="/dersler" 
+            icon={<Folder size={20} className={activeTab === 'folders' || activeTab === 'subject' ? 'text-blue-600 dark:text-blue-400' : ''} />} 
+            label="Dersler"
+            active={activeTab === 'folders' || activeTab === 'subject'} 
+            onClick={() => handleTabChange('folders')} 
+          />
+          <MobileNavItem 
+            icon={<MoreHorizontal size={20} className={isMobileMoreOpen ? 'text-blue-600 dark:text-blue-400' : ''} />} 
+            label="Daha Fazla"
+            active={isMobileMoreOpen || ['profile', 'notifications', 'announcements', 'agenda', 'global', 'weather', 'map', 'voice', 'games', 'friends', 'admin', 'predicted'].includes(activeTab)} 
+            badge={unreadNotificationsCount}
+            dotBadge={hasUnreadAnnouncement}
+            onClick={() => setIsMobileMoreOpen(true)} 
+          />
         </nav>
       </div>
+
+      {/* Mobile "Daha Fazla" Sheet / Drawer Menu */}
+      {isMobileMoreOpen && (
+        <div 
+          className="fixed inset-0 z-[9999] md:hidden flex flex-col justify-end bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setIsMobileMoreOpen(false)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl max-h-[85vh] overflow-y-auto p-4 sm:p-5 shadow-2xl animate-in slide-in-from-bottom duration-200 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-sm shadow-md">
+                  {username ? username[0].toUpperCase() : "K"}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">
+                    {username || "Kullanıcı"}
+                  </h3>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {isEmirgan ? "Yönetici (Emirgan)" : "KapsApp Öğrenci"}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsMobileMoreOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                aria-label="Menüyü Kapat"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Drawer Module Grid */}
+            <div className="grid grid-cols-3 gap-2.5">
+              <DrawerGridItem 
+                icon={<UserCircle2 size={22} className="text-blue-500" />} 
+                label="Profilim" 
+                active={activeTab === 'profile'} 
+                onClick={() => { handleTabChange('profile'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<Bell size={22} className="text-amber-500" />} 
+                label="Bildirimler" 
+                badge={unreadNotificationsCount} 
+                active={activeTab === 'notifications'} 
+                onClick={() => { handleTabChange('notifications'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<Megaphone size={22} className="text-orange-500" />} 
+                label="Duyurular" 
+                dotBadge={hasUnreadAnnouncement} 
+                active={activeTab === 'announcements'} 
+                onClick={() => { handleTabChange('announcements'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<CalendarDays size={22} className="text-indigo-500" />} 
+                label="Ajanda" 
+                active={activeTab === 'agenda'} 
+                onClick={() => { handleTabChange('agenda'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<Globe size={22} className="text-emerald-500" />} 
+                label="Genel Sohbet" 
+                badge={unreadGlobalCount} 
+                active={activeTab === 'global'} 
+                onClick={() => { handleTabChange('global'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<CloudSun size={22} className="text-sky-500" />} 
+                label="Hava Durumu" 
+                active={activeTab === 'weather'} 
+                onClick={() => { handleTabChange('weather'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<MapPin size={22} className="text-teal-500" />} 
+                label="Canlı Harita" 
+                active={activeTab === 'map'} 
+                onClick={() => { handleTabChange('map'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<Radio size={22} className="text-purple-500" />} 
+                label="Sesli Sohbet" 
+                active={activeTab === 'voice'} 
+                onClick={() => { handleTabChange('voice'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<Gamepad2 size={22} className="text-pink-500" />} 
+                label="Oyunlar" 
+                active={activeTab === 'games'} 
+                onClick={() => { handleTabChange('games'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<Users size={22} className="text-cyan-500" />} 
+                label="Arkadaşlar" 
+                active={activeTab === 'friends'} 
+                onClick={() => { handleTabChange('friends'); setIsMobileMoreOpen(false); }} 
+              />
+              {(isEmirgan || hasPredictedAccess) && (
+                <DrawerGridItem 
+                  icon={<GraduationCap size={22} className="text-amber-500" />} 
+                  label="IB Predicted" 
+                  active={activeTab === 'predicted'} 
+                  onClick={() => { handleTabChange('predicted'); setIsMobileMoreOpen(false); }} 
+                />
+              )}
+              {isEmirgan && (
+                <DrawerGridItem 
+                  icon={<Crown size={22} className="text-yellow-500" />} 
+                  label="Yönetim" 
+                  badge={pendingApprovalsCount} 
+                  active={activeTab === 'admin'} 
+                  onClick={() => { handleTabChange('admin'); setIsMobileMoreOpen(false); }} 
+                />
+              )}
+            </div>
+
+            {/* Drawer Footer Actions */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setDarkMode(!darkMode)}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                {darkMode ? <Sun size={16} className="text-amber-500" /> : <Moon size={16} className="text-indigo-500" />}
+                <span>{darkMode ? "Açık Tema" : "Koyu Tema"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMoreOpen(false);
+                  handleLogout();
+                }}
+                className="py-2.5 px-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <LogOut size={16} />
+                <span>Çıkış Yap</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Birebir Sesli Arama ve Sesli Oda Davet Modülü Katmanları */}
       <IncomingCallNotification />
@@ -1306,6 +1581,48 @@ export default function App() {
       <KapAttackOverlay socket={socket} />
     </div>
     </CallProvider>
+  );
+}
+
+function DrawerGridItem({
+  icon,
+  label,
+  active,
+  badge,
+  dotBadge,
+  onClick
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  badge?: number;
+  dotBadge?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all text-center relative cursor-pointer ${
+        active
+          ? "bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-extrabold shadow-xs"
+          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+      }`}
+    >
+      <div className="relative mb-1">
+        {icon}
+        {badge && badge > 0 ? (
+          <span className="absolute -top-1.5 -right-2 px-1 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none shadow-sm">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        ) : dotBadge ? (
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse shadow-sm shadow-red-500/50"></span>
+        ) : null}
+      </div>
+      <span className="text-[11px] font-bold leading-tight truncate max-w-full">
+        {label}
+      </span>
+    </button>
   );
 }
 
@@ -1328,7 +1645,7 @@ function NavItem({
   extraBadge?: React.ReactNode; 
   onClick?: () => void; 
 }) {
-  const commonClass = `w-full flex items-center justify-between p-3 lg:px-4 rounded-xl transition-all relative cursor-pointer no-underline ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`;
+  const commonClass = `w-full flex items-center justify-between p-3 lg:px-4 rounded-xl transition-all relative cursor-pointer no-underline group ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`;
 
   const content = (
     <>
@@ -1340,6 +1657,20 @@ function NavItem({
         </div>
         <span className="hidden lg:block">{label}</span>
       </div>
+
+      {/* Tablet Collapsed Sidebar Tooltip (768px - 1023px) */}
+      <div 
+        role="tooltip" 
+        className="hidden md:group-hover:flex lg:hidden absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 border border-slate-700/80"
+      >
+        <span>{label}</span>
+        {badge && badge > 0 && (
+          <span className="px-1.5 py-0.2 bg-red-500 rounded-full text-[10px] font-bold">
+            {badge}
+          </span>
+        )}
+      </div>
+
       {extraBadge ? (
         <div className="hidden lg:flex items-center">
           {extraBadge}
@@ -1360,6 +1691,8 @@ function NavItem({
         to={to}
         onClick={onClick}
         className={commonClass}
+        title={label}
+        aria-label={label}
       >
         {content}
       </Link>
@@ -1371,6 +1704,8 @@ function NavItem({
       type="button"
       onClick={onClick}
       className={commonClass}
+      title={label}
+      aria-label={label}
     >
       {content}
     </button>
@@ -1379,6 +1714,7 @@ function NavItem({
 
 function MobileNavItem({ 
   icon, 
+  label,
   to,
   active, 
   badge, 
@@ -1387,6 +1723,7 @@ function MobileNavItem({
   onClick 
 }: { 
   icon: React.ReactNode; 
+  label: string;
   to?: string;
   active: boolean; 
   badge?: number; 
@@ -1394,22 +1731,31 @@ function MobileNavItem({
   extraBadge?: string; 
   onClick?: () => void; 
 }) {
-  const commonClass = `min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 rounded-xl transition-all relative cursor-pointer no-underline shrink-0 ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`;
+  const commonClass = `flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-all relative cursor-pointer no-underline select-none ${
+    active 
+      ? 'text-blue-600 dark:text-blue-400 font-extrabold' 
+      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 font-medium'
+  }`;
 
   const content = (
     <>
-      {icon}
-      {badge && badge > 0 ? (
-        <span className="absolute top-1 right-1 px-1 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none shadow-sm">
-          {badge > 99 ? '99+' : badge}
-        </span>
-      ) : dotBadge ? (
-        <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse shadow-sm shadow-red-500/50"></span>
-      ) : extraBadge ? (
-        <span className="absolute -top-0.5 right-0 px-1 min-w-[14px] h-3.5 bg-sky-500 text-white text-[8px] font-black flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none shadow-xs">
-          {extraBadge}
-        </span>
-      ) : null}
+      <div className="relative flex items-center justify-center">
+        {icon}
+        {badge && badge > 0 ? (
+          <span className="absolute -top-1.5 -right-2 px-1 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none shadow-sm">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        ) : dotBadge ? (
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse shadow-sm shadow-red-500/50"></span>
+        ) : extraBadge ? (
+          <span className="absolute -top-1.5 -right-2 px-1 min-w-[14px] h-3.5 bg-sky-500 text-white text-[8px] font-black flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none shadow-xs">
+            {extraBadge}
+          </span>
+        ) : null}
+      </div>
+      <span className="text-[10px] mt-0.5 tracking-tight truncate max-w-full">
+        {label}
+      </span>
     </>
   );
 
@@ -1419,6 +1765,7 @@ function MobileNavItem({
         to={to}
         onClick={onClick}
         className={commonClass}
+        aria-label={label}
       >
         {content}
       </Link>
@@ -1430,6 +1777,7 @@ function MobileNavItem({
       type="button"
       onClick={onClick}
       className={commonClass}
+      aria-label={label}
     >
       {content}
     </button>

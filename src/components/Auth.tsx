@@ -1,19 +1,22 @@
 import { useState } from "react";
-import { ShieldCheck, FileText, CheckCircle2, MapPin } from "lucide-react";
+import { ShieldCheck, FileText, CheckCircle2, MapPin, KeyRound } from "lucide-react";
 import { safeFetchJson } from "../utils/api";
 import KvkkModal from "./KvkkModal";
+import ForgotPasswordModal from "./ForgotPasswordModal";
 
 interface AuthProps {
   onAuthSuccess: (token: string, username: string, avatar: string | null, id: number, color?: string) => void;
+  onNavigateToReset?: (token: string) => void;
 }
 
-export default function Auth({ onAuthSuccess }: AuthProps) {
+export default function Auth({ onAuthSuccess, onNavigateToReset }: AuthProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [kvkkAccepted, setKvkkAccepted] = useState(false);
   const [locationConsent, setLocationConsent] = useState(false);
   const [showKvkkModal, setShowKvkkModal] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -105,9 +108,20 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Şifre
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Şifre
+              </label>
+              {isLogin && (
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(true)}
+                  className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                >
+                  Şifremi Unuttum?
+                </button>
+              )}
+            </div>
             <input
               type="password"
               required
@@ -280,6 +294,13 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
         onClose={() => setShowKvkkModal(false)}
         onAccept={() => setKvkkAccepted(true)}
         showAcceptButton={!isLogin}
+      />
+
+      {/* Forgot Password Modal */}
+      <ForgotPasswordModal
+        isOpen={showForgotPassword}
+        onClose={() => setShowForgotPassword(false)}
+        onNavigateToReset={onNavigateToReset}
       />
     </div>
   );

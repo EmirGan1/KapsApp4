@@ -93,7 +93,7 @@ export default function PostMediaFrame({
       {/* 3. Expand / Fullscreen Floating Trigger */}
       {showExpandButton && (
         <div
-          className="absolute top-3 right-3 z-20 bg-black/60 hover:bg-black/90 text-white px-3 py-1.5 rounded-full opacity-0 group-hover/media:opacity-100 transition-all duration-200 backdrop-blur-md flex items-center gap-1.5 shadow-lg scale-95 group-hover/media:scale-100"
+          className="absolute top-3 right-3 z-20 bg-black/75 hover:bg-black/90 text-white px-3 py-1.5 rounded-full opacity-90 sm:opacity-0 sm:group-hover/media:opacity-100 [@media(pointer:coarse)]:opacity-90 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/media:opacity-100 transition-all duration-200 backdrop-blur-md flex items-center gap-1.5 shadow-lg scale-95 sm:group-hover/media:scale-100 pointer-events-auto"
           title="Büyüt ve Tam Ekranda Gör"
         >
           {isVideo ? (

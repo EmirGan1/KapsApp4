@@ -47,6 +47,50 @@ export async function deleteCourseFileRecord(
   return { success: true, id: Number(fileObj.id), folder_id: fileObj.folder_id || fileObj.course_id };
 }
 
+export function cleanParseTopics(topicsData: any, fallbackTag?: any): string[] {
+  const sanitize = (val: any): string => {
+    if (!val) return "";
+    let s = String(val).trim();
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+      s = s.slice(1, -1).trim();
+    }
+    return s.replace(/\\"/g, '"').trim();
+  };
+
+  const extract = (item: any): string[] => {
+    if (!item) return [];
+    if (Array.isArray(item)) return item.flatMap(extract);
+    if (typeof item === "string") {
+      const trimmed = item.trim();
+      if (!trimmed) return [];
+      if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return Array.isArray(parsed) ? parsed.flatMap(extract) : extract(parsed);
+        } catch {
+          const stripped = trimmed.replace(/^[\[{\("']+|[\]}\)"']+$/g, "");
+          if (stripped.includes(",")) return stripped.split(",").flatMap(extract);
+          return [sanitize(stripped)];
+        }
+      }
+      if (trimmed.includes(",")) {
+        return trimmed.split(",").flatMap(extract);
+      }
+      return [sanitize(trimmed)];
+    }
+    return [sanitize(item)];
+  };
+
+  let list: string[] = [];
+  if (topicsData) list = extract(topicsData);
+  if (list.length === 0 && fallbackTag) list = extract(fallbackTag);
+
+  const clean = list
+    .map(sanitize)
+    .filter((s) => s.length > 0 && s !== "null" && s !== "undefined" && s !== "[]");
+  return Array.from(new Set(clean));
+}
+
 export function registerCourseRoutes(
   app: Express,
   client: any,
@@ -73,24 +117,13 @@ export function registerCourseRoutes(
       });
 
       const parsedFiles = fileRes.rows.map((row: any) => {
-        let topicsArray: string[] = [];
-        if (row.topics) {
-          try {
-            const parsed = typeof row.topics === "string" ? JSON.parse(row.topics) : row.topics;
-            if (Array.isArray(parsed)) topicsArray = parsed;
-            else if (typeof parsed === "string") topicsArray = [parsed];
-          } catch (e) {
-            topicsArray = [String(row.topics)];
-          }
-        }
-        if (topicsArray.length === 0 && row.topic_tag) {
-          topicsArray = [row.topic_tag];
-        }
+        const topicsArray = cleanParseTopics(row.topics, row.topic_tag);
+        const primaryTag = topicsArray.includes("ALL") ? "ALL" : (topicsArray[0] || (row.topic_tag ? String(row.topic_tag).replace(/^[\[{\("']+|[\]}\)"']+$/g, '') : null));
 
         return {
           ...row,
           topics: topicsArray,
-          topic_tag: row.topic_tag || (topicsArray[0] ?? null)
+          topic_tag: primaryTag
         };
       });
 

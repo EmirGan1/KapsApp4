@@ -25,6 +25,8 @@ export default function Chats({
   onUnreadDMsChange,
   targetUserId,
   onTargetUserHandled,
+  targetGroupId,
+  onTargetGroupHandled,
   onActiveChatUserChange,
 }: { 
   socket: Socket | null, 
@@ -35,6 +37,8 @@ export default function Chats({
   onUnreadDMsChange?: (count: number) => void,
   targetUserId?: number | null,
   onTargetUserHandled?: () => void,
+  targetGroupId?: number | string | null,
+  onTargetGroupHandled?: () => void,
   onActiveChatUserChange?: (userId: number | null) => void,
 }) {
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -99,6 +103,29 @@ export default function Chats({
       });
     }
   }, [targetUserId, socket, friends, onTargetUserHandled]);
+
+  // Deep-link Group Chat auto-selection (via notification or /sohbetler?room=...)
+  useEffect(() => {
+    if (!targetGroupId || !socket) return;
+    setActiveTab("groups");
+    const numId = Number(targetGroupId);
+    const existingGroup = groups.find((g) => g.id === numId);
+    if (existingGroup) {
+      setActiveChat(existingGroup);
+      onTargetGroupHandled?.();
+    } else {
+      socket.emit("get_groups", (data: Group[]) => {
+        if (Array.isArray(data)) {
+          setGroups(data);
+          const found = data.find((g) => g.id === numId);
+          if (found) {
+            setActiveChat(found);
+          }
+        }
+        onTargetGroupHandled?.();
+      });
+    }
+  }, [targetGroupId, socket, groups, onTargetGroupHandled]);
   
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState("");
@@ -717,7 +744,7 @@ export default function Chats({
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden bg-white dark:bg-slate-950 transition-colors duration-200">
       {/* Sidebar */}
-      <div className={`w-full md:w-80 border-r border-slate-100 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900 transition-colors duration-200 ${activeChat ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`w-full lg:w-80 border-r border-slate-100 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900 transition-colors duration-200 ${activeChat ? 'hidden lg:flex' : 'flex'}`}>
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm z-10 flex flex-col gap-3 transition-colors duration-200">
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Sohbetler</h2>
           
@@ -827,7 +854,7 @@ export default function Chats({
       </div>
 
       {/* Chat Area */}
-      <div className={`flex-1 flex flex-col bg-[#F0F2F5] dark:bg-slate-950 relative transition-colors duration-200 ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`flex-1 flex flex-col bg-[#F0F2F5] dark:bg-slate-950 relative transition-colors duration-200 ${!activeChat ? 'hidden lg:flex' : 'flex'}`}>
         {!activeChat ? (
           <div className="flex-1 flex items-center justify-center text-slate-400 flex-col gap-4">
             <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-colors">
@@ -838,8 +865,14 @@ export default function Chats({
         ) : (
           <>
             {/* Chat Header */}
-            <div className="bg-white dark:bg-slate-900 px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 shadow-sm z-10 transition-colors duration-200">
-              <button className="md:hidden p-2 -ml-2 text-blue-600 dark:text-blue-400" onClick={() => setActiveChat(null)}>Geri</button>
+            <div className="bg-white dark:bg-slate-900 px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 shadow-sm z-10 transition-colors duration-200">
+              <button 
+                className="lg:hidden px-2.5 py-1.5 -ml-1 text-blue-600 dark:text-blue-400 font-bold text-xs rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 cursor-pointer shrink-0" 
+                onClick={() => setActiveChat(null)}
+                aria-label="Sohbet listesine geri dön"
+              >
+                ← Geri
+              </button>
               
               {activeTab === "friends" ? (
                 <div className="relative">

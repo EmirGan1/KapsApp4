@@ -1,3 +1,7 @@
+import { safeDecodeURI } from "./utils/safeUri";
+
+export { safeDecodeURI };
+
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
 export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted";
@@ -141,7 +145,7 @@ export function getTabFromPathname(pathname: string): {
   // Dynamic course folder route: /dersler/:courseId
   if (cleanPath.startsWith("/dersler/")) {
     const rawCourse = cleanPath.slice("/dersler/".length);
-    const subject = decodeURIComponent(rawCourse);
+    const subject = safeDecodeURI(rawCourse);
     return { tab: "subject", subject };
   }
 
