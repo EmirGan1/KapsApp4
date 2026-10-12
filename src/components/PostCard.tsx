@@ -227,7 +227,7 @@ export const PostCard: React.FC<PostCardProps> = ({
                           <button
                             type="button"
                             onClick={() => onDeleteComment(c.id, post.id)}
-                            className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded cursor-pointer"
+                            className="text-slate-400 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity p-0.5 rounded cursor-pointer"
                             title="Yorumu Sil"
                           >
                             <Trash2 size={12} />

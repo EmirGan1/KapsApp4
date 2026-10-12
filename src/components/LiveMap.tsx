@@ -933,7 +933,7 @@ export default function LiveMap({
                     </span>
                   </div>
                 </div>
-                <Crosshair size={13} className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1" />
+                <Crosshair size={13} className="text-blue-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0 ml-1" />
               </div>
             )}
 
@@ -975,7 +975,7 @@ export default function LiveMap({
                       </span>
                     </div>
                   </div>
-                  <Navigation size={13} className="text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1" />
+                  <Navigation size={13} className="text-indigo-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0 ml-1" />
                 </div>
               );
             })}

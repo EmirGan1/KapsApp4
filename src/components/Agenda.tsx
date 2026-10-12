@@ -823,7 +823,7 @@ export default function Agenda({
                           e.stopPropagation();
                           handleOpenAddForm(dayItem.dateStr);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 transition-all cursor-pointer"
+                        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 transition-all cursor-pointer"
                         title="Bu Güne Etkinlik Ekle"
                       >
                         <Plus size={13} />

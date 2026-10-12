@@ -871,7 +871,7 @@ export default function Chats({
                 onClick={() => setActiveChat(null)}
                 aria-label="Sohbet listesine geri dön"
               >
-                ← Geri
+                ← Sohbetler
               </button>
               
               {activeTab === "friends" ? (
@@ -978,7 +978,7 @@ export default function Chats({
                         {msg.type === 'image' && (
                           <div className="relative group cursor-pointer overflow-hidden rounded-xl max-w-xs md:max-w-sm" onClick={() => openMediaModal(msg)}>
                             <img src={msg.content} referrerPolicy="no-referrer" alt="Fotoğraf" className="w-full object-cover rounded-xl hover:opacity-95 transition-opacity" />
-                            <button className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                               <Maximize2 size={14} />
                             </button>
                           </div>
@@ -987,7 +987,7 @@ export default function Chats({
                           <div className="relative group overflow-hidden rounded-xl max-w-xs md:max-w-sm bg-black" onClick={() => openMediaModal(msg)}>
                             <video src={msg.content} autoPlay muted loop playsInline className="w-full rounded-xl pointer-events-none" />
                             <div 
-                              className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1 cursor-pointer"
+                              className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-1.5 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1 cursor-pointer"
                               title="Büyüt ve Bilgileri Gör"
                             >
                               <Maximize2 size={14} />

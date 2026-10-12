@@ -52,3 +52,11 @@ html, body, #root {
   scrollbar-width: none;
 }
 
+/* Touch device interactions & visibility (Ensures controls hidden behind hover are accessible on touch devices) */
+@media (hover: none), (pointer: coarse) {
+  .touch-control-visible {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+}
+

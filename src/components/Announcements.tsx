@@ -761,7 +761,7 @@ export default function Announcements({
                       {isEmirgan && (
                         <button
                           onClick={() => handleDelete(ann.id)}
-                          className="p-2 text-slate-400 hover:text-red-600 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                          className="p-2 text-slate-400 hover:text-red-600 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 cursor-pointer"
                           title="Duyuruyu Sil"
                         >
                           <Trash2 size={16} />

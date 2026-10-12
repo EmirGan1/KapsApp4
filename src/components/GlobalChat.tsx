@@ -640,7 +640,7 @@ export default function GlobalChat({
                           className="rounded-xl max-h-72 w-full object-cover hover:opacity-95 transition-opacity"
                         />
                         <button
-                          className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                           title="Büyüt"
                         >
                           <Maximize2 size={14} />
@@ -653,7 +653,7 @@ export default function GlobalChat({
                       <div className="relative group overflow-hidden rounded-xl bg-black max-w-sm" onClick={() => openMediaModal(msg)}>
                         <video src={msg.content} autoPlay muted loop playsInline className="w-full rounded-xl pointer-events-none" />
                         <div
-                          className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1 cursor-pointer"
+                          className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-1.5 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1 cursor-pointer"
                           title="Büyüt ve Bilgileri Gör"
                         >
                           <Maximize2 size={14} />
