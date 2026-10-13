@@ -6,11 +6,12 @@ import {
   Bold, Italic, Underline, Strikethrough, Heading1, Heading2, 
   Type, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, 
   Palette, Sparkles, AlertCircle, Eye, RefreshCw, Send, ShieldAlert, X,
-  Users, Target
+  Users, Target, ImagePlus, Image as ImageIcon, Loader2, Download
 } from "lucide-react";
 import { AnnouncementItem, AnnouncementStyles, isVisibleToUser, parseTargetRoles } from "../types";
 import TargetRoleSelector from "./TargetRoleSelector";
 import TargetRoleBadge from "./TargetRoleBadge";
+import { getApiUrl } from "../utils/api";
 
 export type { AnnouncementStyles, AnnouncementItem };
 
@@ -73,7 +74,18 @@ export default function Announcements({
   const [showColorMenu, setShowColorMenu] = useState(false);
   const [formError, setFormError] = useState("");
 
+  // Photo attachment states for 'emirgan'
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
   const editorRef = useRef<HTMLDivElement>(null);
+
+  const sanitizeOptions = useMemo(() => ({
+    ADD_TAGS: ['img', 'iframe', 'span', 'p', 'div', 'br', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'strong', 'em', 'u', 's', 'b', 'i'],
+    ADD_ATTR: ['src', 'alt', 'class', 'style', 'loading', 'decoding', 'target', 'rel', 'href', 'title']
+  }), []);
 
   // Load announcements
   const loadAnnouncements = () => {
@@ -132,6 +144,116 @@ export default function Announcements({
   const handleEditorInput = () => {
     if (editorRef.current) {
       setEditorHtml(editorRef.current.innerHTML);
+    }
+  };
+
+  // Handle image selection via input
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploadingImage(true);
+    setFormError("");
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith("image/")) {
+          alert("Lütfen sadece fotoğraf / görsel dosyası seçiniz.");
+          continue;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+        const res = await fetch(getApiUrl("/api/upload"), {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: formData
+        });
+
+        if (!res.ok) {
+          throw new Error("Fotoğraf yüklenemedi.");
+        }
+
+        const data = await res.json();
+        const fullUrl = getApiUrl(data.url);
+
+        setAttachedImages((prev) => [...prev, fullUrl]);
+
+        // Insert image HTML into editor
+        const imgHtml = `<p><img src="${fullUrl}" alt="Duyuru Fotoğrafı" class="max-w-full h-auto rounded-2xl my-3 shadow-md border border-slate-200 dark:border-slate-800 object-cover cursor-pointer hover:opacity-95 transition-opacity" /></p><p><br></p>`;
+
+        if (editorRef.current) {
+          editorRef.current.focus();
+          document.execCommand("insertHTML", false, imgHtml);
+          setEditorHtml(editorRef.current.innerHTML);
+        } else {
+          setEditorHtml((prev) => prev + imgHtml);
+        }
+      }
+    } catch (err: any) {
+      console.error("Duyuru fotoğrafı yükleme hatası:", err);
+      setFormError(err.message || "Fotoğraf yüklenirken bir hata oluştu.");
+    } finally {
+      setIsUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
+  };
+
+  // Handle paste image directly into contenteditable editor
+  const handleEditorPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        e.preventDefault();
+        const blob = items[i].getAsFile();
+        if (!blob) continue;
+
+        setIsUploadingImage(true);
+        try {
+          const formData = new FormData();
+          formData.append("file", blob);
+          const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+          const res = await fetch(getApiUrl("/api/upload"), {
+            method: "POST",
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: formData
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const fullUrl = getApiUrl(data.url);
+            setAttachedImages((prev) => [...prev, fullUrl]);
+            const imgHtml = `<p><img src="${fullUrl}" alt="Duyuru Fotoğrafı" class="max-w-full h-auto rounded-2xl my-3 shadow-md border border-slate-200 dark:border-slate-800 object-cover cursor-pointer hover:opacity-95 transition-opacity" /></p><p><br></p>`;
+            document.execCommand("insertHTML", false, imgHtml);
+            if (editorRef.current) setEditorHtml(editorRef.current.innerHTML);
+          }
+        } catch (err) {
+          console.error("Paste image error:", err);
+        } finally {
+          setIsUploadingImage(false);
+        }
+      }
+    }
+  };
+
+  // Remove attached image
+  const removeAttachedImage = (urlToRemove: string) => {
+    setAttachedImages((prev) => prev.filter((u) => u !== urlToRemove));
+    if (editorRef.current) {
+      const currentContent = editorRef.current.innerHTML;
+      const cleanContent = currentContent.replace(
+        new RegExp(`<p><img[^>]*src="${urlToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*></p>`, 'gi'),
+        ''
+      ).replace(
+        new RegExp(`<img[^>]*src="${urlToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>`, 'gi'),
+        ''
+      );
+      editorRef.current.innerHTML = cleanContent;
+      setEditorHtml(cleanContent);
     }
   };
 
@@ -603,6 +725,33 @@ export default function Announcements({
                     <ListOrdered size={17} />
                   </button>
 
+                  <div className="w-px h-5 bg-slate-300 dark:bg-slate-700 mx-1"></div>
+
+                  {/* Photo Upload Button for Emirgan */}
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={isUploadingImage}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 transition-all text-xs font-bold cursor-pointer disabled:opacity-50 shrink-0"
+                    title="Duyuruya Fotoğraf / Görsel Ekle"
+                  >
+                    {isUploadingImage ? (
+                      <Loader2 size={15} className="animate-spin text-blue-600" />
+                    ) : (
+                      <ImagePlus size={15} />
+                    )}
+                    <span>{isUploadingImage ? "Fotoğraf Yükleniyor..." : "Fotoğraf Ekle"}</span>
+                  </button>
+
+                  <input
+                    type="file"
+                    ref={imageInputRef}
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+
                   <div className="flex-1"></div>
 
                   {/* Preview Toggle */}
@@ -625,7 +774,7 @@ export default function Announcements({
                   <div className="p-5 min-h-[160px] max-h-[300px] overflow-y-auto bg-slate-50 dark:bg-slate-950/50 prose prose-sm dark:prose-invert max-w-none text-slate-900 dark:text-white">
                     <div
                       dangerouslySetInnerHTML={{
-                        __html: DOMPurify.sanitize(editorRef.current?.innerHTML || editorHtml || "<em>İçerik boş.</em>")
+                        __html: DOMPurify.sanitize(editorRef.current?.innerHTML || editorHtml || "<em>İçerik boş.</em>", sanitizeOptions)
                       }}
                     />
                   </div>
@@ -634,9 +783,33 @@ export default function Announcements({
                     ref={editorRef}
                     contentEditable
                     onInput={handleEditorInput}
-                    data-placeholder="Duyuru metnini buraya yazınız... (Renk, kalınlık ve başlık araçlarını kullanabilirsiniz)"
+                    onPaste={handleEditorPaste}
+                    data-placeholder="Duyuru metnini yazınız... (Fotoğraf sürükleyip bırakabilir, yapıştırabilir veya 'Fotoğraf Ekle' butonunu kullanabilirsiniz)"
                     className="p-5 min-h-[160px] max-h-[300px] overflow-y-auto focus:outline-none text-slate-900 dark:text-white text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:cursor-text"
                   />
+                )}
+
+                {/* Attached Photos Thumbnail Strip */}
+                {attachedImages.length > 0 && (
+                  <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex items-center gap-2 overflow-x-auto">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+                      <ImageIcon size={14} className="text-blue-500" />
+                      Ekli Fotoğraflar ({attachedImages.length}):
+                    </span>
+                    {attachedImages.map((imgUrl, idx) => (
+                      <div key={idx} className="relative group shrink-0 w-14 h-14 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs">
+                        <img src={imgUrl} alt={`Fotoğraf ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeAttachedImage(imgUrl)}
+                          className="absolute top-0.5 right-0.5 bg-rose-600 text-white rounded-full p-0.5 shadow-md cursor-pointer opacity-90 hover:opacity-100 transition-opacity"
+                          title="Fotoğrafı Kaldır"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -778,8 +951,14 @@ export default function Announcements({
                     <div
                       className={`${sizeClass} ${weightClass} text-slate-700 dark:text-slate-300 leading-relaxed prose prose-sm dark:prose-invert max-w-none break-words`}
                       style={{ color: customColor }}
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target && target.tagName === "IMG" && (target as HTMLImageElement).src) {
+                          setLightboxImageUrl((target as HTMLImageElement).src);
+                        }
+                      }}
                       dangerouslySetInnerHTML={{
-                        __html: DOMPurify.sanitize(ann.content)
+                        __html: DOMPurify.sanitize(ann.content, sanitizeOptions)
                       }}
                     />
                   </div>
@@ -789,6 +968,45 @@ export default function Announcements({
           );
         })()}
       </div>
+
+      {/* Lightbox Photo Viewer Modal */}
+      {lightboxImageUrl && (
+        <div 
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-150 select-none"
+          onClick={() => setLightboxImageUrl(null)}
+        >
+          <div className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center justify-center p-2">
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+              <a
+                href={lightboxImageUrl}
+                download="duyuru_fotografi.jpg"
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700/80 transition-all shadow-md cursor-pointer"
+                title="İndir"
+              >
+                <Download size={18} />
+              </a>
+              <button
+                type="button"
+                onClick={() => setLightboxImageUrl(null)}
+                className="p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700/80 transition-all cursor-pointer shadow-md"
+                title="Kapat"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <img
+              src={lightboxImageUrl}
+              alt="Duyuru Fotoğrafı Büyük Boyut"
+              className="max-w-full max-h-[85vh] rounded-3xl object-contain shadow-2xl border border-slate-800 animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
