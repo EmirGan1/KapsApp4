@@ -13,15 +13,19 @@ import {
   LayoutGrid,
   List,
   Trash2,
-  HardDrive
+  HardDrive,
+  Target,
+  BookOpen,
+  Sparkles
 } from 'lucide-react';
 import { getApiUrl, getAuthHeaders } from '../utils/api';
-import FileUploadModal from './FileUploadModal';
-import CourseMaterialCard, { parseTopics } from './CourseMaterialCard';
+import FileUploadModal, { DocumentType, FileUploadPayload } from './FileUploadModal';
+import CourseMaterialCard, { formatTopics, parseTopics } from './CourseMaterialCard';
 
 export interface CourseFileItem {
   id: number;
   folder_id: string;
+  course_id?: string;
   filename: string;
   original_name: string;
   mimetype: string;
@@ -32,6 +36,8 @@ export interface CourseFileItem {
   uploader_avatar?: string;
   topic_tag?: string | null;
   topics?: string[];
+  doc_type?: DocumentType;
+  docType?: DocumentType;
   created_at: string;
 }
 
@@ -99,23 +105,16 @@ export const COURSE_IB_THEMES: Record<string, string[]> = {
   "Chemistry": [
     "Structure 1: Models of the particulate nature of matter",
     "Structure 2: Models of bonding and structure",
+    "Structure 3: Classification of matter",
     "Reactivity 1: What drives chemical reactions?",
     "Reactivity 2: How much, how fast and how far?",
     "Reactivity 3: What are the mechanisms of chemical change?"
   ],
   "Biology": [
-    "Unity and Diversity (Cells, Organisms)",
-    "Molecular Biology & Genetics",
-    "Continuity and Change (Genetics, Evolution)",
-    "Form and Function (Physiology)",
-    "Interaction and Interdependence (Ecology)"
-  ],
-  "Turkish": [
-    "Metin Türleri ve İnceleme",
-    "Edebi Akımlar ve Dönemler",
-    "Şiir ve Tiyatro Tahlili",
-    "Roman ve Hikaye Çözümlemeleri",
-    "Dil Bilgisi ve Anlatım"
+    "Unity and Diversity",
+    "Form and Function",
+    "Interaction and Interdependence",
+    "Continuity and Change"
   ]
 };
 
@@ -138,9 +137,9 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   
   // Search & Filter State
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<'all' | 'question_paper' | 'mark_scheme' | 'notes'>('all');
   const [selectedFilterTheme, setSelectedFilterTheme] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
 
   // Upload Modal State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -215,17 +214,14 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     setIsUploadModalOpen(true);
   };
 
-  // Submit file upload with multi-topic and allTopics support
-  const handleUploadSubmit = async (payload: {
-    file: File;
-    selectedTopics: string[];
-    allTopics: boolean;
-    note: string;
-  }) => {
+  // Submit file upload with docType, multi-topic and allTopics support
+  const handleUploadSubmit = async (payload: FileUploadPayload) => {
     setIsUploading(true);
 
     const formData = new FormData();
     formData.append("file", payload.file);
+    formData.append("docType", payload.docType);
+    formData.append("doc_type", payload.docType);
     formData.append("allTopics", payload.allTopics ? "true" : "false");
     formData.append("topics", JSON.stringify(payload.selectedTopics));
     payload.selectedTopics.forEach((t) => formData.append("topics[]", t));
@@ -296,6 +292,39 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     }
   };
 
+  // Helper to determine docType for a file item
+  const getFileDocType = (f: CourseFileItem): DocumentType => {
+    if (f.docType) return f.docType;
+    if (f.doc_type) return f.doc_type;
+    const name = (f.original_name || f.filename || '').toLowerCase();
+    if (name.includes('markscheme') || name.includes('_ms') || name.includes('ms.') || name.includes('cevap') || name.includes('cozum') || name.includes('çözüm')) {
+      return 'mark_scheme';
+    }
+    if (name.includes('paper') || name.includes('exam') || name.includes('deneme') || name.includes('soru')) {
+      return 'question_paper';
+    }
+    if (name.includes('note') || name.includes('not') || name.includes('ozet') || name.includes('özet') || name.includes('summary')) {
+      return 'notes';
+    }
+    return 'other';
+  };
+
+  // Type Counts
+  const countsByType = useMemo(() => {
+    let qp = 0;
+    let ms = 0;
+    let notes = 0;
+
+    files.forEach(f => {
+      const t = getFileDocType(f);
+      if (t === 'mark_scheme') ms++;
+      else if (t === 'question_paper') qp++;
+      else if (t === 'notes' || t === 'summary') notes++;
+    });
+
+    return { all: files.length, qp, ms, notes };
+  }, [files]);
+
   // Total size calculation
   const totalSizeBytes = useMemo(() => {
     return files.reduce((acc, curr) => acc + (curr.size || 0), 0);
@@ -303,61 +332,73 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
   const formatTotalSize = (bytes: number) => {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  // Filtered files list: topic filter + search query
+  // Filtered files list: type filter + topic filter + search query
   const filteredFiles = useMemo(() => {
     return files.filter((f) => {
-      const parsed = parseTopics(f.topics, f.topic_tag);
+      const fileType = getFileDocType(f);
+
+      // 1. Doc Type Filter
+      if (selectedTypeFilter === 'question_paper') {
+        if (fileType !== 'question_paper') return false;
+      } else if (selectedTypeFilter === 'mark_scheme') {
+        if (fileType !== 'mark_scheme') return false;
+      } else if (selectedTypeFilter === 'notes') {
+        if (fileType !== 'notes' && fileType !== 'summary') return false;
+      }
+
+      // 2. Topic Filter
+      const parsed = formatTopics(f.topics, f.topic_tag);
       const isAll = parsed.includes('ALL') || parsed.includes('Hepsi') || f.topic_tag === 'ALL' || f.topic_tag === 'Hepsi';
 
-      // 1. Topic Filter
       if (selectedFilterTheme !== 'all') {
         const hasTopic = parsed.some(t => t.toLowerCase() === selectedFilterTheme.toLowerCase()) ||
                          (f.topic_tag && f.topic_tag.toLowerCase() === selectedFilterTheme.toLowerCase());
         if (!isAll && !hasTopic) return false;
       }
 
-      // 2. Search Query Filter
+      // 3. Search Query Filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const filename = (f.original_name || f.filename || '').toLowerCase();
         const uploader = (f.uploader_name || '').toLowerCase();
         const topicsMatch = parsed.some(t => t.toLowerCase().includes(q));
+        const typeMatch = fileType.toLowerCase().includes(q);
 
-        if (!filename.includes(q) && !uploader.includes(q) && !topicsMatch) {
+        if (!filename.includes(q) && !uploader.includes(q) && !topicsMatch && !typeMatch) {
           return false;
         }
       }
 
       return true;
     });
-  }, [files, selectedFilterTheme, searchQuery]);
+  }, [files, selectedTypeFilter, selectedFilterTheme, searchQuery]);
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 sm:p-6 my-4 shadow-sm">
+    <div className="bg-slate-950/40 dark:bg-slate-900/60 rounded-3xl border border-slate-800/80 p-4 sm:p-6 my-4 shadow-sm">
       
       {/* 1. Üst Başlık & Eylemler */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-800">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 shadow-inner">
-            <UploadCloud size={20} />
+          <div className="w-11 h-11 rounded-2xl bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center justify-center shrink-0 shadow-inner">
+            <UploadCloud size={22} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-slate-100 tracking-tight">
+              <h3 className="font-extrabold text-base sm:text-lg text-slate-100 tracking-tight">
                 Ders Materyalleri & Dosyalar
               </h3>
-              <span className="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 flex items-center gap-1">
+              <span className="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
                 <GraduationCap size={12} />
                 <span>IB Müfredatı</span>
               </span>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2">
-              <span>PDF, Word, Slayt ve Özet Dokümanlar</span>
+            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+              <span>Soru Kağıtları, Mark Scheme (Cevap Anahtarları) ve Özet Notlar</span>
               <span>•</span>
-              <span className="font-bold text-slate-700 dark:text-slate-300">{files.length} Dosya</span>
+              <span className="font-bold text-slate-200">{files.length} Dosya</span>
               {totalSizeBytes > 0 && (
                 <>
                   <span>•</span>
@@ -368,7 +409,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
           </div>
         </div>
 
-        {/* Aksiyon Grubu: Arama & Yükleme Butonu */}
+        {/* Aksiyon Grubu: Yükleme Butonu */}
         <div className="flex items-center gap-2.5">
           <input
             type="file"
@@ -380,7 +421,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 active:scale-95 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-sm shadow-blue-500/25 transition-all cursor-pointer"
+            className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 active:scale-95 disabled:bg-sky-800 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-sm shadow-sky-600/25 transition-all cursor-pointer"
           >
             <Plus size={16} />
             <span>Materyal / Dosya Yükle</span>
@@ -390,60 +431,92 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
       {/* 2. Filtre ve Arama Araç Çubuğu */}
       <div className="space-y-3 mb-4">
-        {/* Arama Kutusu ve Görünüm Değiştirici */}
-        <div className="flex items-center gap-2.5">
-          <div className="relative flex-1">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Dosya adı, konu veya yükleyen ara..."
-              className="w-full pl-9 pr-8 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-
-          {/* Grid / List Görünüm Seçici */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/70 dark:border-slate-700/70 shrink-0">
+        
+        {/* Arama Kutusu */}
+        <div className="relative w-full">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Dosya adı, konu, 'mark scheme' veya yükleyen ara..."
+            className="w-full pl-9 pr-8 py-2 rounded-xl text-xs bg-slate-900/80 border border-slate-800 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+          />
+          {searchQuery && (
             <button
               type="button"
-              onClick={() => setLayoutMode('grid')}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                layoutMode === 'grid'
-                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs'
-                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-              }`}
-              title="Kılavuz (Grid) Görünümü"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-0.5 rounded cursor-pointer"
             >
-              <LayoutGrid size={15} />
+              <X size={14} />
             </button>
-            <button
-              type="button"
-              onClick={() => setLayoutMode('list')}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                layoutMode === 'list'
-                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs'
-                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-              }`}
-              title="Liste Görünümü"
-            >
-              <List size={15} />
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* IB Konu Filtre Rozetleri */}
+        {/* 2A. DOSYA TÜRÜ FİLTRESİ (Doc Type Filter) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+          <button
+            type="button"
+            onClick={() => setSelectedTypeFilter('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              selectedTypeFilter === 'all'
+                ? 'bg-sky-600 text-white shadow-xs'
+                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+          >
+            Tüm Türler ({countsByType.all})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedTypeFilter('question_paper')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+              selectedTypeFilter === 'question_paper'
+                ? 'bg-sky-600 text-white shadow-xs'
+                : 'bg-slate-900 border border-slate-800 text-sky-400 hover:bg-slate-800'
+            }`}
+          >
+            <span>📝 Soru Kağıtları</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-sky-500/20 text-sky-300">
+              {countsByType.qp}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedTypeFilter('mark_scheme')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+              selectedTypeFilter === 'mark_scheme'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-slate-900 border border-slate-800 text-emerald-400 hover:bg-slate-800'
+            }`}
+          >
+            <Target size={13} />
+            <span>🎯 Mark Scheme (Cevap Anahtarları)</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300">
+              {countsByType.ms}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedTypeFilter('notes')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+              selectedTypeFilter === 'notes'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-slate-900 border border-slate-800 text-amber-400 hover:bg-slate-800'
+            }`}
+          >
+            <span>📖 Ders Notları & Özet</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/20 text-amber-300">
+              {countsByType.notes}
+            </span>
+          </button>
+        </div>
+
+        {/* 2B. KONU (THEME) FİLTRESİ */}
         {files.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-slate-800/60 pb-1">
             <span className="text-[11px] font-bold text-slate-400 shrink-0 flex items-center gap-1 mr-1">
               <Filter size={12} />
               <span>Konu:</span>
@@ -454,16 +527,16 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
               onClick={() => setSelectedFilterTheme('all')}
               className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 selectedFilterTheme === 'all'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  ? 'bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-white shadow-xs'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
-              Tüm Konular ({files.length})
+              Tüm Konular
             </button>
 
             {courseThemes.map((theme) => {
               const count = files.filter((f) => {
-                const parsed = parseTopics(f.topics, f.topic_tag);
+                const parsed = formatTopics(f.topics, f.topic_tag);
                 const isAll = parsed.includes('ALL') || parsed.includes('Hepsi') || f.topic_tag === 'ALL';
                 const hasTheme = parsed.some(t => t.toLowerCase() === theme.toLowerCase()) || 
                                  (f.topic_tag && f.topic_tag.toLowerCase() === theme.toLowerCase());
@@ -478,8 +551,8 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                   onClick={() => setSelectedFilterTheme(theme)}
                   className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                     selectedFilterTheme === theme
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      ? 'bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-white shadow-xs'
+                      : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                   }`}
                 >
                   {theme} ({count})
@@ -490,55 +563,56 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
         )}
       </div>
 
-      {/* 3. Dosyalar Listesi */}
+      {/* 3. DOSYALAR LİSTESİ (Ferah Geniş Doküman Satırları) */}
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-2.5">
-          <Loader2 size={24} className="animate-spin text-blue-500" />
+          <Loader2 size={24} className="animate-spin text-sky-500" />
           <p className="text-xs font-medium">Ders materyalleri yükleniyor...</p>
         </div>
       ) : files.length === 0 ? (
         <div 
           onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl p-8 sm:p-10 text-center cursor-pointer hover:border-blue-500 dark:hover:border-blue-500 transition-colors bg-slate-50/50 dark:bg-slate-800/30 group"
+          className="border-2 border-dashed border-slate-800 rounded-3xl p-8 sm:p-10 text-center cursor-pointer hover:border-sky-500 transition-colors bg-slate-900/30 group"
         >
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-500 dark:text-blue-400 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+          <div className="w-12 h-12 rounded-2xl bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
             <UploadCloud size={24} />
           </div>
-          <p className="font-bold text-sm text-slate-700 dark:text-slate-200">
+          <p className="font-bold text-sm text-slate-200">
             Henüz ders materyali veya dosya yüklenmemiş
           </p>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 max-w-sm mx-auto">
-            Buraya tıklayarak PDF, Word veya özet ders notlarınızı IB konu başlıklarıyla etiketleyip yükleyin.
+          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+            Buraya tıklayarak PDF, Soru Kağıtları veya Mark Scheme (Cevap Anahtarı) dokümanlarınızı yükleyin.
           </p>
         </div>
       ) : filteredFiles.length === 0 ? (
-        <div className="text-center py-10 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-200/60 dark:border-slate-800 p-6 space-y-2">
-          <p className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">
-            Arama kriterinize uygun dosya bulunamadı.
+        <div className="text-center py-10 bg-slate-900/40 rounded-2xl border border-slate-800 p-6 space-y-2">
+          <p className="text-xs sm:text-sm font-semibold text-slate-300">
+            Arama veya filtre kriterinize uygun doküman bulunamadı.
           </p>
           <p className="text-[11px] text-slate-400">
-            Farklı bir arama terimi deneyebilir veya konu filtresini sıfırlayabilirsiniz.
+            Farklı bir arama terimi deneyebilir veya filtreleri sıfırlayabilirsiniz.
           </p>
           <button
             type="button"
             onClick={() => {
               setSearchQuery('');
               setSelectedFilterTheme('all');
+              setSelectedTypeFilter('all');
             }}
-            className="mt-2 px-3 py-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+            className="mt-2 px-3 py-1.5 text-xs font-bold text-sky-400 hover:underline cursor-pointer"
           >
             Filtreleri Temizle
           </button>
         </div>
       ) : (
-        <div className={layoutMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4" : "flex flex-col gap-3"}>
+        <div className="w-full flex flex-col gap-2.5 mt-3">
           {filteredFiles.map((file) => (
             <CourseMaterialCard
               key={file.id}
               file={file}
               currentUserId={currentUserId}
               isEmirgan={isEmirgan}
-              layoutMode={layoutMode}
+              layoutMode="list"
               onPreviewPdf={(url, title) => {
                 setPreviewPdfUrl(url);
                 setPreviewPdfTitle(title);
@@ -549,7 +623,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
         </div>
       )}
 
-      {/* 4. Çoklu Konu Seçimli Dosya Yükleme Modalı */}
+      {/* 4. Dosya Yükleme Modalı (Doc Type & Mark Scheme Destekli) */}
       <FileUploadModal
         isOpen={isUploadModalOpen}
         onClose={() => {
@@ -565,31 +639,31 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
       {/* 5. Silme Onay Modalı */}
       {deleteConfirmFile && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-slate-900 rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl border border-slate-800 space-y-4">
             <div className="flex items-start gap-3.5">
-              <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 shrink-0">
+              <div className="p-3 rounded-2xl bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0">
                 <Trash2 size={22} />
               </div>
               <div className="space-y-1 min-w-0 flex-1">
-                <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
+                <h3 className="font-extrabold text-base text-slate-100">
                   Ders Materyalini Sil
                 </h3>
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs text-slate-400 leading-relaxed">
                   Bu materyali silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
                 </p>
-                <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/70 text-xs font-bold text-slate-700 dark:text-slate-200 break-words">
+                <div className="mt-2 p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 break-words">
                   {deleteConfirmFile.original_name || deleteConfirmFile.filename}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setDeleteConfirmFile(null)}
                 disabled={isDeleting}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 İptal
               </button>
@@ -598,7 +672,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                 type="button"
                 onClick={handleConfirmDelete}
                 disabled={isDeleting}
-                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {isDeleting ? (
                   <>
@@ -619,14 +693,14 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
       {/* 6. PDF Önizleme Modalı */}
       {previewPdfUrl && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-slate-900 rounded-3xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl border border-slate-800 overflow-hidden">
             
             {/* Modal Başlığı */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 shrink-0">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <FileText size={18} className="text-rose-500 shrink-0" />
-                <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 truncate">
+                <h3 className="font-bold text-sm sm:text-base text-slate-100 truncate">
                   {previewPdfTitle}
                 </h3>
               </div>
@@ -637,14 +711,14 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                   download={previewPdfTitle}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                  className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
                 >
                   <Download size={13} />
                   <span>İndir</span>
                 </a>
                 <button
                   onClick={() => setPreviewPdfUrl(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="p-1.5 text-slate-400 hover:text-slate-200 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X size={20} />
                 </button>
@@ -652,7 +726,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
             </div>
 
             {/* Modal Gövdesi / PDF Iframe */}
-            <div className="flex-1 w-full h-full bg-slate-100 dark:bg-slate-950 relative">
+            <div className="flex-1 w-full h-full bg-slate-950 relative">
               <iframe
                 src={`${previewPdfUrl}#toolbar=1`}
                 title={previewPdfTitle}

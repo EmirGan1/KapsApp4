@@ -820,7 +820,7 @@ export default function Feed({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
-      <div className="max-w-xl mx-auto pb-24">
+      <div className={`mx-auto pb-24 transition-all duration-200 ${activeSubject ? 'w-full max-w-6xl xl:max-w-7xl px-3 sm:px-6 lg:px-8 py-4 space-y-6' : 'max-w-xl'}`}>
         
         {/* Subject Header & Folder Gallery Switch */}
         {activeSubject && (

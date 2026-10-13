@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   FileText, 
   Download, 
@@ -12,29 +12,37 @@ import {
   Tag,
   Sparkles,
   Calendar,
-  HardDrive
+  HardDrive,
+  CheckCircle2,
+  Target,
+  BookOpen,
+  User,
+  Info
 } from 'lucide-react';
 import { CourseFileItem } from './CourseFilesManager';
 import { getApiUrl } from '../utils/api';
+
+export type DocumentType = 'question_paper' | 'mark_scheme' | 'notes' | 'summary' | 'other';
 
 /**
  * Güvenli ve dayanıklı konu (topic) ayrıştırıcı
  * Ham JSON stringleri (örn: '["Number and Algebra"]'), virgülle ayrılmış dizgileri
  * veya dizi yapılarını temiz bir string dizisine dönüştürür.
+ * Tırnak işareti, köşeli parantez veya kaçış karakterlerini kesin olarak temizler.
  */
-export const parseTopics = (topicsData: any, fallbackTag?: string | null): string[] => {
-  if (!topicsData && !fallbackTag) return [];
+export const formatTopics = (rawTopics: any, fallbackTag?: string | null): string[] => {
+  if (!rawTopics && !fallbackTag) return [];
 
-  const sanitizeStr = (val: any): string => {
-    if (val === null || val === undefined) return '';
-    let str = String(val).trim();
-    // Tırnak işaretlerini temizle
+  const cleanItem = (item: any): string => {
+    if (item === null || item === undefined) return '';
+    let str = String(item).trim();
+    // Tırnak ve köşeli parantezleri temizle
+    str = str.replace(/^[\[{\("']+|[\]}\)"']+$/g, '').trim();
     if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
       str = str.slice(1, -1).trim();
     }
-    // Ters eğik çizgi kaçışlarını temizle
-    str = str.replace(/\\"/g, '"');
-    return str.trim();
+    str = str.replace(/\\"/g, '"').replace(/[\[\]"']/g, '').trim();
+    return str;
   };
 
   const extract = (data: any): string[] => {
@@ -46,7 +54,6 @@ export const parseTopics = (topicsData: any, fallbackTag?: string | null): strin
       const trimmed = data.trim();
       if (!trimmed) return [];
 
-      // JSON Array veya Object biçimindeyse
       if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
         try {
           const parsed = JSON.parse(trimmed);
@@ -57,39 +64,58 @@ export const parseTopics = (topicsData: any, fallbackTag?: string | null): strin
             return extract(parsed);
           }
         } catch {
-          // JSON parse hatasında köşeli ayraç ve tırnakları sıyır
-          const stripped = trimmed.replace(/^[\[{\("']+|[\]}\)"']+$/g, '');
-          if (stripped.includes(',')) {
-            return stripped.split(',').flatMap(s => extract(s));
-          }
-          return [sanitizeStr(stripped)];
+          return trimmed.replace(/[\[\]"']/g, '').split(',').map(s => cleanItem(s)).filter(Boolean);
         }
       }
 
-      // Virgülle ayrılmış string ise
       if (trimmed.includes(',')) {
-        return trimmed.split(',').flatMap(s => extract(s));
+        return trimmed.split(',').map(s => cleanItem(s)).filter(Boolean);
       }
 
-      return [sanitizeStr(trimmed)];
+      const cleaned = cleanItem(trimmed);
+      return cleaned ? [cleaned] : [];
     }
-    return [sanitizeStr(data)];
+    const cleaned = cleanItem(data);
+    return cleaned ? [cleaned] : [];
   };
 
-  let rawList: string[] = [];
-  if (topicsData) {
-    rawList = extract(topicsData);
-  }
-  if (rawList.length === 0 && fallbackTag) {
-    rawList = extract(fallbackTag);
-  }
+  let list: string[] = [];
+  if (rawTopics) list = extract(rawTopics);
+  if (list.length === 0 && fallbackTag) list = extract(fallbackTag);
 
-  // Boş, 'null', 'undefined', '[]' gibi sahte değerleri filtrele ve tekilleştir
-  const cleaned = rawList
-    .map(s => sanitizeStr(s))
+  const finalTopics = list
+    .map(cleanItem)
     .filter(s => s.length > 0 && s !== 'null' && s !== 'undefined' && s !== '[]' && s !== '{}');
 
-  return Array.from(new Set(cleaned));
+  return Array.from(new Set(finalTopics));
+};
+
+export const parseTopics = formatTopics;
+
+export const canDeleteFile = (file: any, currentUser: any): boolean => {
+  if (!currentUser) return false;
+  if (typeof currentUser === 'number') {
+    return Number(file?.uploaded_by || file?.userId) === currentUser;
+  }
+  const username = String(currentUser.username || currentUser.name || '').trim().toLowerCase();
+  const isSuperAdmin = 
+    username === 'emirgan' || 
+    currentUser.role === 'ROOT' || 
+    currentUser.role === 'ADMIN' || 
+    currentUser.role === 'admin' ||
+    currentUser.is_admin === 1 ||
+    currentUser.is_admin === true ||
+    currentUser.isEmirgan === true;
+
+  const fileUploaderId = Number(file?.uploaded_by || file?.userId);
+  const currentId = Number(currentUser.id);
+
+  const isOwner = 
+    (fileUploaderId > 0 && currentId > 0 && fileUploaderId === currentId) || 
+    (file?.uploaderUsername && file.uploaderUsername.toLowerCase() === username) ||
+    (file?.uploader_name && file.uploader_name.replace(/^@/, '').toLowerCase() === username);
+
+  return isSuperAdmin || isOwner;
 };
 
 export interface CourseMaterialCardProps {
@@ -107,24 +133,42 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
   isEmirgan,
   onPreviewPdf,
   onInitiateDelete,
-  layoutMode = 'grid'
+  layoutMode = 'list'
 }) => {
-  const isOwner = Number(file.uploaded_by) === Number(currentUserId);
-  const canDelete = isOwner || isEmirgan;
+  const [showAllTopicsTooltip, setShowAllTopicsTooltip] = useState(false);
+
+  const canDelete = canDeleteFile(file, { id: currentUserId, isEmirgan, username: isEmirgan ? 'emirgan' : '' });
 
   const rawFilename = file.original_name || file.filename || 'Adsız Dosya';
   const fileExt = rawFilename.split('.').pop()?.toUpperCase() || 'DOSYA';
   const isPdf = (file.mimetype || '').includes('pdf') || fileExt.toLowerCase() === 'pdf';
 
-  // Konuları güvenli şekilde parse et
-  const parsedTopics = parseTopics(file.topics, file.topic_tag);
+  // Belge türünü tespit et (doc_type, docType veya dosya adına göre)
+  const lowerName = rawFilename.toLowerCase();
+  const explicitDocType = file.docType || file.doc_type;
+  const isMarkScheme = explicitDocType === 'mark_scheme' || 
+                       lowerName.includes('markscheme') || 
+                       lowerName.includes('_ms') || 
+                       lowerName.includes('ms.') || 
+                       lowerName.includes('cevap') || 
+                       lowerName.includes('cozum') || 
+                       lowerName.includes('çözüm');
+
+  const isQuestionPaper = explicitDocType === 'question_paper' || 
+                          (!isMarkScheme && (lowerName.includes('paper') || lowerName.includes('exam') || lowerName.includes('deneme') || lowerName.includes('soru')));
+
+  const isNotes = explicitDocType === 'notes' || explicitDocType === 'summary' ||
+                  (!isMarkScheme && !isQuestionPaper && (lowerName.includes('note') || lowerName.includes('not') || lowerName.includes('ozet') || lowerName.includes('özet')));
+
+  // Konuları güvenli şekilde formatla
+  const parsedTopics = formatTopics(file.topics, file.topic_tag);
   const isAllTopics = parsedTopics.includes('ALL') || 
                       parsedTopics.includes('Hepsi') || 
                       file.topic_tag === 'ALL' || 
                       file.topic_tag === 'Hepsi';
   const regularTopics = parsedTopics.filter(t => t !== 'ALL' && t !== 'Hepsi');
 
-  // Boyut biçimlendirici
+  // Formatlı dosya boyutu
   const formatFileSize = (bytes: number) => {
     if (!bytes || isNaN(bytes)) return '0 KB';
     if (bytes < 1024 * 1024) {
@@ -133,7 +177,7 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  // Tarih biçimlendirici
+  // Formatlı yükleme tarihi
   const formatUploadDate = (isoString?: string) => {
     if (!isoString) return '';
     try {
@@ -150,194 +194,190 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
     }
   };
 
-  // Dosya ikonu ve renk teması
-  const getFileStyling = () => {
+  const uploaderName = file.uploader_name ? (file.uploader_name.startsWith('@') ? file.uploader_name : `@${file.uploader_name}`) : '@öğrenci';
+  const formattedSize = formatFileSize(file.size);
+  const uploadDate = formatUploadDate(file.created_at);
+
+  // Dosya ikon ve renk temasını belirle
+  const getFileIconConfig = () => {
     const ext = fileExt.toLowerCase();
     const mime = (file.mimetype || '').toLowerCase();
 
+    if (isMarkScheme) {
+      return {
+        icon: <Target className="w-5 h-5 text-emerald-500" />,
+        bgColor: 'bg-emerald-500/10 dark:bg-emerald-950/40 border-emerald-500/20 dark:border-emerald-800/60',
+        badgeColor: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+      };
+    }
     if (mime.includes('pdf') || ext === 'pdf') {
       return {
-        icon: <FileText className="w-5 h-5 text-rose-500 shrink-0" />,
-        badgeBg: 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/50',
-        cardBorder: 'hover:border-rose-300 dark:hover:border-rose-800'
+        icon: <FileText className="w-5 h-5 text-rose-500" />,
+        bgColor: 'bg-rose-500/10 dark:bg-rose-950/40 border-rose-500/20 dark:border-rose-800/60',
+        badgeColor: 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60'
       };
     }
     if (mime.includes('word') || ['doc', 'docx'].includes(ext)) {
       return {
-        icon: <FileText className="w-5 h-5 text-blue-500 shrink-0" />,
-        badgeBg: 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900/50',
-        cardBorder: 'hover:border-blue-300 dark:hover:border-blue-800'
+        icon: <FileText className="w-5 h-5 text-blue-500" />,
+        bgColor: 'bg-blue-500/10 dark:bg-blue-950/40 border-blue-500/20 dark:border-blue-800/60',
+        badgeColor: 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/60'
       };
     }
     if (mime.includes('spreadsheet') || mime.includes('excel') || ['xls', 'xlsx'].includes(ext)) {
       return {
-        icon: <FileSpreadsheet className="w-5 h-5 text-emerald-500 shrink-0" />,
-        badgeBg: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/50',
-        cardBorder: 'hover:border-emerald-300 dark:hover:border-emerald-800'
+        icon: <FileSpreadsheet className="w-5 h-5 text-emerald-500" />,
+        bgColor: 'bg-emerald-500/10 dark:bg-emerald-950/40 border-emerald-500/20 dark:border-emerald-800/60',
+        badgeColor: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
       };
     }
     if (mime.includes('presentation') || mime.includes('powerpoint') || ['ppt', 'pptx'].includes(ext)) {
       return {
-        icon: <Presentation className="w-5 h-5 text-amber-500 shrink-0" />,
-        badgeBg: 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/50',
-        cardBorder: 'hover:border-amber-300 dark:hover:border-amber-800'
+        icon: <Presentation className="w-5 h-5 text-amber-500" />,
+        bgColor: 'bg-amber-500/10 dark:bg-amber-950/40 border-amber-500/20 dark:border-amber-800/60',
+        badgeColor: 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
       };
     }
-    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+    if (['zip', 'rar', '7z'].includes(ext)) {
       return {
-        icon: <FileArchive className="w-5 h-5 text-purple-500 shrink-0" />,
-        badgeBg: 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-900/50',
-        cardBorder: 'hover:border-purple-300 dark:hover:border-purple-800'
-      };
-    }
-    if (['py', 'js', 'ts', 'html', 'css', 'json', 'cpp', 'java'].includes(ext)) {
-      return {
-        icon: <FileCode className="w-5 h-5 text-cyan-500 shrink-0" />,
-        badgeBg: 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-900/50',
-        cardBorder: 'hover:border-cyan-300 dark:hover:border-cyan-800'
+        icon: <FileArchive className="w-5 h-5 text-purple-500" />,
+        bgColor: 'bg-purple-500/10 dark:bg-purple-950/40 border-purple-500/20 dark:border-purple-800/60',
+        badgeColor: 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/60'
       };
     }
     return {
-      icon: <FileIcon className="w-5 h-5 text-slate-500 shrink-0" />,
-      badgeBg: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
-      cardBorder: 'hover:border-slate-300 dark:hover:border-slate-700'
+      icon: <FileIcon className="w-5 h-5 text-slate-500" />,
+      bgColor: 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+      badgeColor: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
     };
   };
 
-  const styleInfo = getFileStyling();
-  const dateStr = formatUploadDate(file.created_at);
-  const uploaderName = file.uploader_name || 'Öğrenci';
+  const iconConfig = getFileIconConfig();
+
+  // Önizleme veya indirme işlemi
+  const handlePrimaryClick = () => {
+    if (isPdf) {
+      onPreviewPdf(getApiUrl(file.url), rawFilename);
+    } else {
+      window.open(getApiUrl(file.url), '_blank');
+    }
+  };
 
   return (
-    <div
-      className={`group relative bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-3.5 sm:p-4 transition-all duration-200 hover:shadow-md ${styleInfo.cardBorder} flex flex-col justify-between`}
-    >
-      {/* 1. ÜST KISIM: İkon, Format Rozeti ve Aksiyon Butonları */}
-      <div className="flex items-start justify-between gap-3 mb-2.5">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700/60 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
-            {styleInfo.icon}
-          </div>
-          <div className="min-w-0">
-            <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wider uppercase border ${styleInfo.badgeBg}`}>
-              {fileExt}
-            </span>
-          </div>
+    <div className="w-full bg-slate-900/60 hover:bg-slate-800/70 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 sm:p-5 transition-all duration-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xs">
+      
+      {/* SOL BLOK: İkon + Tam Dosya Adı + Etiketler */}
+      <div className="flex items-start gap-4 flex-1 min-w-0">
+        {/* İkon */}
+        <div className={`p-3 rounded-xl shrink-0 border mt-0.5 ${
+          isMarkScheme 
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+            : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+        }`}>
+          {isMarkScheme ? <CheckCircle2 className="w-6 h-6"/> : <FileText className="w-6 h-6"/>}
         </div>
 
-        {/* Hızlı Aksiyon Butonları (Sağ Üstte Net ve Çakışmayan Alan) */}
-        <div className="flex items-center gap-1 shrink-0">
-          {isPdf && (
-            <button
-              type="button"
-              onClick={() => onPreviewPdf(getApiUrl(file.url), rawFilename)}
-              className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors cursor-pointer"
-              title="Önizle (PDF)"
-              aria-label="Önizle"
-            >
-              <Eye size={16} />
-            </button>
-          )}
+        {/* Başlık ve Etiket Alanı */}
+        <div className="flex-1 min-w-0 space-y-2">
+          {/* KESİNTİSİZ TAM DOSYA ADI */}
+          <h3 
+            onClick={handlePrimaryClick}
+            className="text-sm sm:text-base font-semibold text-slate-100 hover:text-sky-400 cursor-pointer break-words whitespace-normal leading-relaxed"
+          >
+            {rawFilename}
+          </h3>
 
-          <a
+          {/* Rozetler ve Konular */}
+          <div className="flex flex-wrap items-center gap-2">
+            {isMarkScheme && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                🎯 Mark Scheme
+              </span>
+            )}
+            {!isMarkScheme && isQuestionPaper && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-sky-500/15 border border-sky-500/30 text-sky-300">
+                📝 Soru Kağıdı
+              </span>
+            )}
+            {!isMarkScheme && !isQuestionPaper && isNotes && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                📖 Ders Notu
+              </span>
+            )}
+            {isAllTopics && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                <Sparkles size={12} className="text-amber-400" />
+                <span>⭐ Tüm Müfredat / Genel</span>
+              </span>
+            )}
+            {!isAllTopics && regularTopics.map((topic, i) => (
+              <span key={i} className="px-2.5 py-0.5 rounded-md text-xs font-medium bg-slate-800/90 border border-slate-700/60 text-slate-300">
+                {topic}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* SAĞ BLOK: Boyut / Yükleyen / Tarih & Hızlı Aksiyonlar */}
+      <div className="flex items-center justify-between lg:justify-end gap-5 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-800/80">
+        {/* Meta Bilgiler */}
+        <div className="flex items-center gap-2.5 text-xs text-slate-400 font-medium">
+          <span className="font-mono text-slate-300 bg-slate-800/80 px-2 py-1 rounded-md border border-slate-700/50">
+            {formattedSize}
+          </span>
+          <span>•</span>
+          <span className="text-slate-300 font-medium">@{uploaderName.replace(/^@/, '')}</span>
+          {uploadDate && (
+            <>
+              <span>•</span>
+              <span className="text-slate-500">{uploadDate}</span>
+            </>
+          )}
+        </div>
+
+        {/* İşlem Butonları */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button 
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              handlePrimaryClick();
+            }} 
+            className="p-2.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer" 
+            title="Önizle"
+          >
+            <Eye className="w-4 h-4 sm:w-5 sm:h-5"/>
+          </button>
+          <a 
             href={getApiUrl(file.url)}
             download={rawFilename}
             target="_blank"
             rel="noreferrer"
-            className="p-1.5 text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
-            title="Dosyayı İndir"
-            aria-label="İndir"
+            onClick={(e) => e.stopPropagation()} 
+            className="p-2.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer" 
+            title="İndir"
           >
-            <Download size={16} />
+            <Download className="w-4 h-4 sm:w-5 sm:h-5"/>
           </a>
-
           {canDelete && (
-            <button
+            <button 
               type="button"
-              onClick={() => onInitiateDelete(file)}
-              className="p-1.5 text-slate-400 hover:text-rose-600 dark:text-slate-500 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-              title="Materyali Sil"
-              aria-label="Sil"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onInitiateDelete(file);
+              }} 
+              className="p-2.5 text-slate-400 hover:text-red-400 hover:bg-red-500/15 rounded-xl transition-colors cursor-pointer" 
+              title="Dosyayı Sil"
             >
-              <Trash2 size={16} />
+              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5 text-red-400"/>
             </button>
           )}
         </div>
       </div>
 
-      {/* 2. ORTA KISIM: Tam ve Okunaklı Dosya Başlığı (Taşmayan, 2 Satıra Saran Esnek Alan) */}
-      <div className="flex-1 my-1">
-        <h4 
-          className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 leading-snug break-words line-clamp-2 hover:line-clamp-none transition-all cursor-default"
-          title={rawFilename}
-        >
-          {rawFilename}
-        </h4>
-
-        {/* 3. KONU (TOPIC) ETİKETLERİ: Asla Ham JSON string olarak basılmaz, estetik chipler halinde gösterilir */}
-        <div className="mt-2.5 flex flex-wrap gap-1.5 items-center">
-          {isAllTopics ? (
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 shadow-2xs">
-              <Sparkles size={11} className="shrink-0 text-amber-500" />
-              <span>🌟 Tüm Konular (Hepsi)</span>
-            </span>
-          ) : regularTopics.length > 0 ? (
-            <>
-              {regularTopics.slice(0, 3).map((topicName, idx) => (
-                <span
-                  key={`${topicName}_${idx}`}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 max-w-[200px]"
-                  title={topicName}
-                >
-                  <Tag size={10} className="shrink-0 text-indigo-500" />
-                  <span className="truncate">{topicName}</span>
-                </span>
-              ))}
-              {regularTopics.length > 3 && (
-                <span 
-                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 cursor-help"
-                  title={regularTopics.slice(3).join(', ')}
-                >
-                  +{regularTopics.length - 3} daha
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-              <Tag size={10} className="shrink-0 text-slate-400" />
-              <span>Genel Materyal</span>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* 4. ALT KISIM (METADATA BAR): Yükleyen Kişi, Dosya Boyutu ve Tarih — Asla üst üste binmez */}
-      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          {/* Uploader Avatar / Circle */}
-          <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0 shadow-2xs">
-            {uploaderName.charAt(0).toUpperCase()}
-          </div>
-          <span 
-            className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[120px] sm:max-w-[160px]"
-            title={`Yükleyen: ${uploaderName}`}
-          >
-            {uploaderName}
-          </span>
-          <span className="text-slate-300 dark:text-slate-600 shrink-0">•</span>
-          <span className="font-mono text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
-            <HardDrive size={10} className="text-slate-400 inline" />
-            <span>{formatFileSize(file.size)}</span>
-          </span>
-        </div>
-
-        {dateStr && (
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0 flex items-center gap-1">
-            <Calendar size={10} className="text-slate-400" />
-            <span>{dateStr}</span>
-          </span>
-        )}
-      </div>
     </div>
   );
 };

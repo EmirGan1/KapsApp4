@@ -98,8 +98,9 @@ export function registerCourseRoutes(
   io: any,
   deleteUploadedFile: (filePath: string) => Promise<void>
 ) {
-  // Ensure 'topics' column exists in subject_files
+  // Ensure 'topics' and 'doc_type' columns exist in subject_files
   client.execute("ALTER TABLE subject_files ADD COLUMN topics TEXT").catch(() => {});
+  client.execute("ALTER TABLE subject_files ADD COLUMN doc_type TEXT").catch(() => {});
 
   // GET: List files for course / subject (Supports multi-topic filter & ALL topic)
   app.get(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], async (req: Request, res: Response) => {
@@ -120,10 +121,27 @@ export function registerCourseRoutes(
         const topicsArray = cleanParseTopics(row.topics, row.topic_tag);
         const primaryTag = topicsArray.includes("ALL") ? "ALL" : (topicsArray[0] || (row.topic_tag ? String(row.topic_tag).replace(/^[\[{\("']+|[\]}\)"']+$/g, '') : null));
 
+        // Detect or normalize docType
+        let docType = row.doc_type;
+        if (!docType) {
+          const origLower = (row.original_name || row.filename || '').toLowerCase();
+          if (origLower.includes('markscheme') || origLower.includes('_ms') || origLower.includes('mark scheme') || origLower.includes('cevap') || origLower.includes('cozum') || origLower.includes('çözüm')) {
+            docType = 'mark_scheme';
+          } else if (origLower.includes('paper') || origLower.includes('exam') || origLower.includes('soru') || origLower.includes('deneme') || origLower.includes('test')) {
+            docType = 'question_paper';
+          } else if (origLower.includes('note') || origLower.includes('not') || origLower.includes('ozet') || origLower.includes('özet') || origLower.includes('summary')) {
+            docType = 'notes';
+          } else {
+            docType = 'other';
+          }
+        }
+
         return {
           ...row,
           topics: topicsArray,
-          topic_tag: primaryTag
+          topic_tag: primaryTag,
+          docType: docType,
+          doc_type: docType
         };
       });
 
@@ -211,11 +229,26 @@ export function registerCourseRoutes(
         const topicsJson = JSON.stringify(topicsList);
         const primaryTopicTag = topicsList.includes("ALL") ? "ALL" : (topicsList[0] || "Genel");
 
-        const insRes = await client.execute({
-          sql: `INSERT INTO subject_files (folder_id, course_id, filename, original_name, mimetype, size, url, uploaded_by, topic_tag, topics, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [folderId, folderId, filename, originalName, mimetype, size, url, authUser.id, primaryTopicTag, topicsJson, new Date().toISOString()]
-        });
+        const docType = req.body.docType || req.body.doc_type || (
+          (originalName.toLowerCase().includes('markscheme') || originalName.toLowerCase().includes('_ms') || originalName.toLowerCase().includes('mark scheme') || originalName.toLowerCase().includes('cevap') || originalName.toLowerCase().includes('cozum') || originalName.toLowerCase().includes('çözüm')) ? 'mark_scheme' :
+          (originalName.toLowerCase().includes('paper') || originalName.toLowerCase().includes('exam') || originalName.toLowerCase().includes('soru') || originalName.toLowerCase().includes('deneme') || originalName.toLowerCase().includes('test')) ? 'question_paper' :
+          (originalName.toLowerCase().includes('note') || originalName.toLowerCase().includes('not') || originalName.toLowerCase().includes('ozet') || originalName.toLowerCase().includes('özet') || originalName.toLowerCase().includes('summary')) ? 'notes' : 'other'
+        );
+
+        let insRes;
+        try {
+          insRes = await client.execute({
+            sql: `INSERT INTO subject_files (folder_id, course_id, filename, original_name, mimetype, size, url, uploaded_by, topic_tag, topics, doc_type, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [folderId, folderId, filename, originalName, mimetype, size, url, authUser.id, primaryTopicTag, topicsJson, docType, new Date().toISOString()]
+          });
+        } catch (e) {
+          insRes = await client.execute({
+            sql: `INSERT INTO subject_files (folder_id, course_id, filename, original_name, mimetype, size, url, uploaded_by, topic_tag, topics, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [folderId, folderId, filename, originalName, mimetype, size, url, authUser.id, primaryTopicTag, topicsJson, new Date().toISOString()]
+          });
+        }
 
         const newFile = {
           id: Number(insRes.lastInsertRowid),
@@ -229,6 +262,8 @@ export function registerCourseRoutes(
           uploader_name: authUser.username,
           topic_tag: primaryTopicTag,
           topics: topicsList,
+          docType: docType,
+          doc_type: docType,
           created_at: new Date().toISOString()
         };
 

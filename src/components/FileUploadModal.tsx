@@ -12,9 +12,22 @@ import {
   Presentation, 
   FileCode, 
   File as FileIcon,
-  CheckCircle2,
-  Tag
+  Tag,
+  Target,
+  BookOpen,
+  FolderArchive,
+  Info
 } from 'lucide-react';
+
+export type DocumentType = 'question_paper' | 'mark_scheme' | 'notes' | 'summary' | 'other';
+
+export interface FileUploadPayload {
+  file: File;
+  selectedTopics: string[];
+  allTopics: boolean;
+  note: string;
+  docType: DocumentType;
+}
 
 interface FileUploadModalProps {
   isOpen: boolean;
@@ -23,12 +36,7 @@ interface FileUploadModalProps {
   courseTitle: string;
   courseThemes: string[];
   isUploading: boolean;
-  onUpload: (payload: {
-    file: File;
-    selectedTopics: string[];
-    allTopics: boolean;
-    note: string;
-  }) => Promise<void>;
+  onUpload: (payload: FileUploadPayload) => Promise<void>;
 }
 
 export const FileUploadModal: React.FC<FileUploadModalProps> = ({
@@ -43,15 +51,46 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [allTopicsSelected, setAllTopicsSelected] = useState<boolean>(false);
   const [fileNote, setFileNote] = useState<string>('');
+  const [docType, setDocType] = useState<DocumentType>('question_paper');
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Reset or preset whenever a new file is pending
+  // Auto-detect document type from filename when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && pendingFile) {
       setSelectedTopics([]);
       setAllTopicsSelected(false);
       setFileNote('');
       setValidationError(null);
+
+      const lowerName = pendingFile.name.toLowerCase();
+      if (
+        lowerName.includes('markscheme') || 
+        lowerName.includes('_ms') || 
+        lowerName.includes('ms.') || 
+        lowerName.includes('cevap') || 
+        lowerName.includes('cozum') || 
+        lowerName.includes('çözüm')
+      ) {
+        setDocType('mark_scheme');
+      } else if (
+        lowerName.includes('paper') || 
+        lowerName.includes('exam') || 
+        lowerName.includes('deneme') || 
+        lowerName.includes('soru') || 
+        lowerName.includes('test')
+      ) {
+        setDocType('question_paper');
+      } else if (
+        lowerName.includes('note') || 
+        lowerName.includes('not') || 
+        lowerName.includes('ozet') || 
+        lowerName.includes('özet') || 
+        lowerName.includes('summary')
+      ) {
+        setDocType('notes');
+      } else {
+        setDocType('other');
+      }
     }
   }, [isOpen, pendingFile]);
 
@@ -81,14 +120,12 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     } else {
       const next = [...selectedTopics, topic];
       setSelectedTopics(next);
-      // If user selected all themes individually, activate allTopics
       if (courseThemes.length > 0 && next.length === courseThemes.length) {
         setAllTopicsSelected(true);
       }
     }
   };
 
-  // Remove topic from active badges
   const handleRemoveTopic = (topic: string) => {
     handleToggleTopic(topic);
   };
@@ -96,7 +133,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedTopics.length === 0 && !allTopicsSelected) {
-      setValidationError("Lütfen en az bir konu seçin veya 'Tüm Konular (Hepsi)' seçeneğini işaretleyin.");
+      setValidationError("Lütfen en az bir konu seçin veya '⭐ Tüm Müfredat (Hepsi)' seçeneğini işaretleyin.");
       return;
     }
 
@@ -104,7 +141,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       file: pendingFile,
       selectedTopics: allTopicsSelected ? ["ALL"] : selectedTopics,
       allTopics: allTopicsSelected,
-      note: fileNote.trim()
+      note: fileNote.trim(),
+      docType
     });
   };
 
@@ -140,13 +178,13 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/50 dark:bg-slate-800/40">
+        <div className="px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/70 dark:bg-slate-800/40">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-inner">
               <UploadCloud className="w-5 h-5" />
@@ -156,7 +194,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 Ders Materyali Yükle
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {courseTitle} dersi için çoklu konu seçimi ve arşivleme
+                {courseTitle} dersi için tür ve konu sınıflandırması
               </p>
             </div>
           </div>
@@ -171,26 +209,137 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-5 flex-1 scrollbar-thin">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1 scrollbar-thin">
           
           {/* File Overview Card */}
-          <div className="flex items-center gap-4 p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl">
+          <div className="flex items-center gap-3.5 p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl">
             <div className="shrink-0 p-2 bg-white dark:bg-slate-800 rounded-xl shadow-xs border border-slate-100 dark:border-slate-700">
               {getFileIcon(pendingFile.name, pendingFile.type)}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+              <p className="text-sm font-bold text-slate-900 dark:text-slate-100 break-words line-clamp-2">
                 {pendingFile.name}
               </p>
               <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                <span className="font-medium font-mono">{formatFileSize(pendingFile.size)}</span>
+                <span className="font-semibold font-mono text-slate-700 dark:text-slate-300">{formatFileSize(pendingFile.size)}</span>
                 <span>•</span>
                 <span className="truncate">{pendingFile.type || "Belge"}</span>
               </div>
             </div>
           </div>
 
-          {/* Konu / Müfredat Seçim Alanı (Multi-Select) */}
+          {/* 1. DOSYA TÜRÜ (DOC TYPE) SEÇİCİ */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Target className="w-3.5 h-3.5 text-emerald-500" />
+              Materyal Türü (Doc Type)
+            </label>
+
+            <div className="grid grid-cols-2 gap-2">
+              {/* Soru Kağıdı */}
+              <button
+                type="button"
+                onClick={() => setDocType('question_paper')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                  docType === 'question_paper'
+                    ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-400 dark:border-sky-600 text-sky-900 dark:text-sky-200 ring-2 ring-sky-400/20 shadow-xs'
+                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold flex items-center gap-1.5">
+                    <span>📝 Soru Kağıdı</span>
+                  </span>
+                  {docType === 'question_paper' && (
+                    <span className="w-4 h-4 rounded-full bg-sky-500 text-white flex items-center justify-center text-[10px]">✓</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Sınav / Deneme (Past Paper)
+                </span>
+              </button>
+
+              {/* Cevap Anahtarı (Mark Scheme) */}
+              <button
+                type="button"
+                onClick={() => setDocType('mark_scheme')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                  docType === 'mark_scheme'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-600 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-400/20 shadow-xs'
+                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                    <span>🎯 Mark Scheme</span>
+                  </span>
+                  {docType === 'mark_scheme' && (
+                    <span className="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">✓</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Cevap Anahtarı & Çözüm
+                </span>
+              </button>
+
+              {/* Ders Notu / Özet */}
+              <button
+                type="button"
+                onClick={() => setDocType('notes')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                  docType === 'notes' || docType === 'summary'
+                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 text-amber-900 dark:text-amber-200 ring-2 ring-amber-400/20 shadow-xs'
+                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold flex items-center gap-1.5">
+                    <span>📖 Ders Notu / Özet</span>
+                  </span>
+                  {(docType === 'notes' || docType === 'summary') && (
+                    <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px]">✓</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Konu anlatımı ve formül kağıtları
+                </span>
+              </button>
+
+              {/* Genel Materyal (Other) */}
+              <button
+                type="button"
+                onClick={() => setDocType('other')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                  docType === 'other'
+                    ? 'bg-slate-100 dark:bg-slate-800 border-slate-400 dark:border-slate-600 text-slate-900 dark:text-white ring-2 ring-slate-400/20 shadow-xs'
+                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold flex items-center gap-1.5">
+                    <span>📁 Genel Materyal</span>
+                  </span>
+                  {docType === 'other' && (
+                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white flex items-center justify-center text-[10px]">✓</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  IA, sunum, ödev veya ek doküman
+                </span>
+              </button>
+            </div>
+
+            {docType === 'question_paper' && (
+              <div className="p-2.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200/80 dark:border-sky-900/60 flex items-start gap-2 text-[11px] text-sky-800 dark:text-sky-300 mt-2">
+                <Info className="w-4 h-4 shrink-0 text-sky-500 mt-0.5" />
+                <p>
+                  Soru kağıdını yükledikten sonra, ilgili <strong>Mark Scheme (Cevap Anahtarı)</strong> dosyasını da ayrı olarak yükleyerek arkadaşlarınızın çözümlerini kontrol etmesini sağlayabilirsiniz.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* 2. KONU / MÜFREDAT SEÇİM ALANI (Multi-Select) */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -198,7 +347,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 Müfredat Konuları (Çoklu Seçim)
               </label>
               <span className="text-[11px] font-semibold text-slate-400">
-                {allTopicsSelected ? "Tüm Konular" : `${selectedTopics.length} konu seçildi`}
+                {allTopicsSelected ? "Tüm Müfredat" : `${selectedTopics.length} konu seçildi`}
               </span>
             </div>
 
@@ -219,9 +368,9 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   <Sparkles className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold">🌟 Tüm Konular (Hepsi)</div>
+                  <div className="text-xs font-bold">⭐ Tüm Müfredat / Genel</div>
                   <div className={`text-[11px] ${allTopicsSelected ? "text-indigo-100" : "text-indigo-600/70 dark:text-indigo-400/70"}`}>
-                    Genel özet, formül kağıdı veya tüm müfredatı kapsayan materyal
+                    Tüm konuları içeren deneme sınavı, formül kağıdı veya genel özet
                   </div>
                 </div>
               </div>
@@ -233,7 +382,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             </button>
 
             {/* Konu Çipleri (Chips / Tag Picker) */}
-            <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1 scrollbar-thin">
+            <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto p-1 scrollbar-thin">
               {courseThemes.map((theme) => {
                 const isSelected = selectedTopics.includes(theme);
                 return (
@@ -258,8 +407,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               })}
             </div>
 
-            {/* Seçilen Konu Rozetleri (Silinebilir Badges) */}
-            {selectedTopics.length > 0 && (
+            {/* Seçilen Konu Rozetleri */}
+            {selectedTopics.length > 0 && !allTopicsSelected && (
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                 <p className="text-[11px] font-semibold text-slate-400 mb-1.5">
                   Seçilen Etiketler:
@@ -285,7 +434,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               </div>
             )}
 
-            {/* Validation Error */}
             {validationError && (
               <div className="flex items-center gap-2 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded-xl border border-rose-200/60 dark:border-rose-900/60 animate-shake">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -294,7 +442,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             )}
           </div>
 
-          {/* İsteğe Bağlı Not / Açıklama */}
+          {/* 3. Not / Açıklama */}
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1.5">
               Dosya Açıklaması / Not (İsteğe Bağlı)
@@ -303,7 +451,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               type="text"
               value={fileNote}
               onChange={(e) => setFileNote(e.target.value)}
-              placeholder="Örn: 2024 Final sınavı soru 4 çözümü, özet formüller..."
+              placeholder="Örn: May 2024 Timezone 1 çözümleri, önemli formüller..."
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-900"
             />
           </div>
