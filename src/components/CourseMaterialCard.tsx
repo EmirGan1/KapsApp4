@@ -145,20 +145,28 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
 
   // Belge türünü tespit et (doc_type, docType veya dosya adına göre)
   const lowerName = rawFilename.toLowerCase();
-  const explicitDocType = file.docType || file.doc_type;
-  const isMarkScheme = explicitDocType === 'mark_scheme' || 
-                       lowerName.includes('markscheme') || 
-                       lowerName.includes('_ms') || 
-                       lowerName.includes('ms.') || 
-                       lowerName.includes('cevap') || 
-                       lowerName.includes('cozum') || 
-                       lowerName.includes('çözüm');
+  const explicitDocTypeStr = String(file.docType || file.doc_type || '');
 
-  const isQuestionPaper = explicitDocType === 'question_paper' || 
-                          (!isMarkScheme && (lowerName.includes('paper') || lowerName.includes('exam') || lowerName.includes('deneme') || lowerName.includes('soru')));
+  const isBothType = explicitDocTypeStr === 'both' || 
+                     (explicitDocTypeStr.includes('question_paper') && explicitDocTypeStr.includes('mark_scheme'));
 
-  const isNotes = explicitDocType === 'notes' || explicitDocType === 'summary' ||
-                  (!isMarkScheme && !isQuestionPaper && (lowerName.includes('note') || lowerName.includes('not') || lowerName.includes('ozet') || lowerName.includes('özet')));
+  const isMarkScheme = isBothType || (
+    explicitDocTypeStr && explicitDocTypeStr !== 'other'
+      ? (explicitDocTypeStr === 'mark_scheme')
+      : (lowerName.includes('markscheme') || lowerName.includes('_ms') || lowerName.includes('ms.') || lowerName.includes('cevap') || lowerName.includes('cozum') || lowerName.includes('çözüm'))
+  );
+
+  const isQuestionPaper = isBothType || (
+    explicitDocTypeStr && explicitDocTypeStr !== 'other'
+      ? (explicitDocTypeStr === 'question_paper')
+      : (lowerName.includes('paper') || lowerName.includes('exam') || lowerName.includes('deneme') || lowerName.includes('soru'))
+  );
+
+  const isNotes = (
+    explicitDocTypeStr && explicitDocTypeStr !== 'other'
+      ? (explicitDocTypeStr === 'notes' || explicitDocTypeStr === 'summary')
+      : (!isMarkScheme && !isQuestionPaper && (lowerName.includes('note') || lowerName.includes('not') || lowerName.includes('ozet') || lowerName.includes('özet')))
+  );
 
   // Konuları güvenli şekilde formatla
   const parsedTopics = formatTopics(file.topics, file.topic_tag);
@@ -289,14 +297,19 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
 
           {/* Rozetler ve Konular */}
           <div className="flex flex-wrap items-center gap-2">
-            {isMarkScheme && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-                🎯 Mark Scheme
+            {isQuestionPaper && isMarkScheme && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-bold bg-gradient-to-r from-sky-500/20 via-indigo-500/20 to-emerald-500/20 border border-sky-400/40 text-sky-200 shadow-xs">
+                📝 Soru Kağıdı + 🎯 Mark Scheme
               </span>
             )}
-            {!isMarkScheme && isQuestionPaper && (
+            {isQuestionPaper && !isMarkScheme && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-sky-500/15 border border-sky-500/30 text-sky-300">
                 📝 Soru Kağıdı
+              </span>
+            )}
+            {isMarkScheme && !isQuestionPaper && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                🎯 Mark Scheme
               </span>
             )}
             {!isMarkScheme && !isQuestionPaper && isNotes && (

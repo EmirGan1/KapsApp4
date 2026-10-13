@@ -294,15 +294,14 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
   // Helper to determine docType for a file item
   const getFileDocType = (f: CourseFileItem): DocumentType => {
-    if (f.docType) return f.docType;
-    if (f.doc_type) return f.doc_type;
+    if (f.docType && f.docType !== 'other') return f.docType;
+    if (f.doc_type && f.doc_type !== 'other') return f.doc_type as DocumentType;
     const name = (f.original_name || f.filename || '').toLowerCase();
-    if (name.includes('markscheme') || name.includes('_ms') || name.includes('ms.') || name.includes('cevap') || name.includes('cozum') || name.includes('çözüm')) {
-      return 'mark_scheme';
-    }
-    if (name.includes('paper') || name.includes('exam') || name.includes('deneme') || name.includes('soru')) {
-      return 'question_paper';
-    }
+    const hasMS = name.includes('markscheme') || name.includes('_ms') || name.includes('ms.') || name.includes('cevap') || name.includes('cozum') || name.includes('çözüm');
+    const hasQP = name.includes('paper') || name.includes('exam') || name.includes('deneme') || name.includes('soru');
+    if (hasMS && hasQP) return 'both';
+    if (hasMS) return 'mark_scheme';
+    if (hasQP) return 'question_paper';
     if (name.includes('note') || name.includes('not') || name.includes('ozet') || name.includes('özet') || name.includes('summary')) {
       return 'notes';
     }
@@ -317,9 +316,9 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
     files.forEach(f => {
       const t = getFileDocType(f);
-      if (t === 'mark_scheme') ms++;
-      else if (t === 'question_paper') qp++;
-      else if (t === 'notes' || t === 'summary') notes++;
+      if (t === 'mark_scheme' || t === 'both') ms++;
+      if (t === 'question_paper' || t === 'both') qp++;
+      if (t === 'notes' || t === 'summary') notes++;
     });
 
     return { all: files.length, qp, ms, notes };
@@ -342,9 +341,9 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
       // 1. Doc Type Filter
       if (selectedTypeFilter === 'question_paper') {
-        if (fileType !== 'question_paper') return false;
+        if (fileType !== 'question_paper' && fileType !== 'both') return false;
       } else if (selectedTypeFilter === 'mark_scheme') {
-        if (fileType !== 'mark_scheme') return false;
+        if (fileType !== 'mark_scheme' && fileType !== 'both') return false;
       } else if (selectedTypeFilter === 'notes') {
         if (fileType !== 'notes' && fileType !== 'summary') return false;
       }

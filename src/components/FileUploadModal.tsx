@@ -19,7 +19,7 @@ import {
   Info
 } from 'lucide-react';
 
-export type DocumentType = 'question_paper' | 'mark_scheme' | 'notes' | 'summary' | 'other';
+export type DocumentType = 'question_paper' | 'mark_scheme' | 'notes' | 'summary' | 'both' | 'other';
 
 export interface FileUploadPayload {
   file: File;
@@ -63,22 +63,14 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       setValidationError(null);
 
       const lowerName = pendingFile.name.toLowerCase();
-      if (
-        lowerName.includes('markscheme') || 
-        lowerName.includes('_ms') || 
-        lowerName.includes('ms.') || 
-        lowerName.includes('cevap') || 
-        lowerName.includes('cozum') || 
-        lowerName.includes('çözüm')
-      ) {
+      const hasMS = lowerName.includes('markscheme') || lowerName.includes('_ms') || lowerName.includes('ms.') || lowerName.includes('cevap') || lowerName.includes('cozum') || lowerName.includes('çözüm');
+      const hasQP = lowerName.includes('paper') || lowerName.includes('exam') || lowerName.includes('deneme') || lowerName.includes('soru') || lowerName.includes('test');
+
+      if (hasMS && hasQP) {
+        setDocType('both');
+      } else if (hasMS) {
         setDocType('mark_scheme');
-      } else if (
-        lowerName.includes('paper') || 
-        lowerName.includes('exam') || 
-        lowerName.includes('deneme') || 
-        lowerName.includes('soru') || 
-        lowerName.includes('test')
-      ) {
+      } else if (hasQP) {
         setDocType('question_paper');
       } else if (
         lowerName.includes('note') || 
@@ -235,7 +227,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               Materyal Türü (Doc Type)
             </label>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {/* Soru Kağıdı */}
               <button
                 type="button"
@@ -255,7 +247,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   )}
                 </div>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Sınav / Deneme (Past Paper)
+                  Sadece Sınav / Deneme (Past Paper)
                 </span>
               </button>
 
@@ -278,7 +270,30 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   )}
                 </div>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Cevap Anahtarı & Çözüm
+                  Sadece Cevap Anahtarı & Çözüm
+                </span>
+              </button>
+
+              {/* İkisi Birlikte (Soru Kağıdı + Mark Scheme) */}
+              <button
+                type="button"
+                onClick={() => setDocType('both')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-1 sm:col-span-2 ${
+                  docType === 'both'
+                    ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-400 dark:border-indigo-600 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-400/20 shadow-xs'
+                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+                    <span>💎 Soru Kağıdı + Mark Scheme (Çözümlü Sınav - İkisi Birlikte)</span>
+                  </span>
+                  {docType === 'both' && (
+                    <span className="w-4 h-4 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px]">✓</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Hem soru kağıdını hem de cevap anahtarını içeren dosya
                 </span>
               </button>
 

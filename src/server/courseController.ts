@@ -102,6 +102,16 @@ export function registerCourseRoutes(
   client.execute("ALTER TABLE subject_files ADD COLUMN topics TEXT").catch(() => {});
   client.execute("ALTER TABLE subject_files ADD COLUMN doc_type TEXT").catch(() => {});
 
+  // Database Migration: Update the two requested Math files to 'question_paper'
+  client.execute(`
+    UPDATE subject_files 
+    SET doc_type = 'question_paper' 
+    WHERE original_name LIKE '%AA_HL_2025_May-Nov_Paper2_Sorulari_Markscheme%' 
+       OR original_name LIKE '%AA_HL_Paper1_Mayis2026_Konu_Sorulari_Markscheme%' 
+       OR filename LIKE '%AA_HL_2025_May-Nov_Paper2_Sorulari_Markscheme%' 
+       OR filename LIKE '%AA_HL_Paper1_Mayis2026_Konu_Sorulari_Markscheme%'
+  `).catch(() => {});
+
   // GET: List files for course / subject (Supports multi-topic filter & ALL topic)
   app.get(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], async (req: Request, res: Response) => {
     try {
@@ -125,9 +135,13 @@ export function registerCourseRoutes(
         let docType = row.doc_type;
         if (!docType) {
           const origLower = (row.original_name || row.filename || '').toLowerCase();
-          if (origLower.includes('markscheme') || origLower.includes('_ms') || origLower.includes('mark scheme') || origLower.includes('cevap') || origLower.includes('cozum') || origLower.includes('çözüm')) {
+          const hasMS = origLower.includes('markscheme') || origLower.includes('_ms') || origLower.includes('ms.') || origLower.includes('mark scheme') || origLower.includes('cevap') || origLower.includes('cozum') || origLower.includes('çözüm');
+          const hasQP = origLower.includes('paper') || origLower.includes('exam') || origLower.includes('soru') || origLower.includes('deneme') || origLower.includes('test');
+          if (hasMS && hasQP) {
+            docType = 'both';
+          } else if (hasMS) {
             docType = 'mark_scheme';
-          } else if (origLower.includes('paper') || origLower.includes('exam') || origLower.includes('soru') || origLower.includes('deneme') || origLower.includes('test')) {
+          } else if (hasQP) {
             docType = 'question_paper';
           } else if (origLower.includes('note') || origLower.includes('not') || origLower.includes('ozet') || origLower.includes('özet') || origLower.includes('summary')) {
             docType = 'notes';
@@ -229,10 +243,15 @@ export function registerCourseRoutes(
         const topicsJson = JSON.stringify(topicsList);
         const primaryTopicTag = topicsList.includes("ALL") ? "ALL" : (topicsList[0] || "Genel");
 
+        const origLower = originalName.toLowerCase();
+        const hasMS = origLower.includes('markscheme') || origLower.includes('_ms') || origLower.includes('ms.') || origLower.includes('mark scheme') || origLower.includes('cevap') || origLower.includes('cozum') || origLower.includes('çözüm');
+        const hasQP = origLower.includes('paper') || origLower.includes('exam') || origLower.includes('soru') || origLower.includes('deneme') || origLower.includes('test');
+
         const docType = req.body.docType || req.body.doc_type || (
-          (originalName.toLowerCase().includes('markscheme') || originalName.toLowerCase().includes('_ms') || originalName.toLowerCase().includes('mark scheme') || originalName.toLowerCase().includes('cevap') || originalName.toLowerCase().includes('cozum') || originalName.toLowerCase().includes('çözüm')) ? 'mark_scheme' :
-          (originalName.toLowerCase().includes('paper') || originalName.toLowerCase().includes('exam') || originalName.toLowerCase().includes('soru') || originalName.toLowerCase().includes('deneme') || originalName.toLowerCase().includes('test')) ? 'question_paper' :
-          (originalName.toLowerCase().includes('note') || originalName.toLowerCase().includes('not') || originalName.toLowerCase().includes('ozet') || originalName.toLowerCase().includes('özet') || originalName.toLowerCase().includes('summary')) ? 'notes' : 'other'
+          (hasMS && hasQP) ? 'both' :
+          hasMS ? 'mark_scheme' :
+          hasQP ? 'question_paper' :
+          (origLower.includes('note') || origLower.includes('not') || origLower.includes('ozet') || origLower.includes('özet') || origLower.includes('summary')) ? 'notes' : 'other'
         );
 
         let insRes;
