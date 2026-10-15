@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { 
   Home, 
@@ -75,6 +75,17 @@ export default function BottomNav({
     'predicted'
   ].includes(activeTab);
 
+  // Prevent background body scroll when mobile more drawer is open
+  useEffect(() => {
+    if (isMobileMoreOpen) {
+      const orig = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = orig;
+      };
+    }
+  }, [isMobileMoreOpen]);
+
   return (
     <>
       {/* Mobile Fixed Bottom Nav Bar (4 Ana Sekme + 1 'Daha Fazla' Çekmecesi) */}
@@ -139,9 +150,14 @@ export default function BottomNav({
           onClick={() => setIsMobileMoreOpen(false)}
         >
           <div 
-            className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl max-h-[85vh] overflow-y-auto p-4 sm:p-5 shadow-2xl animate-in slide-in-from-bottom duration-200 space-y-4 touch-pan-y"
+            className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl max-h-[88dvh] overflow-y-auto overscroll-contain p-4 sm:p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl animate-in slide-in-from-bottom duration-200 space-y-4 touch-pan-y"
+            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Drag Handle */}
+            <div className="pt-0 pb-1 flex justify-center shrink-0 -mt-1">
+              <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+            </div>
             {/* Drawer Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-3">

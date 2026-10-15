@@ -256,6 +256,17 @@ export default function WeatherDashboard({ darkMode, onBackToMain }: WeatherDash
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedDay]);
 
+  // Prevent background scrolling on iOS / Android when forecast modal is open
+  useEffect(() => {
+    if (selectedDay) {
+      const orig = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = orig;
+      };
+    }
+  }, [selectedDay]);
+
   // Calculate week-wide min & max for 7-day temperature range bars
   const weekTempRange = useMemo(() => {
     if (!weatherData || !weatherData.daily || weatherData.daily.length === 0) {
@@ -404,7 +415,7 @@ export default function WeatherDashboard({ darkMode, onBackToMain }: WeatherDash
       {/* ====================================================================== */}
       {/* 2. MAIN CONTENT AREA */}
       {/* ====================================================================== */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+      <main className="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-6 pb-24 sm:pb-8 pb-safe space-y-4 sm:space-y-6">
         {/* Error Notice */}
         {errorMsg && (
           <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs sm:text-sm flex items-center justify-between shadow-xs animate-in fade-in">
@@ -916,12 +927,18 @@ export default function WeatherDashboard({ darkMode, onBackToMain }: WeatherDash
       {selectedDay && (
         <div
           onClick={() => setSelectedDay(null)}
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 max-w-2xl w-[95vw] max-h-[85vh] overflow-y-auto shadow-2xl space-y-6 text-slate-800 dark:text-slate-100 animate-in zoom-in-95 transition-all"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-7 max-w-2xl w-full max-h-[88dvh] sm:max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y shadow-2xl space-y-6 text-slate-800 dark:text-slate-100 animate-in zoom-in-95 transition-all pb-safe"
+            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
           >
+            {/* Mobile Drag Handle */}
+            <div className="sm:hidden pt-1 pb-1 flex justify-center shrink-0 -mt-2">
+              <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+            </div>
+
             {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-3">

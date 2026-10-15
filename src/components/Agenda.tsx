@@ -166,6 +166,20 @@ export default function Agenda({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedExamEvent, selectedFoodEvent, isFormModalOpen, isDayDrawerOpen]);
 
+  // Lock background body scroll when any modal or drawer is active on mobile / iOS
+  useEffect(() => {
+    const isAnyModalActive = Boolean(
+      selectedExamEvent || selectedFoodEvent || isFormModalOpen || isDayDrawerOpen || isScheduleModalOpen
+    );
+    if (isAnyModalActive) {
+      const origOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = origOverflow;
+      };
+    }
+  }, [selectedExamEvent, selectedFoodEvent, isFormModalOpen, isDayDrawerOpen, isScheduleModalOpen]);
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth(); // 0-indexed
 
@@ -760,7 +774,7 @@ export default function Agenda({
       </div>
 
       {/* 3. Main Calendar View Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-4 md:p-6 touch-pan-y overscroll-y-contain">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 pb-24 sm:p-4 sm:pb-6 md:p-6 touch-pan-y overscroll-y-contain pb-safe">
         {agendaViewMode === "mock_overlay" ? (
           <div className="max-w-7xl mx-auto">
             <AgendaCalendar
@@ -791,7 +805,7 @@ export default function Agenda({
                 <div
                   key={dayItem.dateStr}
                   onClick={() => handleDayClick(dayItem.dateStr)}
-                  className={`min-h-[90px] sm:min-h-[120px] md:min-h-[135px] p-1.5 sm:p-2.5 flex flex-col justify-between transition-colors duration-150 cursor-pointer group relative ${
+                  className={`min-h-[52px] sm:min-h-[120px] md:min-h-[135px] p-1 sm:p-2.5 flex flex-col justify-between transition-colors duration-150 cursor-pointer group relative ${
                     !dayItem.isCurrentMonth
                       ? "bg-slate-50/50 dark:bg-slate-950/40 text-slate-300 dark:text-slate-600 opacity-60"
                       : isWeekend
@@ -992,13 +1006,18 @@ export default function Agenda({
       {/* 4. DEDICATED EXAM DETAIL POPUP MODAL (Pre-Mock 3 Card) */}
       {selectedExamEvent && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={() => setSelectedExamEvent(null)}
         >
           <div
-            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-rose-500/30 overflow-hidden flex flex-col max-h-[90vh]"
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-rose-500/30 overflow-hidden flex flex-col max-h-[88dvh] sm:max-h-[90vh] pb-safe"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Drag Handle */}
+            <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+              <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+            </div>
+
             {/* Gradient Header */}
             <div className="p-5 bg-gradient-to-r from-rose-600 via-rose-700 to-amber-600 text-white flex items-start justify-between relative overflow-hidden shrink-0">
               <div className="absolute -right-6 -bottom-6 text-white/10 pointer-events-none select-none">
@@ -1040,7 +1059,10 @@ export default function Agenda({
             </div>
 
             {/* Exam Details Body */}
-            <div className="p-5 overflow-y-auto space-y-4 bg-slate-50/60 dark:bg-slate-900/60 flex-1 text-xs sm:text-sm">
+            <div 
+              className="p-5 overflow-y-auto overscroll-contain touch-pan-y space-y-4 bg-slate-50/60 dark:bg-slate-900/60 flex-1 min-h-0 text-xs sm:text-sm"
+              style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+            >
               
               {/* Date & Time Info Box */}
               <div className="grid grid-cols-2 gap-3">
@@ -1171,9 +1193,13 @@ export default function Agenda({
           onClick={() => setSelectedFoodEvent(null)}
         >
           <div
-            className="w-full sm:max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-emerald-500/20 max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-2 duration-200"
+            className="w-full sm:max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-emerald-500/20 max-h-[88dvh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-2 duration-200 pb-safe"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Drag Handle */}
+            <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+              <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+            </div>
             {/* Emerald Gradient Header */}
             <div className="p-5 bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white flex items-start justify-between relative overflow-hidden shrink-0">
               <div className="absolute -right-6 -bottom-6 text-white/10 pointer-events-none select-none">
@@ -1220,7 +1246,10 @@ export default function Agenda({
             </div>
 
             {/* Menu Items List */}
-            <div className="p-5 overflow-y-auto space-y-3 bg-slate-50/60 dark:bg-slate-900/60 flex-1">
+            <div 
+              className="p-5 overflow-y-auto overscroll-contain touch-pan-y space-y-3 bg-slate-50/60 dark:bg-slate-900/60 flex-1 min-h-0"
+              style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+            >
               <div className="flex items-center justify-between px-1 mb-1">
                 <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <span>Günün Menü Kalemleri</span>
@@ -1265,7 +1294,7 @@ export default function Agenda({
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between">
+            <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between">
               {isEmirgan ? (
                 <div className="flex items-center gap-2">
                   <button
@@ -1305,13 +1334,21 @@ export default function Agenda({
 
       {/* 6. Day Events Drawer / Detail Modal */}
       {isDayDrawerOpen && selectedDayDate && (
-        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity duration-200">
+        <div 
+          onClick={() => setIsDayDrawerOpen(false)}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity duration-200"
+        >
           <div
-            className="w-full sm:max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-2 duration-200"
+            className="w-full sm:max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[88dvh] sm:max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-2 duration-200 relative pb-safe"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Drag Handle */}
+            <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+              <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+            </div>
+
             {/* Drawer Header */}
-            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900">
+            <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                   <CalendarIcon size={20} />
@@ -1355,7 +1392,10 @@ export default function Agenda({
             </div>
 
             {/* Events List Body */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-3.5">
+            <div 
+              className="flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-3.5 min-h-0"
+              style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+            >
               {selectedDayEvents.length === 0 ? (
                 <div className="py-12 text-center">
                   <CalendarDays size={40} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
@@ -1504,7 +1544,7 @@ export default function Agenda({
             </div>
 
             {/* Drawer Footer */}
-            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 flex justify-end">
+            <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 flex justify-end">
               <button
                 type="button"
                 onClick={() => setIsDayDrawerOpen(false)}
@@ -1519,12 +1559,15 @@ export default function Agenda({
 
       {/* 7. Admin Create / Edit Modal Form */}
       {isFormModalOpen && isEmirgan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+        <div 
+          onClick={() => setIsFormModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+        >
           <div
-            className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col"
+            className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90dvh] pb-safe"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                   <CalendarDays size={20} />
@@ -1541,13 +1584,17 @@ export default function Agenda({
               <button
                 type="button"
                 onClick={() => setIsFormModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="p-5 space-y-4">
+            <form 
+              onSubmit={handleFormSubmit} 
+              className="p-5 space-y-4 overflow-y-auto overscroll-contain touch-pan-y flex-1 min-h-0"
+              style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+            >
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Etkinlik / Sınav Başlığı *

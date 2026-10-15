@@ -174,15 +174,34 @@ export default function DailyScheduleModal({
     return null;
   }, [now, userRoles]);
 
+  // Prevent background scrolling while schedule modal is open on iOS / Android
+  useEffect(() => {
+    if (isOpen) {
+      const orig = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = orig;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+    <div 
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+    >
       <div
-        className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col transition-all duration-300 my-auto ${
-          viewMode === "weekly" ? "max-w-6xl max-h-[94vh]" : "max-w-2xl max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+        className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col transition-all duration-300 pb-safe ${
+          viewMode === "weekly" ? "max-w-6xl max-h-[90dvh] sm:max-h-[94vh]" : "max-w-2xl max-h-[88dvh] sm:max-h-[92vh]"
         }`}
       >
+        {/* Mobile Drag Handle */}
+        <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+          <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+        </div>
         {/* ========================================================= */}
         {/* MODAL HEADER */}
         {/* ========================================================= */}
@@ -384,7 +403,10 @@ export default function DailyScheduleModal({
         {/* ========================================================= */}
         {/* MODAL MAIN CONTENT BODY */}
         {/* ========================================================= */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 touch-pan-y overscroll-y-contain">
+        <div 
+          className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 touch-pan-y overscroll-y-contain"
+          style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+        >
           {viewMode === "daily" ? (
             /* ------------------------------------------------------- */
             /* DAILY SCHEDULE VIEW (DEFAULT)                           */

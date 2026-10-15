@@ -169,12 +169,31 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     return <FileIcon className="w-8 h-8 text-slate-500" />;
   };
 
+  // Prevent background body scroll when FileUploadModal is active on mobile
+  useEffect(() => {
+    const orig = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = orig;
+    };
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div 
+      onClick={() => {
+        if (!isUploading) onClose();
+      }}
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
+    >
       <div 
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] sm:max-h-[92vh] pb-safe"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile Drag Handle */}
+        <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+          <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+        </div>
+
         {/* Header */}
         <div className="px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/70 dark:bg-slate-800/40">
           <div className="flex items-center gap-3">
@@ -201,7 +220,11 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1 scrollbar-thin">
+        <form 
+          onSubmit={handleSubmit} 
+          className="p-5 sm:p-6 overflow-y-auto overscroll-contain touch-pan-y space-y-5 flex-1 min-h-0 scrollbar-thin"
+          style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+        >
           
           {/* File Overview Card */}
           <div className="flex items-center gap-3.5 p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl">

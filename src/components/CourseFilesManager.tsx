@@ -16,7 +16,8 @@ import {
   HardDrive,
   Target,
   BookOpen,
-  Sparkles
+  Sparkles,
+  ExternalLink
 } from 'lucide-react';
 import { getApiUrl, getAuthHeaders } from '../utils/api';
 import FileUploadModal, { DocumentType, FileUploadPayload } from './FileUploadModal';
@@ -153,6 +154,17 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isEmirgan = currentUsername?.trim().toLowerCase() === 'emirgan';
+
+  // Prevent background body scroll when preview or delete modal is open
+  useEffect(() => {
+    if (previewPdfUrl || deleteConfirmFile) {
+      const orig = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = orig;
+      };
+    }
+  }, [previewPdfUrl, deleteConfirmFile]);
 
   // Get themes for this specific course
   const courseThemes = COURSE_IB_THEMES[courseTitle] || 
@@ -692,19 +704,35 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
       {/* 6. PDF Önizleme Modalı */}
       {previewPdfUrl && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150">
-          <div className="bg-slate-900 rounded-3xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl border border-slate-800 overflow-hidden">
+        <div 
+          onClick={() => setPreviewPdfUrl(null)}
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-slate-900 rounded-3xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl border border-slate-800 overflow-hidden pb-safe"
+          >
             
             {/* Modal Başlığı */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0 pr-2">
                 <FileText size={18} className="text-rose-500 shrink-0" />
                 <h3 className="font-bold text-sm sm:text-base text-slate-100 truncate">
                   {previewPdfTitle}
                 </h3>
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={previewPdfUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                  title="Tam Ekran / Yeni Sekmede Aç"
+                >
+                  <ExternalLink size={13} />
+                  <span className="hidden sm:inline">Tam Ekran</span>
+                </a>
                 <a
                   href={previewPdfUrl}
                   download={previewPdfTitle}
