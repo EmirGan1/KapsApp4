@@ -36,10 +36,10 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
 
     setIsLoading(true);
     try {
-      const data = await safeFetchJson("/api/auth/reset-password", {
+      const data = await safeFetchJson("/api/auth/complete-password-reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, newPassword })
+        body: JSON.stringify({ resetToken: token, token, newPassword })
       });
 
       setSuccessMessage(data.message || "Şifreniz başarıyla güncellendi!");

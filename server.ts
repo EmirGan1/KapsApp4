@@ -369,6 +369,13 @@ async function initDb() {
   try { await client.execute("ALTER TABLE users ADD COLUMN approved_at DATETIME"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN roles TEXT DEFAULT '[\"titc\",\"eng_b_hl\"]'"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'"); } catch(e){}
+
+  // Secure Two-Step Admin-Approved Password Reset Migrations
+  try { await client.execute("ALTER TABLE users ADD COLUMN reset_status TEXT DEFAULT 'NONE'"); } catch(e){}
+  try { await client.execute("ALTER TABLE users ADD COLUMN reset_token TEXT"); } catch(e){}
+  try { await client.execute("ALTER TABLE users ADD COLUMN reset_requested_at DATETIME"); } catch(e){}
+  try { await client.execute("ALTER TABLE users ADD COLUMN reset_updated_at DATETIME"); } catch(e){}
+  try { await client.execute("UPDATE users SET reset_status = 'NONE' WHERE reset_status IS NULL OR reset_status = ''"); } catch(e){}
   
   // 1. emirgan kullanıcısını kesin olarak approved ve admin yap
   try { await client.execute("UPDATE users SET status = 'approved', is_admin = 1 WHERE LOWER(username) = 'emirgan'"); } catch(e){}
@@ -666,7 +673,7 @@ async function startServer() {
       }
       return compression.filter(req, res);
     }
-  }));
+  }) as any);
 
   // Reverse proxy setup for accurate client IP detection (Nginx / PM2 / Cloud)
   app.set("trust proxy", true);
@@ -749,8 +756,6 @@ async function startServer() {
     "http://localhost:3000"
   ];
 
-  // Enable high-performance HTTP compression (gzip/deflate) to drastically reduce network latency & payload sizes
-  app.use(compression());
 
   app.use(cors({
     origin: (origin, callback) => {
@@ -1134,6 +1139,11 @@ async function startServer() {
   app.post(["/api/login", "/api/auth/login"], async (req, res) => {
     try {
       const { username, password } = req.body;
+      const cleanUsername = (username || "").toString().trim();
+      if (!cleanUsername) {
+        return res.status(400).json({ error: "Lütfen kullanıcı adınızı girin." });
+      }
+
       const rawDeviceId = 
         req.headers["x-hardware-fingerprint"] || 
         req.headers["x-device-id"] || 
@@ -1142,80 +1152,143 @@ async function startServer() {
       const deviceId = typeof rawDeviceId === "string" ? rawDeviceId.trim() : "";
 
       const userRes = await client.execute({
-        sql: "SELECT id, username, password, color, avatar, isBanned, is_banned, locationConsent, is_admin, status FROM users WHERE username = ?",
-        args: [username]
+        sql: "SELECT id, username, password, color, avatar, isBanned, is_banned, locationConsent, is_admin, status, reset_status, reset_token FROM users WHERE LOWER(username) = LOWER(?)",
+        args: [cleanUsername]
       });
       
-      if (userRes.rows.length > 0) {
-        const user = userRes.rows[0];
+      if (userRes.rows.length === 0) {
+        return res.status(401).json({ error: "Geçersiz kullanıcı adı veya şifre." });
+      }
 
-        // 5651 & Emirgan Moderation: Ban Check
-        if (Number(user.isBanned) === 1 || Number(user.is_banned) === 1 || user.isBanned === "1") {
-          return res.status(403).json({ error: "Hesabınız kural ihlali nedeniyle askıya alınmıştır." });
-        }
+      const user = userRes.rows[0];
 
-        // Account Approval Check
-        const userStatus = user.status || 'approved';
-        if (userStatus === 'pending') {
-          return res.status(403).json({ 
-            error: "ACCOUNT_PENDING", 
-            message: "Hesabınız henüz onaylanmadı. Yönetici (emirgan) onayı bekleniyor." 
+      // 5651 & Emirgan Moderation: Ban Check
+      if (Number(user.isBanned) === 1 || Number(user.is_banned) === 1 || user.isBanned === "1") {
+        return res.status(403).json({ error: "Hesabınız kural ihlali nedeniyle askıya alınmıştır." });
+      }
+
+      // KRİTİK KONTROL 1: Eğer user.reset_status === 'APPROVED' ise:
+      // Kullanıcının şifre girip girmediğine, doğru veya yanlış şifre yazdığına BAKILMAKSIZIN
+      // giriş işlemini kes ve şifre yenileme sinyalini dön!
+      if (user.reset_status === 'APPROVED') {
+        return res.json({ 
+          requirePasswordReset: true,
+          resetToken: user.reset_token,
+          username: user.username,
+          message: "Şifre sıfırlama talebiniz onaylanmış. Lütfen yeni şifrenizi belirleyin."
+        });
+      }
+
+      // Account Approval Check
+      const userStatus = user.status || 'approved';
+      if (userStatus === 'pending') {
+        // Eğer kullanıcı şifre sıfırlama talebi açmışsa ve PENDING ise bekleme mesajı dön
+        if (user.reset_status === 'PENDING') {
+          return res.json({
+            status: "PENDING",
+            message: "Şifre sıfırlama talebiniz henüz Emirgan tarafından onaylanmadı. Lütfen onayı bekleyin."
           });
         }
-        if (userStatus === 'rejected') {
-          return res.status(403).json({ 
-            error: "ACCOUNT_REJECTED", 
-            message: "Hesap kaydınız reddedilmiştir." 
+        return res.status(403).json({ 
+          error: "ACCOUNT_PENDING", 
+          message: "Hesabınız henüz onaylanmadı. Yönetici (emirgan) onayı bekleniyor." 
+        });
+      }
+      if (userStatus === 'rejected') {
+        return res.status(403).json({ 
+          error: "ACCOUNT_REJECTED", 
+          message: "Hesap kaydınız reddedilmiştir." 
+        });
+      }
+
+      // KRİTİK KONTROL 2: Eğer user.reset_status === 'PENDING' ise:
+      if (user.reset_status === 'PENDING') {
+        // Kullanıcı şifre girmeden (boş şifre ile) giriş yapmayı denediyse:
+        if (!password || !password.trim()) {
+          return res.json({
+            status: "PENDING",
+            message: "Şifre sıfırlama talebiniz henüz Emirgan tarafından onaylanmadı. Lütfen onayı bekleyin."
           });
         }
-
+        // Ancak kullanıcı PENDING durumdayken eski şifresini hatırlayıp doğru şifresini girdiyse:
         if (await bcrypt.compare(password, user.password as string)) {
-          const token = crypto.randomUUID();
-          const refreshToken = crypto.randomUUID();
-          const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-          const deviceInfo = (req.headers['user-agent'] || deviceId || 'Web/Mobile Client').toString().slice(0, 255);
-          const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 gün geçerli
-
-          let color = user.color;
-          if (!color) {
-            const colors = ["bg-red-500", "bg-blue-500", "bg-green-500", "bg-yellow-500", "bg-purple-500", "bg-pink-500", "bg-indigo-500", "bg-teal-500"];
-            color = colors[Math.floor(Math.random() * colors.length)];
-          }
-          const clientIp = getClientIp(req);
-
-          // 1. users tablosunu güncelle
+          // Normal giriş yapsın ve sıfırlama talebi otomatik iptal edilsin!
           await client.execute({
-            sql: "UPDATE users SET token = ?, color = ?, last_ip = ?, device_fingerprint = COALESCE(?, device_fingerprint), last_device_id = COALESCE(?, last_device_id), last_seen = ? WHERE id = ?",
-            args: [token, color, clientIp, deviceId || null, deviceId || null, new Date().toISOString(), user.id]
-          });
-
-          // 2. Çoklu cihaz oturumu: user_sessions tablosuna ekle
-          await client.execute({
-            sql: "INSERT INTO user_sessions (user_id, token, refresh_token_hash, device_info, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-            args: [user.id, token, refreshTokenHash, deviceInfo, new Date().toISOString(), expiresAt]
-          }).catch((err) => console.error("Session insert error:", err));
-
-          // Asynchronously log login traffic for 5651 compliance
-          logAccess(Number(user.id), clientIp, 'login');
-
-          const isAdmin = (user.username as string)?.toLowerCase() === "emirgan" || user.is_admin === 1;
-
-          res.json({ 
-            token, 
-            refreshToken,
-            username: user.username, 
-            avatar: user.avatar, 
-            id: user.id, 
-            color, 
-            isAdmin,
-            locationConsent: user.locationConsent === 1 
+            sql: "UPDATE users SET reset_status = 'NONE', reset_token = NULL, reset_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            args: [user.id]
           });
         } else {
-          res.status(401).json({ error: "Geçersiz giriş." });
+          return res.status(401).json({ 
+            error: "Geçersiz şifre. Şifre sıfırlama talebiniz yönetici (emirgan) onayı bekliyor." 
+          });
+        }
+      } else if (user.reset_status === 'REJECTED') {
+        // KRİTİK KONTROL 3: Eğer user.reset_status === 'REJECTED' ise:
+        await client.execute({
+          sql: "UPDATE users SET reset_status = 'NONE', reset_token = NULL, reset_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          args: [user.id]
+        });
+        if (!password || !password.trim()) {
+          return res.status(401).json({ 
+            error: "Şifre sıfırlama talebiniz yönetici tarafından reddedildi. Lütfen geçerli şifrenizle giriş yapın." 
+          });
+        }
+        if (!await bcrypt.compare(password, user.password as string)) {
+          return res.status(401).json({ 
+            error: "Şifre sıfırlama talebiniz yönetici tarafından reddedildi. Lütfen geçerli şifrenizle giriş yapın." 
+          });
         }
       } else {
-        res.status(401).json({ error: "Geçersiz giriş." });
+        // Standart Giriş Doğrulaması
+        if (!password || !password.trim()) {
+          return res.status(400).json({ error: "Lütfen şifrenizi girin." });
+        }
+        if (!await bcrypt.compare(password, user.password as string)) {
+          return res.status(401).json({ error: "Geçersiz giriş." });
+        }
       }
+
+      // Başarılı Giriş — Oturum Tokenları ve Kayıt
+      const token = crypto.randomUUID();
+      const refreshToken = crypto.randomUUID();
+      const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      const deviceInfo = (req.headers['user-agent'] || deviceId || 'Web/Mobile Client').toString().slice(0, 255);
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 gün geçerli
+
+      let color = user.color;
+      if (!color) {
+        const colors = ["bg-red-500", "bg-blue-500", "bg-green-500", "bg-yellow-500", "bg-purple-500", "bg-pink-500", "bg-indigo-500", "bg-teal-500"];
+        color = colors[Math.floor(Math.random() * colors.length)];
+      }
+      const clientIp = getClientIp(req);
+
+      // 1. users tablosunu güncelle
+      await client.execute({
+        sql: "UPDATE users SET token = ?, color = ?, last_ip = ?, device_fingerprint = COALESCE(?, device_fingerprint), last_device_id = COALESCE(?, last_device_id), last_seen = ? WHERE id = ?",
+        args: [token, color, clientIp, deviceId || null, deviceId || null, new Date().toISOString(), user.id]
+      });
+
+      // 2. Çoklu cihaz oturumu: user_sessions tablosuna ekle
+      await client.execute({
+        sql: "INSERT INTO user_sessions (user_id, token, refresh_token_hash, device_info, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+        args: [user.id, token, refreshTokenHash, deviceInfo, new Date().toISOString(), expiresAt]
+      }).catch((err) => console.error("Session insert error:", err));
+
+      // Asynchronously log login traffic for 5651 compliance
+      logAccess(Number(user.id), clientIp, 'login');
+
+      const isAdmin = (user.username as string)?.toLowerCase() === "emirgan" || user.is_admin === 1;
+
+      res.json({ 
+        token, 
+        refreshToken,
+        username: user.username, 
+        avatar: user.avatar, 
+        id: user.id, 
+        color, 
+        isAdmin,
+        locationConsent: user.locationConsent === 1 
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1244,110 +1317,355 @@ async function startServer() {
     }
   });
 
-  // Şifre Kurtarma: Talep (Forgot Password)
-  app.post(["/api/auth/forgot-password", "/api/forgot-password"], async (req, res) => {
+  // =========================================================================
+  // GÜVENLİ İKİ AŞAMALI ŞİFRE SIFIRLAMA MİMARİSİ (EMİRGAN / ROOT ONAYLI)
+  // =========================================================================
+
+  // 1. POST /api/auth/request-password-reset (Talep Oluşturma)
+  app.post(["/api/auth/request-password-reset", "/api/auth/forgot-password", "/api/forgot-password"], async (req, res) => {
     try {
-      const { email, username } = req.body;
-      const target = (email || username || "").toString().trim();
+      const { username, email } = req.body;
+      const target = (username || email || "").toString().trim();
       if (!target) {
-        return res.status(400).json({ error: "Lütfen kayıtlı e-posta adresinizi veya kullanıcı adınızı girin." });
+        return res.status(400).json({ error: "Lütfen kullanıcı adınızı girin." });
+      }
+
+      // Güvenlik: emirgan hesabı için dışarıdan sıfırlama talebi açılamaz
+      if (target.toLowerCase() === "emirgan") {
+        return res.status(403).json({ 
+          error: "Yönetici (emirgan) hesabı için dışarıdan şifre sıfırlama talebi oluşturulamaz." 
+        });
       }
 
       const userRes = await client.execute({
-        sql: "SELECT id, username, email FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)",
+        sql: "SELECT id, username, email, reset_status, reset_token, isBanned, is_banned FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
         args: [target, target]
       });
 
       if (userRes.rows.length === 0) {
-        // Kullanıcı ifşasını (user enumeration) engellemek için başarı mesajı döndür
-        return res.json({ 
-          success: true, 
-          message: "Eğer sistemde kayıtlı böyle bir hesap varsa, şifre sıfırlama bağlantısı oluşturuldu." 
-        });
+        return res.status(404).json({ error: "Bu kullanıcı adına sahip bir hesap bulunamadı." });
       }
 
       const foundUser = userRes.rows[0];
-      const resetToken = crypto.randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 dakika
 
+      if (Number(foundUser.isBanned) === 1 || Number(foundUser.is_banned) === 1) {
+        return res.status(403).json({ error: "Hesabınız askıya alınmıştır. Şifre sıfırlama yapılamaz." });
+      }
+
+      // Eğer kullanıcı zaten APPROVED durumdaysa doğrudan onaylı token'ı dön
+      if (foundUser.reset_status === 'APPROVED' && foundUser.reset_token) {
+        return res.json({
+          success: true,
+          status: 'APPROVED',
+          resetToken: foundUser.reset_token,
+          message: "Şifre sıfırlama talebiniz zaten yönetici tarafından onaylanmış durumda."
+        });
+      }
+
+      // Kullanıcının durumunu PENDING yap ve kriptografik reset_token ata
+      const resetToken = crypto.randomBytes(32).toString("hex");
       await client.execute({
-        sql: "INSERT INTO password_resets (user_id, token, expires_at, created_at, used) VALUES (?, ?, ?, ?, 0)",
-        args: [foundUser.id, resetToken, expiresAt, new Date().toISOString()]
+        sql: "UPDATE users SET reset_status = 'PENDING', reset_token = ?, reset_requested_at = CURRENT_TIMESTAMP, reset_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        args: [resetToken, foundUser.id]
       });
 
-      const resetUrl = `/sifre-sifirla?token=${resetToken}`;
-      console.log(`[PASSWORD RESET] User: ${foundUser.username}, Reset URL: ${resetUrl}`);
+      // Emirgan (ROOT) kullanıcısını bul ve bildirim gönder
+      try {
+        const emirganRes = await client.execute("SELECT id FROM users WHERE LOWER(username) = 'emirgan'");
+        if (emirganRes.rows.length > 0) {
+          const emirganId = Number(emirganRes.rows[0].id);
+          const notifContent = `@${foundUser.username} şifresini sıfırlamak için onayınızı bekliyor.`;
+          const notifMeta = JSON.stringify({ 
+            targetUserId: foundUser.id, 
+            targetUsername: foundUser.username,
+            resetRequestedAt: new Date().toISOString()
+          });
+
+          const notifRes = await client.execute({
+            sql: "INSERT INTO notifications (user_id, type, content, sender_id, target_id, metadata, created_at, read) VALUES (?, 'PASSWORD_RESET_REQUEST', ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)",
+            args: [emirganId, notifContent, foundUser.id, foundUser.id, notifMeta]
+          });
+
+          const notifId = Number((notifRes as any).lastInsertRowid || Date.now());
+          const notifObj = {
+            id: notifId,
+            user_id: emirganId,
+            type: 'PASSWORD_RESET_REQUEST',
+            content: notifContent,
+            read: 0,
+            sender_id: foundUser.id,
+            target_id: foundUser.id,
+            metadata: notifMeta,
+            created_at: new Date().toISOString()
+          };
+          io.emit("new_notification", notifObj);
+        }
+      } catch (notifErr) {
+        console.error("[PASSWORD RESET] Error creating notification for emirgan:", notifErr);
+      }
+
+      // Canlı panel güncelleme sinyali
+      io.emit("password_reset_pending_updated");
 
       return res.json({
         success: true,
-        message: "Şifre sıfırlama bağlantısı oluşturuldu. Bağlantı 30 dakika boyunca geçerlidir.",
-        resetToken,
-        resetUrl
+        status: 'PENDING',
+        message: "Şifre sıfırlama talebi yöneticiye (emirgan) iletildi, onay bekleniyor."
       });
+    } catch (e: any) {
+      console.error("[PASSWORD RESET] Request error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // 2. GET /api/auth/password-reset-status/:username (Canlı Durum Yoklama / Polling)
+  app.get("/api/auth/password-reset-status/:username", async (req, res) => {
+    try {
+      const usernameParam = (req.params.username || "").trim();
+      if (!usernameParam) {
+        return res.status(400).json({ error: "Kullanıcı adı belirtilmelidir." });
+      }
+
+      const userRes = await client.execute({
+        sql: "SELECT id, username, reset_status, reset_token FROM users WHERE LOWER(username) = LOWER(?)",
+        args: [usernameParam]
+      });
+
+      if (userRes.rows.length === 0) {
+        return res.json({ status: 'NONE' });
+      }
+
+      const user = userRes.rows[0];
+
+      if (user.reset_status === 'APPROVED') {
+        return res.json({ 
+          status: 'APPROVED', 
+          resetToken: user.reset_token,
+          username: user.username 
+        });
+      }
+
+      if (user.reset_status === 'REJECTED') {
+        // Reddedildikten sonra bir sonraki istekte takılı kalmaması için temizle
+        await client.execute({
+          sql: "UPDATE users SET reset_status = 'NONE', reset_token = NULL, reset_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          args: [user.id]
+        });
+        return res.json({ 
+          status: 'REJECTED', 
+          message: "Şifre sıfırlama talebiniz yönetici (emirgan) tarafından reddedildi." 
+        });
+      }
+
+      if (user.reset_status === 'PENDING') {
+        return res.json({ status: 'PENDING' });
+      }
+
+      return res.json({ status: 'NONE' });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  // Şifre Kurtarma: Yeni Şifre Belirleme (Reset Password)
-  app.post(["/api/auth/reset-password", "/api/reset-password"], async (req, res) => {
+  // 3. POST /api/admin/password-reset/decide (Emirgan Onay / Red Endpoint'i)
+  app.post(["/api/admin/password-reset/decide", "/api/emirgan/password-reset/decide"], async (req, res) => {
     try {
-      const { token, newPassword } = req.body;
-      if (!token || !newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
-        return res.status(400).json({ error: "Geçersiz istek. Şifre en az 6 karakter olmalıdır." });
+      const authHeader = (req.headers.authorization || '').replace('Bearer ', '').trim();
+      const adminName = (req.headers['x-username'] || req.query.username || req.headers['x-admin-username'] || '').toString().toLowerCase();
+      
+      let isAuthorized = adminName === 'emirgan';
+      if (!isAuthorized && authHeader) {
+        const u = await client.execute({ sql: "SELECT username, is_admin FROM users WHERE token = ?", args: [authHeader] });
+        if (u.rows.length > 0 && (String(u.rows[0].username).toLowerCase() === 'emirgan' || u.rows[0].is_admin === 1)) {
+          isAuthorized = true;
+        }
       }
 
-      const resetRes = await client.execute({
-        sql: "SELECT id, user_id, expires_at, used FROM password_resets WHERE token = ?",
-        args: [token]
+      if (!isAuthorized) {
+        return res.status(403).json({ error: "Yetkisiz erişim. Sadece yönetici (emirgan) işlem yapabilir." });
+      }
+
+      const { targetUserId, targetUsername, decision } = req.body;
+      if (!decision || (decision !== 'APPROVE' && decision !== 'REJECT')) {
+        return res.status(400).json({ error: "Geçersiz karar. 'APPROVE' veya 'REJECT' olmalıdır." });
+      }
+
+      let targetUser: any = null;
+      if (targetUserId) {
+        const r = await client.execute({
+          sql: "SELECT id, username, reset_status, reset_token FROM users WHERE id = ?",
+          args: [targetUserId]
+        });
+        if (r.rows.length > 0) targetUser = r.rows[0];
+      }
+      if (!targetUser && targetUsername) {
+        const r = await client.execute({
+          sql: "SELECT id, username, reset_status, reset_token FROM users WHERE LOWER(username) = LOWER(?)",
+          args: [targetUsername]
+        });
+        if (r.rows.length > 0) targetUser = r.rows[0];
+      }
+
+      if (!targetUser) {
+        return res.status(404).json({ error: "Hedef kullanıcı bulunamadı." });
+      }
+
+      if (decision === 'APPROVE') {
+        const token = targetUser.reset_token || crypto.randomBytes(32).toString("hex");
+        await client.execute({
+          sql: "UPDATE users SET reset_status = 'APPROVED', reset_token = ?, reset_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          args: [token, targetUser.id]
+        });
+      } else {
+        await client.execute({
+          sql: "UPDATE users SET reset_status = 'REJECTED', reset_token = NULL, reset_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          args: [targetUser.id]
+        });
+      }
+
+      // İlgili bildirimleri okundu yap
+      await client.execute({
+        sql: "UPDATE notifications SET read = 1 WHERE type = 'PASSWORD_RESET_REQUEST' AND (target_id = ? OR sender_id = ?)",
+        args: [targetUser.id, targetUser.id]
+      }).catch(() => {});
+
+      // Canlı socket yayınları
+      io.emit('password_reset_decided', { 
+        userId: targetUser.id, 
+        username: targetUser.username, 
+        decision 
       });
+      io.emit('password_reset_pending_updated');
 
-      if (resetRes.rows.length === 0) {
-        return res.status(400).json({ error: "Geçersiz veya bulunamayan şifre sıfırlama bağlantısı." });
+      return res.json({
+        success: true,
+        decision,
+        username: targetUser.username,
+        message: decision === 'APPROVE' 
+          ? `@${targetUser.username} için şifre sıfırlama talebi onaylandı.` 
+          : `@${targetUser.username} için şifre sıfırlama talebi reddedildi.`
+      });
+    } catch (err: any) {
+      console.error("[PASSWORD RESET] Decide error:", err);
+      return res.status(500).json({ error: "İşlem sırasında hata oluştu: " + err.message });
+    }
+  });
+
+  // 4. GET /api/admin/password-reset/pending (Bekleyen Sıfırlama Talepleri Listesi)
+  app.get(["/api/admin/password-reset/pending", "/api/emirgan/password-resets/pending", "/api/admin/password-resets/pending"], async (req, res) => {
+    try {
+      const authHeader = (req.headers.authorization || '').replace('Bearer ', '').trim();
+      const adminName = (req.headers['x-username'] || req.query.username || req.headers['x-admin-username'] || '').toString().toLowerCase();
+      
+      let isAuthorized = adminName === 'emirgan';
+      if (!isAuthorized && authHeader) {
+        const u = await client.execute({ sql: "SELECT username, is_admin FROM users WHERE token = ?", args: [authHeader] });
+        if (u.rows.length > 0 && (String(u.rows[0].username).toLowerCase() === 'emirgan' || u.rows[0].is_admin === 1)) {
+          isAuthorized = true;
+        }
       }
 
-      const resetRecord = resetRes.rows[0];
-      if (Number(resetRecord.used) === 1) {
-        return res.status(400).json({ error: "Bu şifre sıfırlama bağlantısı daha önce kullanılmış." });
+      if (!isAuthorized) {
+        return res.status(403).json({ error: "Yetkisiz erişim. Sadece yönetici (emirgan) görüntüleyebilir." });
       }
 
-      if (new Date(resetRecord.expires_at as string).getTime() < Date.now()) {
-        return res.status(400).json({ error: "Şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir bağlantı talep edin." });
+      const pendingRes = await client.execute(
+        "SELECT id, username, email, reset_status, reset_requested_at, reset_updated_at, created_at, avatar, color FROM users WHERE reset_status = 'PENDING' ORDER BY reset_requested_at DESC"
+      );
+
+      return res.json({ pendingRequests: pendingRes.rows });
+    } catch (err: any) {
+      console.error("[PASSWORD RESET] Pending requests error:", err);
+      return res.status(500).json({ error: "Talepler alınamadı: " + err.message });
+    }
+  });
+
+  // 5. POST /api/auth/complete-password-reset (Yeni Şifreyi Kaydetme)
+  app.post(["/api/auth/complete-password-reset", "/api/auth/reset-password", "/api/reset-password"], async (req, res) => {
+    try {
+      const { username, resetToken, token, newPassword } = req.body;
+      const actualToken = (resetToken || token || "").toString().trim();
+
+      if (!actualToken || !newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
+        return res.status(400).json({ error: "Geçersiz istek. Yeni şifre en az 6 karakter olmalıdır." });
+      }
+
+      let userRes = null;
+      if (username && username.toString().trim()) {
+        userRes = await client.execute({
+          sql: "SELECT id, username, reset_status, reset_token, color, avatar, is_admin, locationConsent FROM users WHERE reset_token = ? AND LOWER(username) = LOWER(?)",
+          args: [actualToken, username.toString().trim()]
+        });
+      } else {
+        userRes = await client.execute({
+          sql: "SELECT id, username, reset_status, reset_token, color, avatar, is_admin, locationConsent FROM users WHERE reset_token = ?",
+          args: [actualToken]
+        });
+      }
+
+      // Kullanıcı bulunamadıysa veya durumu APPROVED değilse 403 Forbidden dön
+      if (!userRes || userRes.rows.length === 0) {
+        return res.status(403).json({ 
+          error: "Geçersiz veya süresi dolmuş sıfırlama anahtarı. Yönetici (emirgan) onayı gereklidir." 
+        });
+      }
+
+      const foundUser = userRes.rows[0];
+      if (foundUser.reset_status !== 'APPROVED') {
+        return res.status(403).json({ 
+          error: "Şifre sıfırlama talebiniz henüz yönetici (emirgan) tarafından onaylanmamış." 
+        });
       }
 
       const hashedPassword = await bcrypt.hash(newPassword, 10);
-      const userId = Number(resetRecord.user_id);
+      const userId = Number(foundUser.id);
+      const newToken = crypto.randomUUID();
+      const refreshToken = crypto.randomUUID();
+      const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      const deviceInfo = (req.headers['user-agent'] || 'Web/Mobile Client (Password Reset)').toString().slice(0, 255);
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-      // Şifreyi güncelle ve ana token'ı temizle
+      // Şifreyi güncelle, reset_status ve reset_token'ı temizle, yeni token ata ve hesabı onayla
       await client.execute({
-        sql: "UPDATE users SET password = ?, token = NULL WHERE id = ?",
-        args: [hashedPassword, userId]
+        sql: "UPDATE users SET password = ?, reset_status = 'NONE', reset_token = NULL, reset_updated_at = CURRENT_TIMESTAMP, status = 'approved', token = ? WHERE id = ?",
+        args: [hashedPassword, newToken, userId]
       });
 
-      // Token'ı kullanıldı olarak işaretle
-      await client.execute({
-        sql: "UPDATE password_resets SET used = 1 WHERE id = ?",
-        args: [resetRecord.id]
-      });
-
-      // Güvenlik: Eski tüm cihaz oturumlarını sonlandır (revocation)
+      // Eski tüm cihaz oturumlarını sonlandır (revocation)
       await client.execute({
         sql: "DELETE FROM user_sessions WHERE user_id = ?",
         args: [userId]
       });
 
-      // Bağlı socketleri sonlandırarak tekrar giriş yapmaya zorla
+      // Yeni geçerli oturumu kaydet
+      await client.execute({
+        sql: "INSERT INTO user_sessions (user_id, token, refresh_token_hash, device_info, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+        args: [userId, newToken, refreshTokenHash, deviceInfo, new Date().toISOString(), expiresAt]
+      }).catch(() => {});
+
+      // Eski bağlı soketleri kapat
       const activeSocketId = onlineUsers.get(userId);
       if (activeSocketId) {
         const s = io.sockets.sockets.get(activeSocketId);
         if (s) s.disconnect(true);
       }
 
+      const isAdmin = (foundUser.username as string)?.toLowerCase() === "emirgan" || foundUser.is_admin === 1;
+
       return res.json({
         success: true,
-        message: "Şifreniz başarıyla güncellendi. Yeni şifrenizle giriş yapabilirsiniz."
+        token: newToken,
+        refreshToken,
+        username: foundUser.username,
+        avatar: foundUser.avatar,
+        id: foundUser.id,
+        color: foundUser.color,
+        isAdmin,
+        locationConsent: foundUser.locationConsent === 1,
+        message: "Şifreniz başarıyla güncellendi. Yeni şifrenizle giriş yapıldı."
       });
     } catch (e: any) {
+      console.error("[PASSWORD RESET] Complete error:", e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -1450,7 +1768,7 @@ async function startServer() {
   });
 
   app.post("/api/upload", (req, res) => {
-    upload.single("file")(req, res, async (err: any) => {
+    (upload.single("file") as any)(req, res, async (err: any) => {
       if (err) {
         console.error("Upload single error:", err);
         if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {
@@ -1504,7 +1822,7 @@ async function startServer() {
 
   // Multiple Media Upload Endpoint (Supports up to 50 files / photos / videos)
   app.post("/api/upload-multiple", (req, res) => {
-    upload.array("files", 50)(req, res, async (err: any) => {
+    (upload.array("files", 50) as any)(req, res, async (err: any) => {
       if (err) {
         console.error("Upload multiple error:", err);
         if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {

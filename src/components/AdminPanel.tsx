@@ -6,7 +6,7 @@ import {
   Unlock, Crown, AlertTriangle, Eye, UserX,
   Radio, HardDrive, Terminal, X, Check, Edit3, 
   ShieldAlert, Ban, UserCheck, ShieldCheck, Gamepad2, Tag,
-  Award, Plus, ArrowUp, ArrowDown, Layers, Sparkles, Palette, Flame
+  Award, Plus, ArrowUp, ArrowDown, Layers, Sparkles, Palette, Flame, KeyRound
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import { COURSE_ROLES, CourseRole, sortRolesByPosition } from "../types";
@@ -60,6 +60,17 @@ interface PendingUserItem {
   last_device_id?: string;
   created_at?: string;
   status?: string;
+}
+
+interface PendingPasswordResetItem {
+  id: number;
+  username: string;
+  email?: string;
+  reset_status: string;
+  reset_requested_at: string;
+  reset_updated_at?: string;
+  avatar?: string | null;
+  color?: string;
 }
 
 interface BannedHardwareItem {
@@ -181,6 +192,44 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
       console.error("Error fetching pending users:", e);
     }
   }, [onPendingCountChange]);
+
+  // 1.1 Fetch Pending Password Reset Requests (Emirgan Approved)
+  const [pendingPasswordResets, setPendingPasswordResets] = useState<PendingPasswordResetItem[]>([]);
+  const [passwordResetActionLoading, setPasswordResetActionLoading] = useState<number | null>(null);
+
+  const fetchPendingPasswordResets = useCallback(async () => {
+    try {
+      const res = await fetch(getApiUrl("/api/admin/password-reset/pending"), { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setPendingPasswordResets(data.pendingRequests || []);
+      }
+    } catch (e) {
+      console.error("Error fetching pending password resets:", e);
+    }
+  }, []);
+
+  const handlePasswordResetDecide = async (userId: number, username: string, decision: 'APPROVE' | 'REJECT') => {
+    try {
+      setPasswordResetActionLoading(userId);
+      const res = await fetch(getApiUrl("/api/admin/password-reset/decide"), {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ targetUserId: userId, targetUsername: username, decision })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(decision === 'APPROVE' ? `@${username} için şifre sıfırlama onaylandı!` : `@${username} için şifre sıfırlama reddedildi.`, "success");
+        setPendingPasswordResets(prev => prev.filter(r => r.id !== userId));
+      } else {
+        showToast(data.error || "İşlem yapılamadı.", "error");
+      }
+    } catch (err: any) {
+      showToast(err.message || "İşlem sırasında hata oluştu.", "error");
+    } finally {
+      setPasswordResetActionLoading(null);
+    }
+  };
 
   // 2. Fetch All Users (Sorted with Online first)
   const fetchUsers = useCallback(async () => {
@@ -527,6 +576,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
   // Initial load & socket listeners
   useEffect(() => {
     fetchPendingUsers();
+    fetchPendingPasswordResets();
     fetchUsers();
     fetchOverview();
     fetchActiveTables();
@@ -534,21 +584,25 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
 
     const interval = setInterval(() => {
       fetchPendingUsers();
+      fetchPendingPasswordResets();
       fetchActiveTables();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [fetchPendingUsers, fetchUsers, fetchOverview, fetchActiveTables, fetchRoles]);
+  }, [fetchPendingUsers, fetchPendingPasswordResets, fetchUsers, fetchOverview, fetchActiveTables, fetchRoles]);
 
   useEffect(() => {
     if (!socket) return;
 
     const handlePendingUpdate = () => {
       fetchPendingUsers();
+      fetchPendingPasswordResets();
       fetchUsers();
       fetchOverview();
       fetchActiveTables();
     };
+
+    socket.on("password_reset_pending_updated", fetchPendingPasswordResets);
 
     const handleActiveTablesUpdate = (tables: any[]) => {
       if (Array.isArray(tables)) {
@@ -592,11 +646,12 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
       socket.off("user_unbanned", handlePendingUpdate);
       socket.off("user_deleted", handlePendingUpdate);
       socket.off("user:roles_updated", handleRolesUpdate);
+      socket.off("password_reset_pending_updated", fetchPendingPasswordResets);
       socket.off("roles:updated", fetchRoles);
       socket.off("active_tables_updated", handleActiveTablesUpdate);
       socket.off("online_users");
     };
-  }, [socket, fetchPendingUsers, fetchUsers, fetchOverview, fetchActiveTables, fetchRoles]);
+  }, [socket, fetchPendingUsers, fetchPendingPasswordResets, fetchUsers, fetchOverview, fetchActiveTables, fetchRoles]);
 
   // Fetch Screen Time Leaderboard from backend
   const fetchScreenTimeLeaderboard = async (rangeToFetch?: "today" | "week" | "all") => {
@@ -623,7 +678,10 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
   // Tab change handler
   const handleTabChange = (tab: "pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity" | "quote") => {
     setActiveTab(tab);
-    if (tab === "pending") fetchPendingUsers();
+    if (tab === "pending") {
+      fetchPendingUsers();
+      fetchPendingPasswordResets();
+    }
     if (tab === "users") fetchUsers();
     if (tab === "roles") fetchRoles();
     if (tab === "tables") fetchActiveTables();
@@ -996,9 +1054,15 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
           }`}
         >
           <ShieldCheck size={16} />
-          <span>📋 Kayıt Onayları</span>
+          <span>📋 Onaylar</span>
+          {pendingPasswordResets.length > 0 && (
+            <span className="px-2 py-0.5 text-[11px] font-black rounded-full bg-amber-400 text-slate-950 animate-pulse flex items-center gap-1" title="Bekleyen Şifre Sıfırlama Talepleri">
+              <KeyRound size={11} />
+              {pendingPasswordResets.length}
+            </span>
+          )}
           {pendingUsers.length > 0 && (
-            <span className="px-2 py-0.5 text-[11px] font-black rounded-full bg-amber-500 text-slate-950 animate-pulse">
+            <span className="px-2 py-0.5 text-[11px] font-black rounded-full bg-blue-600 text-white">
               {pendingUsers.length}
             </span>
           )}
@@ -1119,10 +1183,101 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
       <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 touch-pan-y overscroll-y-contain">
         
         {/* ========================================================= */}
-        {/* TAB 1: KAYIT ONAYLARI (PENDING USERS)                     */}
+        {/* TAB 1: ONAY BEKLEYENLER (ŞİFRE SIFIRLAMA & KAYIT ONAYLARI) */}
         {/* ========================================================= */}
         {activeTab === "pending" && (
-          <div className="space-y-4 max-w-5xl mx-auto">
+          <div className="space-y-6 max-w-5xl mx-auto">
+            {/* 1. BEKLEYEN ŞİFRE SIFIRLAMA TALEPLERİ (EMİRGAN ONAYI) */}
+            <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-transparent border border-amber-500/40 rounded-2xl p-5 shadow-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 rounded-xl font-black shadow-md">
+                    <KeyRound size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                      <span>🔑 Bekleyen Şifre Sıfırlama Talepleri</span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
+                        pendingPasswordResets.length > 0 
+                          ? 'bg-amber-400 text-slate-950 animate-pulse' 
+                          : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {pendingPasswordResets.length} bekleyen
+                      </span>
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Kullanıcılar siz onaylamadan şifrelerini değiştiremez. Onay verdiğinizde kullanıcı anında yeni şifre belirleyebilir.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={fetchPendingPasswordResets}
+                  className="self-start sm:self-center flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors cursor-pointer"
+                >
+                  <RefreshCw size={13} />
+                  <span>Talepleri Yenile</span>
+                </button>
+              </div>
+
+              {pendingPasswordResets.length === 0 ? (
+                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-center">
+                  <p className="text-xs text-slate-400 font-medium">
+                    Şu anda onay bekleyen herhangi bir şifre sıfırlama talebi bulunmuyor.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {pendingPasswordResets.map((req) => (
+                    <div
+                      key={req.id}
+                      className="bg-slate-900 border border-amber-500/40 hover:border-amber-400 rounded-xl p-4 transition-all shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3.5"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center font-bold text-base shrink-0">
+                          {req.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-white">@{req.username}</span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              ⏳ Onay Bekliyor
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Talep Saati: {req.reset_requested_at ? new Date(req.reset_requested_at).toLocaleString("tr-TR") : "Belirtilmemiş"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          disabled={passwordResetActionLoading === req.id}
+                          onClick={() => handlePasswordResetDecide(req.id, req.username, 'APPROVE')}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+                        >
+                          <Check size={14} />
+                          <span>Onayla</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={passwordResetActionLoading === req.id}
+                          onClick={() => handlePasswordResetDecide(req.id, req.username, 'REJECT')}
+                          className="px-3.5 py-1.5 bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 text-red-400 border border-red-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                        >
+                          <X size={14} />
+                          <span>Reddet</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 2. ONAY BEKLEYEN YENİ HESAP KAYITLARI */}
             <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-2xl p-5 shadow-lg">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
