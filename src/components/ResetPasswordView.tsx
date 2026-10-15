@@ -4,12 +4,16 @@ import { safeFetchJson } from "../utils/api";
 
 interface ResetPasswordViewProps {
   token: string;
+  username?: string;
+  requesterKey?: string;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
 export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
   token,
+  username,
+  requesterKey,
   onSuccess,
   onCancel
 }) => {
@@ -24,8 +28,8 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
     setError(null);
     setSuccessMessage(null);
 
-    if (newPassword.length < 6) {
-      setError("Yeni şifreniz en az 6 karakter olmalıdır.");
+    if (newPassword.length < 8 || new TextEncoder().encode(newPassword).length > 72) {
+      setError("Yeni şifreniz en az 8 karakter ve en fazla 72 bayt olmalıdır.");
       return;
     }
 
@@ -34,18 +38,17 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
       return;
     }
 
+    if (!username || !requesterKey) { setError("Bu bağlantı artık kullanılamaz. Giriş ekranından yeni bir sıfırlama talebi gönderin."); return; }
     setIsLoading(true);
     try {
       const data = await safeFetchJson("/api/auth/complete-password-reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resetToken: token, token, newPassword })
+        body: JSON.stringify({ username, requesterKey, resetToken: token, newPassword })
       });
 
       setSuccessMessage(data.message || "Şifreniz başarıyla güncellendi!");
-      setTimeout(() => {
-        onSuccess();
-      }, 2000);
+      onSuccess();
     } catch (err: any) {
       setError(err.message || "Şifre sıfırlanırken bir hata oluştu.");
     } finally {
@@ -53,8 +56,18 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
     }
   };
 
+  if (!username || !requesterKey || !token) return (
+    <div className="min-h-[100dvh] flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
+      <div role="alert" className="max-w-md rounded-2xl p-6 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 space-y-4">
+        <h2 className="font-bold text-lg">Yeni sıfırlama talebi gerekli</h2>
+        <p>Bu eski bağlantı artık kullanılamaz. Giriş ekranından Şifremi Unuttum seçeneğiyle yönetici onaylı yeni bir talep gönderin.</p>
+        <button type="button" onClick={onCancel} className="min-h-11 w-full rounded-xl bg-blue-600 text-white px-4 py-3">Giriş Ekranına Dön</button>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4">
+    <div className="fixed inset-0 z-[99999] overflow-y-auto min-h-[100dvh] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4">
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5">
         
         <div className="text-center space-y-2">
@@ -81,7 +94,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Yeni Şifre (En az 6 karakter)
+                Yeni Şifre (En az 8 karakter)
               </label>
               <input
                 type="password"
@@ -89,7 +102,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-base focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
               />
             </div>
 
@@ -103,7 +116,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-base focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
               />
             </div>
 
@@ -122,7 +135,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
               {isLoading ? (
                 <Loader2 size={16} className="animate-spin" />
               ) : (
-                "Şifreyi Güncelle ve Giriş Yap"
+                "Şifreyi Güncelle"
               )}
             </button>
 

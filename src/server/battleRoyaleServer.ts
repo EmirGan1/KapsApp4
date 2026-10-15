@@ -403,16 +403,15 @@ export function rayIntersectsCircle(
     return { hit: dSq <= radius * radius, x: x1, y: y1, t: 0 };
   }
 
-  // Projection of circle center onto segment
-  const t = Math.max(0, Math.min(1, ((cx - x1) * dx + (cy - y1) * dy) / lenSq));
-  const projX = x1 + t * dx;
-  const projY = y1 + t * dy;
-  const distSq = (cx - projX) * (cx - projX) + (cy - projY) * (cy - projY);
-
-  if (distSq <= radius * radius) {
-    return { hit: true, x: projX, y: projY, t };
-  }
-  return { hit: false, x: 0, y: 0, t: 1 };
+  const ox=x1-cx, oy=y1-cy;
+  const c=ox*ox+oy*oy-radius*radius;
+  if (c<=0) return {hit:true,x:x1,y:y1,t:0};
+  const b=ox*dx+oy*dy;
+  const discriminant=b*b-lenSq*c;
+  if (discriminant<0) return {hit:false,x:0,y:0,t:1};
+  const t=(-b-Math.sqrt(discriminant))/lenSq;
+  if (t<0 || t>1) return {hit:false,x:0,y:0,t:1};
+  return {hit:true,x:x1+t*dx,y:y1+t*dy,t};
 }
 
 export function checkRaycastLOS(
@@ -422,13 +421,12 @@ export function checkRaycastLOS(
 ): { hit: boolean; x: number; y: number; t: number } {
   // 1. Bina duvarları kontrolü
   const wallHit = checkRaycastWalls(x1, y1, x2, y2, buildings);
-  if (wallHit.hit) return wallHit;
 
   // 2. Taş engelleri (Rock Obstacles) kontrolü (Mermiler ve görüş hattı kayalardan geçemez)
-  let minT = 1.0;
-  let hit = false;
-  let hitX = x2;
-  let hitY = y2;
+  let minT = wallHit.hit ? wallHit.t : 1.0;
+  let hit = wallHit.hit;
+  let hitX = wallHit.hit ? wallHit.x : x2;
+  let hitY = wallHit.hit ? wallHit.y : y2;
   for (const obs of obstacles) {
     if (obs && obs.type === 'rock') {
       const rockRadius = obs.radius || 25;
@@ -727,6 +725,9 @@ export class BattleRoyaleManager {
     mode: 'royale' | 'deathmatch',
     duration: number
   ): GameRoom {
+    capacity = Number.isFinite(Number(capacity)) ? Math.min(20, Math.max(2, Math.floor(Number(capacity)))) : 20;
+    duration = Number.isFinite(Number(duration)) ? Math.min(3600, Math.max(30, Math.floor(Number(duration)))) : 180;
+    mode = mode === 'royale' ? 'royale' : 'deathmatch';
     const id = 'royale_' + Math.random().toString(36).substring(2, 9);
     const room: GameRoom = {
       id,
@@ -854,6 +855,7 @@ export class BattleRoyaleManager {
       return { success: true, room };
     }
 
+    if (room.status === 'countdown') return { success: false, error: 'Geri sayım başladı; sonraki turu bekleyin.' };
     if (room.players.length >= room.capacity) {
       return { success: false, error: 'Masa dolu!' };
     }
@@ -894,6 +896,20 @@ export class BattleRoyaleManager {
       lastShootTime: 0
     };
 
+    if (room.status === 'playing') {
+      const spawn = this.findSafeSpawn(room);
+      newPlayer.x = spawn.x;
+      newPlayer.y = spawn.y;
+      if (room.mode === 'royale') {
+        // Late arrivals spectate until the next round; joining cannot resurrect an eliminated participant.
+        newPlayer.isAlive = false;
+        newPlayer.hp = 0;
+        newPlayer.spectating = true;
+      } else {
+        newPlayer.spawnShieldEndTime = Date.now() + 3500;
+        newPlayer.respawnAckReceived = true;
+      }
+    }
     room.players.push(newPlayer);
     this.broadcastRoomState(room);
     this.broadcastRoomsList();
@@ -904,6 +920,8 @@ export class BattleRoyaleManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
+    const leavingPlayer = room.players.find(p => p.userId === userId);
+    if (leavingPlayer) room.positionHistory?.delete(leavingPlayer.id);
     room.players = room.players.filter(p => p.userId !== userId);
 
     const realPlayers = room.players.filter(p => !p.isBot);
@@ -933,6 +951,7 @@ export class BattleRoyaleManager {
   public addBot(roomId: string, userId: number) {
     const room = this.rooms.get(roomId);
     if (!room || room.status !== 'lobby') return { error: 'Bot eklenemez.' };
+    if (!room.players.some(p => p.userId === userId && p.isHost && !p.isBot)) return { error: 'Sadece oda kurucusu botları yönetebilir.' };
     if (room.players.length >= room.capacity) return { error: 'Masa dolu!' };
 
     const botNames = ['kapboss', 'kıllıÇ', 'AXELbot', 'EmGaN', 'EE', 'IA', 'TOK', 'CAS', 'IB'];
@@ -986,6 +1005,7 @@ export class BattleRoyaleManager {
   public removeBot(roomId: string, userId: number, botIdStr?: string) {
     const room = this.rooms.get(roomId);
     if (!room || room.status !== 'lobby') return { error: 'Bot silinemez.' };
+    if (!room.players.some(p => p.userId === userId && p.isHost && !p.isBot)) return { error: 'Sadece oda kurucusu botları yönetebilir.' };
 
     let idx = -1;
     if (botIdStr) {
@@ -1022,6 +1042,7 @@ export class BattleRoyaleManager {
   public returnToLobby(roomId: string, userId: number) {
     const room = this.rooms.get(roomId);
     if (!room) return { error: 'Oda bulunamadı.' };
+    if (!room.players.some(p => p.userId === userId && p.isHost && !p.isBot)) return { error: 'Sadece oda kurucusu lobiye dönebilir.' };
     this.resetRoomToLobby(room);
     return { success: true, room: this.getPublicRoomState(room) };
   }
@@ -1041,6 +1062,7 @@ export class BattleRoyaleManager {
     room.killfeed = [];
     room.damagePopups = [];
     room.matchTimeRemaining = room.duration;
+    room.positionHistory?.clear();
 
     room.players.forEach(p => {
       p.hp = 100;
@@ -1049,6 +1071,11 @@ export class BattleRoyaleManager {
       p.kills = 0;
       p.deaths = 0;
       p.spectating = false;
+      p.vx = 0; p.vy = 0; p.shooting = false;
+      p.isReloading = false; p.reloadEndTime = 0;
+      p.respawnAt = null; p.respawnAckReceived = true;
+      p.speedBuffEndTime = 0; p.rageBuffEndTime = 0;
+      p.lastShootTime = 0; p.lastInputTime = Date.now();
       p.ready = p.isHost || p.isBot;
       p.activeWeapon = 'pistol';
       p.activeWeaponSlot = 0;
@@ -1093,6 +1120,7 @@ export class BattleRoyaleManager {
   }
 
   private launchGamePlay(room: GameRoom) {
+    room.positionHistory?.clear();
     room.status = 'playing';
     room.matchTimeRemaining = room.duration;
     room.winner = null;
@@ -1134,6 +1162,11 @@ export class BattleRoyaleManager {
       p.weapons = ['pistol'];
       p.ammo = { pistol: 15, shotgun: 6, smg: 32, rifle: 30, sniper: 5, plasma: 3 };
       p.reserveAmmo = { pistol: 60, shotgun: 24, smg: 120, rifle: 90, sniper: 15, plasma: 6 };
+      p.vx = 0; p.vy = 0; p.shooting = false;
+      p.isReloading = false; p.reloadEndTime = 0;
+      p.respawnAt = null; p.respawnAckReceived = true;
+      p.speedBuffEndTime = 0; p.rageBuffEndTime = 0;
+      p.lastShootTime = 0; p.lastInputTime = Date.now();
       p.botStrafeDir = Math.random() < 0.5 ? 1 : -1;
       p.botStrafeTimer = Date.now() + 600;
       p.botStuckCounter = 0;
@@ -1234,7 +1267,7 @@ export class BattleRoyaleManager {
   }
 
   public processPlayerInput(roomId: string, userId: number, input: any) {
-    if (!input || typeof input !== 'object') return;
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return;
     const room = this.rooms.get(roomId);
     if (!room || room.status !== 'playing') return;
 
@@ -1288,7 +1321,7 @@ export class BattleRoyaleManager {
 
     // Angle (strictly finite, bounded)
     if (typeof input.angle === 'number' && Number.isFinite(input.angle)) {
-      player.angle = input.angle;
+      player.angle = ((input.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
     }
 
     // Shooting (support both shooting and isShooting boolean aliases)
@@ -1301,7 +1334,7 @@ export class BattleRoyaleManager {
     // Weapon Switch
     if (typeof input.switchWeapon === 'number' && Number.isFinite(input.switchWeapon)) {
       const targetSlot = Math.floor(input.switchWeapon);
-      if (player.weapons[targetSlot]) {
+      if (player.weapons[targetSlot] && targetSlot !== player.activeWeaponSlot) {
         player.activeWeaponSlot = targetSlot;
         player.activeWeapon = player.weapons[targetSlot];
         player.isReloading = false;
@@ -1309,7 +1342,8 @@ export class BattleRoyaleManager {
       }
     } else if (input.switchWeapon === 'next' || input.switchWeapon === 'prev') {
       if (player.weapons.length > 1) {
-        player.activeWeaponSlot = (player.activeWeaponSlot + 1) % player.weapons.length;
+        const delta = input.switchWeapon === 'prev' ? -1 : 1;
+        player.activeWeaponSlot = (player.activeWeaponSlot + delta + player.weapons.length) % player.weapons.length;
         player.activeWeapon = player.weapons[player.activeWeaponSlot];
         player.isReloading = false;
         player.reloadEndTime = 0;
@@ -1337,10 +1371,12 @@ export class BattleRoyaleManager {
     if (!room || room.status !== 'playing') return false;
 
     const p = room.players.find(pl => pl.userId === userId);
-    if (!p || p.isAlive) return false;
+    if (!p || p.isAlive || room.mode !== 'deathmatch') return false;
 
     const now = Date.now();
+    if (!p.respawnAt || now < p.respawnAt) return false;
     const spawn = this.findSafeSpawn(room);
+    room.positionHistory?.delete(p.id);
     p.x = spawn.x;
     p.y = spawn.y;
     p.hp = 100;
@@ -1428,11 +1464,11 @@ export class BattleRoyaleManager {
     if (!room) return false;
 
     const player = room.players.find(p => p.userId === userId);
-    if (!player || !player.isAlive) return false;
+    if (!player || !player.isAlive || room.status !== 'playing' || player.respawnAckReceived !== false || player.spawnShieldEndTime <= Date.now()) return false;
 
     player.respawnAckReceived = true;
     // Guaranteed 2 full seconds of protection after camera and render confirmation
-    player.spawnShieldEndTime = Date.now() + 2000;
+    player.spawnShieldEndTime = Math.min(player.spawnShieldEndTime, Date.now() + 2000);
     return true;
   }
 
@@ -1500,9 +1536,12 @@ export class BattleRoyaleManager {
           return;
         }
 
-        const itemAmmo = typeof item.currentAmmo === 'number' && Number.isFinite(item.currentAmmo) ? item.currentAmmo : cfg.magSize;
+        const itemAmmo = typeof item.currentAmmo === 'number' && Number.isFinite(item.currentAmmo) ? Math.max(0, Math.min(cfg.magSize, Math.floor(item.currentAmmo))) : cfg.magSize;
         const oldWeapon = player.activeWeapon;
-        const oldSlot = player.activeWeaponSlot || 0;
+        const duplicateSlot = player.weapons.indexOf(wName);
+        const oldSlot = duplicateSlot >= 0 ? duplicateSlot : (player.activeWeaponSlot || 0);
+        if (player.weapons.length >= 2 && !forceSwap && duplicateSlot < 0) return;
+        if (player.weapons.length === 1 && player.weapons[0] === 'fists') player.weapons = [];
 
         if (player.weapons.length < 2 && !player.weapons.includes(wName)) {
           player.weapons.push(wName);
@@ -1521,6 +1560,7 @@ export class BattleRoyaleManager {
             : (droppedCfg?.magSize || 15);
 
           player.weapons[oldSlot] = wName;
+          player.activeWeaponSlot = oldSlot;
           player.activeWeapon = wName;
           player.ammo[wName] = itemAmmo;
           if (player.reserveAmmo[wName] === undefined) {
@@ -1566,7 +1606,7 @@ export class BattleRoyaleManager {
       } else {
         consumeItem();
       }
-    } catch {
+    } finally {
       room.lootLocks?.delete(item.id);
     }
   }
@@ -1622,7 +1662,7 @@ export class BattleRoyaleManager {
       // 6. Check Battle Royale Elimination & Win
       if (room.mode === 'royale') {
         const alivePlayers = room.players.filter(p => p.isAlive);
-        if (alivePlayers.length <= 1 && room.players.length > 1) {
+        if (alivePlayers.length === 0 || (alivePlayers.length === 1 && room.players.length > 1)) {
           this.endBattleRoyale(room, alivePlayers[0] || null);
           return;
         }
@@ -1756,6 +1796,7 @@ export class BattleRoyaleManager {
       if (!p.isAlive) {
         if (room.mode === 'deathmatch' && p.respawnAt && now >= p.respawnAt) {
           const spawn = this.findSafeSpawn(room);
+          room.positionHistory?.delete(p.id);
           p.x = spawn.x;
           p.y = spawn.y;
           p.hp = 100;
@@ -1770,6 +1811,8 @@ export class BattleRoyaleManager {
           p.ammo = { pistol: WEAPON_CONFIGS.pistol.magSize };
           p.reserveAmmo = { pistol: WEAPON_CONFIGS.pistol.magSize * 2 };
           p.isReloading = false;
+          p.reloadEndTime = 0; p.shooting = false; p.vx = 0; p.vy = 0;
+          p.lastInputTime = now;
 
           // Notify room and client immediately with player:respawned
           this.io.to(room.id).emit('player:respawned', {
@@ -1790,6 +1833,10 @@ export class BattleRoyaleManager {
           });
         }
         return;
+      }
+
+      if (!p.isBot && p.lastInputTime !== undefined && now - p.lastInputTime > 1000) {
+        p.vx = 0; p.vy = 0; p.shooting = false;
       }
 
       // Handle Reload completion
@@ -2217,183 +2264,76 @@ export class BattleRoyaleManager {
   // RAY-CAST BULLET UPDATES (Ghosting & Tunneling Prevention)
   // ============================================================
   private updateBullets(room: GameRoom, now: number) {
-    const remainingBullets: BulletData[] = [];
-
-    room.bullets.forEach(bullet => {
-      const prevX = bullet.x;
-      const prevY = bullet.y;
-      const nextX = bullet.x + bullet.vx;
-      const nextY = bullet.y + bullet.vy;
-      const stepDist = Math.hypot(bullet.vx, bullet.vy);
-
-      bullet.distanceTraveled += stepDist;
-
-      // 1. Map Boundaries and Range Check
-      if (
-        nextX < 0 || nextX > MAP_SIZE ||
-        nextY < 0 || nextY > MAP_SIZE ||
-        bullet.distanceTraveled >= bullet.maxRange
-      ) {
-        if (bullet.isAoE) {
-          this.triggerExplosion(room, nextX, nextY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId);
-        }
-        return;
-      }
-
-      // 2. RAY-CAST WALL COLLISION (Zero-ghosting bullet physics)
-      const wallRay = checkRaycastWalls(prevX, prevY, nextX, nextY, MAP_BUILDINGS);
-      if (wallRay.hit) {
-        // Wall spark/dust effect at exact impact point
-        room.explosions.push({
-          id: `spark_w_${now}_${Math.random().toString(36).substring(2, 6)}`,
-          x: Math.round(wallRay.x),
-          y: Math.round(wallRay.y),
-          radius: 18,
-          createdAt: now
-        });
-        if (bullet.isAoE) {
-          this.triggerExplosion(room, wallRay.x, wallRay.y, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId, bullet.weaponType);
-        }
-        return; // Bullet stops and terminates on the wall
-      }
-
-      // 2B. Rock Obstacle Swept Collision (Mermiler kayalardan geçemez)
-      let hitRock = false;
-      let rockHitX = nextX;
-      let rockHitY = nextY;
-      for (const obs of room.obstacles) {
-        if (obs.type === 'rock') {
-          const rHit = rayIntersectsCircle(prevX, prevY, nextX, nextY, obs.x, obs.y, obs.radius + bullet.radius);
-          if (rHit.hit) {
-            hitRock = true;
-            rockHitX = rHit.x;
-            rockHitY = rHit.y;
-            break;
-          }
-        }
-      }
-      if (hitRock) {
-        // Rock dust/spark effect
-        room.explosions.push({
-          id: `spark_r_${now}_${Math.random().toString(36).substring(2, 6)}`,
-          x: Math.round(rockHitX),
-          y: Math.round(rockHitY),
-          radius: 18,
-          createdAt: now
-        });
-        if (bullet.isAoE) {
-          this.triggerExplosion(room, rockHitX, rockHitY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId, bullet.weaponType);
-        }
-        return; // Bullet blocked by solid rock obstacle!
-      }
-
-      // 3. TNT Barrel Swept Collision
-      let hitBarrel = false;
-      for (const barrel of room.barrels) {
-        const dSq = distToSegmentSquared(barrel.x, barrel.y, prevX, prevY, nextX, nextY);
-        const hitR = barrel.radius + bullet.radius;
-        if (dSq <= hitR * hitR) {
-          barrel.hp -= bullet.damage;
-          hitBarrel = true;
-          if (barrel.hp <= 0) {
-            barrel.hp = 0;
-            this.triggerExplosion(room, barrel.x, barrel.y, 140, 85, bullet.shooterId, 'barrel');
-          }
-          break;
-        }
-      }
-      if (hitBarrel) {
-        room.barrels = room.barrels.filter(b => b.hp > 0);
-        return;
-      }
-
-      // 4. Crate Swept Collision
-      let hitCrate = false;
-      for (const crate of room.crates) {
-        const dSq = distToSegmentSquared(crate.x, crate.y, prevX, prevY, nextX, nextY);
-        const hitR = 24 + bullet.radius;
-        if (dSq <= hitR * hitR) {
-          crate.hp -= bullet.damage;
-          hitCrate = true;
-          if (crate.hp <= 0) {
-            const wName = crate.lootType.startsWith('weapon_') ? crate.lootType.replace('weapon_', '') : null;
-            const mag = wName && WEAPON_CONFIGS[wName] ? WEAPON_CONFIGS[wName].magSize : undefined;
-            room.loot.push({
-              id: `loot_cr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-              type: crate.lootType,
-              currentAmmo: mag,
-              maxAmmo: mag,
-              x: crate.x,
-              y: crate.y
-            });
-          }
-          break;
-        }
-      }
-      if (hitCrate) {
-        room.crates = room.crates.filter(c => c.hp > 0);
-        return;
-      }
-
-      // 5. Player Swept Ray-Collision (with Lag Compensation & Behind Wall/Rock Protection)
-      let hitPlayer = false;
+    const survivors: BulletData[] = [];
+    for (const bullet of room.bullets) {
+      if (![bullet.x,bullet.y,bullet.vx,bullet.vy,bullet.damage,bullet.radius,bullet.maxRange,bullet.distanceTraveled].every(Number.isFinite)) continue;
+      const speed = Math.hypot(bullet.vx,bullet.vy);
+      const remaining = bullet.maxRange-bullet.distanceTraveled;
+      if (remaining<=0 || speed<=0) continue;
+      const scale=Math.min(1,remaining/speed);
+      const nextX=bullet.x+bullet.vx*scale, nextY=bullet.y+bullet.vy*scale;
+      type Collision = { t:number; x:number; y:number; kind:'wall'|'rock'|'barrel'|'crate'|'player'|'boundary'; entity?:any };
+      let closest: Collision | null = null;
+      const consider = (hit:{hit:boolean;t:number;x:number;y:number}, kind:Collision['kind'], entity?:any) => {
+        if (hit.hit && (!closest || hit.t<closest.t)) closest={...hit,kind,entity};
+      };
+      // Compare every swept collision by distance, rather than category or array order.
+      consider(checkRaycastWalls(bullet.x,bullet.y,nextX,nextY,MAP_BUILDINGS),'wall');
+      for (const obstacle of room.obstacles) if (obstacle.type==='rock') consider(
+        rayIntersectsCircle(bullet.x,bullet.y,nextX,nextY,obstacle.x,obstacle.y,obstacle.radius+bullet.radius),'rock');
+      for (const barrel of room.barrels) if (barrel.hp>0) consider(
+        rayIntersectsCircle(bullet.x,bullet.y,nextX,nextY,barrel.x,barrel.y,barrel.radius+bullet.radius),'barrel',barrel);
+      for (const crate of room.crates) if (crate.hp>0) consider(
+        rayIntersectsCircle(bullet.x,bullet.y,nextX,nextY,crate.x,crate.y,24+bullet.radius),'crate',crate);
+      const shooter=room.players.find(p=>p.id===bullet.shooterId);
+      const rewind=now-Math.min(350,Math.max(0,shooter?.clientPing ?? 50));
       for (const target of room.players) {
-        if (!target || !target.isAlive || target.id === bullet.shooterId) continue;
-        if (target.spawnShieldEndTime > now) continue;
-
-        // Retrieve shooter latency for lag compensation rewind
-        const shooter = room.players.find(p => p.id === bullet.shooterId);
-        const shooterPing = shooter?.clientPing ?? 50;
-        const rewindTime = Math.min(350, Math.max(0, shooterPing));
-        const targetTime = now - rewindTime;
-
-        // Check against both current position and lag-compensated historical position
-        const historicalTarget = this.getHistoricalPlayerPosition(room, target.id, targetTime);
-        const targetX = historicalTarget ? historicalTarget.x : target.x;
-        const targetY = historicalTarget ? historicalTarget.y : target.y;
-
-        const dSqCurrent = distToSegmentSquared(target.x, target.y, prevX, prevY, nextX, nextY);
-        const dSqRewind = distToSegmentSquared(targetX, targetY, prevX, prevY, nextX, nextY);
-        const hitR = 24 + bullet.radius;
-
-        if (dSqCurrent <= hitR * hitR || dSqRewind <= hitR * hitR) {
-          // Wall check: wall between bullet origin and player blocks damage!
-          const wallBlock = checkRaycastWalls(prevX, prevY, target.x, target.y, MAP_BUILDINGS);
-          if (wallBlock.hit) continue;
-
-          // Rock check: rock between bullet origin and player blocks damage!
-          let rockBlock = false;
-          for (const obs of room.obstacles) {
-            if (obs.type === 'rock') {
-              const rHit = rayIntersectsCircle(prevX, prevY, target.x, target.y, obs.x, obs.y, obs.radius);
-              if (rHit.hit) {
-                rockBlock = true;
-                break;
-              }
-            }
+        if (!target.isAlive || target.id===bullet.shooterId || target.spawnShieldEndTime>now) continue;
+        // Rewind must never allow a shot through cover at the player's current position.
+        if (checkRaycastLOS(bullet.x,bullet.y,target.x,target.y,MAP_BUILDINGS,room.obstacles).hit) continue;
+        consider(rayIntersectsCircle(bullet.x,bullet.y,nextX,nextY,target.x,target.y,24+bullet.radius),'player',target);
+        const old=this.getHistoricalPlayerPosition(room,target.id,rewind);
+        if (old) consider(rayIntersectsCircle(bullet.x,bullet.y,nextX,nextY,old.x,old.y,24+bullet.radius),'player',target);
+      }
+      if (nextX<0 || nextX>MAP_SIZE || nextY<0 || nextY>MAP_SIZE) {
+        let t=1;
+        if (nextX<0) t=Math.min(t,(0-bullet.x)/(nextX-bullet.x));
+        if (nextX>MAP_SIZE) t=Math.min(t,(MAP_SIZE-bullet.x)/(nextX-bullet.x));
+        if (nextY<0) t=Math.min(t,(0-bullet.y)/(nextY-bullet.y));
+        if (nextY>MAP_SIZE) t=Math.min(t,(MAP_SIZE-bullet.y)/(nextY-bullet.y));
+        consider({hit:true,t,x:bullet.x+(nextX-bullet.x)*t,y:bullet.y+(nextY-bullet.y)*t},'boundary');
+      }
+      const collision=closest as Collision | null;
+      if (collision) {
+        const entity=collision.entity;
+        if (collision.kind==='player' && !bullet.isAoE) this.applyDamageToPlayer(room,entity,bullet.damage,bullet.shooterId,bullet.weaponType);
+        if (collision.kind==='barrel') {
+          entity.hp=Math.max(0,entity.hp-bullet.damage);
+          if (entity.hp===0) {
+            room.barrels=room.barrels.filter(b=>b!==entity);
+            this.triggerExplosion(room,entity.x,entity.y,140,85,bullet.shooterId,'barrel');
           }
-          if (rockBlock) continue;
-
-          hitPlayer = true;
-          this.applyDamageToPlayer(room, target, bullet.damage, bullet.shooterId, bullet.weaponType);
-          break;
         }
-      }
-
-      if (hitPlayer) {
-        if (bullet.isAoE) {
-          this.triggerExplosion(room, nextX, nextY, bullet.aoeRadius || 130, bullet.damage, bullet.shooterId, bullet.weaponType);
+        if (collision.kind==='crate') {
+          entity.hp=Math.max(0,entity.hp-bullet.damage);
+          if (entity.hp===0) {
+            const cfg=WEAPON_CONFIGS[entity.lootType.replace('weapon_','')];
+            room.loot.push({id:`loot_cr_${now}_${Math.random().toString(36).slice(2,8)}`,type:entity.lootType,currentAmmo:cfg?.magSize,maxAmmo:cfg?.magSize,x:entity.x,y:entity.y});
+            room.crates=room.crates.filter(c=>c!==entity);
+          }
         }
-        return;
+        if (collision.kind==='wall' || collision.kind==='rock') room.explosions.push({id:`spark_${now}_${Math.random()}`,x:collision.x,y:collision.y,radius:18,createdAt:now});
+        if (bullet.isAoE) this.triggerExplosion(room,collision.x,collision.y,bullet.aoeRadius || 130,bullet.damage,bullet.shooterId,bullet.weaponType);
+        continue;
       }
-
-      // Bullet advanced safely
-      bullet.x = nextX;
-      bullet.y = nextY;
-      remainingBullets.push(bullet);
-    });
-
-    room.bullets = remainingBullets;
+      bullet.distanceTraveled+=Math.min(speed,remaining);
+      if (scale<1 || bullet.distanceTraveled>=bullet.maxRange) {
+        if (bullet.isAoE) this.triggerExplosion(room,nextX,nextY,bullet.aoeRadius || 130,bullet.damage,bullet.shooterId,bullet.weaponType);
+        continue;
+      }
+      bullet.x=nextX;bullet.y=nextY;survivors.push(bullet);
+    }
+    room.bullets=survivors;
   }
 
   private triggerExplosion(
@@ -2472,7 +2412,7 @@ export class BattleRoyaleManager {
     attackerId: string,
     weaponType?: string
   ) {
-    if (!target || !target.isAlive || target.spawnShieldEndTime > Date.now()) return;
+    if (!target || !target.isAlive || target.spawnShieldEndTime > Date.now() || !Number.isFinite(damage) || damage <= 0) return;
 
     let dmg = damage;
     let totalDmg = damage;
@@ -2517,6 +2457,7 @@ export class BattleRoyaleManager {
   }
 
   private eliminatePlayer(room: GameRoom, victim: PlayerData, killerId: string, weaponType?: string) {
+    if (!victim.isAlive) return;
     victim.isAlive = false;
     victim.deaths = (victim.deaths || 0) + 1;
     victim.hp = 0;
@@ -2529,7 +2470,7 @@ export class BattleRoyaleManager {
     victim.vy = 0;
 
     const killer = room.players.find(p => p.id === killerId);
-    if (killer) {
+    if (killer && killer.id !== victim.id) {
       killer.kills = (killer.kills || 0) + 1;
     }
 
@@ -2615,7 +2556,10 @@ export class BattleRoyaleManager {
   }
 
   private endBattleRoyale(room: GameRoom, winner: PlayerData | null) {
+    if (room.status !== 'playing') return;
     room.status = 'gameover';
+    if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
+    if (room.countdownTimer) clearInterval(room.countdownTimer);
     room.winner = winner ? {
       id: winner.id,
       userId: winner.userId,
@@ -2624,16 +2568,17 @@ export class BattleRoyaleManager {
       kills: winner.kills
     } : null;
 
-    if (winner && winner.userId > 0) {
-      this.recordWin(winner.userId, winner.kills);
-    }
+    this.recordMatch(room, winner?.id);
 
     this.io.to(room.id).emit('royale:game_over', { winner: room.winner, state: this.getPublicGameState(room) });
     this.broadcastRoomsList();
   }
 
   private endDeathmatch(room: GameRoom) {
+    if (room.status !== 'playing') return;
     room.status = 'gameover';
+    if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
+    if (room.countdownTimer) clearInterval(room.countdownTimer);
     const sorted = [...room.players].sort((a, b) => (b.kills || 0) - (a.kills || 0));
     const leader = sorted[0] || null;
 
@@ -2645,26 +2590,21 @@ export class BattleRoyaleManager {
       kills: leader.kills
     } : null;
 
-    if (leader && leader.userId > 0) {
-      this.recordWin(leader.userId, leader.kills);
-    }
+    this.recordMatch(room, leader?.id);
 
     this.io.to(room.id).emit('royale:game_over', { winner: room.winner, state: this.getPublicGameState(room) });
     this.broadcastRoomsList();
   }
 
-  private async recordWin(userId: number, kills: number) {
-    try {
-      await this.db.execute({
-        sql: `UPDATE users SET 
-              royale_wins = COALESCE(royale_wins, 0) + 1,
-              royale_kills = COALESCE(royale_kills, 0) + ?,
-              royale_matches = COALESCE(royale_matches, 0) + 1
-              WHERE id = ?`,
-        args: [kills, userId]
-      });
-    } catch (e) {
-      console.error('Error updating royale stats:', e);
+  private recordMatch(room: GameRoom, winnerId?: string) {
+    if (!this.db) return; // Offline simulations do not write player statistics.
+    for (const player of room.players) {
+      if (player.isBot || player.userId <= 0) continue;
+      void this.db.execute({
+        sql: `UPDATE users SET royale_wins=COALESCE(royale_wins,0)+?,
+          royale_kills=COALESCE(royale_kills,0)+?,royale_matches=COALESCE(royale_matches,0)+1 WHERE id=?`,
+        args: [player.id===winnerId ? 1 : 0,player.kills || 0,player.userId]
+      }).catch(err=>console.error('Error recording Battle Royale match:',err));
     }
   }
 
@@ -2699,14 +2639,17 @@ export class BattleRoyaleManager {
   }
 
   private findSafeSpawn(room: GameRoom): { x: number; y: number } {
-    for (let attempt = 0; attempt < 35; attempt++) {
-      const x = 300 + Math.random() * (MAP_SIZE - 600);
-      const y = 300 + Math.random() * (MAP_SIZE - 600);
-      if (!this.checkBuildingWallCollision(x, y, 32)) {
-        return { x: Math.round(x), y: Math.round(y) };
-      }
+    const safe = (x: number, y: number) => !this.checkBuildingWallCollision(x,y,32)
+      && !this.checkObstacleCollision(room,x,y,32)
+      && room.crates.every(c => Math.hypot(x-c.x,y-c.y) > 56)
+      && room.barrels.every(b => Math.hypot(x-b.x,y-b.y) > b.radius+32);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const x = Math.round(300 + Math.random() * (MAP_SIZE - 600));
+      const y = Math.round(300 + Math.random() * (MAP_SIZE - 600));
+      if (safe(x,y)) return { x,y };
     }
-    return { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
+    for (let y=60;y<MAP_SIZE-60;y+=64) for (let x=60;x<MAP_SIZE-60;x+=64) if (safe(x,y)) return {x,y};
+    throw new Error('No collision-free spawn available');
   }
 
   public broadcastRoomState(room: GameRoom) {
@@ -2888,6 +2831,7 @@ export class BattleRoyaleManager {
         "deathmatch",
         600
       );
+      this.rooms.delete(room.id);
       room.id = testRoomId;
       this.rooms.set(testRoomId, room);
 
@@ -3185,6 +3129,7 @@ export function runVirtualHumanClientsSimulation(manager?: BattleRoyaleManager, 
       "deathmatch",
       600
     );
+    mgr.rooms.delete(room.id);
     room.id = testRoomId;
     mgr.rooms.set(testRoomId, room);
 
@@ -3251,7 +3196,7 @@ export function runVirtualHumanClientsSimulation(manager?: BattleRoyaleManager, 
 
       // Fast forward virtual time to respawn
       virtualTime += 3100;
-      mgr.processPlayerInput(testRoomId, p1.userId, { requestRespawn: true });
+      mgr['updatePlayersAndBots'](room, virtualTime);
       if (!p1.isAlive || p1.hp !== 100) {
         errorTracker.push(`[Scenario 1 Failed]: Player 1 did not respawn properly with 100 HP!`);
       }

@@ -1,221 +1,72 @@
-import React, { useState, useEffect } from "react";
-import { KeyRound, CheckCircle2, AlertCircle, Loader2, ArrowLeft, Send, Clock } from "lucide-react";
-import { safeFetchJson } from "../utils/api";
+import { useEffect, useState } from 'react';
+import { KeyRound, Loader2 } from 'lucide-react';
+import { safeFetchJson } from '../utils/api';
+import { createResetTicket, readResetTicket, clearResetTicket, type ResetTicket } from '../utils/passwordReset';
+import ResetPasswordView from './ResetPasswordView';
 
-interface ForgotPasswordModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onNavigateToReset?: (token: string) => void;
-}
-
-export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
-  isOpen,
-  onClose,
-  onNavigateToReset
-}) => {
-  const [identifier, setIdentifier] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isWaitingApproval, setIsWaitingApproval] = useState(false);
-  const [approvedToken, setApprovedToken] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // 3-Saniyelik Canlı Polling: Yönetici onayını bekle
+type AuthView = 'FORGOT_REQUEST' | 'WAITING_APPROVAL' | 'SET_NEW_PASSWORD';
+export default function ForgotPasswordModal({ isOpen, onClose, initialUsername = '', initialStatus, initialResetToken }: {
+  isOpen: boolean; onClose: () => void; initialUsername?: string; initialStatus?: 'PENDING' | 'APPROVED'; initialResetToken?: string;
+}) {
+  const [username, setUsername] = useState(initialUsername);
+  const [view, setView] = useState<AuthView>('FORGOT_REQUEST');
+  const [ticket, setTicket] = useState<ResetTicket | null>(null);
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   useEffect(() => {
-    if (!isOpen || !isWaitingApproval || !identifier.trim()) return;
-
-    let isMounted = true;
-    const interval = setInterval(async () => {
+    if (!isOpen) return;
+    setUsername(initialUsername); setError(''); setNotice('');
+    setTicket(readResetTicket(initialUsername)); setToken(initialResetToken || '');
+    setView(initialStatus === 'APPROVED' && initialResetToken ? 'SET_NEW_PASSWORD' : initialStatus === 'PENDING' ? 'WAITING_APPROVAL' : 'FORGOT_REQUEST');
+  }, [isOpen, initialUsername, initialStatus, initialResetToken]);
+  useEffect(() => {
+    if (!isOpen || view !== 'WAITING_APPROVAL' || !ticket) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
       try {
-        const res = await fetch(`/api/auth/password-reset-status/${encodeURIComponent(identifier.trim())}`);
-        const data = await res.json();
-
-        if (!isMounted) return;
-
-        if (data.status === 'APPROVED' && data.resetToken) {
-          clearInterval(interval);
-          setApprovedToken(data.resetToken);
-          setIsWaitingApproval(false);
-          if (onNavigateToReset) {
-            onClose();
-            onNavigateToReset(data.resetToken);
-          }
-        } else if (data.status === 'REJECTED') {
-          clearInterval(interval);
-          setIsWaitingApproval(false);
-          setError(data.message || 'Şifre sıfırlama talebiniz yönetici (emirgan) tarafından reddedildi.');
+        const result = await safeFetchJson(`/api/auth/password-reset-status/${encodeURIComponent(ticket.username)}`, { headers: { 'X-Password-Reset-Key': ticket.requesterKey } });
+        if (cancelled) return;
+        setError('');
+        if (result.status === 'APPROVED' && result.resetToken) { setToken(result.resetToken); setView('SET_NEW_PASSWORD'); return; }
+        if (['REJECTED', 'EXPIRED', 'CANCELLED', 'COMPLETED'].includes(result.status)) {
+          clearResetTicket(ticket.username); setView('FORGOT_REQUEST');
+          setError(result.status === 'REJECTED' ? 'Şifre sıfırlama talebiniz yönetici tarafından reddedildi.' : 'Talep kapanmış veya süresi dolmuş. Gerekirse yeni talep gönderin.'); return;
         }
-      } catch (err) {
-        console.error('Polling hatası:', err);
-      }
-    }, 3000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
+      } catch (err: any) { if (!cancelled) setError(err.message || 'Durum alınamadı. Yeniden deneniyor.'); }
+      if (!cancelled) timer = setTimeout(poll, 3000);
     };
-  }, [isOpen, isWaitingApproval, identifier, onNavigateToReset, onClose]);
-
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isOpen, view, ticket]);
   if (!isOpen) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanId = identifier.trim();
-    if (!cleanId) return;
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const data = await safeFetchJson("/api/auth/request-password-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: cleanId })
-      });
-
-      if (data.status === 'APPROVED' && data.resetToken) {
-        setApprovedToken(data.resetToken);
-        if (onNavigateToReset) {
-          onClose();
-          onNavigateToReset(data.resetToken);
-        }
-      } else {
-        setIsWaitingApproval(true);
-      }
-    } catch (err: any) {
-      setError(err.message || "İşlem sırasında bir hata oluştu.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-4">
-        
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 shadow-inner">
-            <KeyRound size={20} />
-          </div>
-          <div>
-            <h3 className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-slate-100">
-              Şifremi Unuttum
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Yönetici onaylı şifre sıfırlama sistemi
-            </p>
-          </div>
-        </div>
-
-        {isWaitingApproval ? (
-          <div className="space-y-4 py-2">
-            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 space-y-2 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
-              <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
-                <Loader2 size={16} className="animate-spin text-amber-600 shrink-0" />
-                <span>⏳ Şifre Sıfırlama Talebi Gönderildi — Onay Bekleniyor</span>
-              </div>
-              <p>
-                Şifre sıfırlama talebiniz yöneticiye (emirgan) iletildi ve onay bekliyor. Bu ekranda bekleyebilirsiniz; onaylandığında otomatik olarak yeni şifre belirleme sayfasına yönlendirileceksiniz.
-              </p>
-              <p className="pt-1 border-t border-amber-200/60 dark:border-amber-900/40 text-[11px] text-amber-700 dark:text-amber-400">
-                💡 Eğer sayfadan çıkarsanız, onaylandıktan sonra giriş ekranında sadece kullanıcı adınızı yazıp giriş yapmayı deneyerek şifre yenileme ekranına ulaşabilirsiniz.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-              <span>Canlı onay durumu yoklanıyor...</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsWaitingApproval(false);
-                onClose();
-              }}
-              className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              Kapat ve Giriş Ekranına Dön
-            </button>
-          </div>
-        ) : approvedToken ? (
-          <div className="space-y-4 py-2">
-            <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 flex items-start gap-3 text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed">
-              <CheckCircle2 size={18} className="shrink-0 text-emerald-600 mt-0.5" />
-              <div>
-                <p className="font-bold">Yönetici Onayı Alındı!</p>
-                <p className="mt-1">Şifrenizi hemen şimdi yenileyebilirsiniz.</p>
-              </div>
-            </div>
-
-            {onNavigateToReset && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onNavigateToReset(approvedToken);
-                }}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/20 cursor-pointer"
-              >
-                Yeni Şifre Belirleme Ekranına Git →
-              </button>
-            )}
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Kullanıcı Adı
-              </label>
-              <input
-                type="text"
-                required
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="Örn: kullanici_adi"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Talebiniz yönetici (emirgan) onayına sunulacaktır.
-              </p>
-            </div>
-
-            {error && (
-              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
-                <AlertCircle size={15} className="shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                İptal
-              </button>
-
-              <button
-                type="submit"
-                disabled={isLoading || !identifier.trim()}
-                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                {isLoading ? (
-                  <Loader2 size={16} className="animate-spin text-slate-950" />
-                ) : (
-                  <>
-                    <Send size={14} />
-                    <span>Talep Gönder</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        )}
-
-      </div>
+  if (view === 'SET_NEW_PASSWORD' && token && ticket) return <ResetPasswordView token={token} username={ticket.username} requesterKey={ticket.requesterKey}
+    onCancel={onClose} onSuccess={() => { clearResetTicket(ticket.username); setToken(''); setView('FORGOT_REQUEST'); setNotice('Şifreniz güncellendi. Giriş ekranından yeni şifrenizle giriş yapın.'); }} />;
+  return <div role="dialog" aria-modal="true" aria-labelledby="reset-heading" className="fixed inset-0 z-[99999] flex items-center justify-center overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-xs">
+    <div className="my-auto w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 sm:p-8 shadow-2xl space-y-5 text-slate-900 dark:text-slate-100">
+      <h2 id="reset-heading" className="flex items-center gap-2 font-bold text-lg"><KeyRound size={22} />Şifremi Unuttum</h2>
+      {view === 'WAITING_APPROVAL' ? <div role="status" className="rounded-2xl p-4 border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 space-y-3">
+        <Loader2 className="animate-spin" /><h3 className="font-bold">Şifre Sıfırlama Talebi Gönderildi — Onay Bekleniyor</h3>
+        <p className="text-sm leading-relaxed">Talebiniz yöneticiye (emirgan) iletildi. Onaylandığında bu ekran otomatik olarak yeni şifre belirleme ekranına geçer. Sayfadan ayrılırsanız aynı tarayıcıdan geri dönüp giriş ekranında kullanıcı adınızı yazarak devam edebilirsiniz. Tarayıcı verilerinizi silmeyin; başka cihazdan devam etmek için yöneticiyle iletişime geçin.</p>
+      </div> : !notice && <form onSubmit={async e => {
+        e.preventDefault(); if (busy) return; setBusy(true); setError('');
+        try {
+          const next = createResetTicket(username); setTicket(next);
+          const result = await safeFetchJson('/api/auth/request-password-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) });
+          if (result.status === 'APPROVED' && result.resetToken) { setToken(result.resetToken); setView('SET_NEW_PASSWORD'); } else setView('WAITING_APPROVAL');
+        } catch (err: any) { setError(err.message || 'Talep gönderilemedi.'); } finally { setBusy(false); }
+      }} className="space-y-4">
+        <p className="text-sm text-slate-600 dark:text-slate-300">Kullanıcı adınızı girin. Şifreniz, yönetici talebinizi onayladıktan sonra değiştirilebilir.</p>
+        <label htmlFor="reset-username" className="block text-sm font-semibold">Kullanıcı Adı</label>
+        <input id="reset-username" autoComplete="username" required maxLength={255} value={username} onChange={e => setUsername(e.target.value)} disabled={busy}
+          className="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 p-3 text-base outline-none focus:ring-2 focus:ring-blue-500" />
+        <button disabled={busy || !username.trim()} className="w-full min-h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white p-3 font-semibold disabled:opacity-50">{busy ? 'Gönderiliyor…' : 'Sıfırlama Talebi Gönder'}</button>
+      </form>}
+      {notice && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{notice}</p>}
+      {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300 break-words">{error}</p>}
+      <button type="button" onClick={onClose} className="w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-600 p-3 font-semibold">Giriş Ekranına Dön</button>
     </div>
-  );
-};
-
-export default ForgotPasswordModal;
+  </div>;
+}

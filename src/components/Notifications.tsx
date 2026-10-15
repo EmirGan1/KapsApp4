@@ -1,9 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { Socket } from "socket.io-client";
 import { 
-  Bell, MessageSquare, UserPlus, UserCheck, Heart, MessageCircle, Users, CheckCheck, Sparkles, Layers, KeyRound, Check, X 
+  Bell, MessageSquare, UserPlus, UserCheck, Heart, MessageCircle, Users, CheckCheck, Sparkles, Layers 
 } from "lucide-react";
 import { AppNotification } from "../types";
+import { PasswordResetActions } from "./PasswordResetRequests";
+
+function resetMetadata(value?: string | null) {
+  try { return JSON.parse(value || "null"); } catch { return null; }
+}
 
 interface StackedNotification {
   key: string;
@@ -172,52 +177,8 @@ export default function Notifications({
     }
   };
 
-  const [resetDecisions, setResetDecisions] = useState<Record<number, 'APPROVE' | 'REJECT'>>({});
-  const [decisionLoadingId, setDecisionLoadingId] = useState<number | null>(null);
-
-  const handlePasswordResetDecision = async (item: AppNotification, decision: 'APPROVE' | 'REJECT') => {
-    try {
-      setDecisionLoadingId(item.id);
-      let targetUserId = item.target_id || item.sender_id;
-      let targetUsername = "";
-      if (item.metadata) {
-        try {
-          const meta = typeof item.metadata === "string" ? JSON.parse(item.metadata) : item.metadata;
-          if (meta.targetUserId) targetUserId = meta.targetUserId;
-          if (meta.targetUsername) targetUsername = meta.targetUsername;
-        } catch {}
-      }
-      const token = localStorage.getItem("token") || localStorage.getItem("lan_token") || "";
-      const res = await fetch("/api/admin/password-reset/decide", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "X-Username": "emirgan"
-        },
-        body: JSON.stringify({ targetUserId, targetUsername, decision })
-      });
-      if (res.ok) {
-        setResetDecisions(prev => ({ ...prev, [item.id]: decision }));
-        if (socket) {
-          socket.emit("mark_single_notification_read", item.id);
-        }
-      }
-    } catch (err) {
-      console.error("Decision error:", err);
-    } finally {
-      setDecisionLoadingId(null);
-    }
-  };
-
   const getIcon = (type: string) => {
     switch (type) {
-      case "PASSWORD_RESET_REQUEST":
-        return (
-          <div className="p-2.5 bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-xl shrink-0 shadow-xs">
-            <KeyRound size={18} />
-          </div>
-        );
       case "new_message":
       case "dm":
         return (
@@ -340,6 +301,11 @@ export default function Notifications({
                   )}
                 </div>
 
+                {stack.type === 'PASSWORD_RESET_REQUEST' && resetMetadata(stack.latestItem.metadata)?.requestId && (
+                  <PasswordResetActions requestId={resetMetadata(stack.latestItem.metadata).requestId}
+                    status={resetMetadata(stack.latestItem.metadata).status} onDone={fetchNotifications} />
+                )}
+
                 {stack.preview && (
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-1 italic">
                     {stack.preview}
@@ -350,47 +316,10 @@ export default function Notifications({
                   <span className="text-[11px] text-slate-400 dark:text-slate-500">
                     {new Date(stack.created_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })}
                   </span>
-                  {stack.type !== "PASSWORD_RESET_REQUEST" && (
-                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold hover:underline">
-                      Görüntüle →
-                    </span>
-                  )}
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold hover:underline">
+                    Görüntüle →
+                  </span>
                 </div>
-
-                {stack.type === "PASSWORD_RESET_REQUEST" && (
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                    {resetDecisions[stack.latestItem.id] ? (
-                      <span className={`text-xs font-bold px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 ${
-                        resetDecisions[stack.latestItem.id] === 'APPROVE'
-                          ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                          : 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800'
-                      }`}>
-                        {resetDecisions[stack.latestItem.id] === 'APPROVE' ? '✅ Onaylandı' : '❌ Reddedildi'}
-                      </span>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled={decisionLoadingId === stack.latestItem.id}
-                          onClick={() => handlePasswordResetDecision(stack.latestItem, 'APPROVE')}
-                          className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs flex items-center gap-1"
-                        >
-                          <Check size={13} />
-                          <span>Onayla</span>
-                        </button>
-                        <button
-                          type="button"
-                          disabled={decisionLoadingId === stack.latestItem.id}
-                          onClick={() => handlePasswordResetDecision(stack.latestItem, 'REJECT')}
-                          className="bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1"
-                        >
-                          <X size={13} />
-                          <span>Reddet</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           ))

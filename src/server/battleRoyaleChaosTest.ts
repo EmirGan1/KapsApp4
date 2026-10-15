@@ -14,7 +14,7 @@
  *   6. Respawn Packet Loss Recovery & Self-Healing State Handshake
  */
 
-import { BattleRoyaleManager, GameRoom, PlayerData, MAP_SIZE, WEAPON_CONFIGS } from './battleRoyaleServer.ts';
+import { BattleRoyaleManager, GameRoom, PlayerData, MAP_SIZE, WEAPON_CONFIGS, MAP_BUILDINGS } from './battleRoyaleServer.ts';
 
 export interface ChaosSimulationReport {
   success: boolean;
@@ -86,6 +86,7 @@ export function runBattleRoyaleChaosSimulation(
   manager?: BattleRoyaleManager,
   clientCount: number = 20
 ): ChaosSimulationReport {
+  clientCount = Number.isFinite(clientCount) ? Math.min(20, Math.max(4, Math.floor(clientCount))) : 20;
   const startTime = Date.now();
   const errors: string[] = [];
   const network = new ChaosNetwork();
@@ -140,6 +141,7 @@ export function runBattleRoyaleChaosSimulation(
     mode: 'deathmatch',
     duration: 600
   });
+  brManager.rooms.delete(room.id);
   room.id = roomId;
   brManager.rooms.set(roomId, room);
 
@@ -342,7 +344,7 @@ export function runBattleRoyaleChaosSimulation(
     speedPlayer.speedBuffEndTime = Date.now() + 60000; // Extreme speed buff
 
     // Position player right next to a building wall and dash directly through it
-    const testBuilding = (brManager as any).MAP_BUILDINGS?.[0] || {
+    const testBuilding = MAP_BUILDINGS[0] || {
       x: 600,
       y: 600,
       w: 300,
@@ -378,24 +380,23 @@ export function runBattleRoyaleChaosSimulation(
   // SCENARIO 6: INACTIVE TAB DELTA-TIME EXPLOSION CLAMP
   // ============================================================
   // Simulate client returning from 30-second background tab (dt = 30,000ms = 30s)
-  const simulatedDtRaw = 30.0; // 30 seconds
-  const clampedDt = Math.min(simulatedDtRaw, 0.1); // Clamped to 100ms max
-  const speed = 4.8 * 1.35;
-  const rawDisplacement = speed * simulatedDtRaw * 30; // ~5832px (teleports across entire map!)
-  const clampedDisplacement = speed * clampedDt * 30; // ~19.4px (safe and fluid!)
-
-  crisisScenarios.deltaTimeMaxObservedDisplacement = clampedDisplacement;
-  if (clampedDisplacement < 30 && clampedDt <= 0.1) {
-    crisisScenarios.deltaTimeExplosionClamped = true;
-  } else {
-    errors.push(`[Physics Explosion]: Delta-time was not clamped! Resulted in ${clampedDisplacement}px jump.`);
-  }
+  const probe = room.players.find(p=>p.isAlive && !p.isBot);
+  if (probe) {
+    const before = {x:probe.x,y:probe.y};
+    probe.vx=1;probe.vy=1;
+    probe.lastInputTime=Date.now()-30_000;
+    (brManager as any).updatePlayersAndBots(room,Date.now());
+    const displacement=Math.hypot(probe.x-before.x,probe.y-before.y);
+    crisisScenarios.deltaTimeMaxObservedDisplacement=displacement;
+    crisisScenarios.deltaTimeExplosionClamped=displacement<=4.8*1.35+0.001;
+    if (!crisisScenarios.deltaTimeExplosionClamped) errors.push(`[Physics Explosion]: Authoritative movement jumped ${displacement}px after stale input.`);
+  } else errors.push('[Physics test]: No live player available.');
 
   // ============================================================
   // SCENARIO 7: RESPAWN PACKET LOSS RECOVERY & SELF-HEALING STATE
   // ============================================================
   crisisScenarios.respawnsTestedWithLoss++;
-  const respawnClient = virtualClients[3];
+  const respawnClient = virtualClients[Math.min(3, virtualClients.length-1)];
   const respawnPlayer = room.players.find(p => p.userId === respawnClient.userId);
   if (respawnPlayer) {
     // 1. Mark player ready for respawn

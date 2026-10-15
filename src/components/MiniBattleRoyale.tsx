@@ -344,6 +344,7 @@ export default function MiniBattleRoyale({
       }
 
       if (data.userId === currentUserId) {
+        socket.emit('royale:respawn_ack', {});
         predictedPosRef.current = { x: data.x, y: data.y };
         cameraPosRef.current = { x: data.x, y: data.y };
         setHudTick(prev => (prev + 1) % 10000);
@@ -357,7 +358,8 @@ export default function MiniBattleRoyale({
         const newMe = state.players.find(p => !p.isBot && p.userId === currentUserId);
         if (newMe && newMe.isAlive) {
           if (!prevMe || !prevMe.isAlive) {
-            // Player just respawned, snap prediction & camera
+            // State snapshots recover a lost respawn event, including its one-use acknowledgement.
+            socket.emit('royale:respawn_ack', {});
             predictedPosRef.current = { x: newMe.x, y: newMe.y };
             cameraPosRef.current = { x: newMe.x, y: newMe.y };
           } else {
@@ -765,6 +767,7 @@ export default function MiniBattleRoyale({
         predictedPosRef.current.y = Math.max(30, Math.min(MAP_SIZE - 30, predictedPosRef.current.y + dirY * speed));
       }
 
+      if (document.hidden) { socket.emit('royale:input', { vx: 0, vy: 0, shooting: false }); return; }
       socket.emit('royale:input', {
         vx,
         vy,
@@ -797,8 +800,9 @@ export default function MiniBattleRoyale({
     if (view !== 'game') return;
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement && (e.target.isContentEditable || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName))) return;
       // Prevent browser default scroll for game controls
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F1'].includes(e.code)) {
         e.preventDefault();
       }
 
@@ -878,6 +882,16 @@ export default function MiniBattleRoyale({
       }
     };
 
+    const releaseInputs = () => {
+      isMouseDown.current = false; isSpaceDown.current = false; keysPressed.current = {};
+      moveTouchIdRef.current = null; aimTouchIdRef.current = null;
+      touchMoveOrigin.current = null; touchMoveCurrent.current = null;
+      touchAimOrigin.current = null; touchAimCurrent.current = null;
+      socket?.emit('royale:input', { vx: 0, vy: 0, shooting: false });
+    };
+    const onVisibilityChange = () => { if (document.hidden) releaseInputs(); };
+    window.addEventListener('blur', releaseInputs);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('mousemove', onMouseMove);
@@ -886,6 +900,9 @@ export default function MiniBattleRoyale({
     window.addEventListener('wheel', onWheel, { passive: true });
 
     return () => {
+      releaseInputs();
+      window.removeEventListener('blur', releaseInputs);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mousemove', onMouseMove);

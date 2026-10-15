@@ -99,7 +99,7 @@ export default function App() {
   const [targetGroupId, setTargetGroupId] = useState<number | string | null>(null);
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState<boolean>(false);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
-  const isEmirgan = (username || "").trim().toLowerCase() === "emirgan";
+  const isEmirgan = (username || "").trim().toLowerCase() === "emirgan" || (localStorage.getItem("lan_account_role") || "").toUpperCase() === "ROOT";
 
   // IB Predicted Access State (Emirgan or Authorized Pool Members only)
   const [hasPredictedAccess, setHasPredictedAccess] = useState<boolean>(() => {
@@ -515,6 +515,8 @@ export default function App() {
 
       newSocket.on("connect", onConnect);
 
+      newSocket.on("session_revoked", () => handleLogout());
+
       newSocket.on("connect_error", (err) => {
         if (err.message && (err.message.includes("DEVICE_BANNED") || err.message.includes("cihaz") || err.message.includes("yasaklanmıştır") || err.message.includes("uzaklaştırılmıştır"))) {
           setIsDeviceBanned(true);
@@ -797,6 +799,7 @@ export default function App() {
         }).catch(() => {});
       } catch (e) {}
     }
+    localStorage.removeItem("lan_account_role");
     localStorage.removeItem("lan_token");
     localStorage.removeItem("lan_username");
     localStorage.removeItem("lan_avatar");
