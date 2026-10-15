@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && node scripts/generate-seo-pages.js",
     "start": "node --max-old-space-size=1536 dist/server.cjs",
     "pm2": "pm2 restart ecosystem.config.cjs --env production",
     "preview": "vite preview",
