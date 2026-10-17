@@ -886,12 +886,14 @@ export function useWebRTC({
     if (socket && roomIdRef.current) {
       socket.emit('screen_share_status', {
         roomId: roomIdRef.current,
-        isSharing: false
+        isSharing: false,
+        isScreenAudioEnabled: false
       });
       socket.emit('voice_update_status', {
         roomId: roomIdRef.current,
         isVideoOff: !replacementTrack,
-        isScreenSharing: false
+        isScreenSharing: false,
+        isScreenAudioEnabled: false
       });
     }
   }, [socket]);
@@ -1016,12 +1018,14 @@ export function useWebRTC({
         socket.emit('screen_share_status', {
           roomId: roomIdRef.current,
           isSharing: true,
+          isScreenAudioEnabled: Boolean(screenAudioTrack),
           withAudio: Boolean(screenAudioTrack)
         });
         socket.emit('voice_update_status', {
           roomId: roomIdRef.current,
           isVideoOff: false,
-          isScreenSharing: true
+          isScreenSharing: true,
+          isScreenAudioEnabled: Boolean(screenAudioTrack)
         });
       }
 

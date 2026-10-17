@@ -188,7 +188,23 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
       if (isMobile || !withAudio) {
         stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       } else {
-        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false
+            },
+            // @ts-ignore
+            systemAudio: 'include'
+          });
+        } catch (subErr: any) {
+          if (subErr?.name === 'NotAllowedError' || subErr?.name === 'AbortError') {
+            throw subErr;
+          }
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        }
       }
     }
   } catch (err1: any) {

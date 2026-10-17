@@ -9794,8 +9794,8 @@ async function startServer() {
       }
     });
 
-    socket.on("voice_update_status", (data: { roomId: string; isMuted?: boolean; isSpeaking?: boolean; isDeafened?: boolean; isVideoOff?: boolean; isScreenSharing?: boolean }) => {
-      const { roomId, isMuted, isSpeaking, isDeafened, isVideoOff, isScreenSharing } = data || {};
+    socket.on("voice_update_status", (data: { roomId: string; isMuted?: boolean; isSpeaking?: boolean; isDeafened?: boolean; isVideoOff?: boolean; isScreenSharing?: boolean; isScreenAudioEnabled?: boolean }) => {
+      const { roomId, isMuted, isSpeaking, isDeafened, isVideoOff, isScreenSharing, isScreenAudioEnabled } = data || {};
       if (!roomId) return;
       const room = voiceRooms.get(roomId);
       if (!room) return;
@@ -9807,6 +9807,7 @@ async function startServer() {
         if (typeof isDeafened === 'boolean') p.isDeafened = isDeafened;
         if (typeof isVideoOff === 'boolean') p.isVideoOff = isVideoOff;
         if (typeof isScreenSharing === 'boolean') p.isScreenSharing = isScreenSharing;
+        if (typeof isScreenAudioEnabled === 'boolean') (p as any).isScreenAudioEnabled = isScreenAudioEnabled;
         io.to(`voice_${roomId}`).emit("voice_user_status_changed", {
           userId: user.id,
           socketId: socket.id,
@@ -9814,12 +9815,13 @@ async function startServer() {
           isSpeaking: p.isSpeaking,
           isDeafened: p.isDeafened,
           isVideoOff: p.isVideoOff,
-          isScreenSharing: p.isScreenSharing
+          isScreenSharing: p.isScreenSharing,
+          isScreenAudioEnabled: (p as any).isScreenAudioEnabled
         });
       }
     });
 
-    socket.on("screen_share_status", (data: { roomId?: string; isSharing: boolean }) => {
+    socket.on("screen_share_status", (data: { roomId?: string; isSharing: boolean; isScreenAudioEnabled?: boolean }) => {
       const targetRoomId = data?.roomId || socket.data.currentVoiceRoom;
       if (!targetRoomId) return;
       const room = voiceRooms.get(targetRoomId);
@@ -9828,6 +9830,7 @@ async function startServer() {
       const p = room.participants.get(user.id);
       if (p) {
         p.isScreenSharing = Boolean(data?.isSharing);
+        (p as any).isScreenAudioEnabled = Boolean(data?.isScreenAudioEnabled);
         if (p.isScreenSharing) {
           p.isVideoOff = false;
         }
@@ -9838,7 +9841,8 @@ async function startServer() {
           isSpeaking: p.isSpeaking,
           isDeafened: p.isDeafened,
           isVideoOff: p.isVideoOff,
-          isScreenSharing: p.isScreenSharing
+          isScreenSharing: p.isScreenSharing,
+          isScreenAudioEnabled: (p as any).isScreenAudioEnabled
         });
         broadcastVoiceRoom(targetRoomId);
       }

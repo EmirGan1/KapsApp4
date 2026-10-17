@@ -34,11 +34,13 @@ import Avatar from './Avatar';
 import VideoCell from './VideoCell';
 import VoiceInviteModal from './VoiceInviteModal';
 import MediaSettingsModal from './MediaSettingsModal';
+import ScreenShareModal from './ScreenShareModal';
 import { 
   CameraResolutionMode, 
   NoiseSuppressionMode, 
   VideoAspectRatioMode, 
-  VideoFitMode 
+  VideoFitMode,
+  isMobileOrTablet
 } from '../utils/webrtcConfig';
 
 interface VideoTileProps {
@@ -49,6 +51,7 @@ interface VideoTileProps {
   stream: MediaStream | null;
   isDeafened: boolean;
   isScreenSharing?: boolean;
+  isScreenAudioEnabled?: boolean;
   isSpotlight?: boolean;
   aspectRatioMode?: VideoAspectRatioMode;
   fitMode?: VideoFitMode;
@@ -66,6 +69,7 @@ export const VideoTile = React.memo(({
   stream,
   isDeafened,
   isScreenSharing = false,
+  isScreenAudioEnabled = false,
   isSpotlight = false,
   aspectRatioMode = 'auto',
   fitMode = 'cover',
@@ -171,9 +175,15 @@ export const VideoTile = React.memo(({
       <div className="relative z-10 p-2 sm:p-2.5 flex items-center justify-between pointer-events-none">
         <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
           {isScreenSharing && (
-            <span className="px-2 py-0.5 rounded-lg bg-blue-600/90 text-white text-[10px] font-black flex items-center gap-1 shadow-md border border-blue-400/40 animate-pulse">
+            <span className="px-2 py-0.5 rounded-lg bg-blue-600/90 text-white text-[10px] font-black flex items-center gap-1.5 shadow-md border border-blue-400/40 animate-pulse">
               <Monitor size={11} />
               <span>Ekran Paylaşımı</span>
+              {(isScreenAudioEnabled || participant.isScreenAudioEnabled) && (
+                <span className="flex items-center gap-0.5 text-emerald-300 bg-blue-800/90 px-1.5 py-0.2 rounded border border-emerald-400/30 font-bold" title="Ekran Sesi Paylaşılıyor">
+                  <Volume2 size={10} />
+                  <span>Ses Açık</span>
+                </span>
+              )}
             </span>
           )}
           {isHost && (
@@ -421,14 +431,32 @@ export function VideoRoomView({
 
   // Direct, unblocked screen share invocation with debounce - zero delay, preserves user activation token
   const lastTriggerTimeRef = useRef(0);
-  const handleScreenShareTrigger = useCallback(async (e?: React.SyntheticEvent) => {
+  const [showScreenShareModal, setShowScreenShareModal] = useState(false);
+
+  // Invoke screen share with specified audio setting
+  const startSharingProcess = useCallback(async (withAudio: boolean = false) => {
+    setIsStartingShare(true);
+    try {
+      if (onStartScreenShare) {
+        await onStartScreenShare(withAudio);
+      } else if (onToggleScreenShare) {
+        await onToggleScreenShare(withAudio);
+      }
+    } catch (triggerErr) {
+      console.warn('[ScreenShare] Start trigger error:', triggerErr);
+    } finally {
+      setIsStartingShare(false);
+    }
+  }, [onStartScreenShare, onToggleScreenShare]);
+
+  // Click on screen share button: if already active -> stop; if not active -> on PC open modal, on mobile start directly
+  const handleScreenShareClick = useCallback((e?: React.SyntheticEvent) => {
     if (e) {
       e.stopPropagation();
     }
 
     const now = Date.now();
-    // Debounce to prevent touch + click double execution (within 500ms)
-    if (now - lastTriggerTimeRef.current < 500) {
+    if (now - lastTriggerTimeRef.current < 400) {
       return;
     }
     lastTriggerTimeRef.current = now;
@@ -440,20 +468,21 @@ export function VideoRoomView({
         onToggleScreenShare();
       }
     } else {
-      setIsStartingShare(true);
-      try {
-        if (onStartScreenShare) {
-          await onStartScreenShare(false);
-        } else if (onToggleScreenShare) {
-          await onToggleScreenShare(false);
-        }
-      } catch (triggerErr) {
-        console.warn('[ScreenShare] Start trigger error:', triggerErr);
-      } finally {
-        setIsStartingShare(false);
+      const isMobile = isMobileOrTablet();
+      if (isMobile) {
+        // Mobile browsers cannot capture system audio via getDisplayMedia
+        startSharingProcess(false);
+      } else {
+        // On PC / Desktop: open modal to let user choose screen sound!
+        setShowScreenShareModal(true);
       }
     }
-  }, [isScreenSharing, onStartScreenShare, onStopScreenShare, onToggleScreenShare]);
+  }, [isScreenSharing, onStopScreenShare, onToggleScreenShare, startSharingProcess]);
+
+  const handleConfirmScreenShare = useCallback(async (withAudio: boolean) => {
+    setShowScreenShareModal(false);
+    await startSharingProcess(withAudio);
+  }, [startSharingProcess]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full max-h-[100dvh] w-full overflow-hidden relative bg-slate-950">
@@ -480,7 +509,13 @@ export function VideoRoomView({
                   <span>•</span>
                   <span className="text-emerald-400 font-bold flex items-center gap-1">
                     <Monitor size={12} />
-                    {screenSharer?.username} ekran paylaşıyor
+                    <span>{screenSharer?.username} ekran paylaşıyor</span>
+                    {(screenSharer?.isScreenAudioEnabled || (screenSharer?.id === currentUserId && isScreenAudioEnabled)) && (
+                      <span className="flex items-center gap-0.5 text-blue-300 bg-blue-950/90 px-1.5 py-0.2 rounded border border-blue-500/30 text-[10px] font-bold">
+                        <Volume2 size={10} />
+                        <span>Sesli</span>
+                      </span>
+                    )}
                   </span>
                 </>
               )}
@@ -735,7 +770,7 @@ export function VideoRoomView({
             {/* Screen Share Button */}
             <button
               type="button"
-              onClick={handleScreenShareTrigger}
+              onClick={handleScreenShareClick}
               disabled={isStartingShare}
               title={isScreenSharing ? 'Ekran Paylaşımını Durdur' : 'Ekranını Paylaş'}
               className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer relative z-50 pointer-events-auto touch-manipulation select-none ${
@@ -818,6 +853,14 @@ export function VideoRoomView({
         onChangeAspectRatio={handleAspectRatioChange}
         fitMode={fitMode}
         onChangeFitMode={handleFitModeChange}
+      />
+
+      {/* Screen Share Configuration Modal (PC Audio Choice) */}
+      <ScreenShareModal
+        isOpen={showScreenShareModal}
+        onClose={() => setShowScreenShareModal(false)}
+        onConfirm={handleConfirmScreenShare}
+        isStarting={isStartingShare}
       />
     </div>
   );
