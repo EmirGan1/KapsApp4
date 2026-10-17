@@ -86,7 +86,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
   }, [isOpen, pendingFile]);
 
-  if (!isOpen || !pendingFile) return null;
+  // Prevent background body scroll when FileUploadModal is active on mobile
+  useEffect(() => {
+    if (!isOpen || !pendingFile) return;
+    const orig = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = orig;
+    };
+  }, [isOpen, pendingFile]);
 
   // Toggle "Tüm Konular (Hepsi)"
   const handleToggleAll = () => {
@@ -124,6 +132,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!pendingFile) return;
     if (selectedTopics.length === 0 && !allTopicsSelected) {
       setValidationError("Lütfen en az bir konu seçin veya '⭐ Tüm Müfredat (Hepsi)' seçeneğini işaretleyin.");
       return;
@@ -169,14 +178,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     return <FileIcon className="w-8 h-8 text-slate-500" />;
   };
 
-  // Prevent background body scroll when FileUploadModal is active on mobile
-  useEffect(() => {
-    const orig = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = orig;
-    };
-  }, []);
+  // Early return after ALL hooks have been unconditionally called
+  if (!isOpen || !pendingFile) return null;
 
   return (
     <div 

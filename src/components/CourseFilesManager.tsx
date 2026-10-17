@@ -180,10 +180,13 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setFiles(data.files || []);
+        setFiles(Array.isArray(data?.files) ? data.files : []);
+      } else {
+        setFiles([]);
       }
     } catch (e) {
       console.error("Error loading course files:", e);
+      setFiles([]);
     } finally {
       setIsLoading(false);
     }
@@ -198,6 +201,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
           loadFiles();
         }
       };
+
       socket.on("folder_files_updated", handleFolderUpdated);
       socket.on("subjects_updated", loadFiles);
       socket.on("file:deleted", loadFiles);
@@ -263,8 +267,8 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
       }
 
       const data = await res.json();
-      if (data.file) {
-        setFiles((prev) => [data.file, ...prev]);
+      if (data && data.file) {
+        setFiles((prev) => [data.file, ...(Array.isArray(prev) ? prev : [])]);
       }
       setIsUploadModalOpen(false);
       setPendingFile(null);
@@ -286,7 +290,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     const fileId = deleteConfirmFile.id;
     
     // Instant reactive local update
-    setFiles((prev) => prev.filter((f) => f.id !== fileId));
+    setFiles((prev) => (Array.isArray(prev) ? prev : []).filter((f) => f && f.id !== fileId));
     setIsDeleting(true);
 
     try {
@@ -306,6 +310,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
 
   // Helper to determine docType for a file item
   const getFileDocType = (f: CourseFileItem): DocumentType => {
+    if (!f) return 'other';
     if (f.docType && f.docType !== 'other') return f.docType;
     if (f.doc_type && f.doc_type !== 'other') return f.doc_type as DocumentType;
     const name = (f.original_name || f.filename || '').toLowerCase();
@@ -325,30 +330,36 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     let qp = 0;
     let ms = 0;
     let notes = 0;
+    const safeFiles = Array.isArray(files) ? files : [];
 
-    files.forEach(f => {
+    safeFiles.forEach(f => {
+      if (!f) return;
       const t = getFileDocType(f);
       if (t === 'mark_scheme' || t === 'both') ms++;
       if (t === 'question_paper' || t === 'both') qp++;
       if (t === 'notes' || t === 'summary') notes++;
     });
 
-    return { all: files.length, qp, ms, notes };
+    return { all: safeFiles.length, qp, ms, notes };
   }, [files]);
 
   // Total size calculation
   const totalSizeBytes = useMemo(() => {
-    return files.reduce((acc, curr) => acc + (curr.size || 0), 0);
+    const safeFiles = Array.isArray(files) ? files : [];
+    return safeFiles.reduce((acc, curr) => acc + (curr?.size || 0), 0);
   }, [files]);
 
   const formatTotalSize = (bytes: number) => {
+    if (!bytes || isNaN(bytes)) return '0 KB';
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
   // Filtered files list: type filter + topic filter + search query
   const filteredFiles = useMemo(() => {
-    return files.filter((f) => {
+    const safeFiles = Array.isArray(files) ? files : [];
+    return safeFiles.filter((f) => {
+      if (!f) return false;
       const fileType = getFileDocType(f);
 
       // 1. Doc Type Filter
