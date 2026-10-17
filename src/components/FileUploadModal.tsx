@@ -58,7 +58,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   useEffect(() => {
     if (isOpen && pendingFile) {
       setSelectedTopics([]);
-      setAllTopicsSelected(false);
+      setAllTopicsSelected(true);
       setFileNote('');
       setValidationError(null);
 
@@ -133,15 +133,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pendingFile) return;
-    if (selectedTopics.length === 0 && !allTopicsSelected) {
-      setValidationError("Lütfen en az bir konu seçin veya '⭐ Tüm Müfredat (Hepsi)' seçeneğini işaretleyin.");
-      return;
-    }
+
+    // Default to ALL if no topics manually selected
+    const effectiveAll = allTopicsSelected || selectedTopics.length === 0;
+    const effectiveTopics = effectiveAll ? ["ALL"] : selectedTopics;
 
     await onUpload({
       file: pendingFile,
-      selectedTopics: allTopicsSelected ? ["ALL"] : selectedTopics,
-      allTopics: allTopicsSelected,
+      selectedTopics: effectiveTopics,
+      allTopics: effectiveAll,
       note: fileNote.trim(),
       docType
     });

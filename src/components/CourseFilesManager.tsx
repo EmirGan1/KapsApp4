@@ -172,11 +172,20 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     COURSE_IB_THEMES[Object.keys(COURSE_IB_THEMES).find(k => courseTitle.toLowerCase().includes(k.toLowerCase()) || courseId.toLowerCase().includes(k.toLowerCase())) || ''] || 
     DEFAULT_IB_THEMES;
 
+  const getFullAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
+    const username = localStorage.getItem("lan_username") || localStorage.getItem("username") || currentUsername || "";
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (username) headers["x-username"] = username;
+    return headers;
+  };
+
   const loadFiles = async () => {
     setIsLoading(true);
     try {
       const res = await fetch(getApiUrl(`/api/courses/${encodeURIComponent(courseId)}/files`), {
-        headers: getAuthHeaders()
+        headers: getFullAuthHeaders()
       });
       if (res.ok) {
         const data = await res.json();
@@ -251,10 +260,9 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     }
 
     try {
-      const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
       const res = await fetch(getApiUrl(`/api/courses/${encodeURIComponent(courseId)}/files`), {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getFullAuthHeaders(),
         body: formData
       });
 
@@ -294,10 +302,9 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     setIsDeleting(true);
 
     try {
-      const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
       await fetch(getApiUrl(`/api/courses/files/${fileId}`), {
         method: "DELETE",
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
+        headers: getFullAuthHeaders()
       });
       loadFiles();
     } catch (e) {
@@ -646,18 +653,20 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
       )}
 
       {/* 4. Dosya Yükleme Modalı (Doc Type & Mark Scheme Destekli) */}
-      <FileUploadModal
-        isOpen={isUploadModalOpen}
-        onClose={() => {
-          setIsUploadModalOpen(false);
-          setPendingFile(null);
-        }}
-        pendingFile={pendingFile}
-        courseTitle={courseTitle}
-        courseThemes={courseThemes}
-        isUploading={isUploading}
-        onUpload={handleUploadSubmit}
-      />
+      {isUploadModalOpen && pendingFile && (
+        <FileUploadModal
+          isOpen={isUploadModalOpen}
+          onClose={() => {
+            setIsUploadModalOpen(false);
+            setPendingFile(null);
+          }}
+          pendingFile={pendingFile}
+          courseTitle={courseTitle}
+          courseThemes={courseThemes}
+          isUploading={isUploading}
+          onUpload={handleUploadSubmit}
+        />
+      )}
 
       {/* 5. Silme Onay Modalı */}
       {deleteConfirmFile && (
