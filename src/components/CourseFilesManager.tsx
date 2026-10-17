@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
   FileText, 
@@ -166,22 +166,24 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     }
   }, [previewPdfUrl, deleteConfirmFile]);
 
-  // Get themes for this specific course
-  const courseThemes = COURSE_IB_THEMES[courseTitle] || 
-    COURSE_IB_THEMES[courseId] || 
-    COURSE_IB_THEMES[Object.keys(COURSE_IB_THEMES).find(k => courseTitle.toLowerCase().includes(k.toLowerCase()) || courseId.toLowerCase().includes(k.toLowerCase())) || ''] || 
-    DEFAULT_IB_THEMES;
+  // Get themes for this specific course (unconditional hook)
+  const courseThemes = useMemo(() => {
+    return COURSE_IB_THEMES[courseTitle] || 
+      COURSE_IB_THEMES[courseId] || 
+      COURSE_IB_THEMES[Object.keys(COURSE_IB_THEMES).find(k => courseTitle.toLowerCase().includes(k.toLowerCase()) || courseId.toLowerCase().includes(k.toLowerCase())) || ''] || 
+      DEFAULT_IB_THEMES;
+  }, [courseTitle, courseId]);
 
-  const getFullAuthHeaders = (): Record<string, string> => {
+  const getFullAuthHeaders = useCallback((): Record<string, string> => {
     const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     const username = localStorage.getItem("lan_username") || localStorage.getItem("username") || currentUsername || "";
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
     if (username) headers["x-username"] = username;
     return headers;
-  };
+  }, [currentUsername]);
 
-  const loadFiles = async () => {
+  const loadFiles = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch(getApiUrl(`/api/courses/${encodeURIComponent(courseId)}/files`), {
@@ -199,7 +201,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [courseId, getFullAuthHeaders]);
 
   useEffect(() => {
     loadFiles();
@@ -221,7 +223,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
         socket.off("file:deleted", loadFiles);
       };
     }
-  }, [courseId, socket]);
+  }, [courseId, socket, loadFiles]);
 
   // When user selects a file via hidden input
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -635,38 +637,38 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
         </div>
       ) : (
         <div className="w-full flex flex-col gap-2.5 mt-3">
-          {filteredFiles.map((file) => (
-            <CourseMaterialCard
-              key={file.id}
-              file={file}
-              currentUserId={currentUserId}
-              isEmirgan={isEmirgan}
-              layoutMode="list"
-              onPreviewPdf={(url, title) => {
-                setPreviewPdfUrl(url);
-                setPreviewPdfTitle(title);
-              }}
-              onInitiateDelete={handleInitiateDelete}
-            />
+          {filteredFiles.map((file, idx) => (
+            file ? (
+              <CourseMaterialCard
+                key={file.id || `course-mat-${file.filename || idx}`}
+                file={file}
+                currentUserId={currentUserId}
+                isEmirgan={isEmirgan}
+                layoutMode="list"
+                onPreviewPdf={(url, title) => {
+                  setPreviewPdfUrl(url);
+                  setPreviewPdfTitle(title);
+                }}
+                onInitiateDelete={handleInitiateDelete}
+              />
+            ) : null
           ))}
         </div>
       )}
 
-      {/* 4. Dosya Yükleme Modalı (Doc Type & Mark Scheme Destekli) */}
-      {isUploadModalOpen && pendingFile && (
-        <FileUploadModal
-          isOpen={isUploadModalOpen}
-          onClose={() => {
-            setIsUploadModalOpen(false);
-            setPendingFile(null);
-          }}
-          pendingFile={pendingFile}
-          courseTitle={courseTitle}
-          courseThemes={courseThemes}
-          isUploading={isUploading}
-          onUpload={handleUploadSubmit}
-        />
-      )}
+      {/* 4. Dosya Yükleme Modalı (Doc Type & Mark Scheme Destekli - Rendered unconditionally to guarantee strict React Rules of Hooks) */}
+      <FileUploadModal
+        isOpen={Boolean(isUploadModalOpen && pendingFile)}
+        onClose={() => {
+          setIsUploadModalOpen(false);
+          setPendingFile(null);
+        }}
+        pendingFile={pendingFile}
+        courseTitle={courseTitle}
+        courseThemes={courseThemes}
+        isUploading={isUploading}
+        onUpload={handleUploadSubmit}
+      />
 
       {/* 5. Silme Onay Modalı */}
       {deleteConfirmFile && (

@@ -6,6 +6,7 @@ export interface VideoCellProps {
   isScreenSharing?: boolean;
   username?: string;
   className?: string;
+  fitMode?: 'cover' | 'contain';
   onVideoPlaying?: (isPlaying: boolean) => void;
 }
 
@@ -23,6 +24,7 @@ export const VideoCell: React.FC<VideoCellProps> = ({
   isScreenSharing = false,
   username,
   className = '',
+  fitMode = 'cover',
   onVideoPlaying
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -109,7 +111,11 @@ export const VideoCell: React.FC<VideoCellProps> = ({
           onVideoPlaying?.(true);
         }}
         className={`w-full h-full transition-opacity duration-300 ${
-          isScreenSharing ? 'object-contain bg-neutral-950' : 'object-cover bg-neutral-950'
+          isScreenSharing 
+            ? 'object-contain bg-neutral-950' 
+            : fitMode === 'contain' 
+            ? 'object-contain bg-neutral-950' 
+            : 'object-cover bg-neutral-950'
         } ${isLocal && !isScreenSharing ? 'scale-x-[-1]' : ''} ${className}`}
       />
 

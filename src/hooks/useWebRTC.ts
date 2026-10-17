@@ -5,11 +5,15 @@ import {
   AUDIO_CONSTRAINTS, 
   CAMERA_CONSTRAINTS,
   getVideoConstraints, 
+  getVideoConstraintsForResolution,
+  getAudioTrackConstraints,
   applySenderBitrateLimit, 
   tuneSdpForAudioOpus,
   checkCanScreenShare,
   isMobileBrowser,
-  requestScreenStream
+  requestScreenStream,
+  CameraResolutionMode,
+  NoiseSuppressionMode
 } from '../utils/webrtcConfig';
 
 interface UseWebRTCOptions {
@@ -35,6 +39,14 @@ export function useWebRTC({
   const [isSpeakingLocal, setIsSpeakingLocal] = useState(false);
   const [mediaPermissionError, setMediaPermissionError] = useState<string | null>(null);
 
+  // Resolution and Noise Suppression State
+  const [resolution, setResolution] = useState<CameraResolutionMode>(() => {
+    return (localStorage.getItem('kapsapp_camera_resolution') as CameraResolutionMode) || 'auto';
+  });
+  const [noiseSuppressionLevel, setNoiseSuppressionLevel] = useState<NoiseSuppressionMode>(() => {
+    return (localStorage.getItem('kapsapp_noise_suppression') as NoiseSuppressionMode) || 'high';
+  });
+
   const isScreenShareSupported = checkCanScreenShare();
 
   // References
@@ -42,6 +54,15 @@ export function useWebRTC({
   const screenStreamRef = useRef<MediaStream | null>(null);
   const originalCameraTrackRef = useRef<MediaStreamTrack | null>(null);
   const originalMicTrackRef = useRef<MediaStreamTrack | null>(null);
+  const filteredAudioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const audioFilterNodesRef = useRef<{
+    source: MediaStreamAudioSourceNode;
+    highPass: BiquadFilterNode;
+    notch50: BiquadFilterNode;
+    notch60: BiquadFilterNode;
+    compressor: DynamicsCompressorNode;
+    dest: MediaStreamAudioDestinationNode;
+  } | null>(null);
   const mixedAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
@@ -142,6 +163,8 @@ export function useWebRTC({
   const isDeafenedRef = useRef(isDeafened);
   const roomIdRef = useRef(roomId);
   const participantCountRef = useRef(participantCount);
+  const resolutionRef = useRef<CameraResolutionMode>(resolution);
+  const noiseSuppressionLevelRef = useRef<NoiseSuppressionMode>(noiseSuppressionLevel);
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { isVideoOffRef.current = isVideoOff; }, [isVideoOff]);
@@ -149,6 +172,104 @@ export function useWebRTC({
   useEffect(() => { isDeafenedRef.current = isDeafened; }, [isDeafened]);
   useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
   useEffect(() => { participantCountRef.current = participantCount; }, [participantCount]);
+  useEffect(() => { resolutionRef.current = resolution; }, [resolution]);
+  useEffect(() => { noiseSuppressionLevelRef.current = noiseSuppressionLevel; }, [noiseSuppressionLevel]);
+
+  // Web Audio AI Noise Filtering Pipeline (High-Pass + Mains Notch + Dynamics Gate/Compressor)
+  const cleanupAudioFilterPipeline = useCallback(() => {
+    if (audioFilterNodesRef.current) {
+      try {
+        audioFilterNodesRef.current.source.disconnect();
+        audioFilterNodesRef.current.highPass.disconnect();
+        audioFilterNodesRef.current.notch50.disconnect();
+        audioFilterNodesRef.current.notch60.disconnect();
+        audioFilterNodesRef.current.compressor.disconnect();
+      } catch (e) {}
+      audioFilterNodesRef.current = null;
+    }
+    if (filteredAudioTrackRef.current) {
+      try {
+        filteredAudioTrackRef.current.stop();
+      } catch (e) {}
+      filteredAudioTrackRef.current = null;
+    }
+  }, []);
+
+  const createAudioFilterPipeline = useCallback((micTrack: MediaStreamTrack): MediaStreamTrack => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return micTrack;
+
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = new AudioCtx();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      cleanupAudioFilterPipeline();
+
+      const mediaStream = new MediaStream([micTrack]);
+      const source = ctx.createMediaStreamSource(mediaStream);
+
+      // 1. High-Pass filter: 85Hz cutoff removes desk rumbles and mic bumping
+      const highPass = ctx.createBiquadFilter();
+      highPass.type = 'highpass';
+      highPass.frequency.setValueAtTime(85, ctx.currentTime);
+      highPass.Q.setValueAtTime(0.707, ctx.currentTime);
+
+      // 2. Notch 50Hz: mains electrical buzz filter
+      const notch50 = ctx.createBiquadFilter();
+      notch50.type = 'notch';
+      notch50.frequency.setValueAtTime(50, ctx.currentTime);
+      notch50.Q.setValueAtTime(4.0, ctx.currentTime);
+
+      // 3. Notch 60Hz: mains electrical buzz filter
+      const notch60 = ctx.createBiquadFilter();
+      notch60.type = 'notch';
+      notch60.frequency.setValueAtTime(60, ctx.currentTime);
+      notch60.Q.setValueAtTime(4.0, ctx.currentTime);
+
+      // 4. Dynamics Compressor: suppresses breath pops, keyboard clatter, and background hiss
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-28, ctx.currentTime);
+      compressor.knee.setValueAtTime(10, ctx.currentTime);
+      compressor.ratio.setValueAtTime(6, ctx.currentTime);
+      compressor.attack.setValueAtTime(0.003, ctx.currentTime);
+      compressor.release.setValueAtTime(0.15, ctx.currentTime);
+
+      // Destination node
+      const dest = ctx.createMediaStreamDestination();
+
+      source.connect(highPass);
+      highPass.connect(notch50);
+      notch50.connect(notch60);
+      notch60.connect(compressor);
+      compressor.connect(dest);
+
+      audioFilterNodesRef.current = {
+        source,
+        highPass,
+        notch50,
+        notch60,
+        compressor,
+        dest
+      };
+
+      const processedTrack = dest.stream.getAudioTracks()[0];
+      if (processedTrack) {
+        filteredAudioTrackRef.current = processedTrack;
+        processedTrack.enabled = !isMutedRef.current;
+        console.log('[WebRTC] AI Destekli Gelişmiş Gürültü Engelleme Filtresi (Web Audio Pipeline) devrede.');
+        return processedTrack;
+      }
+      return micTrack;
+    } catch (err) {
+      console.warn('[WebRTC] AI Audio filter pipeline initialization failed:', err);
+      return micTrack;
+    }
+  }, [cleanupAudioFilterPipeline]);
 
   // iOS / Safari Background Visibility & Screen Share Keepalive
   useEffect(() => {
@@ -201,6 +322,7 @@ export function useWebRTC({
   const cleanupWebRTC = useCallback(() => {
     releaseWakeLock();
     stopBackgroundKeepAlive();
+    cleanupAudioFilterPipeline();
 
     if (speakingIntervalRef.current) {
       clearInterval(speakingIntervalRef.current);
@@ -306,12 +428,13 @@ export function useWebRTC({
       cleanupWebRTC();
 
       let stream: MediaStream;
-      const vConstraints = getVideoConstraints(participantCountRef.current);
+      const vConstraints = getVideoConstraintsForResolution(resolutionRef.current, participantCountRef.current);
+      const aConstraints = getAudioTrackConstraints(noiseSuppressionLevelRef.current);
 
       if (preferVideo) {
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            audio: AUDIO_CONSTRAINTS,
+            audio: aConstraints,
             video: vConstraints
           });
           setIsVideoOff(false);
@@ -319,7 +442,7 @@ export function useWebRTC({
           console.warn('[WebRTC] Camera access failed, falling back to audio only:', videoErr);
           try {
             stream = await navigator.mediaDevices.getUserMedia({
-              audio: AUDIO_CONSTRAINTS,
+              audio: aConstraints,
               video: false
             });
             setIsVideoOff(true);
@@ -330,7 +453,7 @@ export function useWebRTC({
         }
       } else {
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: AUDIO_CONSTRAINTS,
+          audio: aConstraints,
           video: false
         });
         setIsVideoOff(true);
@@ -343,6 +466,9 @@ export function useWebRTC({
       if (micTrack) {
         originalMicTrackRef.current = micTrack;
         micTrack.enabled = !isMutedRef.current;
+        if (noiseSuppressionLevelRef.current === 'high') {
+          createAudioFilterPipeline(micTrack);
+        }
       }
 
       const camTrack = stream.getVideoTracks()[0];
@@ -419,7 +545,7 @@ export function useWebRTC({
     peerConnectionsRef.current.set(remoteSocketId, pc);
 
     // 1. Transceivers & Track Configuration
-    const audioTrack = mixedAudioTrackRef.current || currentLocalStream?.getAudioTracks()[0] || null;
+    const audioTrack = mixedAudioTrackRef.current || filteredAudioTrackRef.current || currentLocalStream?.getAudioTracks()[0] || null;
     const videoTrack = currentLocalStream?.getVideoTracks()[0] || null;
 
     if (audioTrack) {
@@ -430,7 +556,7 @@ export function useWebRTC({
 
     if (videoTrack) {
       const sender = pc.addTrack(videoTrack, currentLocalStream!);
-      applySenderBitrateLimit(sender, participantCountRef.current);
+      applySenderBitrateLimit(sender, participantCountRef.current, resolutionRef.current);
     } else {
       pc.addTransceiver('video', { direction: 'sendrecv' });
     }
@@ -584,7 +710,7 @@ export function useWebRTC({
     } else {
       // 2. Turn Camera ON: Get new video stream, replaceTrack, and Renegotiate with all peers
       try {
-        const vConstraints = getVideoConstraints(participantCountRef.current);
+        const vConstraints = getVideoConstraintsForResolution(resolutionRef.current, participantCountRef.current);
         const camStream = await navigator.mediaDevices.getUserMedia({
           video: vConstraints
         });
@@ -606,10 +732,10 @@ export function useWebRTC({
 
             if (videoSender) {
               await videoSender.replaceTrack(newVideoTrack).catch(() => {});
-              applySenderBitrateLimit(videoSender, participantCountRef.current);
+              applySenderBitrateLimit(videoSender, participantCountRef.current, resolutionRef.current);
             } else {
               const sender = pc.addTrack(newVideoTrack, localStreamRef.current);
-              applySenderBitrateLimit(sender, participantCountRef.current);
+              applySenderBitrateLimit(sender, participantCountRef.current, resolutionRef.current);
             }
 
             try {
@@ -705,7 +831,7 @@ export function useWebRTC({
         if (originalCameraTrackRef.current && originalCameraTrackRef.current.readyState === 'live') {
           replacementTrack = originalCameraTrackRef.current;
         } else {
-          const vConstraints = getVideoConstraints(participantCountRef.current);
+          const vConstraints = getVideoConstraintsForResolution(resolutionRef.current, participantCountRef.current);
           const camStream = await navigator.mediaDevices.getUserMedia({
             video: vConstraints
           });
@@ -730,7 +856,7 @@ export function useWebRTC({
           console.warn('[WebRTC] Revert replaceTrack error:', err);
         });
         if (replacementTrack) {
-          applySenderBitrateLimit(videoSender, participantCountRef.current);
+          applySenderBitrateLimit(videoSender, participantCountRef.current, resolutionRef.current);
         }
       }
 
@@ -1100,6 +1226,129 @@ export function useWebRTC({
     };
   }, [socket, setupLocalMedia, createPeerConnection]);
 
+  // Dynamic Resolution Switcher (Auto, 1080p, 720p, 480p)
+  const changeResolution = useCallback(async (newRes: CameraResolutionMode) => {
+    setResolution(newRes);
+    resolutionRef.current = newRes;
+    try {
+      localStorage.setItem('kapsapp_camera_resolution', newRes);
+    } catch (e) {}
+
+    // If camera is currently active and not sharing screen, dynamically update constraints and stream
+    if (!isVideoOffRef.current && !isScreenSharingRef.current) {
+      const vConstraints = getVideoConstraintsForResolution(newRes, participantCountRef.current);
+      const currentCamTrack = originalCameraTrackRef.current;
+
+      let updatedTrack: MediaStreamTrack | null = null;
+      let needsNewTrack = false;
+
+      if (currentCamTrack && currentCamTrack.readyState === 'live') {
+        try {
+          await currentCamTrack.applyConstraints(vConstraints);
+          updatedTrack = currentCamTrack;
+        } catch (applyErr) {
+          console.warn('[WebRTC] applyConstraints failed, requesting fresh camera stream:', applyErr);
+          needsNewTrack = true;
+        }
+      } else {
+        needsNewTrack = true;
+      }
+
+      if (needsNewTrack) {
+        try {
+          const freshCamStream = await navigator.mediaDevices.getUserMedia({
+            video: vConstraints
+          });
+          const freshTrack = freshCamStream.getVideoTracks()[0];
+          if (freshTrack) {
+            if (currentCamTrack) {
+              try { currentCamTrack.stop(); } catch (e) {}
+            }
+            originalCameraTrackRef.current = freshTrack;
+            updatedTrack = freshTrack;
+
+            if (localStreamRef.current) {
+              const oldTracks = localStreamRef.current.getVideoTracks();
+              oldTracks.forEach((t) => localStreamRef.current?.removeTrack(t));
+              localStreamRef.current.addTrack(freshTrack);
+              setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+            }
+          }
+        } catch (camErr) {
+          console.warn('[WebRTC] Could not re-acquire camera stream with new resolution:', camErr);
+        }
+      }
+
+      // Update video senders and bitrate limit on all active peer connections
+      if (updatedTrack) {
+        for (const [sId, pc] of peerConnectionsRef.current.entries()) {
+          const senders = pc.getSenders();
+          const videoSender = senders.find((s) => s.track?.kind === 'video') || senders.find((s) => !s.track);
+          if (videoSender) {
+            if (needsNewTrack) {
+              await videoSender.replaceTrack(updatedTrack).catch(() => {});
+            }
+            await applySenderBitrateLimit(videoSender, participantCountRef.current, newRes);
+          }
+
+          if (needsNewTrack) {
+            try {
+              const rawOffer = await pc.createOffer();
+              const tunedSdp = tuneSdpForAudioOpus(rawOffer.sdp || '');
+              const offer = { type: rawOffer.type, sdp: tunedSdp };
+              await pc.setLocalDescription(offer);
+              socket?.emit('voice_offer', { targetSocketId: sId, offer });
+            } catch (renegErr) {
+              console.debug('[WebRTC] Resolution renegotiation notice:', renegErr);
+            }
+          }
+        }
+      }
+    }
+  }, [socket]);
+
+  // Dynamic Noise Suppression Switcher (Off, Standard, High AI Filter)
+  const changeNoiseSuppression = useCallback(async (newLevel: NoiseSuppressionMode) => {
+    setNoiseSuppressionLevel(newLevel);
+    noiseSuppressionLevelRef.current = newLevel;
+    try {
+      localStorage.setItem('kapsapp_noise_suppression', newLevel);
+    } catch (e) {}
+
+    const micTrack = originalMicTrackRef.current;
+    if (!micTrack) return;
+
+    // Apply native constraints to hardware mic track
+    const aConstraints = getAudioTrackConstraints(newLevel);
+    try {
+      await micTrack.applyConstraints(aConstraints);
+    } catch (err) {
+      console.debug('[WebRTC] applyConstraints on audio track warning:', err);
+    }
+
+    // Determine target outgoing audio track
+    let targetTrack: MediaStreamTrack = micTrack;
+    if (newLevel === 'high') {
+      targetTrack = createAudioFilterPipeline(micTrack);
+    } else {
+      cleanupAudioFilterPipeline();
+      targetTrack = micTrack;
+    }
+
+    targetTrack.enabled = !isMutedRef.current;
+
+    // Replace audio track across all active peer connections (if not sharing system audio)
+    if (!mixedAudioTrackRef.current) {
+      for (const [, pc] of peerConnectionsRef.current.entries()) {
+        const senders = pc.getSenders();
+        const audioSender = senders.find((s) => s.track?.kind === 'audio');
+        if (audioSender) {
+          await audioSender.replaceTrack(targetTrack).catch(() => {});
+        }
+      }
+    }
+  }, [createAudioFilterPipeline, cleanupAudioFilterPipeline]);
+
   return {
     localStream,
     remoteStreams,
@@ -1111,6 +1360,8 @@ export function useWebRTC({
     isDeafened,
     isSpeakingLocal,
     mediaPermissionError,
+    resolution,
+    noiseSuppressionLevel,
     setupLocalMedia,
     toggleMute,
     toggleVideo,
@@ -1118,6 +1369,8 @@ export function useWebRTC({
     startScreenShare,
     stopScreenShare,
     toggleScreenShare,
+    changeResolution,
+    changeNoiseSuppression,
     cleanupWebRTC,
     initiateOfferToPeer,
     removePeerConnection,

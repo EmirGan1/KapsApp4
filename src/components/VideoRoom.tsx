@@ -20,12 +20,26 @@ import {
   Volume2,
   Volume1,
   ChevronUp,
-  UserPlus
+  UserPlus,
+  Sliders,
+  Sparkles,
+  Tv,
+  Smartphone,
+  Maximize2,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
 import { VoiceParticipant } from '../types';
 import Avatar from './Avatar';
 import VideoCell from './VideoCell';
 import VoiceInviteModal from './VoiceInviteModal';
+import MediaSettingsModal from './MediaSettingsModal';
+import { 
+  CameraResolutionMode, 
+  NoiseSuppressionMode, 
+  VideoAspectRatioMode, 
+  VideoFitMode 
+} from '../utils/webrtcConfig';
 
 interface VideoTileProps {
   participant: VoiceParticipant;
@@ -36,6 +50,8 @@ interface VideoTileProps {
   isDeafened: boolean;
   isScreenSharing?: boolean;
   isSpotlight?: boolean;
+  aspectRatioMode?: VideoAspectRatioMode;
+  fitMode?: VideoFitMode;
   onKick?: (userId: number) => void;
   onForceMute?: (userId: number) => void;
   onForceCameraOff?: (userId: number) => void;
@@ -51,6 +67,8 @@ export const VideoTile = React.memo(({
   isDeafened,
   isScreenSharing = false,
   isSpotlight = false,
+  aspectRatioMode = 'auto',
+  fitMode = 'cover',
   onKick,
   onForceMute,
   onForceCameraOff,
@@ -87,8 +105,17 @@ export const VideoTile = React.memo(({
 
   const showVideo = Boolean(hasLiveVideoTrack || (isSharingActive && stream));
 
+  // Dynamic aspect ratio calculation
+  const aspectClass = isSharingActive || isSpotlight
+    ? 'w-full h-full'
+    : aspectRatioMode === 'landscape'
+    ? 'aspect-video w-full max-h-full max-w-full mx-auto'
+    : aspectRatioMode === 'portrait'
+    ? 'aspect-[9/16] h-full max-h-full max-w-full mx-auto'
+    : 'w-full h-full';
+
   return (
-    <div className={`relative w-full h-full min-h-[140px] sm:min-h-[160px] rounded-2xl overflow-hidden bg-slate-900 border transition-all duration-200 flex flex-col justify-between shadow-md group ${
+    <div className={`relative ${aspectClass} rounded-2xl overflow-hidden bg-slate-900 border transition-all duration-200 flex flex-col justify-between shadow-md group ${
       isSharingActive
         ? 'border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.45)] ring-2 ring-blue-500/80'
         : participant.isSpeaking
@@ -106,6 +133,7 @@ export const VideoTile = React.memo(({
             isLocal={isSelf}
             isScreenSharing={isSharingActive}
             username={participant.username}
+            fitMode={fitMode}
             onVideoPlaying={setIsVideoPlaying}
           />
         </div>
@@ -258,6 +286,10 @@ interface VideoRoomViewProps {
   isSpeakingLocal: boolean;
   mediaPermissionError: string | null;
   socket?: Socket | null;
+  resolution?: CameraResolutionMode;
+  noiseSuppressionLevel?: NoiseSuppressionMode;
+  onChangeResolution?: (res: CameraResolutionMode) => void;
+  onChangeNoiseSuppression?: (level: NoiseSuppressionMode) => void;
   onToggleMute: () => void;
   onToggleVideo: () => void;
   onToggleScreenShare?: (withAudio?: boolean) => void;
@@ -290,6 +322,10 @@ export function VideoRoomView({
   isSpeakingLocal,
   mediaPermissionError,
   socket,
+  resolution = 'auto',
+  noiseSuppressionLevel = 'high',
+  onChangeResolution,
+  onChangeNoiseSuppression,
   onToggleMute,
   onToggleVideo,
   onToggleScreenShare,
@@ -313,31 +349,74 @@ export function VideoRoomView({
   const isSpotlightMode = Boolean(screenSharer);
   const [isStartingShare, setIsStartingShare] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
-  // Dynamic Smart Grid calculation tailored for mobile & desktop
+  // Aspect ratio and fit mode states (persisted in localStorage)
+  const [aspectRatioMode, setAspectRatioMode] = useState<VideoAspectRatioMode>(() => {
+    return (localStorage.getItem('kapsapp_video_aspect_mode') as VideoAspectRatioMode) || 'auto';
+  });
+  const [fitMode, setFitMode] = useState<VideoFitMode>(() => {
+    return (localStorage.getItem('kapsapp_video_fit_mode') as VideoFitMode) || 'cover';
+  });
+
+  const handleAspectRatioChange = (mode: VideoAspectRatioMode) => {
+    setAspectRatioMode(mode);
+    try {
+      localStorage.setItem('kapsapp_video_aspect_mode', mode);
+    } catch (e) {}
+  };
+
+  const handleFitModeChange = (mode: VideoFitMode) => {
+    setFitMode(mode);
+    try {
+      localStorage.setItem('kapsapp_video_fit_mode', mode);
+    } catch (e) {}
+  };
+
+  const cycleAspectRatio = () => {
+    const next: VideoAspectRatioMode = 
+      aspectRatioMode === 'auto' ? 'landscape' :
+      aspectRatioMode === 'landscape' ? 'portrait' : 'auto';
+    handleAspectRatioChange(next);
+  };
+
+  const cycleNoiseSuppression = () => {
+    if (!onChangeNoiseSuppression) return;
+    const current = noiseSuppressionLevel || 'high';
+    const next: NoiseSuppressionMode = 
+      current === 'high' ? 'standard' :
+      current === 'standard' ? 'off' : 'high';
+    onChangeNoiseSuppression(next);
+  };
+
+  // Dynamic Screen-Filling Smart Grid calculation tailored for mobile & desktop (eliminates empty side bars)
   const getGridClasses = (total: number) => {
     if (total <= 1) {
-      return 'w-full max-w-2xl mx-auto h-full max-h-[70vh] flex items-center justify-center';
+      return 'w-full h-full max-w-5xl mx-auto flex items-center justify-center p-1 sm:p-2';
     }
     if (total === 2) {
-      return 'grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-4xl mx-auto w-full h-full max-h-[72vh] auto-rows-fr';
+      // 2 People: Screen-filling responsive grid
+      // On desktop / landscape: 2 columns, 1 row (fills 100% width and 100% height without empty pillars)
+      // On mobile / portrait: 1 column, 2 rows (fills 100% width and 50% height each, zero wasted margins)
+      return 'grid grid-cols-1 md:grid-cols-2 grid-rows-2 md:grid-rows-1 gap-2 sm:gap-3 w-full h-full flex-1 auto-rows-fr';
     }
     if (total <= 4) {
-      return 'grid grid-cols-2 sm:grid-cols-2 gap-2.5 sm:gap-3.5 max-w-4xl mx-auto w-full h-full max-h-[74vh] auto-rows-fr';
+      // 2x2 grid filling entire area
+      return 'grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 w-full h-full flex-1 auto-rows-fr';
     }
     if (total <= 6) {
-      return 'grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 max-w-5xl mx-auto w-full h-full max-h-[75vh] auto-rows-fr';
+      return 'grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 w-full h-full flex-1 auto-rows-fr';
     }
     if (total <= 9) {
-      return 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-2 max-w-6xl mx-auto w-full h-full max-h-[76vh] auto-rows-fr';
+      return 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-2 w-full h-full flex-1 auto-rows-fr';
     }
     if (total <= 12) {
-      return 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-w-6xl mx-auto w-full h-full auto-rows-fr';
+      return 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 sm:gap-2 w-full h-full flex-1 auto-rows-fr';
     }
     if (total <= 16) {
-      return 'grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-7xl mx-auto w-full h-full auto-rows-fr';
+      return 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 gap-1.5 sm:gap-2 w-full h-full flex-1 auto-rows-fr';
     }
-    return 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5 sm:gap-2 max-w-7xl mx-auto w-full h-full auto-rows-fr';
+    return 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5 w-full h-full flex-1 auto-rows-fr';
   };
 
   // Direct, unblocked screen share invocation with debounce - zero delay, preserves user activation token
@@ -409,11 +488,45 @@ export function VideoRoomView({
           </div>
         </div>
 
-        {/* Header Actions: Invite User & Leave Room */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Header Actions: Quick Aspect, Settings, Invite User & Leave Room */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          
+          {/* Quick Aspect Ratio Toggle */}
+          <button
+            onClick={cycleAspectRatio}
+            className="min-h-[36px] px-2.5 sm:px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700/80 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-sm cursor-pointer"
+            title={`Görünüm Oranı: ${aspectRatioMode.toUpperCase()} (Değiştirmek için tıkla)`}
+          >
+            {aspectRatioMode === 'landscape' ? (
+              <Tv size={14} className="text-blue-400" />
+            ) : aspectRatioMode === 'portrait' ? (
+              <Smartphone size={14} className="text-blue-400" />
+            ) : (
+              <Maximize2 size={14} className="text-blue-400" />
+            )}
+            <span className="hidden md:inline">
+              {aspectRatioMode === 'auto' ? 'Otomatik' : aspectRatioMode === 'landscape' ? '16:9' : '9:16'}
+            </span>
+          </button>
+
+          {/* Quick Settings Button */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="min-h-[36px] px-2.5 sm:px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700/80 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-sm cursor-pointer"
+            title="Medya, Çözünürlük ve Gürültü Ayarları"
+          >
+            <Sliders size={14} className="text-purple-400" />
+            <span className="hidden sm:inline">Ayarlar</span>
+            {resolution !== 'auto' && (
+              <span className="text-[10px] font-black text-purple-400 bg-purple-950/80 px-1 py-0.2 rounded border border-purple-500/30">
+                {resolution}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => setShowInviteModal(true)}
-            className="min-h-[38px] px-3.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 transition-all active:scale-95 shadow-sm shrink-0 cursor-pointer"
+            className="min-h-[36px] px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 transition-all active:scale-95 shadow-sm shrink-0 cursor-pointer"
             title="Kullanıcı Davet Et"
           >
             <UserPlus size={15} />
@@ -422,7 +535,7 @@ export function VideoRoomView({
 
           <button
             onClick={onLeaveRoom}
-            className="min-h-[38px] px-3.5 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all active:scale-95 shadow-sm shrink-0 cursor-pointer"
+            className="min-h-[36px] px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all active:scale-95 shadow-sm shrink-0 cursor-pointer"
           >
             <PhoneOff size={15} />
             <span className="hidden xs:inline">Ayrıl</span>
@@ -439,7 +552,7 @@ export function VideoRoomView({
       )}
 
       {/* Video Content Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-2.5 sm:p-4 pb-28 flex flex-col justify-center items-center touch-pan-y overscroll-y-contain">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-3 pb-24 sm:pb-28 flex flex-col justify-center items-center touch-pan-y overscroll-y-contain w-full h-full">
         
         {/* Spotlight Mode: Large Screen Share with Participant Thumbnails Below */}
         {isSpotlightMode && screenSharer ? (
@@ -460,6 +573,8 @@ export function VideoRoomView({
                     isDeafened={isDeafened}
                     isScreenSharing={true}
                     isSpotlight={true}
+                    aspectRatioMode={aspectRatioMode}
+                    fitMode={fitMode}
                     onKick={onKickUser}
                     onForceMute={onForceMuteUser}
                     onForceCameraOff={onForceCameraOffUser}
@@ -488,6 +603,8 @@ export function VideoRoomView({
                           stream={stream}
                           isDeafened={isDeafened}
                           isScreenSharing={isSelf ? isScreenSharing : Boolean(participant.isScreenSharing)}
+                          aspectRatioMode={aspectRatioMode}
+                          fitMode={fitMode}
                           onKick={onKickUser}
                           onForceMute={onForceMuteUser}
                           onForceCameraOff={onForceCameraOffUser}
@@ -500,8 +617,8 @@ export function VideoRoomView({
             )}
           </div>
         ) : (
-          /* Normal Dynamic Smart Grid */
-          <div className="w-full h-full flex flex-col justify-center items-center">
+          /* Normal Dynamic Screen-Filling Smart Grid */
+          <div className="w-full h-full flex-1 flex flex-col justify-center items-center">
             <div className={getGridClasses(count)}>
               {participants.map((participant) => {
                 const isSelf = participant.id === currentUserId;
@@ -510,7 +627,7 @@ export function VideoRoomView({
                   : (remoteStreams.get(participant.socketId) || null);
 
                 return (
-                  <div key={participant.id} className="w-full h-full flex items-center justify-center min-h-[140px] sm:min-h-[160px]">
+                  <div key={participant.id} className="w-full h-full flex items-center justify-center min-h-0 overflow-hidden">
                     <VideoTile
                       participant={participant}
                       isSelf={isSelf}
@@ -519,6 +636,8 @@ export function VideoRoomView({
                       stream={stream}
                       isDeafened={isDeafened}
                       isScreenSharing={isSelf ? isScreenSharing : Boolean(participant.isScreenSharing)}
+                      aspectRatioMode={aspectRatioMode}
+                      fitMode={fitMode}
                       onKick={onKickUser}
                       onForceMute={onForceMuteUser}
                       onForceCameraOff={onForceCameraOffUser}
@@ -533,15 +652,15 @@ export function VideoRoomView({
       </div>
 
       {/* Floating Bottom Control Dock */}
-      <div className="absolute bottom-4 left-0 right-0 px-4 flex justify-center z-40 pointer-events-none">
+      <div className="absolute bottom-4 left-0 right-0 px-3 sm:px-4 flex justify-center z-40 pointer-events-none">
         <div className="relative pointer-events-auto touch-manipulation z-50">
-          <div className="bg-slate-900/95 backdrop-blur-xl px-4 sm:px-8 py-2.5 sm:py-3 rounded-2xl border border-slate-800 shadow-2xl flex items-center gap-2.5 sm:gap-4 max-w-lg w-full justify-around">
+          <div className="bg-slate-900/95 backdrop-blur-xl px-3 sm:px-6 py-2.5 sm:py-3 rounded-2xl border border-slate-800 shadow-2xl flex items-center gap-2 sm:gap-3.5 max-w-xl w-full justify-around">
             
             {/* Mic Button */}
             <button
               onClick={onToggleMute}
               title={isMuted ? 'Mikrofonu Aç' : 'Mikrofonu Kapat'}
-              className={`min-w-[44px] min-h-[44px] sm:min-w-[48px] sm:min-h-[48px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
                 isMuted
                   ? 'bg-rose-600 hover:bg-rose-500 text-white ring-2 ring-rose-500/30'
                   : isSpeakingLocal
@@ -549,29 +668,77 @@ export function VideoRoomView({
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
               }`}
             >
-              {isMuted ? <MicOff size={20} className="pointer-events-none" /> : <Mic size={20} className="pointer-events-none" />}
+              {isMuted ? <MicOff size={19} className="pointer-events-none" /> : <Mic size={19} className="pointer-events-none" />}
+            </button>
+
+            {/* AI Noise Suppression Quick Button */}
+            <button
+              onClick={cycleNoiseSuppression}
+              title={`Gürültü Engelleme: ${
+                noiseSuppressionLevel === 'high' ? 'Yüksek (AI Filtre)' : noiseSuppressionLevel === 'standard' ? 'Standart' : 'Kapalı'
+              } (Değiştirmek için tıkla)`}
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex flex-col items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
+                noiseSuppressionLevel === 'high'
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 ring-2 ring-amber-500/30'
+                  : noiseSuppressionLevel === 'standard'
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700'
+              }`}
+            >
+              {noiseSuppressionLevel === 'high' ? (
+                <Sparkles size={16} className="text-amber-400" />
+              ) : noiseSuppressionLevel === 'standard' ? (
+                <ShieldCheck size={16} className="text-blue-400" />
+              ) : (
+                <Mic size={16} className="text-slate-400" />
+              )}
+              <span className="text-[8.5px] font-black uppercase tracking-tighter mt-0.5">
+                {noiseSuppressionLevel === 'high' ? 'AI' : noiseSuppressionLevel === 'standard' ? 'STD' : 'OFF'}
+              </span>
             </button>
 
             {/* Camera Button */}
             <button
               onClick={onToggleVideo}
               title={isVideoOff ? 'Kamerayı Aç' : 'Kamerayı Kapat'}
-              className={`min-w-[44px] min-h-[44px] sm:min-w-[48px] sm:min-h-[48px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
                 isVideoOff
                   ? 'bg-rose-600 hover:bg-rose-500 text-white ring-2 ring-rose-500/30'
                   : 'bg-blue-600 hover:bg-blue-500 text-white ring-2 ring-blue-500/30'
               }`}
             >
-              {isVideoOff ? <CameraOff size={20} className="pointer-events-none" /> : <Camera size={20} className="pointer-events-none" />}
+              {isVideoOff ? <CameraOff size={19} className="pointer-events-none" /> : <Camera size={19} className="pointer-events-none" />}
             </button>
 
-            {/* Screen Share Button - Direct One-Tap (No popups, immediate native prompt with touch support) */}
+            {/* Quick Aspect Ratio Cycle Button */}
+            <button
+              onClick={cycleAspectRatio}
+              title={`Kamera Görünüm Oranı: ${aspectRatioMode.toUpperCase()} (Tıkla: Değiştir)`}
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex flex-col items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
+                aspectRatioMode !== 'auto'
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 ring-1 ring-blue-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+              }`}
+            >
+              {aspectRatioMode === 'landscape' ? (
+                <Tv size={16} className="text-blue-400" />
+              ) : aspectRatioMode === 'portrait' ? (
+                <Smartphone size={16} className="text-blue-400" />
+              ) : (
+                <Maximize2 size={16} />
+              )}
+              <span className="text-[8.5px] font-black uppercase tracking-tighter mt-0.5">
+                {aspectRatioMode === 'auto' ? 'AUTO' : aspectRatioMode === 'landscape' ? '16:9' : '9:16'}
+              </span>
+            </button>
+
+            {/* Screen Share Button */}
             <button
               type="button"
               onClick={handleScreenShareTrigger}
               disabled={isStartingShare}
               title={isScreenSharing ? 'Ekran Paylaşımını Durdur' : 'Ekranını Paylaş'}
-              className={`min-w-[44px] min-h-[44px] sm:min-w-[48px] sm:min-h-[48px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer relative z-50 pointer-events-auto touch-manipulation select-none ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer relative z-50 pointer-events-auto touch-manipulation select-none ${
                 isScreenSharing
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-4 ring-emerald-500/40 animate-pulse'
                   : isStartingShare
@@ -583,32 +750,41 @@ export function VideoRoomView({
               {isStartingShare ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin pointer-events-none" />
               ) : isScreenSharing ? (
-                <MonitorOff size={20} className="pointer-events-none" />
+                <MonitorOff size={19} className="pointer-events-none" />
               ) : (
-                <Monitor size={20} className="pointer-events-none" />
+                <Monitor size={19} className="pointer-events-none" />
               )}
+            </button>
+
+            {/* Settings Modal Button */}
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              title="Kamera Çözünürlüğü ve Gelişmiş Ayarlar"
+              className="min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+            >
+              <Sliders size={19} />
             </button>
 
             {/* Deafen Button */}
             <button
               onClick={onToggleDeafen}
               title={isDeafened ? 'Sesi Aç' : 'Kulaklığı Kapat (Sağırlaştır)'}
-              className={`min-w-[44px] min-h-[44px] sm:min-w-[48px] sm:min-h-[48px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer ${
                 isDeafened
                   ? 'bg-amber-600 hover:bg-amber-500 text-white ring-2 ring-amber-500/30'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
               }`}
             >
-              {isDeafened ? <VolumeX size={20} /> : <Headphones size={20} />}
+              {isDeafened ? <VolumeX size={19} /> : <Headphones size={19} />}
             </button>
 
             {/* Leave Button */}
             <button
               onClick={onLeaveRoom}
               title="Odadan Ayrıl"
-              className="min-w-[44px] min-h-[44px] sm:min-w-[48px] sm:min-h-[48px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+              className="min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
             >
-              <PhoneOff size={20} />
+              <PhoneOff size={19} />
             </button>
           </div>
         </div>
@@ -625,6 +801,24 @@ export function VideoRoomView({
           currentUserId={currentUserId}
         />
       )}
+
+      {/* Media & Camera Settings Modal */}
+      <MediaSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        resolution={resolution}
+        onChangeResolution={(res) => {
+          onChangeResolution && onChangeResolution(res);
+        }}
+        noiseSuppressionLevel={noiseSuppressionLevel}
+        onChangeNoiseSuppression={(lvl) => {
+          onChangeNoiseSuppression && onChangeNoiseSuppression(lvl);
+        }}
+        aspectRatioMode={aspectRatioMode}
+        onChangeAspectRatio={handleAspectRatioChange}
+        fitMode={fitMode}
+        onChangeFitMode={handleFitModeChange}
+      />
     </div>
   );
 }

@@ -79,6 +79,11 @@ export default function EditRolesModal({
     };
   }, [socket]);
 
+  // Sorted active roles for Discord preview (Hook must always be called before any early return)
+  const sortedActiveRoles = useMemo(() => {
+    return sortRolesByPosition(selectedRoles, availableRoles);
+  }, [selectedRoles, availableRoles]);
+
   if (!isOpen) return null;
 
   // Toggle role with Smart SL / HL Conflict resolution
@@ -174,11 +179,6 @@ export default function EditRolesModal({
 
   // Custom Created Roles
   const customRoles = availableRoles.filter((r) => r.isCustom || (!r.subjectGroup && r.id !== "titc" && r.id !== "eng_b_hl"));
-
-  // Sorted active roles for Discord preview
-  const sortedActiveRoles = useMemo(() => {
-    return sortRolesByPosition(selectedRoles, availableRoles);
-  }, [selectedRoles, availableRoles]);
 
   return (
     <div

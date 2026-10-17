@@ -147,6 +147,8 @@ export default function VoiceChat({
     isDeafened,
     isSpeakingLocal,
     mediaPermissionError,
+    resolution,
+    noiseSuppressionLevel,
     setupLocalMedia,
     toggleMute,
     toggleVideo,
@@ -154,6 +156,8 @@ export default function VoiceChat({
     stopScreenShare,
     toggleScreenShare,
     toggleDeafen,
+    changeResolution,
+    changeNoiseSuppression,
     cleanupWebRTC,
     initiateOfferToPeer,
     removePeerConnection,
@@ -455,6 +459,10 @@ export default function VoiceChat({
           mediaPermissionError={mediaPermissionError}
           socket={socket}
           roomId={currentRoom.id}
+          resolution={resolution}
+          noiseSuppressionLevel={noiseSuppressionLevel}
+          onChangeResolution={changeResolution}
+          onChangeNoiseSuppression={changeNoiseSuppression}
           onToggleMute={toggleMute}
           onToggleVideo={toggleVideo}
           onToggleScreenShare={toggleScreenShare}

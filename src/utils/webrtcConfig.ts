@@ -28,6 +28,11 @@ export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   channelCount: 1
 };
 
+export type CameraResolutionMode = 'auto' | '1080p' | '720p' | '480p';
+export type NoiseSuppressionMode = 'off' | 'standard' | 'high';
+export type VideoAspectRatioMode = 'auto' | 'landscape' | 'portrait';
+export type VideoFitMode = 'cover' | 'contain';
+
 /**
  * Flexible Camera & Audio Constraints with Ideal Dimensions (prevents camera initialization crashes)
  */
@@ -44,6 +49,28 @@ export const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
     autoGainControl: true
   }
 };
+
+/**
+ * Audio Track constraints generator based on selected noise suppression level
+ */
+export function getAudioTrackConstraints(mode: NoiseSuppressionMode = 'standard'): MediaTrackConstraints {
+  if (mode === 'off') {
+    return {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      sampleRate: 48000,
+      channelCount: 1
+    };
+  }
+  return {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    sampleRate: 48000,
+    channelCount: 1
+  };
+}
 
 /**
  * Adaptive Video Constraints based on active participant count
@@ -74,6 +101,44 @@ export function getVideoConstraints(participantCount: number = 1): MediaTrackCon
     frameRate: { ideal: 30, max: 30 },
     facingMode: 'user'
   };
+}
+
+/**
+ * Video constraints tailored to explicit user resolution choice or auto-adaptation
+ */
+export function getVideoConstraintsForResolution(
+  resolution: CameraResolutionMode = 'auto',
+  participantCount: number = 1
+): MediaTrackConstraints {
+  if (resolution === '1080p') {
+    return {
+      width: { ideal: 1920, min: 1280 },
+      height: { ideal: 1080, min: 720 },
+      frameRate: { ideal: 30, max: 30 },
+      facingMode: 'user'
+    };
+  }
+
+  if (resolution === '720p') {
+    return {
+      width: { ideal: 1280, min: 960 },
+      height: { ideal: 720, min: 540 },
+      frameRate: { ideal: 30, max: 30 },
+      facingMode: 'user'
+    };
+  }
+
+  if (resolution === '480p') {
+    return {
+      width: { ideal: 640, min: 480 },
+      height: { ideal: 480, min: 360 },
+      frameRate: { ideal: 24, max: 24 },
+      facingMode: 'user'
+    };
+  }
+
+  // Auto
+  return getVideoConstraints(participantCount);
 }
 
 /**
@@ -190,19 +255,35 @@ export function isMobileBrowser(): boolean {
  */
 export async function applySenderBitrateLimit(
   sender: RTCRtpSender,
-  participantCount: number = 1
+  participantCount: number = 1,
+  resolution?: CameraResolutionMode
 ): Promise<void> {
   if (!sender || sender.track?.kind !== 'video') return;
 
-  let targetBitrateBps = 450_000; // 450 kbps default
-  let maxFps = 24;
+  let targetBitrateBps = 600_000; // 600 kbps default
+  let maxFps = 30;
 
-  if (participantCount > 12) {
-    targetBitrateBps = 280_000;
-    maxFps = 20;
-  } else if (participantCount > 6) {
-    targetBitrateBps = 350_000;
+  if (resolution === '1080p') {
+    targetBitrateBps = 1_800_000; // 1.8 Mbps for crisp 1080p
+    maxFps = 30;
+  } else if (resolution === '720p') {
+    targetBitrateBps = 900_000; // 900 kbps for smooth 720p
+    maxFps = 30;
+  } else if (resolution === '480p') {
+    targetBitrateBps = 380_000; // 380 kbps for data-saving / performance
     maxFps = 24;
+  } else {
+    // Auto based on room density
+    if (participantCount > 12) {
+      targetBitrateBps = 280_000;
+      maxFps = 20;
+    } else if (participantCount > 6) {
+      targetBitrateBps = 400_000;
+      maxFps = 24;
+    } else {
+      targetBitrateBps = 750_000;
+      maxFps = 30;
+    }
   }
 
   try {
