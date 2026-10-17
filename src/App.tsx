@@ -43,7 +43,6 @@ import Games from "./components/Games";
 import VoiceChat from "./components/VoiceChat";
 import LiveMap from "./components/LiveMap";
 import WeatherDashboard from "./components/WeatherDashboard";
-import IBPredictedPage from "./components/IBPredictedPage";
 import Announcements, { AnnouncementItem } from "./components/Announcements";
 import AnnouncementModal from "./components/AnnouncementModal";
 import ToastContainer, { ToastItem } from "./components/ToastContainer";
@@ -101,18 +100,9 @@ export default function App() {
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const isEmirgan = (username || "").trim().toLowerCase() === "emirgan" || (localStorage.getItem("lan_account_role") || "").toUpperCase() === "ROOT";
 
-  // IB Predicted Access State (Emirgan or Authorized Pool Members only)
-  const [hasPredictedAccess, setHasPredictedAccess] = useState<boolean>(() => {
-    return (localStorage.getItem("lan_username") || "").trim().toLowerCase() === "emirgan";
-  });
-  
   // 1. Synchronize URL changes to activeTab and state (Back/Forward or Direct Navigation)
   useEffect(() => {
     const resolved = getTabFromPathname(location.pathname);
-    if (resolved.tab === "predicted" && !isEmirgan && !hasPredictedAccess) {
-      navigate("/", { replace: true });
-      return;
-    }
     if (resolved.tab === "admin" && !isEmirgan) {
       navigate("/", { replace: true });
       return;
@@ -146,7 +136,7 @@ export default function App() {
         setResetPasswordToken(tokenParam);
       }
     } catch (e) {}
-  }, [location.pathname, location.search, isEmirgan, hasPredictedAccess, currentUserId, navigate]);
+  }, [location.pathname, location.search, isEmirgan, currentUserId, navigate]);
 
   // 2. Dynamic SEO updates per route (Title, Description, Canonical, OG tags)
   const currentRouteMeta = Object.values(APP_ROUTES).find(r => r.path === location.pathname) || {
@@ -263,43 +253,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [token]);
 
-  // Check IB Predicted Access status (Emirgan or Authorized Pool User)
-  useEffect(() => {
-    if (!token && (username || "").trim().toLowerCase() !== "emirgan") {
-      setHasPredictedAccess(false);
-      return;
-    }
-    const checkPredictedAccess = async () => {
-      try {
-        const isEmirganUser = (username || "").trim().toLowerCase() === "emirgan";
-        const res = await fetch("/api/predicted/my-status", {
-          headers: {
-            Authorization: `Bearer ${token || ''}`,
-            ...(isEmirganUser ? { 'x-username': 'emirgan' } : {})
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setHasPredictedAccess(!!data.hasAccess);
-        }
-      } catch (e) {
-        if ((username || "").trim().toLowerCase() === "emirgan") {
-          setHasPredictedAccess(true);
-        }
-      }
-    };
-    checkPredictedAccess();
-
-    if (socket) {
-      const handlePoolUpdated = () => {
-        checkPredictedAccess();
-      };
-      socket.on("predicted:pool_updated", handlePoolUpdated);
-      return () => {
-        socket.off("predicted:pool_updated", handlePoolUpdated);
-      };
-    }
-  }, [token, username, socket]);
 
   const handleAcceptVoiceInvite = (invite: VoiceCallInvite) => {
     if (socket) {
@@ -817,9 +770,6 @@ export default function App() {
   };
 
   const handleTabChange = (tab: AppTab) => {
-    if (tab === "predicted" && !isEmirgan && !hasPredictedAccess) {
-      return;
-    }
     setActiveTab(tab);
     if (tab === "announcements") {
       setHasUnreadAnnouncement(false);
@@ -870,11 +820,6 @@ export default function App() {
   };
 
   // If user is currently on predicted page but loses access, redirect safely
-  useEffect(() => {
-    if (activeTab === "predicted" && !isEmirgan && !hasPredictedAccess) {
-      navigate("/");
-    }
-  }, [activeTab, isEmirgan, hasPredictedAccess, navigate]);
 
   // Android Hardware Back Button Handler (Capacitor Native)
   const lastBackPressRef = useRef<number>(0);
@@ -1159,15 +1104,7 @@ export default function App() {
             <NavItem to="/oyunlar" icon={<Gamepad2 />} label="Oyunlar" active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
             <NavItem to="/bildirimler" icon={<Bell />} label="Bildirimler" active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
             <NavItem to="/profil" icon={<UserCircle2 />} label="Profil" active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
-            {(isEmirgan || hasPredictedAccess) && (
-              <NavItem 
-                to="/tahminler"
-                icon={<GraduationCap className="text-amber-500 dark:text-amber-400" />} 
-                label="IB Predicted" 
-                active={activeTab === 'predicted'} 
-                onClick={() => handleTabChange('predicted')} 
-              />
-            )}
+
           </nav>
         </div>
 
@@ -1208,7 +1145,6 @@ export default function App() {
             unreadGlobalCount={unreadGlobalCount} 
             hasUnreadAnnouncement={hasUnreadAnnouncement} 
             isEmirgan={isEmirgan} 
-            hasPredictedAccess={hasPredictedAccess} 
           />
         )}
         {activeTab === 'admin' && isEmirgan && (
@@ -1338,19 +1274,6 @@ export default function App() {
           />
         )}
 
-        {/* IB Predicted Grade Tab */}
-        {activeTab === 'predicted' && (isEmirgan || hasPredictedAccess) && (
-          <IBPredictedPage 
-            currentUserId={currentUserId} 
-            username={username} 
-            avatar={avatar} 
-            color={color} 
-            darkMode={darkMode} 
-            socket={socket} 
-            onOpenChat={handleOpenChat} 
-            onUserClick={handleUserClick} 
-          />
-        )}
 
         {/* Persistently mounted LiveMap tab to prevent re-initialization and gray tiles when switching tabs */}
         <div className={`flex-1 flex-col relative w-full h-full ${activeTab === 'map' ? 'flex' : 'hidden'}`}>
@@ -1391,7 +1314,6 @@ export default function App() {
         handleTabChange={handleTabChange}
         username={username}
         isEmirgan={isEmirgan}
-        hasPredictedAccess={hasPredictedAccess}
         unreadGlobalCount={unreadGlobalCount}
         pendingApprovalsCount={pendingApprovalsCount}
         darkMode={darkMode}

@@ -35,7 +35,6 @@ export interface BottomNavProps {
   handleTabChange: (tab: AppTab) => void;
   username: string;
   isEmirgan: boolean;
-  hasPredictedAccess: boolean;
   unreadGlobalCount: number;
   pendingApprovalsCount: number;
   darkMode: boolean;
@@ -53,7 +52,6 @@ export default function BottomNav({
   handleTabChange,
   username,
   isEmirgan,
-  hasPredictedAccess,
   unreadGlobalCount,
   pendingApprovalsCount,
   darkMode,
@@ -71,8 +69,7 @@ export default function BottomNav({
     'voice', 
     'games', 
     'friends', 
-    'admin', 
-    'predicted'
+    'admin'
   ].includes(activeTab);
 
   // Prevent background body scroll when mobile more drawer is open
@@ -249,14 +246,6 @@ export default function BottomNav({
                 active={activeTab === 'friends'} 
                 onClick={() => { handleTabChange('friends'); setIsMobileMoreOpen(false); }} 
               />
-              {(isEmirgan || hasPredictedAccess) && (
-                <DrawerGridItem 
-                  icon={<GraduationCap size={22} className="text-amber-500" />} 
-                  label="IB Predicted" 
-                  active={activeTab === 'predicted'} 
-                  onClick={() => { handleTabChange('predicted'); setIsMobileMoreOpen(false); }} 
-                />
-              )}
               {isEmirgan && (
                 <DrawerGridItem 
                   icon={<Crown size={22} className="text-yellow-500" />} 

@@ -4,7 +4,7 @@ export { safeDecodeURI };
 
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
-export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "predicted";
+export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather";
 
 export interface RouteMeta {
   path: string;
@@ -125,13 +125,6 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     description: "Kişisel mesajlar, oyun davetleri ve sistem bildirimleri merkezi.",
     canonical: "https://kapsapp.online/bildirimler",
   },
-  predicted: {
-    path: "/tahminler",
-    tab: "predicted",
-    title: "IB Predicted Not Değerlendirme | KapsApp",
-    description: "12 G IB Diploma Programı ders bazlı öngörülen not tahminleri ve denetim paneli.",
-    canonical: "https://kapsapp.online/tahminler",
-  },
 };
 
 // Map URL pathname to internal Tab name
@@ -216,7 +209,6 @@ export function getPathFromTab(
     case "voice": return "/sesli-sohbet";
     case "friends": return "/arkadaslar";
     case "notifications": return "/bildirimler";
-    case "predicted": return "/tahminler";
     default: return "/";
   }
 }

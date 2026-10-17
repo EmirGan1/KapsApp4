@@ -64,7 +64,6 @@ interface DashboardProps {
   unreadGlobalCount?: number;
   hasUnreadAnnouncement?: boolean;
   isEmirgan?: boolean;
-  hasPredictedAccess?: boolean;
 }
 
 const FAVORITE_COURSES = [
@@ -92,7 +91,6 @@ export default function Dashboard({
   unreadGlobalCount = 0,
   hasUnreadAnnouncement = false,
   isEmirgan = false,
-  hasPredictedAccess = false,
 }: DashboardProps) {
   // 1. Current Time & Greeting
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
