@@ -12,7 +12,9 @@ import {
   Volume2, 
   ShieldCheck, 
   Check, 
-  Gauge
+  Gauge,
+  SwitchCamera,
+  ZoomIn
 } from 'lucide-react';
 import { 
   CameraResolutionMode, 
@@ -32,6 +34,11 @@ interface MediaSettingsModalProps {
   onChangeAspectRatio: (mode: VideoAspectRatioMode) => void;
   fitMode: VideoFitMode;
   onChangeFitMode: (mode: VideoFitMode) => void;
+  cameraFacingMode?: 'user' | 'environment';
+  onToggleCameraFacingMode?: () => void;
+  cameraZoom?: number;
+  cameraZoomRange?: { min: number; max: number; step: number };
+  onChangeCameraZoom?: (zoom: number) => void;
 }
 
 export const MediaSettingsModal: React.FC<MediaSettingsModalProps> = ({
@@ -44,7 +51,12 @@ export const MediaSettingsModal: React.FC<MediaSettingsModalProps> = ({
   aspectRatioMode,
   onChangeAspectRatio,
   fitMode,
-  onChangeFitMode
+  onChangeFitMode,
+  cameraFacingMode = 'user',
+  onToggleCameraFacingMode,
+  cameraZoom = 1,
+  cameraZoomRange = { min: 1, max: 5, step: 0.1 },
+  onChangeCameraZoom
 }) => {
   if (!isOpen) return null;
 
@@ -191,6 +203,64 @@ export const MediaSettingsModal: React.FC<MediaSettingsModalProps> = ({
                 </div>
                 {fitMode === 'contain' && <Check size={16} className="text-emerald-400 shrink-0" />}
               </button>
+            </div>
+          </div>
+
+          {/* Section: Camera Direction (Front/Back) & Zoom */}
+          <div className="pt-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <SwitchCamera size={14} className="text-blue-400" />
+                <span>Kamera Yönü ve Yakınlaştırma (Zoom)</span>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {onToggleCameraFacingMode && (
+                <button
+                  type="button"
+                  onClick={onToggleCameraFacingMode}
+                  className="p-3 rounded-xl border border-slate-700/80 bg-slate-800/60 hover:bg-slate-800 text-slate-200 flex items-center justify-between transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center">
+                      <SwitchCamera size={16} />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-xs font-bold">Kamera Değiştir</div>
+                      <div className="text-[10px] text-slate-400">
+                        {cameraFacingMode === 'user' ? 'Ön Kamera Aktif' : 'Arka Kamera Aktif'}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-blue-400 bg-blue-950/80 px-2.5 py-1 rounded-lg border border-blue-500/30">
+                    Çevir
+                  </span>
+                </button>
+              )}
+
+              {onChangeCameraZoom && cameraZoomRange && (
+                <div className="p-3 rounded-xl border border-slate-700/80 bg-slate-800/60 flex flex-col justify-between gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <ZoomIn size={14} className="text-emerald-400" />
+                      <span>Zoom: {cameraZoom || 1}x</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Maks {cameraZoomRange.max || 5}x
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={cameraZoomRange.min || 1}
+                    max={cameraZoomRange.max || 5}
+                    step={cameraZoomRange.step || 0.1}
+                    value={cameraZoom || 1}
+                    onChange={(e) => onChangeCameraZoom(parseFloat(e.target.value))}
+                    className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
+                  />
+                </div>
+              )}
             </div>
           </div>
 

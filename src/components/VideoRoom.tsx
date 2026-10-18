@@ -761,6 +761,24 @@ export function VideoRoomView({
               {isVideoOff ? <CameraOff size={19} className="pointer-events-none" /> : <Camera size={19} className="pointer-events-none" />}
             </button>
 
+            {/* Switch Camera (Front/Back) Button */}
+            {onToggleCameraFacingMode && !isVideoOff && (
+              <button
+                onClick={onToggleCameraFacingMode}
+                title={`Kamera Yönü: ${cameraFacingMode === 'user' ? 'Ön Kamera' : 'Arka Kamera'}`}
+                className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex flex-col items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation shrink-0 ${
+                  cameraFacingMode === 'environment'
+                    ? 'bg-amber-600/20 text-amber-400 border border-amber-500/50 ring-1 ring-amber-500/30'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                }`}
+              >
+                <SwitchCamera size={16} className={cameraFacingMode === 'environment' ? 'text-amber-400' : 'text-blue-400'} />
+                <span className="text-[8px] font-black uppercase tracking-tighter mt-0.5">
+                  {cameraFacingMode === 'user' ? 'ÖN' : 'ARKA'}
+                </span>
+              </button>
+            )}
+
             {/* Speakerphone / Earpiece Audio Output Mode Toggle Button */}
             {onToggleAudioOutput && (
               <button
@@ -887,6 +905,11 @@ export function VideoRoomView({
         onChangeAspectRatio={handleAspectRatioChange}
         fitMode={fitMode}
         onChangeFitMode={handleFitModeChange}
+        cameraFacingMode={cameraFacingMode}
+        onToggleCameraFacingMode={onToggleCameraFacingMode}
+        cameraZoom={cameraZoom}
+        cameraZoomRange={cameraZoomRange}
+        onChangeCameraZoom={onChangeCameraZoom}
       />
 
       {/* Screen Share Configuration Modal (PC Audio Choice) */}
