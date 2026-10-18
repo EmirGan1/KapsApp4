@@ -11,9 +11,11 @@ import {
   tuneSdpForAudioOpus,
   checkCanScreenShare,
   isMobileBrowser,
+  isMobileOrTablet,
   requestScreenStream,
   CameraResolutionMode,
-  NoiseSuppressionMode
+  NoiseSuppressionMode,
+  AudioOutputMode
 } from '../utils/webrtcConfig';
 
 interface UseWebRTCOptions {
@@ -39,6 +41,11 @@ export function useWebRTC({
   const [isSpeakingLocal, setIsSpeakingLocal] = useState(false);
   const [mediaPermissionError, setMediaPermissionError] = useState<string | null>(null);
 
+  // Audio Output Mode: Speakerphone vs Earpiece (Mobile-friendly)
+  const [audioOutputMode, setAudioOutputMode] = useState<AudioOutputMode>(() => {
+    return 'speaker';
+  });
+
   // Resolution and Noise Suppression State
   const [resolution, setResolution] = useState<CameraResolutionMode>(() => {
     return (localStorage.getItem('kapsapp_camera_resolution') as CameraResolutionMode) || 'auto';
@@ -57,14 +64,15 @@ export function useWebRTC({
   const filteredAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const audioFilterNodesRef = useRef<{
     source: MediaStreamAudioSourceNode;
-    highPass: BiquadFilterNode;
-    notch50: BiquadFilterNode;
-    notch60: BiquadFilterNode;
-    speechEQ: BiquadFilterNode;
-    lowPass: BiquadFilterNode;
-    compressor: DynamicsCompressorNode;
-    gainNode: GainNode;
-    analyser: AnalyserNode;
+    highPass?: BiquadFilterNode;
+    notch50?: BiquadFilterNode;
+    notch60?: BiquadFilterNode;
+    speechEQ?: BiquadFilterNode;
+    lowPass?: BiquadFilterNode;
+    compressor?: DynamicsCompressorNode;
+    gainNode?: GainNode;
+    masterGainNode: GainNode;
+    analyser?: AnalyserNode;
     dest: MediaStreamAudioDestinationNode;
     interval?: any;
   } | null>(null);
@@ -170,6 +178,7 @@ export function useWebRTC({
   const participantCountRef = useRef(participantCount);
   const resolutionRef = useRef<CameraResolutionMode>(resolution);
   const noiseSuppressionLevelRef = useRef<NoiseSuppressionMode>(noiseSuppressionLevel);
+  const audioOutputModeRef = useRef<AudioOutputMode>(audioOutputMode);
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { isVideoOffRef.current = isVideoOff; }, [isVideoOff]);
@@ -179,8 +188,9 @@ export function useWebRTC({
   useEffect(() => { participantCountRef.current = participantCount; }, [participantCount]);
   useEffect(() => { resolutionRef.current = resolution; }, [resolution]);
   useEffect(() => { noiseSuppressionLevelRef.current = noiseSuppressionLevel; }, [noiseSuppressionLevel]);
+  useEffect(() => { audioOutputModeRef.current = audioOutputMode; }, [audioOutputMode]);
 
-  // Web Audio AI Noise Filtering Pipeline (High-Pass + Mains Notch + Dynamics Gate/Compressor)
+  // Web Audio AI Noise Filtering Pipeline with Master Make-up Gain & Natural Gate
   const cleanupAudioFilterPipeline = useCallback(() => {
     if (audioFilterNodesRef.current) {
       try {
@@ -188,14 +198,15 @@ export function useWebRTC({
           clearInterval(audioFilterNodesRef.current.interval);
         }
         audioFilterNodesRef.current.source.disconnect();
-        audioFilterNodesRef.current.highPass.disconnect();
-        audioFilterNodesRef.current.notch50.disconnect();
-        audioFilterNodesRef.current.notch60.disconnect();
-        audioFilterNodesRef.current.speechEQ.disconnect();
-        audioFilterNodesRef.current.lowPass.disconnect();
-        audioFilterNodesRef.current.compressor.disconnect();
-        audioFilterNodesRef.current.gainNode.disconnect();
-        audioFilterNodesRef.current.analyser.disconnect();
+        audioFilterNodesRef.current.highPass?.disconnect();
+        audioFilterNodesRef.current.notch50?.disconnect();
+        audioFilterNodesRef.current.notch60?.disconnect();
+        audioFilterNodesRef.current.speechEQ?.disconnect();
+        audioFilterNodesRef.current.lowPass?.disconnect();
+        audioFilterNodesRef.current.compressor?.disconnect();
+        audioFilterNodesRef.current.gainNode?.disconnect();
+        audioFilterNodesRef.current.masterGainNode?.disconnect();
+        audioFilterNodesRef.current.analyser?.disconnect();
       } catch (e) {}
       audioFilterNodesRef.current = null;
     }
@@ -213,7 +224,7 @@ export function useWebRTC({
       if (!AudioCtx) return micTrack;
 
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = new AudioCtx();
+        audioContextRef.current = new AudioCtx({ sampleRate: 48000 });
       }
       const ctx = audioContextRef.current;
       if (ctx.state === 'suspended') {
@@ -224,39 +235,69 @@ export function useWebRTC({
 
       const mediaStream = new MediaStream([micTrack]);
       const source = ctx.createMediaStreamSource(mediaStream);
+      const dest = ctx.createMediaStreamDestination();
 
-      // 1. High-Pass filter: 120Hz cutoff removes low desk rumbles & bumping
+      // Master Make-Up Gain Node: 1.7x base gain boost (2.0x in speakerphone mode)
+      const masterGain = ctx.createGain();
+      const isSpeaker = audioOutputModeRef.current === 'speaker';
+      const baseMasterGain = isSpeaker ? 2.0 : 1.7;
+      masterGain.gain.setValueAtTime(baseMasterGain, ctx.currentTime);
+
+      const currentMode = noiseSuppressionLevelRef.current;
+
+      // 1. Gürültü Engelleme KAPALI: Doğrudan Master Gain hattı üzerinden tam netlikte ve gür ses
+      if (currentMode === 'off') {
+        source.connect(masterGain);
+        masterGain.connect(dest);
+
+        audioFilterNodesRef.current = {
+          source,
+          masterGainNode: masterGain,
+          dest
+        };
+
+        const processedTrack = dest.stream.getAudioTracks()[0];
+        if (processedTrack) {
+          filteredAudioTrackRef.current = processedTrack;
+          processedTrack.enabled = !isMutedRef.current;
+          console.log('[WebRTC] Gürültü engelleme KAPALI: Filtresiz direkt ses aktarımı (Make-Up Gain aktif).');
+          return processedTrack;
+        }
+        return micTrack;
+      }
+
+      // 2. Gürültü Engelleme STANDART / YÜKSEK: İnsan sesini yutmayan doğal DSP & Noise Gate hattı
+      // High-Pass Filter: 85Hz cutoff (sadece masa titreşimi ve kasa dip uğultularını keser, ses gövdesini korur)
       const highPass = ctx.createBiquadFilter();
       highPass.type = 'highpass';
-      highPass.frequency.setValueAtTime(120, ctx.currentTime);
+      highPass.frequency.setValueAtTime(85, ctx.currentTime);
       highPass.Q.setValueAtTime(0.707, ctx.currentTime);
 
-      // 2. Notch 50Hz: electrical mains buzz
+      // Elektrik şebeke 50Hz / 60Hz Notch filtreleri
       const notch50 = ctx.createBiquadFilter();
       notch50.type = 'notch';
       notch50.frequency.setValueAtTime(50, ctx.currentTime);
-      notch50.Q.setValueAtTime(6.0, ctx.currentTime);
+      notch50.Q.setValueAtTime(4.0, ctx.currentTime);
 
-      // 3. Notch 60Hz: electrical mains buzz
       const notch60 = ctx.createBiquadFilter();
       notch60.type = 'notch';
       notch60.frequency.setValueAtTime(60, ctx.currentTime);
-      notch60.Q.setValueAtTime(6.0, ctx.currentTime);
+      notch60.Q.setValueAtTime(4.0, ctx.currentTime);
 
-      // 4. Peaking filter for human speech presence boost (2.2kHz)
+      // Speech Formant EQ: 2400Hz (+2.5dB) insan konuşma berraklığı
       const speechEQ = ctx.createBiquadFilter();
       speechEQ.type = 'peaking';
-      speechEQ.frequency.setValueAtTime(2200, ctx.currentTime);
+      speechEQ.frequency.setValueAtTime(2400, ctx.currentTime);
       speechEQ.Q.setValueAtTime(1.0, ctx.currentTime);
-      speechEQ.gain.setValueAtTime(3.0, ctx.currentTime);
+      speechEQ.gain.setValueAtTime(2.5, ctx.currentTime);
 
-      // 5. Low-Pass filter: 4200Hz cutoff to filter keyboard clatter and fan hiss
+      // Low-Pass Filter: 8000Hz (mekanik tuş klikleri ve sert tiz parazitleri keser, sesin doğallığını bozmaz)
       const lowPass = ctx.createBiquadFilter();
       lowPass.type = 'lowpass';
-      lowPass.frequency.setValueAtTime(4200, ctx.currentTime);
+      lowPass.frequency.setValueAtTime(8000, ctx.currentTime);
       lowPass.Q.setValueAtTime(0.707, ctx.currentTime);
 
-      // 6. Mild & Transparent Dynamics Compressor
+      // Şeffaf Dinamik Kompresör (ses patlamalarını önler, uzaktaki fısıltıları toparlar)
       const compressor = ctx.createDynamicsCompressor();
       compressor.threshold.setValueAtTime(-24, ctx.currentTime);
       compressor.knee.setValueAtTime(30, ctx.currentTime);
@@ -264,61 +305,72 @@ export function useWebRTC({
       compressor.attack.setValueAtTime(0.003, ctx.currentTime);
       compressor.release.setValueAtTime(0.25, ctx.currentTime);
 
-      // 7. Krisp-style Smart Noise Gate + Make-up Gain
-      const gainNode = ctx.createGain();
-      const makeupGain = noiseSuppressionLevelRef.current === 'high' ? 2.0 : 1.2;
-      gainNode.gain.setValueAtTime(makeupGain, ctx.currentTime);
+      // Dinamik Noise Gate GainNode
+      const gateGain = ctx.createGain();
+      gateGain.gain.setValueAtTime(1.0, ctx.currentTime);
 
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.2;
+      analyser.smoothingTimeConstant = 0.15;
 
-      // Destination node
-      const dest = ctx.createMediaStreamDestination();
-
+      // Filtre zinciri bağlantısı:
       source.connect(highPass);
       highPass.connect(notch50);
       notch50.connect(notch60);
       notch60.connect(speechEQ);
       speechEQ.connect(lowPass);
       lowPass.connect(compressor);
-      compressor.connect(gainNode);
-      gainNode.connect(analyser);
-      analyser.connect(dest);
+      compressor.connect(gateGain);
+      gateGain.connect(analyser);
+      analyser.connect(masterGain);
+      masterGain.connect(dest);
 
-      // Real-time RMS Noise Gate loop (Balanced -43dB threshold & dynamic makeup gain)
+      // Doğal İnsan Sesi Noise Gate Döngüsü:
+      // Açılma Eşiği (Open Threshold): -52 dB (~0.0025 RMS)
+      // Kapanma Eşiği (Close Threshold): -56 dB (~0.0016 RMS)
+      // Attack: 5ms, Hold: 350ms (cümle aralarında nefes alırken kapı açık kalır), Release: 150ms
+      // Floor Gain: 0.04 (asla tam 0 olmaz, harf sonları yutulmaz)
       const dataArray = new Float32Array(analyser.fftSize);
-      const NOISE_THRESHOLD = 0.007; // ~ -43dB RMS threshold
-      let isSpeechActive = true;
+      const OPEN_THRESHOLD = currentMode === 'high' ? 0.0028 : 0.0022;
+      const CLOSE_THRESHOLD = currentMode === 'high' ? 0.0018 : 0.0014;
+      let isGateOpen = true;
+      let lastSpeechTime = Date.now();
 
       const interval = setInterval(() => {
-        if (!analyser || !gainNode || !ctx || ctx.state === 'closed') return;
+        if (!analyser || !gateGain || !ctx || ctx.state === 'closed') return;
         if (ctx.state === 'suspended') {
           ctx.resume().catch(() => {});
           return;
         }
+
         analyser.getFloatTimeDomainData(dataArray);
-        
         let sumSquares = 0;
         for (let i = 0; i < dataArray.length; i++) {
           sumSquares += dataArray[i] * dataArray[i];
         }
         const rms = Math.sqrt(sumSquares / dataArray.length);
+        const now = Date.now();
 
-        const activeGain = noiseSuppressionLevelRef.current === 'high' ? 2.0 : 1.2;
-
-        if (rms > NOISE_THRESHOLD) {
-          if (!isSpeechActive) {
-            isSpeechActive = true;
-            gainNode.gain.setTargetAtTime(activeGain, ctx.currentTime, 0.008);
+        if (rms >= OPEN_THRESHOLD) {
+          lastSpeechTime = now;
+          if (!isGateOpen) {
+            isGateOpen = true;
+            // 5ms Attack Time
+            gateGain.gain.setTargetAtTime(1.0, ctx.currentTime, 0.005);
+          }
+        } else if (rms <= CLOSE_THRESHOLD) {
+          // 350ms Hold Time
+          if (isGateOpen && (now - lastSpeechTime > 350)) {
+            isGateOpen = false;
+            // 150ms Release Time to 0.04 floor gain
+            gateGain.gain.setTargetAtTime(0.04, ctx.currentTime, 0.15);
           }
         } else {
-          if (isSpeechActive && rms < 0.002) {
-            isSpeechActive = false;
-            gainNode.gain.setTargetAtTime(activeGain * 0.15, ctx.currentTime, 0.08);
+          if (isGateOpen) {
+            lastSpeechTime = now;
           }
         }
-      }, 25);
+      }, 20);
 
       audioFilterNodesRef.current = {
         source,
@@ -328,7 +380,8 @@ export function useWebRTC({
         speechEQ,
         lowPass,
         compressor,
-        gainNode,
+        gainNode: gateGain,
+        masterGainNode: masterGain,
         analyser,
         dest,
         interval
@@ -338,12 +391,12 @@ export function useWebRTC({
       if (processedTrack) {
         filteredAudioTrackRef.current = processedTrack;
         processedTrack.enabled = !isMutedRef.current;
-        console.log('[WebRTC] AI Destekli Gelişmiş Gürültü Engelleme Filtresi (Web Audio Pipeline) devrede.');
+        console.log(`[WebRTC] İnsan sesi odaklı Noise Gate (${currentMode.toUpperCase()}) aktif.`);
         return processedTrack;
       }
       return micTrack;
     } catch (err) {
-      console.warn('[WebRTC] AI Audio filter pipeline initialization failed:', err);
+      console.warn('[WebRTC] Audio pipeline initialization error, fallback to raw mic:', err);
       return micTrack;
     }
   }, [cleanupAudioFilterPipeline]);
@@ -543,9 +596,7 @@ export function useWebRTC({
       if (micTrack) {
         originalMicTrackRef.current = micTrack;
         micTrack.enabled = !isMutedRef.current;
-        if (noiseSuppressionLevelRef.current === 'high') {
-          createAudioFilterPipeline(micTrack);
-        }
+        createAudioFilterPipeline(micTrack);
       }
 
       const camTrack = stream.getVideoTracks()[0];

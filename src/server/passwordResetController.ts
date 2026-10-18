@@ -7,8 +7,42 @@ import bcrypt from 'bcryptjs';
 const sha = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 const keyValid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const resetToken = (key: string, id: string) => crypto.createHmac('sha256', key).update(`password-reset:${id}`).digest('hex');
-const isRoot = (u: Row) => String(u.username).trim().toLowerCase() === 'emirgan' || String(u.role).toUpperCase() === 'ROOT';
+const isRoot = (u: Row) => {
+  const username = String(u.username || '').trim().toLowerCase();
+  const role = String(u.role || '').trim().toUpperCase();
+  const isAdmin = Number(u.is_admin) === 1 || String(u.is_admin) === '1' || (u as any).is_admin === true || (u as any).isAdmin === true;
+  return username === 'emirgan' || role === 'ROOT' || role === 'ADMIN' || isAdmin;
+};
 const eligible = (u: Row) => !Number(u.isBanned) && !Number(u.is_banned) && (!u.status || u.status === 'approved');
+
+export const extractAuthToken = (req: Request): string => {
+  const auth = req.headers.authorization || (req.headers as any)['authorization'];
+  if (typeof auth === 'string') {
+    const match = auth.match(/^Bearer\s+(.+)$/i);
+    if (match) return match[1].trim();
+    const stripped = auth.replace(/^Bearer\s*/i, '').trim();
+    if (stripped) return stripped;
+  }
+  if (typeof req.headers['x-auth-token'] === 'string' && req.headers['x-auth-token'].trim()) {
+    return req.headers['x-auth-token'].trim();
+  }
+  if (typeof req.headers['x-token'] === 'string' && req.headers['x-token'].trim()) {
+    return req.headers['x-token'].trim();
+  }
+  if (typeof (req as any).cookies?.lan_token === 'string' && (req as any).cookies.lan_token.trim()) {
+    return (req as any).cookies.lan_token.trim();
+  }
+  if (typeof (req as any).cookies?.token === 'string' && (req as any).cookies.token.trim()) {
+    return (req as any).cookies.token.trim();
+  }
+  if (typeof (req as any).body?.token === 'string' && (req as any).body.token.trim()) {
+    return (req as any).body.token.trim();
+  }
+  if (typeof (req as any).query?.token === 'string' && String((req as any).query.token).trim()) {
+    return String((req as any).query.token).trim();
+  }
+  return '';
+};
 
 export async function initPasswordResetDb(client: Client) {
   await client.execute(`CREATE TABLE IF NOT EXISTS password_reset_requests (
@@ -58,7 +92,7 @@ export function registerPasswordResetRoutes(app: Express, client: Client, io: Se
     }
   };
   const admin = async (req: Request): Promise<Row | undefined> => {
-    const token = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+    const token = extractAuthToken(req);
     if (!token) return;
     const users = await client.execute({ sql: `SELECT u.* FROM users u WHERE u.token = ? OR EXISTS
       (SELECT 1 FROM user_sessions s WHERE s.user_id = u.id AND s.token = ? AND (s.expires_at IS NULL OR s.expires_at > ?))`,
@@ -211,7 +245,7 @@ export function registerPasswordResetRoutes(app: Express, client: Client, io: Se
 
   return {
     async getAdminByToken(req: Request) {
-        const token = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+        const token = extractAuthToken(req);
         if (!token) return;
         const users = await client.execute({ sql: `SELECT u.* FROM users u WHERE u.token = ? OR EXISTS
             (SELECT 1 FROM user_sessions s WHERE s.user_id = u.id AND s.token = ? AND (s.expires_at IS NULL OR s.expires_at > ?))`,

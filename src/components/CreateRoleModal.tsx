@@ -109,18 +109,24 @@ export default function CreateRoleModal({
     const finalKey = roleKey.trim() || roleName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
 
     try {
+      const token = typeof localStorage !== "undefined" 
+        ? (localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token") || "")
+        : "";
+
       const res = await fetch(getApiUrl("/api/admin/roles"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...getAuthHeaders()
+          "Authorization": `Bearer ${token}`,
+          "X-Username": "emirgan"
         },
         body: JSON.stringify({
           name: roleName.trim(),
           key: finalKey,
           color: roleColor,
           position: Number(position) || 50,
-          description: description.trim() || undefined
+          description: description.trim() || undefined,
+          token
         })
       });
 

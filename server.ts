@@ -2518,23 +2518,68 @@ async function startServer() {
     return true;
   };
 
-  // Strict Admin Middleware: ONLY user "emirgan" is permitted
+  // Strict Admin Middleware: ONLY user "emirgan" or ROOT/ADMIN is permitted
   const requireEmirganAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-      const authUser = await passwordReset.getAdminByToken(req);
-      if (!authUser) return res.status(403).json({ error: "Doğrulanmış emirgan veya ROOT oturumu gerekli." });
-      
-      const username = String(authUser.username).toLowerCase().trim();
-      const role = String(authUser.role).toUpperCase().trim();
-      const isAuthorized = username === 'emirgan' || role === 'ROOT' || role === 'ADMIN';
-      
+      let token = "";
+      const authHeader = req.headers.authorization || (req.headers as any)["authorization"];
+      if (typeof authHeader === "string") {
+        const match = authHeader.match(/^Bearer\s+(.+)$/i);
+        token = match ? match[1].trim() : authHeader.replace(/^Bearer\s*/i, "").trim();
+      }
+      if (!token && typeof req.headers["x-auth-token"] === "string") {
+        token = req.headers["x-auth-token"].trim();
+      }
+      if (!token && typeof req.headers["x-token"] === "string") {
+        token = req.headers["x-token"].trim();
+      }
+      if (!token && (req as any).cookies?.lan_token) {
+        token = String((req as any).cookies.lan_token).trim();
+      }
+      if (!token && typeof req.body?.token === "string") {
+        token = req.body.token.trim();
+      }
+      if (!token && typeof req.query?.token === "string") {
+        token = String(req.query.token).trim();
+      }
+
+      let authUser: any = null;
+      if (token) {
+        const userRes = await client.execute({
+          sql: `SELECT u.* FROM users u WHERE u.token = ? OR EXISTS (
+            SELECT 1 FROM user_sessions s WHERE s.user_id = u.id AND s.token = ? AND (s.expires_at IS NULL OR s.expires_at > ?)
+          ) LIMIT 1`,
+          args: [token, token, new Date().toISOString()]
+        });
+        if (userRes.rows.length > 0) {
+          authUser = userRes.rows[0];
+        }
+      }
+
+      if (!authUser) {
+        authUser = await passwordReset.getAdminByToken(req);
+      }
+
+      if (!authUser) {
+        return res.status(403).json({ error: "Doğrulanmış emirgan veya ROOT oturumu gerekli." });
+      }
+
+      const username = String(authUser.username || "").toLowerCase().trim();
+      const role = String(authUser.role || "").toUpperCase().trim();
+      const isAdmin = Number(authUser.is_admin) === 1 || authUser.is_admin === true || authUser.is_admin === "1" || (authUser as any).isAdmin === true;
+      const isAuthorized = username === "emirgan" || role === "ROOT" || role === "ADMIN" || isAdmin;
+
       if (!isAuthorized) {
         return res.status(403).json({ error: "Doğrulanmış emirgan veya ROOT oturumu gerekli." });
       }
 
       (req as any).adminUser = authUser;
+      (req as any).user = authUser;
       next();
-    } catch (err) { return res.status(500).json({ error: "Yetki doğrulanamadı." }); }
+    } catch (err: any) {
+      console.error("[requireEmirganAdmin] Auth error:", err);
+      return res.status(500).json({ error: "Yetki doğrulanamadı." });
+    }
   };
 
   // 1. Admin (emirgan) User Deletion: Kalıcı Olarak Veritabanından Tüm İlişkili Kayıtları Temizler
@@ -4642,6 +4687,7 @@ async function startServer() {
   const userActiveCallId = new Map<number, string>(); // userId -> callId
 
   const voiceRooms = new Map<string, ServerVoiceRoom>();
+  const voiceDisconnectGraceTimers = new Map<number, NodeJS.Timeout>();
 
   const getSanitizedVoiceRoom = (room: ServerVoiceRoom) => ({
     id: room.id,
@@ -9686,6 +9732,14 @@ async function startServer() {
       }
 
       const isHost = room.hostId === user.id;
+
+      // Clear any pending disconnect grace timer if user reconnects
+      const pendingGrace = voiceDisconnectGraceTimers.get(user.id);
+      if (pendingGrace) {
+        clearTimeout(pendingGrace);
+        voiceDisconnectGraceTimers.delete(user.id);
+      }
+
       const participant: ServerVoiceParticipant = {
         id: user.id,
         username: user.username,
@@ -9855,6 +9909,14 @@ async function startServer() {
         });
         broadcastVoiceRoom(targetRoomId);
       }
+    });
+
+    // Voice Room Keepalive Heartbeat: Prevents Cloudflare / Nginx 60-second proxy timeout drops
+    socket.on("voice_ping", (data: any) => {
+      socket.emit("voice_pong", {
+        timestamp: Date.now(),
+        clientTime: data?.timestamp
+      });
     });
 
     socket.on("voice:invite_user", (data: { targetUserId: number; roomId: string; roomName: string; inviter?: any }, cb?: any) => {
@@ -11571,22 +11633,49 @@ async function startServer() {
 
       const voiceRoomId = socket.data.currentVoiceRoom;
       if (voiceRoomId) {
-        const vRoom = voiceRooms.get(voiceRoomId);
-        if (vRoom) {
-          if (vRoom.hostId === user.id) {
-            io.to(`voice_${voiceRoomId}`).emit("voice_room_closed", { reason: "Oda kurucusu ayrıldığı için oda kapatıldı." });
-            voiceRooms.delete(voiceRoomId);
-          } else {
-            vRoom.participants.delete(user.id);
-            if (vRoom.participants.size === 0) {
-              voiceRooms.delete(voiceRoomId);
-            } else {
-              socket.to(`voice_${voiceRoomId}`).emit("voice_user_left", { userId: user.id, socketId: socket.id });
-              broadcastVoiceRoom(voiceRoomId);
+        // Clear any existing timer for this user
+        const existingTimer = voiceDisconnectGraceTimers.get(user.id);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+
+        // 20-second grace period for transient network switches (Wi-Fi/4G handoffs, lockscreen, background tab)
+        const graceTimer = setTimeout(() => {
+          voiceDisconnectGraceTimers.delete(user.id);
+          const vRoom = voiceRooms.get(voiceRoomId);
+          if (vRoom) {
+            const currentParticipant = vRoom.participants.get(user.id);
+            // Only clean up if user has not re-joined with a new socket
+            if (currentParticipant && currentParticipant.socketId === socket.id) {
+              if (vRoom.hostId === user.id) {
+                // If there are other participants, promote the next participant to host instead of killing the call!
+                const remaining = Array.from(vRoom.participants.values()).filter(p => p.id !== user.id);
+                if (remaining.length > 0) {
+                  const newHost = remaining[0];
+                  vRoom.hostId = newHost.id;
+                  vRoom.hostUsername = newHost.username;
+                  vRoom.participants.delete(user.id);
+                  io.to(`voice_${voiceRoomId}`).emit("voice_user_left", { userId: user.id, socketId: socket.id });
+                  broadcastVoiceRoom(voiceRoomId);
+                } else {
+                  io.to(`voice_${voiceRoomId}`).emit("voice_room_closed", { reason: "Oda kurucusu ayrıldığı için oda kapatıldı." });
+                  voiceRooms.delete(voiceRoomId);
+                }
+              } else {
+                vRoom.participants.delete(user.id);
+                if (vRoom.participants.size === 0) {
+                  voiceRooms.delete(voiceRoomId);
+                } else {
+                  io.to(`voice_${voiceRoomId}`).emit("voice_user_left", { userId: user.id, socketId: socket.id });
+                  broadcastVoiceRoom(voiceRoomId);
+                }
+              }
+              emitVoiceRoomsList();
             }
           }
-          emitVoiceRoomsList();
-        }
+        }, 20000);
+
+        voiceDisconnectGraceTimers.set(user.id, graceTimer);
       }
       const unoRoomId = socket.data.currentUnoRoom;
       if (unoRoomId) {

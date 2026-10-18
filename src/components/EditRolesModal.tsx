@@ -128,14 +128,19 @@ export default function EditRolesModal({
     const rolesToSave = Array.from(new Set([...selectedRoles]));
 
     try {
+      const token = typeof localStorage !== "undefined" 
+        ? (localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token") || "")
+        : "";
+
       // 1. REST API update
       const res = await fetch(getApiUrl(`/api/users/${userId}/roles`), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          ...getAuthHeaders()
+          "Authorization": `Bearer ${token}`,
+          "X-Username": "emirgan"
         },
-        body: JSON.stringify({ roles: rolesToSave })
+        body: JSON.stringify({ roles: rolesToSave, token })
       });
 
       const data = await res.json();

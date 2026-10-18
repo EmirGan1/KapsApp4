@@ -66,7 +66,64 @@ export function getAuthHeaders(extraHeaders?: HeadersInit): Headers {
     if (!headers.has("X-Device-Id")) headers.set("X-Device-Id", hwFingerprint);
   }
 
+  // Ensure spreading `...getAuthHeaders()` in object literals retains Authorization and hardware headers
+  try {
+    if (token) {
+      Object.defineProperty(headers, "Authorization", {
+        value: `Bearer ${token}`,
+        enumerable: true,
+        writable: true,
+        configurable: true
+      });
+      Object.defineProperty(headers, "authorization", {
+        value: `Bearer ${token}`,
+        enumerable: true,
+        writable: true,
+        configurable: true
+      });
+    }
+    if (hwFingerprint && hwFingerprint !== "hw_pending_init") {
+      Object.defineProperty(headers, "X-Hardware-Fingerprint", {
+        value: hwFingerprint,
+        enumerable: true,
+        writable: true,
+        configurable: true
+      });
+      Object.defineProperty(headers, "X-Device-Id", {
+        value: hwFingerprint,
+        enumerable: true,
+        writable: true,
+        configurable: true
+      });
+    }
+  } catch {}
+
   return headers;
+}
+
+/**
+ * Returns plain object headers for compatibility with standard fetch/axios config
+ */
+export function getAuthHeaderObj(extraHeaders?: Record<string, string>): Record<string, string> {
+  const token = typeof localStorage !== "undefined" 
+    ? (localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token"))
+    : null;
+
+  const result: Record<string, string> = {
+    ...(extraHeaders || {})
+  };
+
+  if (token && !result["Authorization"]) {
+    result["Authorization"] = `Bearer ${token}`;
+  }
+
+  const hwFingerprint = getCachedHardwareFingerprint();
+  if (hwFingerprint && hwFingerprint !== "hw_pending_init") {
+    if (!result["X-Hardware-Fingerprint"]) result["X-Hardware-Fingerprint"] = hwFingerprint;
+    if (!result["X-Device-Id"]) result["X-Device-Id"] = hwFingerprint;
+  }
+
+  return result;
 }
 
 /**

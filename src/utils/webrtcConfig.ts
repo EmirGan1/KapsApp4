@@ -17,21 +17,30 @@ export const ICE_SERVERS: RTCConfiguration = {
   rtcpMuxPolicy: 'require'
 };
 
-/**
- * Audio Media Constraints with Echo Cancellation, Noise Suppression, and AGC
- */
-export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
-  echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true,
-  sampleRate: 48000,
-  channelCount: 1
-};
-
+export type AudioOutputMode = 'speaker' | 'earpiece';
 export type CameraResolutionMode = 'auto' | '1080p' | '720p' | '480p';
 export type NoiseSuppressionMode = 'off' | 'standard' | 'high';
 export type VideoAspectRatioMode = 'auto' | 'landscape' | 'portrait';
 export type VideoFitMode = 'cover' | 'contain';
+
+/**
+ * Audio Media Constraints with Hardware AEC, AGC, and disabled browser-side double suppression
+ */
+export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: { ideal: true },
+  noiseSuppression: false, // Prevents browser double-filtering and voice muffling
+  autoGainControl: { ideal: true },
+  // @ts-ignore
+  googEchoCancellation: { ideal: true },
+  // @ts-ignore
+  googAutoGainControl: { ideal: true },
+  // @ts-ignore
+  googNoiseSuppression: { ideal: false },
+  // @ts-ignore
+  googHighpassFilter: { ideal: true },
+  sampleRate: 48000,
+  channelCount: 1
+};
 
 /**
  * Flexible Camera & Audio Constraints with Ideal Dimensions (prevents camera initialization crashes)
@@ -43,30 +52,25 @@ export const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
     frameRate: { ideal: 30, max: 30 },
     facingMode: 'user'
   },
-  audio: {
-    echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true
-  }
+  audio: AUDIO_CONSTRAINTS
 };
 
 /**
  * Audio Track constraints generator based on selected noise suppression level
  */
 export function getAudioTrackConstraints(mode: NoiseSuppressionMode = 'standard'): MediaTrackConstraints {
-  if (mode === 'off') {
-    return {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-      sampleRate: 48000,
-      channelCount: 1
-    };
-  }
   return {
-    echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
+    echoCancellation: { ideal: true },
+    noiseSuppression: false, // In-app Web Audio pipeline handles noise suppression cleanly
+    autoGainControl: { ideal: true },
+    // @ts-ignore
+    googEchoCancellation: { ideal: true },
+    // @ts-ignore
+    googAutoGainControl: { ideal: true },
+    // @ts-ignore
+    googNoiseSuppression: { ideal: false },
+    // @ts-ignore
+    googHighpassFilter: { ideal: true },
     sampleRate: 48000,
     channelCount: 1
   };
