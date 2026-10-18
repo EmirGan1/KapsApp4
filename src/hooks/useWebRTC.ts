@@ -46,6 +46,106 @@ export function useWebRTC({
     return 'speaker';
   });
 
+  const toggleAudioOutputMode = useCallback(() => {
+    setAudioOutputMode((prev) => {
+      const next = prev === 'speaker' ? 'earpiece' : 'speaker';
+      if (audioFilterNodesRef.current?.masterGainNode && audioContextRef.current) {
+        const gainVal = next === 'speaker' ? 2.0 : 1.0;
+        audioFilterNodesRef.current.masterGainNode.gain.setValueAtTime(gainVal, audioContextRef.current.currentTime);
+      }
+      return next;
+    });
+  }, []);
+
+  // Camera Facing Mode ('user' vs 'environment') and Zoom States
+  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('user');
+  const [cameraZoom, setCameraZoomState] = useState<number>(1);
+  const [cameraZoomRange, setCameraZoomRange] = useState<{ min: number; max: number; step: number }>({ min: 1, max: 1, step: 0.1 });
+  const cameraFacingModeRef = useRef(cameraFacingMode);
+  useEffect(() => { cameraFacingModeRef.current = cameraFacingMode; }, [cameraFacingMode]);
+
+  const toggleCameraFacingMode = useCallback(async () => {
+    const nextMode = cameraFacingModeRef.current === 'user' ? 'environment' : 'user';
+    setCameraFacingMode(nextMode);
+    cameraFacingModeRef.current = nextMode;
+
+    if (!isVideoOffRef.current && !isScreenSharingRef.current) {
+      try {
+        const baseVConstraints = getVideoConstraintsForResolution(resolutionRef.current, participantCountRef.current);
+        let freshStream: MediaStream;
+        try {
+          freshStream = await navigator.mediaDevices.getUserMedia({
+            video: { ...baseVConstraints, facingMode: { exact: nextMode } }
+          });
+        } catch {
+          freshStream = await navigator.mediaDevices.getUserMedia({
+            video: { ...baseVConstraints, facingMode: nextMode }
+          });
+        }
+        const freshTrack = freshStream.getVideoTracks()[0];
+        if (freshTrack) {
+          const oldTrack = originalCameraTrackRef.current;
+          if (oldTrack) {
+            try { oldTrack.stop(); } catch (e) {}
+          }
+          originalCameraTrackRef.current = freshTrack;
+
+          try {
+            const caps: any = freshTrack.getCapabilities?.() || {};
+            if (caps.zoom) {
+              setCameraZoomRange({
+                min: caps.zoom.min || 1,
+                max: caps.zoom.max || 5,
+                step: caps.zoom.step || 0.1
+              });
+              setCameraZoomState(caps.zoom.min || 1);
+            }
+          } catch (e) {}
+
+          if (localStreamRef.current) {
+            const oldVTracks = localStreamRef.current.getVideoTracks();
+            oldVTracks.forEach((t) => localStreamRef.current?.removeTrack(t));
+            localStreamRef.current.addTrack(freshTrack);
+            setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+          }
+
+          for (const [, pc] of peerConnectionsRef.current.entries()) {
+            const senders = pc.getSenders();
+            const videoSender = senders.find((s) => s.track?.kind === 'video') || senders.find((s) => !s.track);
+            if (videoSender) {
+              await videoSender.replaceTrack(freshTrack).catch(() => {});
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[WebRTC] Toggle camera facing mode error:', err);
+      }
+    }
+  }, []);
+
+  const setCameraZoom = useCallback(async (zoomVal: number) => {
+    setCameraZoomState(zoomVal);
+    const track = originalCameraTrackRef.current;
+    if (track && 'applyConstraints' in track) {
+      try {
+        await (track as any).applyConstraints({
+          advanced: [{ zoom: zoomVal }]
+        });
+      } catch (err) {
+        console.debug('[WebRTC] Apply zoom constraint failed:', err);
+      }
+    }
+  }, []);
+
+  // WebSocket Heartbeat Ping (every 25s) to prevent proxy/Nginx timeout drops
+  useEffect(() => {
+    if (!socket || !roomId) return;
+    const interval = setInterval(() => {
+      socket.emit('voice_ping', { roomId, timestamp: Date.now() });
+    }, 25000);
+    return () => clearInterval(interval);
+  }, [socket, roomId]);
+
   // Resolution and Noise Suppression State
   const [resolution, setResolution] = useState<CameraResolutionMode>(() => {
     return (localStorage.getItem('kapsapp_camera_resolution') as CameraResolutionMode) || 'auto';
@@ -759,10 +859,21 @@ export function useWebRTC({
       }
     };
 
-    // 4. Connection State Management
-    pc.onconnectionstatechange = () => {
+    // 4. Connection State Management with Automatic ICE Restart
+    pc.onconnectionstatechange = async () => {
       console.log(`[WebRTC] Connection state with ${remoteSocketId}:`, pc.connectionState);
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        console.log(`[WebRTC] Connection lost with ${remoteSocketId}, attempting automatic ICE restart...`);
+        try {
+          const offer = await pc.createOffer({ iceRestart: true });
+          await pc.setLocalDescription(offer);
+          if (socket && roomIdRef.current) {
+            socket.emit('voice_offer', { targetSocketId: remoteSocketId, offer });
+          }
+        } catch (err) {
+          console.warn('[WebRTC] ICE restart failed:', err);
+        }
+      } else if (pc.connectionState === 'closed') {
         const audioEl = remoteAudioElementsRef.current.get(remoteSocketId);
         if (audioEl) {
           audioEl.pause();
@@ -1494,10 +1605,17 @@ export function useWebRTC({
     mediaPermissionError,
     resolution,
     noiseSuppressionLevel,
+    audioOutputMode,
+    cameraFacingMode,
+    cameraZoom,
+    cameraZoomRange,
     setupLocalMedia,
     toggleMute,
     toggleVideo,
     toggleDeafen,
+    toggleAudioOutputMode,
+    toggleCameraFacingMode,
+    setCameraZoom,
     startScreenShare,
     stopScreenShare,
     toggleScreenShare,

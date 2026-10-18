@@ -27,7 +27,9 @@ import {
   Smartphone,
   Maximize2,
   ShieldCheck,
-  Check
+  Check,
+  SwitchCamera,
+  ZoomIn
 } from 'lucide-react';
 import { VoiceParticipant } from '../types';
 import Avatar from './Avatar';
@@ -298,6 +300,10 @@ interface VideoRoomViewProps {
   socket?: Socket | null;
   resolution?: CameraResolutionMode;
   noiseSuppressionLevel?: NoiseSuppressionMode;
+  audioOutputMode?: 'speaker' | 'earpiece';
+  cameraFacingMode?: 'user' | 'environment';
+  cameraZoom?: number;
+  cameraZoomRange?: { min: number; max: number; step: number };
   onChangeResolution?: (res: CameraResolutionMode) => void;
   onChangeNoiseSuppression?: (level: NoiseSuppressionMode) => void;
   onToggleMute: () => void;
@@ -306,6 +312,9 @@ interface VideoRoomViewProps {
   onStartScreenShare?: (withAudio: boolean) => void;
   onStopScreenShare?: () => void;
   onToggleDeafen: () => void;
+  onToggleAudioOutput?: () => void;
+  onToggleCameraFacingMode?: () => void;
+  onChangeCameraZoom?: (zoom: number) => void;
   onLeaveRoom: () => void;
   onKickUser?: (userId: number) => void;
   onForceMuteUser?: (userId: number) => void;
@@ -334,6 +343,10 @@ export function VideoRoomView({
   socket,
   resolution = 'auto',
   noiseSuppressionLevel = 'high',
+  audioOutputMode = 'speaker',
+  cameraFacingMode = 'user',
+  cameraZoom = 1,
+  cameraZoomRange = { min: 1, max: 1, step: 0.1 },
   onChangeResolution,
   onChangeNoiseSuppression,
   onToggleMute,
@@ -342,6 +355,9 @@ export function VideoRoomView({
   onStartScreenShare,
   onStopScreenShare,
   onToggleDeafen,
+  onToggleAudioOutput,
+  onToggleCameraFacingMode,
+  onChangeCameraZoom,
   onLeaveRoom,
   onKickUser,
   onForceMuteUser,
@@ -687,15 +703,15 @@ export function VideoRoomView({
       </div>
 
       {/* Floating Bottom Control Dock */}
-      <div className="absolute bottom-4 left-0 right-0 px-3 sm:px-4 flex justify-center z-40 pointer-events-none">
-        <div className="relative pointer-events-auto touch-manipulation z-50">
-          <div className="bg-slate-900/95 backdrop-blur-xl px-3 sm:px-6 py-2.5 sm:py-3 rounded-2xl border border-slate-800 shadow-2xl flex items-center gap-2 sm:gap-3.5 max-w-xl w-full justify-around">
+      <div className="absolute bottom-4 left-0 right-0 px-2 sm:px-4 flex justify-center z-40 pointer-events-none pb-safe">
+        <div className="relative pointer-events-auto touch-manipulation z-50 w-full max-w-2xl px-2">
+          <div className="bg-slate-900/95 backdrop-blur-xl px-2.5 sm:px-5 py-2 sm:py-3 rounded-2xl border border-slate-800 shadow-2xl flex items-center gap-1.5 sm:gap-3 overflow-x-auto no-scrollbar scroll-smooth justify-start sm:justify-around w-full">
             
             {/* Mic Button */}
             <button
               onClick={onToggleMute}
               title={isMuted ? 'Mikrofonu Aç' : 'Mikrofonu Kapat'}
-              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation shrink-0 ${
                 isMuted
                   ? 'bg-rose-600 hover:bg-rose-500 text-white ring-2 ring-rose-500/30'
                   : isSpeakingLocal
@@ -712,7 +728,7 @@ export function VideoRoomView({
               title={`Gürültü Engelleme: ${
                 noiseSuppressionLevel === 'high' ? 'Yüksek (AI Filtre)' : noiseSuppressionLevel === 'standard' ? 'Standart' : 'Kapalı'
               } (Değiştirmek için tıkla)`}
-              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex flex-col items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex flex-col items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation shrink-0 ${
                 noiseSuppressionLevel === 'high'
                   ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 ring-2 ring-amber-500/30'
                   : noiseSuppressionLevel === 'standard'
@@ -736,7 +752,7 @@ export function VideoRoomView({
             <button
               onClick={onToggleVideo}
               title={isVideoOff ? 'Kamerayı Aç' : 'Kamerayı Kapat'}
-              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation shrink-0 ${
                 isVideoOff
                   ? 'bg-rose-600 hover:bg-rose-500 text-white ring-2 ring-rose-500/30'
                   : 'bg-blue-600 hover:bg-blue-500 text-white ring-2 ring-blue-500/30'
@@ -745,11 +761,29 @@ export function VideoRoomView({
               {isVideoOff ? <CameraOff size={19} className="pointer-events-none" /> : <Camera size={19} className="pointer-events-none" />}
             </button>
 
+            {/* Speakerphone / Earpiece Audio Output Mode Toggle Button */}
+            {onToggleAudioOutput && (
+              <button
+                onClick={onToggleAudioOutput}
+                title={`Ses Çıkışı: ${audioOutputMode === 'speaker' ? 'Hoparlör (Speaker)' : 'Ahize (Earpiece)'}`}
+                className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex flex-col items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation shrink-0 ${
+                  audioOutputMode === 'speaker'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 ring-1 ring-blue-500/30'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                }`}
+              >
+                {audioOutputMode === 'speaker' ? <Volume2 size={16} className="text-blue-400" /> : <Volume1 size={16} className="text-slate-300" />}
+                <span className="text-[8px] font-black uppercase tracking-tighter mt-0.5">
+                  {audioOutputMode === 'speaker' ? 'HOP' : 'AHİZ'}
+                </span>
+              </button>
+            )}
+
             {/* Quick Aspect Ratio Cycle Button */}
             <button
               onClick={cycleAspectRatio}
               title={`Kamera Görünüm Oranı: ${aspectRatioMode.toUpperCase()} (Tıkla: Değiştir)`}
-              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex flex-col items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex flex-col items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer touch-manipulation shrink-0 ${
                 aspectRatioMode !== 'auto'
                   ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 ring-1 ring-blue-500/30'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
@@ -773,7 +807,7 @@ export function VideoRoomView({
               onClick={handleScreenShareClick}
               disabled={isStartingShare}
               title={isScreenSharing ? 'Ekran Paylaşımını Durdur' : 'Ekranını Paylaş'}
-              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer relative z-50 pointer-events-auto touch-manipulation select-none ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer relative z-50 pointer-events-auto touch-manipulation select-none shrink-0 ${
                 isScreenSharing
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-4 ring-emerald-500/40 animate-pulse'
                   : isStartingShare
@@ -795,7 +829,7 @@ export function VideoRoomView({
             <button
               onClick={() => setShowSettingsModal(true)}
               title="Kamera Çözünürlüğü ve Gelişmiş Ayarlar"
-              className="min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+              className="min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
             >
               <Sliders size={19} />
             </button>
@@ -804,7 +838,7 @@ export function VideoRoomView({
             <button
               onClick={onToggleDeafen}
               title={isDeafened ? 'Sesi Aç' : 'Kulaklığı Kapat (Sağırlaştır)'}
-              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer ${
+              className={`min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${
                 isDeafened
                   ? 'bg-amber-600 hover:bg-amber-500 text-white ring-2 ring-amber-500/30'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
@@ -817,7 +851,7 @@ export function VideoRoomView({
             <button
               onClick={onLeaveRoom}
               title="Odadan Ayrıl"
-              className="min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+              className="min-w-[42px] min-h-[42px] sm:min-w-[46px] sm:min-h-[46px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
             >
               <PhoneOff size={19} />
             </button>

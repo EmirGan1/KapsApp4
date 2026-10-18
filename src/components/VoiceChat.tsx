@@ -22,6 +22,7 @@ interface VoiceChatProps {
   avatar: string | null;
   color?: string;
   onUserClick?: (userId: number) => void;
+  onRoomActiveChange?: (active: boolean) => void;
 }
 
 // Memoized Voice Room Card for Lobby
@@ -117,12 +118,21 @@ export default function VoiceChat({
   currentUsername,
   avatar,
   color,
-  onUserClick
+  onUserClick,
+  onRoomActiveChange
 }: VoiceChatProps) {
   const [rooms, setRooms] = useState<VoiceRoom[]>([]);
   const [currentRoom, setCurrentRoom] = useState<VoiceRoom | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    const active = Boolean(currentRoom);
+    onRoomActiveChange?.(active);
+    try {
+      localStorage.setItem('kapsapp_in_voice_room', active ? 'true' : 'false');
+    } catch (e) {}
+  }, [currentRoom, onRoomActiveChange]);
 
   // Creation Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -149,6 +159,10 @@ export default function VoiceChat({
     mediaPermissionError,
     resolution,
     noiseSuppressionLevel,
+    audioOutputMode,
+    cameraFacingMode,
+    cameraZoom,
+    cameraZoomRange,
     setupLocalMedia,
     toggleMute,
     toggleVideo,
@@ -156,6 +170,9 @@ export default function VoiceChat({
     stopScreenShare,
     toggleScreenShare,
     toggleDeafen,
+    toggleAudioOutputMode,
+    toggleCameraFacingMode,
+    setCameraZoom,
     changeResolution,
     changeNoiseSuppression,
     cleanupWebRTC,
@@ -469,6 +486,13 @@ export default function VoiceChat({
           onStartScreenShare={startScreenShare}
           onStopScreenShare={stopScreenShare}
           onToggleDeafen={toggleDeafen}
+          audioOutputMode={audioOutputMode}
+          cameraFacingMode={cameraFacingMode}
+          cameraZoom={cameraZoom}
+          cameraZoomRange={cameraZoomRange}
+          onToggleAudioOutput={toggleAudioOutputMode}
+          onToggleCameraFacingMode={toggleCameraFacingMode}
+          onChangeCameraZoom={setCameraZoom}
           onLeaveRoom={handleLeaveRoom}
           onKickUser={handleKickUser}
           onForceMuteUser={handleForceMuteUser}

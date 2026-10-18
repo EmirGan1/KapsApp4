@@ -161,6 +161,7 @@ export default function App() {
   const [unreadGlobalCount, setUnreadGlobalCount] = useState(0);
   const [unreadDmCount, setUnreadDmCount] = useState(0);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [isInVoiceRoom, setIsInVoiceRoom] = useState(false);
 
   // Announcements & Drop-down Modal State
   const [hasUnreadAnnouncement, setHasUnreadAnnouncement] = useState(false);
@@ -1294,7 +1295,7 @@ export default function App() {
         
         {/* Persistently mounted Voice Chat tab to preserve audio connection when switching tabs */}
         <div className={`flex-1 flex-col relative w-full h-full ${activeTab === 'voice' ? 'flex' : 'hidden'}`}>
-          <VoiceChat socket={socket} currentUserId={currentUserId} currentUsername={username} avatar={avatar} color={color} onUserClick={handleUserClick} />
+          <VoiceChat socket={socket} currentUserId={currentUserId} currentUsername={username} avatar={avatar} color={color} onUserClick={handleUserClick} onRoomActiveChange={setIsInVoiceRoom} />
         </div>
 
         {/* Persistently mounted Games tab to preserve room and game state when navigating */}
@@ -1319,6 +1320,7 @@ export default function App() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         handleLogout={handleLogout}
+        isInVoiceRoom={isInVoiceRoom}
       />
 
       {/* Global Birebir Sesli Arama ve Sesli Oda Davet Modülü Katmanları */}
