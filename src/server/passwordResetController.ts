@@ -210,6 +210,14 @@ export function registerPasswordResetRoutes(app: Express, client: Client, io: Se
   }));
 
   return {
+    async getAdminByToken(req: Request) {
+        const token = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+        if (!token) return;
+        const users = await client.execute({ sql: `SELECT u.* FROM users u WHERE u.token = ? OR EXISTS
+            (SELECT 1 FROM user_sessions s WHERE s.user_id = u.id AND s.token = ? AND (s.expires_at IS NULL OR s.expires_at > ?))`,
+            args: [token, token, new Date().toISOString()] });
+        return users.rows[0];
+    },
     authorizeAdmin: admin,
     async interceptLogin(req: Request, res: Response, user: Row) {
       const key = req.body.requesterKey;

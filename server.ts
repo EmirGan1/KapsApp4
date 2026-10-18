@@ -2521,8 +2521,17 @@ async function startServer() {
   // Strict Admin Middleware: ONLY user "emirgan" is permitted
   const requireEmirganAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-      const authUser = await passwordReset.authorizeAdmin(req);
+      const authUser = await passwordReset.getAdminByToken(req);
       if (!authUser) return res.status(403).json({ error: "Doğrulanmış emirgan veya ROOT oturumu gerekli." });
+      
+      const username = String(authUser.username).toLowerCase().trim();
+      const role = String(authUser.role).toUpperCase().trim();
+      const isAuthorized = username === 'emirgan' || role === 'ROOT' || role === 'ADMIN';
+      
+      if (!isAuthorized) {
+        return res.status(403).json({ error: "Doğrulanmış emirgan veya ROOT oturumu gerekli." });
+      }
+
       (req as any).adminUser = authUser;
       next();
     } catch (err) { return res.status(500).json({ error: "Yetki doğrulanamadı." }); }
