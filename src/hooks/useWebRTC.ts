@@ -256,17 +256,18 @@ export function useWebRTC({
       lowPass.frequency.setValueAtTime(4200, ctx.currentTime);
       lowPass.Q.setValueAtTime(0.707, ctx.currentTime);
 
-      // 6. Aggressive Dynamics Compressor
+      // 6. Mild & Transparent Dynamics Compressor
       const compressor = ctx.createDynamicsCompressor();
-      compressor.threshold.setValueAtTime(-34, ctx.currentTime);
-      compressor.knee.setValueAtTime(4, ctx.currentTime);
-      compressor.ratio.setValueAtTime(12, ctx.currentTime);
-      compressor.attack.setValueAtTime(0.002, ctx.currentTime);
-      compressor.release.setValueAtTime(0.1, ctx.currentTime);
+      compressor.threshold.setValueAtTime(-24, ctx.currentTime);
+      compressor.knee.setValueAtTime(30, ctx.currentTime);
+      compressor.ratio.setValueAtTime(3, ctx.currentTime);
+      compressor.attack.setValueAtTime(0.003, ctx.currentTime);
+      compressor.release.setValueAtTime(0.25, ctx.currentTime);
 
-      // 7. Krisp-style Smart Noise Gate (GainNode + AnalyserNode RMS thresholding)
+      // 7. Krisp-style Smart Noise Gate + Make-up Gain
       const gainNode = ctx.createGain();
-      gainNode.gain.setValueAtTime(1.0, ctx.currentTime); // start open so voice is never trapped / muted initially
+      const makeupGain = noiseSuppressionLevelRef.current === 'high' ? 2.0 : 1.2;
+      gainNode.gain.setValueAtTime(makeupGain, ctx.currentTime);
 
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
@@ -285,9 +286,9 @@ export function useWebRTC({
       gainNode.connect(analyser);
       analyser.connect(dest);
 
-      // Real-time RMS Noise Gate loop (Discord/Krisp style: zero gain when below noise threshold)
+      // Real-time RMS Noise Gate loop (Balanced -43dB threshold & dynamic makeup gain)
       const dataArray = new Float32Array(analyser.fftSize);
-      const NOISE_THRESHOLD = 0.015; // responsive threshold
+      const NOISE_THRESHOLD = 0.007; // ~ -43dB RMS threshold
       let isSpeechActive = true;
 
       const interval = setInterval(() => {
@@ -304,15 +305,17 @@ export function useWebRTC({
         }
         const rms = Math.sqrt(sumSquares / dataArray.length);
 
+        const activeGain = noiseSuppressionLevelRef.current === 'high' ? 2.0 : 1.2;
+
         if (rms > NOISE_THRESHOLD) {
           if (!isSpeechActive) {
             isSpeechActive = true;
-            gainNode.gain.setTargetAtTime(1.0, ctx.currentTime, 0.008);
+            gainNode.gain.setTargetAtTime(activeGain, ctx.currentTime, 0.008);
           }
         } else {
-          if (isSpeechActive && rms < 0.005) {
+          if (isSpeechActive && rms < 0.002) {
             isSpeechActive = false;
-            gainNode.gain.setTargetAtTime(0.05, ctx.currentTime, 0.08); // keep small floor so voice is muffled rather than dead silence
+            gainNode.gain.setTargetAtTime(activeGain * 0.15, ctx.currentTime, 0.08);
           }
         }
       }, 25);
