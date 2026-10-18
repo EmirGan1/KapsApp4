@@ -63,7 +63,10 @@ export function useWebRTC({
     speechEQ: BiquadFilterNode;
     lowPass: BiquadFilterNode;
     compressor: DynamicsCompressorNode;
+    gainNode: GainNode;
+    analyser: AnalyserNode;
     dest: MediaStreamAudioDestinationNode;
+    interval?: any;
   } | null>(null);
   const mixedAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -181,6 +184,9 @@ export function useWebRTC({
   const cleanupAudioFilterPipeline = useCallback(() => {
     if (audioFilterNodesRef.current) {
       try {
+        if (audioFilterNodesRef.current.interval) {
+          clearInterval(audioFilterNodesRef.current.interval);
+        }
         audioFilterNodesRef.current.source.disconnect();
         audioFilterNodesRef.current.highPass.disconnect();
         audioFilterNodesRef.current.notch50.disconnect();
@@ -188,6 +194,8 @@ export function useWebRTC({
         audioFilterNodesRef.current.speechEQ.disconnect();
         audioFilterNodesRef.current.lowPass.disconnect();
         audioFilterNodesRef.current.compressor.disconnect();
+        audioFilterNodesRef.current.gainNode.disconnect();
+        audioFilterNodesRef.current.analyser.disconnect();
       } catch (e) {}
       audioFilterNodesRef.current = null;
     }
@@ -248,13 +256,21 @@ export function useWebRTC({
       lowPass.frequency.setValueAtTime(4200, ctx.currentTime);
       lowPass.Q.setValueAtTime(0.707, ctx.currentTime);
 
-      // 6. Aggressive Dynamics Compressor / Noise Gate for vocal isolation
+      // 6. Aggressive Dynamics Compressor
       const compressor = ctx.createDynamicsCompressor();
-      compressor.threshold.setValueAtTime(-36, ctx.currentTime);
+      compressor.threshold.setValueAtTime(-34, ctx.currentTime);
       compressor.knee.setValueAtTime(4, ctx.currentTime);
       compressor.ratio.setValueAtTime(12, ctx.currentTime);
       compressor.attack.setValueAtTime(0.002, ctx.currentTime);
-      compressor.release.setValueAtTime(0.12, ctx.currentTime);
+      compressor.release.setValueAtTime(0.1, ctx.currentTime);
+
+      // 7. Krisp-style Smart Noise Gate (GainNode + AnalyserNode RMS thresholding)
+      const gainNode = ctx.createGain();
+      gainNode.gain.setValueAtTime(0, ctx.currentTime);
+
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.2;
 
       // Destination node
       const dest = ctx.createMediaStreamDestination();
@@ -265,7 +281,37 @@ export function useWebRTC({
       notch60.connect(speechEQ);
       speechEQ.connect(lowPass);
       lowPass.connect(compressor);
-      compressor.connect(dest);
+      compressor.connect(gainNode);
+      gainNode.connect(analyser);
+      analyser.connect(dest);
+
+      // Real-time RMS Noise Gate loop (Discord/Krisp style: zero gain when below noise threshold)
+      const dataArray = new Float32Array(analyser.fftSize);
+      const NOISE_THRESHOLD = 0.022; // ~ -33dB RMS threshold
+      let isSpeechActive = false;
+
+      const interval = setInterval(() => {
+        if (!analyser || !gainNode || !ctx || ctx.state === 'closed') return;
+        analyser.getFloatTimeDomainData(dataArray);
+        
+        let sumSquares = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sumSquares += dataArray[i] * dataArray[i];
+        }
+        const rms = Math.sqrt(sumSquares / dataArray.length);
+
+        if (rms > NOISE_THRESHOLD) {
+          if (!isSpeechActive) {
+            isSpeechActive = true;
+            gainNode.gain.setTargetAtTime(1.0, ctx.currentTime, 0.008); // fast attack when speech starts
+          }
+        } else {
+          if (isSpeechActive) {
+            isSpeechActive = false;
+            gainNode.gain.setTargetAtTime(0.0, ctx.currentTime, 0.08); // smooth release when speech stops (cuts keyboard clicks)
+          }
+        }
+      }, 25);
 
       audioFilterNodesRef.current = {
         source,
@@ -275,7 +321,10 @@ export function useWebRTC({
         speechEQ,
         lowPass,
         compressor,
-        dest
+        gainNode,
+        analyser,
+        dest,
+        interval
       };
 
       const processedTrack = dest.stream.getAudioTracks()[0];
