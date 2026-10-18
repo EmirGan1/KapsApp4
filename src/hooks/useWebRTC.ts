@@ -60,6 +60,8 @@ export function useWebRTC({
     highPass: BiquadFilterNode;
     notch50: BiquadFilterNode;
     notch60: BiquadFilterNode;
+    speechEQ: BiquadFilterNode;
+    lowPass: BiquadFilterNode;
     compressor: DynamicsCompressorNode;
     dest: MediaStreamAudioDestinationNode;
   } | null>(null);
@@ -183,6 +185,8 @@ export function useWebRTC({
         audioFilterNodesRef.current.highPass.disconnect();
         audioFilterNodesRef.current.notch50.disconnect();
         audioFilterNodesRef.current.notch60.disconnect();
+        audioFilterNodesRef.current.speechEQ.disconnect();
+        audioFilterNodesRef.current.lowPass.disconnect();
         audioFilterNodesRef.current.compressor.disconnect();
       } catch (e) {}
       audioFilterNodesRef.current = null;
@@ -213,31 +217,44 @@ export function useWebRTC({
       const mediaStream = new MediaStream([micTrack]);
       const source = ctx.createMediaStreamSource(mediaStream);
 
-      // 1. High-Pass filter: 85Hz cutoff removes desk rumbles and mic bumping
+      // 1. High-Pass filter: 120Hz cutoff removes low desk rumbles & bumping
       const highPass = ctx.createBiquadFilter();
       highPass.type = 'highpass';
-      highPass.frequency.setValueAtTime(85, ctx.currentTime);
+      highPass.frequency.setValueAtTime(120, ctx.currentTime);
       highPass.Q.setValueAtTime(0.707, ctx.currentTime);
 
-      // 2. Notch 50Hz: mains electrical buzz filter
+      // 2. Notch 50Hz: electrical mains buzz
       const notch50 = ctx.createBiquadFilter();
       notch50.type = 'notch';
       notch50.frequency.setValueAtTime(50, ctx.currentTime);
-      notch50.Q.setValueAtTime(4.0, ctx.currentTime);
+      notch50.Q.setValueAtTime(6.0, ctx.currentTime);
 
-      // 3. Notch 60Hz: mains electrical buzz filter
+      // 3. Notch 60Hz: electrical mains buzz
       const notch60 = ctx.createBiquadFilter();
       notch60.type = 'notch';
       notch60.frequency.setValueAtTime(60, ctx.currentTime);
-      notch60.Q.setValueAtTime(4.0, ctx.currentTime);
+      notch60.Q.setValueAtTime(6.0, ctx.currentTime);
 
-      // 4. Dynamics Compressor: suppresses breath pops, keyboard clatter, and background hiss
+      // 4. Peaking filter for human speech presence boost (2.2kHz)
+      const speechEQ = ctx.createBiquadFilter();
+      speechEQ.type = 'peaking';
+      speechEQ.frequency.setValueAtTime(2200, ctx.currentTime);
+      speechEQ.Q.setValueAtTime(1.0, ctx.currentTime);
+      speechEQ.gain.setValueAtTime(3.0, ctx.currentTime);
+
+      // 5. Low-Pass filter: 4200Hz cutoff to filter keyboard clatter and fan hiss
+      const lowPass = ctx.createBiquadFilter();
+      lowPass.type = 'lowpass';
+      lowPass.frequency.setValueAtTime(4200, ctx.currentTime);
+      lowPass.Q.setValueAtTime(0.707, ctx.currentTime);
+
+      // 6. Aggressive Dynamics Compressor / Noise Gate for vocal isolation
       const compressor = ctx.createDynamicsCompressor();
-      compressor.threshold.setValueAtTime(-28, ctx.currentTime);
-      compressor.knee.setValueAtTime(10, ctx.currentTime);
-      compressor.ratio.setValueAtTime(6, ctx.currentTime);
-      compressor.attack.setValueAtTime(0.003, ctx.currentTime);
-      compressor.release.setValueAtTime(0.15, ctx.currentTime);
+      compressor.threshold.setValueAtTime(-36, ctx.currentTime);
+      compressor.knee.setValueAtTime(4, ctx.currentTime);
+      compressor.ratio.setValueAtTime(12, ctx.currentTime);
+      compressor.attack.setValueAtTime(0.002, ctx.currentTime);
+      compressor.release.setValueAtTime(0.12, ctx.currentTime);
 
       // Destination node
       const dest = ctx.createMediaStreamDestination();
@@ -245,7 +262,9 @@ export function useWebRTC({
       source.connect(highPass);
       highPass.connect(notch50);
       notch50.connect(notch60);
-      notch60.connect(compressor);
+      notch60.connect(speechEQ);
+      speechEQ.connect(lowPass);
+      lowPass.connect(compressor);
       compressor.connect(dest);
 
       audioFilterNodesRef.current = {
@@ -253,6 +272,8 @@ export function useWebRTC({
         highPass,
         notch50,
         notch60,
+        speechEQ,
+        lowPass,
         compressor,
         dest
       };
