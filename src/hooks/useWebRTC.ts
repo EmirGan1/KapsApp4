@@ -266,7 +266,7 @@ export function useWebRTC({
 
       // 7. Krisp-style Smart Noise Gate (GainNode + AnalyserNode RMS thresholding)
       const gainNode = ctx.createGain();
-      gainNode.gain.setValueAtTime(0, ctx.currentTime);
+      gainNode.gain.setValueAtTime(1.0, ctx.currentTime); // start open so voice is never trapped / muted initially
 
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
@@ -287,11 +287,15 @@ export function useWebRTC({
 
       // Real-time RMS Noise Gate loop (Discord/Krisp style: zero gain when below noise threshold)
       const dataArray = new Float32Array(analyser.fftSize);
-      const NOISE_THRESHOLD = 0.022; // ~ -33dB RMS threshold
-      let isSpeechActive = false;
+      const NOISE_THRESHOLD = 0.015; // responsive threshold
+      let isSpeechActive = true;
 
       const interval = setInterval(() => {
         if (!analyser || !gainNode || !ctx || ctx.state === 'closed') return;
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+          return;
+        }
         analyser.getFloatTimeDomainData(dataArray);
         
         let sumSquares = 0;
@@ -303,12 +307,12 @@ export function useWebRTC({
         if (rms > NOISE_THRESHOLD) {
           if (!isSpeechActive) {
             isSpeechActive = true;
-            gainNode.gain.setTargetAtTime(1.0, ctx.currentTime, 0.008); // fast attack when speech starts
+            gainNode.gain.setTargetAtTime(1.0, ctx.currentTime, 0.008);
           }
         } else {
-          if (isSpeechActive) {
+          if (isSpeechActive && rms < 0.005) {
             isSpeechActive = false;
-            gainNode.gain.setTargetAtTime(0.0, ctx.currentTime, 0.08); // smooth release when speech stops (cuts keyboard clicks)
+            gainNode.gain.setTargetAtTime(0.05, ctx.currentTime, 0.08); // keep small floor so voice is muffled rather than dead silence
           }
         }
       }, 25);
