@@ -455,10 +455,10 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     affectedCourseIds: ["tok", "literature"]
   },
 
-  // 15.10.2026 Perşembe (Thursday)
+  // 15.10.2026 Perşembe (Thursday) - Math Paper 1 (CANCELLED)
   {
-    id: "mock_20261015_math_p1",
-    title: "Mathematics Paper 1 (SL/HL)",
+    id: "mock_20261015_math_p1_cancelled",
+    title: "Mathematics Paper 1 (CANCELLED)",
     subject: "Mathematics",
     level: "SL/HL",
     date: "2026-10-15",
@@ -470,17 +470,17 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     hlEndTime: "11:00",
     targetRoles: ["math_sl", "math_hl", "math", "matematik"],
     targetCourses: ["Mathematics"],
-    room: "Ana Konferans Salonu (Masa 1-35)",
+    room: "İptal (Yağmur Nedeniyle)",
     paper: "Paper 1",
     durationMin: 90,
-    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 1 (SL: 90 dk bitiş: 10:20, HL: 130 dk bitiş: 11:00)",
-    affectedCourseIds: ["math", "chemistry_digsoc_psychology"]
+    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 1 (İPTAL - Yağmur Nedeniyle 26 Ekim'e ertelendi)",
+    affectedCourseIds: []
   },
 
-  // 16.10.2026 Cuma (Friday)
+  // 16.10.2026 Cuma (Friday) - Math Paper 2 & 3 (CANCELLED)
   {
-    id: "mock_20261016_math_p2",
-    title: "Mathematics Paper 2 (SL/HL)",
+    id: "mock_20261016_math_p2_cancelled",
+    title: "Mathematics Paper 2 (CANCELLED)",
     subject: "Mathematics",
     level: "SL/HL",
     date: "2026-10-16",
@@ -492,15 +492,15 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     hlEndTime: "10:50",
     targetRoles: ["math_sl", "math_hl", "math", "matematik"],
     targetCourses: ["Mathematics"],
-    room: "Ana Konferans Salonu",
+    room: "İptal (Yağmur Nedeniyle)",
     paper: "Paper 2",
     durationMin: 90,
-    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 2 (SL: 90 dk bitiş: 10:20, HL: 120 dk bitiş: 10:50)",
-    affectedCourseIds: ["literature", "foreign_language"]
+    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 2 (İPTAL - Yağmur Nedeniyle 27 Ekim'e ertelendi)",
+    affectedCourseIds: []
   },
   {
-    id: "mock_20261016_math_p3",
-    title: "Mathematics Paper 3 (HL)",
+    id: "mock_20261016_math_p3_cancelled",
+    title: "Mathematics Paper 3 (CANCELLED)",
     subject: "Mathematics",
     level: "HL",
     date: "2026-10-16",
@@ -512,11 +512,75 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     hlEndTime: "14:50",
     targetRoles: ["math_hl"],
     targetCourses: ["Mathematics"],
+    room: "İptal (Yağmur Nedeniyle)",
+    paper: "Paper 3",
+    durationMin: 75,
+    description: "IB DP Pre-Mock 3 • Mathematics HL Paper 3 (İPTAL - Yağmur Nedeniyle 27 Ekim'e ertelendi)",
+    affectedCourseIds: []
+  },
+
+  // NEW DATES FOR RESCHEDULED MATH EXAMS
+  // 26.10.2026 Pazartesi (Monday) - Rescheduled Math P1
+  {
+    id: "mock_20261026_math_p1",
+    title: "Mathematics Paper 1 (Rescheduled)",
+    subject: "Mathematics",
+    level: "SL/HL",
+    date: "2026-10-26",
+    startTime: "08:50",
+    endTime: "11:00",
+    slDurationMinutes: 90,
+    hlDurationMinutes: 130,
+    slEndTime: "10:20",
+    hlEndTime: "11:00",
+    targetRoles: ["math_sl", "math_hl", "math", "matematik"],
+    targetCourses: ["Mathematics"],
+    room: "Ana Konferans Salonu",
+    paper: "Paper 1",
+    durationMin: 90,
+    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 1 (Rescheduled)",
+    affectedCourseIds: ["math"]
+  },
+  // 27.10.2026 Salı (Tuesday) - Rescheduled Math P2 & P3
+  {
+    id: "mock_20261027_math_p2",
+    title: "Mathematics Paper 2 (Rescheduled)",
+    subject: "Mathematics",
+    level: "SL/HL",
+    date: "2026-10-27",
+    startTime: "08:50",
+    endTime: "10:50",
+    slDurationMinutes: 90,
+    hlDurationMinutes: 120,
+    slEndTime: "10:20",
+    hlEndTime: "10:50",
+    targetRoles: ["math_sl", "math_hl", "math", "matematik"],
+    targetCourses: ["Mathematics"],
+    room: "Ana Konferans Salonu",
+    paper: "Paper 2",
+    durationMin: 90,
+    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 2 (Rescheduled)",
+    affectedCourseIds: ["math"]
+  },
+  {
+    id: "mock_20261027_math_p3",
+    title: "Mathematics Paper 3 (Rescheduled)",
+    subject: "Mathematics",
+    level: "HL",
+    date: "2026-10-27",
+    startTime: "13:35",
+    endTime: "14:50",
+    slDurationMinutes: 0,
+    hlDurationMinutes: 75,
+    slEndTime: "13:35",
+    hlEndTime: "14:50",
+    targetRoles: ["math_hl"],
+    targetCourses: ["Mathematics"],
     room: "Derslik 301",
     paper: "Paper 3",
     durationMin: 75,
-    description: "IB DP Pre-Mock 3 • Mathematics HL Paper 3 (75 dk bitiş: 14:50)",
-    affectedCourseIds: ["math", "physics_biology"]
+    description: "IB DP Pre-Mock 3 • Mathematics HL Paper 3 (Rescheduled)",
+    affectedCourseIds: ["math"]
   },
 
   // --- HAFTA 2 (WEEK 2) ---

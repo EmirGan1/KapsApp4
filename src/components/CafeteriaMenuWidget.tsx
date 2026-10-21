@@ -153,7 +153,7 @@ export default function CafeteriaMenuWidget({
   const active = menuData || (isWeekend ? DEFAULT_MENU_DAYS.monday : DEFAULT_MENU_DAYS.weekday);
 
   return (
-    <div className={`aspect-square bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-white dark:to-slate-900 border border-amber-200/60 dark:border-amber-900/40 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden relative group ${className}`}>
+    <div className={`bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-white dark:to-slate-900 border border-amber-200/60 dark:border-amber-900/40 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group ${className}`}>
       {/* Background Decor */}
       <div className="absolute -right-6 -bottom-6 w-32 h-32 rounded-full bg-amber-500/10 dark:bg-amber-500/5 blur-2xl pointer-events-none" />
 

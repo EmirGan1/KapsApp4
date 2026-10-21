@@ -56,7 +56,7 @@ export default function MockExamCard({
   return (
     <div
       onClick={onClick}
-      className={`w-full min-w-0 overflow-hidden h-auto flex flex-col justify-between rounded-2xl p-4 transition-all duration-200 relative ${
+      className={`w-full min-w-0 h-auto flex flex-col justify-between rounded-2xl p-4 transition-all duration-200 ${
         isCurrent
           ? "border-emerald-500 ring-2 ring-emerald-500/80 shadow-lg shadow-emerald-500/20 bg-emerald-500/10 dark:bg-emerald-500/15"
           : isUserExam
