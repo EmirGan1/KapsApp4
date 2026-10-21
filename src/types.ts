@@ -366,3 +366,97 @@ export const sortRolesByPosition = (
 
   return matched.sort((a, b) => (b.position || 0) - (a.position || 0));
 };
+export type IBSession = "M26" | "M25" | "N25";
+export type IBTimezone = "TZ1" | "TZ2" | "TZ3" | "unconfirmed" | "unspecified";
+export type IBGrade = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export interface GradeBoundary {
+  grade: number;
+  min: number | null;
+}
+
+export type GradeBoundaryRecord = {
+  7: number | null;
+  6: number | null;
+  5: number | null;
+  4: number | null;
+  3: number | null;
+  2: number | null;
+  1: number;
+};
+
+export interface FinalGradeBoundary {
+  subjectKey: string;
+  subjectName: string;
+  level: "SL" | "HL";
+  session: IBSession;
+  timezone: IBTimezone;
+  source: string;
+  boundaries: GradeBoundaryRecord;
+}
+
+export interface ComponentGradeBoundary {
+  subjectKey: string;
+  level: "SL" | "HL";
+  session: IBSession;
+  componentId: string;
+  componentName: string;
+  maxMarks: number;
+  source: string;
+  boundaries: GradeBoundaryRecord;
+}
+
+export interface ComponentStructure {
+  id: string;
+  name: string;
+  weight: number; // percentage out of 100, e.g. 19 for 19%
+  maxMarks: number;
+  isIA?: boolean;
+}
+
+export interface HistoricalAverage {
+  subjectKey: string;
+  level: "SL" | "HL";
+  yearsCount: number; // N
+  status: string;
+  averages: {
+    7: number | null;
+    6: number | null;
+    5: number | null;
+    4: number | null;
+    3: number | null;
+    2: number | null;
+    1: number;
+  } | null;
+}
+
+export interface Paper {
+  id: string;
+  name: string;
+  maxScore: number | '';
+  achievedScore: number | '';
+  weight?: number; // e.g. 19 for 19%
+}
+
+export interface InternalAssessment {
+  name?: string;
+  maxScore: number | '';
+  achievedScore: number | '';
+  weight: number;
+  enabled: boolean;
+}
+
+export interface Subject {
+  id: string;
+  name: string;
+  level: 'SL' | 'HL';
+  boundaries: GradeBoundary[];
+  papers: Paper[];
+  ia: InternalAssessment;
+  session?: IBSession;
+  timezone?: IBTimezone;
+  source?: string;
+  syllabus?: string;
+  historicalAverages?: HistoricalAverage | null;
+}
+

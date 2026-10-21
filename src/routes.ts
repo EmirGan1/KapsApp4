@@ -4,7 +4,7 @@ export { safeDecodeURI };
 
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
-export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather";
+export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator";
 
 export interface RouteMeta {
   path: string;
@@ -90,6 +90,13 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     description: "KapsApp topluluk duyuruları, etkinlik bildirimleri ve önemli okul güncellemeleri.",
     canonical: "https://kapsapp.online/duyurular",
   },
+  ibCalculator: {
+    path: "/ib-hesaplayici",
+    tab: "ib-calculator",
+    title: "KapsCulator - IB Diploma ve Puan Hesaplayıcı | KapsApp",
+    description: "KapsApp KapsCulator - IB Diploma puan hesaplama aracı. Turkish A, English B, TITC, Math AA, Physics ve Digital Society sınav, IA ve diploma simülatörü.",
+    canonical: "https://kapsapp.online/ib-hesaplayici",
+  },
   feed: {
     path: "/akis",
     tab: "feed",
@@ -167,6 +174,11 @@ export function getTabFromPathname(pathname: string): {
     return { tab: "chats" };
   }
 
+  // KapIB calculator aliases
+  if (cleanPath === "/ib-hesaplayici" || cleanPath === "/kapib" || cleanPath === "/ib-puan-hesaplayici" || cleanPath === "/ib") {
+    return { tab: "ib-calculator" };
+  }
+
   // Exact matches
   for (const key of Object.keys(APP_ROUTES)) {
     const meta = APP_ROUTES[key];
@@ -204,6 +216,7 @@ export function getPathFromTab(
     case "admin": return "/emirgan";
     case "agenda": return "/ajanda";
     case "announcements": return "/duyurular";
+    case "ib-calculator": return "/ib-hesaplayici";
     case "feed": return "/akis";
     case "map": return "/harita";
     case "voice": return "/sesli-sohbet";

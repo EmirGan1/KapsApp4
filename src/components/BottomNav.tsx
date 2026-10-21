@@ -21,7 +21,8 @@ import {
   Sun, 
   Moon, 
   LogOut, 
-  X 
+  X,
+  Calculator 
 } from "lucide-react";
 import { AppTab } from "../routes";
 
@@ -66,6 +67,7 @@ export default function BottomNav({
     'profile', 
     'notifications', 
     'announcements', 
+    'ib-calculator',
     'agenda', 
     'global', 
     'weather', 
@@ -211,6 +213,12 @@ export default function BottomNav({
                 dotBadge={hasUnreadAnnouncement} 
                 active={activeTab === 'announcements'} 
                 onClick={() => { handleTabChange('announcements'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<Calculator size={22} className="text-purple-500" />} 
+                label="KapsCulator" 
+                active={activeTab === 'ib-calculator'} 
+                onClick={() => { handleTabChange('ib-calculator'); setIsMobileMoreOpen(false); }} 
               />
               <DrawerGridItem 
                 icon={<CalendarDays size={22} className="text-indigo-500" />} 

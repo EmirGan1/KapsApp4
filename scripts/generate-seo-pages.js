@@ -43,6 +43,12 @@ const routes = [
     title: 'Okul & Platform Duyuruları | KapsApp',
     description: 'Sınav duyuruları, etkinlikler ve yönetim bilgilendirmeleri.',
     canonical: 'https://kapsapp.online/duyurular'
+  },
+  {
+    path: 'ib-hesaplayici',
+    title: 'KapsCulator - IB Diploma ve Puan Hesaplayıcı | KapsApp',
+    description: 'KapsApp KapsCulator - IB Diploma puan hesaplama aracı. Turkish A, English B, TITC, Math AA, Physics ve Digital Society sınav, IA ve diploma simülatörü.',
+    canonical: 'https://kapsapp.online/ib-hesaplayici'
   }
 ];
 

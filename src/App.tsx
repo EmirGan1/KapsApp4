@@ -26,7 +26,8 @@ import {
   X,
   FolderX,
   LogOut,
-  KeyRound
+  KeyRound,
+  Calculator
 } from "lucide-react";
 import { APP_ROUTES, getTabFromPathname, getPathFromTab, AppTab } from "./routes";
 import { useSEO } from "./components/SEO";
@@ -44,6 +45,7 @@ import VoiceChat from "./components/VoiceChat";
 import LiveMap from "./components/LiveMap";
 import WeatherDashboard from "./components/WeatherDashboard";
 import Announcements, { AnnouncementItem } from "./components/Announcements";
+import KapIBCalculator from "./components/KapIBCalculator";
 import AnnouncementModal from "./components/AnnouncementModal";
 import ToastContainer, { ToastItem } from "./components/ToastContainer";
 import DeviceBanScreen from "./components/DeviceBanScreen";
@@ -1076,6 +1078,13 @@ export default function App() {
               onClick={() => handleTabChange('announcements')} 
             />
             <NavItem 
+              to="/ib-hesaplayici"
+              icon={<Calculator className="text-purple-500 dark:text-purple-400" />} 
+              label="KapsCulator" 
+              active={activeTab === 'ib-calculator'} 
+              onClick={() => handleTabChange('ib-calculator')} 
+            />
+            <NavItem 
               to="/hava-durumu"
               icon={<CloudSun className="text-sky-500" />} 
               label="Hava Durumu" 
@@ -1169,6 +1178,9 @@ export default function App() {
               setHasUnreadAnnouncement(false);
             }}
           />
+        )}
+        {activeTab === 'ib-calculator' && (
+          <KapIBCalculator currentUserRoles={currentUserRoles} />
         )}
         {activeTab === 'agenda' && (
           <Agenda 
