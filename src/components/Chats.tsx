@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { Friend, Message, MediaModalData } from "../types";
-import { Send, Image as ImageIcon, Mic, Users, Plus, X, Reply, Smile, FileText, Download, Paperclip, Maximize2, Trash2, Loader2, Phone, PhoneCall, Check, CheckCheck } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Users, Plus, X, Reply, Smile, FileText, Download, Paperclip, Maximize2, Trash2, Loader2, Phone, PhoneCall, Check, CheckCheck, Camera } from "lucide-react";
 import Avatar from "./Avatar";
 import MediaModal from "./MediaModal";
 import { getApiUrl, getAuthHeaders } from "../utils/api";
@@ -28,6 +28,7 @@ export default function Chats({
   targetGroupId,
   onTargetGroupHandled,
   onActiveChatUserChange,
+  onActiveChatChange,
 }: { 
   socket: Socket | null, 
   currentUserId: number, 
@@ -40,6 +41,7 @@ export default function Chats({
   targetGroupId?: number | string | null,
   onTargetGroupHandled?: () => void,
   onActiveChatUserChange?: (userId: number | null) => void,
+  onActiveChatChange?: (hasActive: boolean) => void,
 }) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -55,12 +57,13 @@ export default function Chats({
   useEffect(() => {
     activeChatRef.current = activeChat;
     activeTabRef.current = activeTab;
+    onActiveChatChange?.(Boolean(activeChat));
     if (activeTab === "friends" && activeChat && "username" in activeChat) {
       onActiveChatUserChange?.((activeChat as Friend).id);
     } else {
       onActiveChatUserChange?.(null);
     }
-  }, [activeChat, activeTab, onActiveChatUserChange]);
+  }, [activeChat, activeTab, onActiveChatUserChange, onActiveChatChange]);
 
   // Android Hardware Back Button integration to exit active DM chat
   useEffect(() => {
@@ -1177,6 +1180,10 @@ export default function Chats({
                 <label className="p-2 sm:p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Fotoğraf veya Video Gönder">
                   <ImageIcon size={20} className="sm:w-[22px] sm:h-[22px]" />
                   <input type="file" accept="image/*,video/*" className="hidden" onChange={handleFileUpload} />
+                </label>
+                <label className="p-2 sm:p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Kamera ile Çek / Gönder">
+                  <Camera size={20} className="sm:w-[22px] sm:h-[22px]" />
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileUpload} />
                 </label>
                 <label className="p-2 sm:p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Belge / Dosya Gönder">
                   <Paperclip size={20} className="sm:w-[22px] sm:h-[22px]" />

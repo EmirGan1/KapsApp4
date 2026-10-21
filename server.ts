@@ -1831,7 +1831,7 @@ async function startServer() {
       const isNum = !isNaN(numId);
       
       const usernameStr = authUser.username ? String(authUser.username).trim().toLowerCase() : "";
-      const isSuperAdmin = usernameStr === "emirgan" || authUser.is_admin === 1 || (authUser as any).role === "admin";
+      const isSuperAdmin = usernameStr === "emirgan" || Number(authUser.is_admin) === 1 || String(authUser.is_admin) === "1" || String((authUser as any).role || "").trim().toUpperCase() === "ROOT" || String((authUser as any).role || "").trim().toUpperCase() === "ADMIN";
       
       for (const tbl of ["messages", "global_messages", "group_messages"]) {
         try {
@@ -1877,7 +1877,7 @@ async function startServer() {
           console.error(`Error querying ${tbl} for deletion:`, e);
         }
       }
-      return res.status(404).json({ error: "Mesaj bulunamadı." });
+      return res.json({ success: true, alreadyDeleted: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Mesaj silinemedi." });
     }
@@ -8604,7 +8604,7 @@ async function startServer() {
       }
 
       const usernameStr = user.username ? String(user.username).trim().toLowerCase() : "";
-      const isEmirgan = usernameStr === "emirgan" || user.is_admin === 1 || (user as any).role === "admin";
+      const isEmirgan = usernameStr === "emirgan" || Number(user.is_admin) === 1 || String(user.is_admin) === "1" || String((user as any).role || "").trim().toUpperCase() === "ROOT" || String((user as any).role || "").trim().toUpperCase() === "ADMIN";
       const currentUserId = Number(user.id);
 
       // Search tables: prioritize requestedType if given, otherwise search all 3 tables
@@ -8636,7 +8636,7 @@ async function startServer() {
       }
 
       if (!foundTable || !foundMsg) {
-        if (cb) cb({ error: "Mesaj bulunamadı." });
+        if (cb) cb({ success: true, alreadyDeleted: true });
         return;
       }
 

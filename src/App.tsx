@@ -191,6 +191,7 @@ export default function App() {
   const toastTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [activeDmChatUserId, setActiveDmChatUserId] = useState<number | null>(null);
   const activeDmChatUserIdRef = useRef<number | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Incoming Voice Room Invite State (VoiceCallInviteModal)
   const [voiceInvite, setVoiceInvite] = useState<VoiceCallInvite | null>(null);
@@ -1191,6 +1192,7 @@ export default function App() {
             targetGroupId={targetGroupId}
             onTargetGroupHandled={() => setTargetGroupId(null)}
             onActiveChatUserChange={setActiveDmChatUserId}
+            onActiveChatChange={setIsChatOpen}
           />
         )}
         {activeTab === 'feed' && <Feed socket={socket} currentUserId={currentUserId} currentUsername={username} onUserClick={handleUserClick} />}
@@ -1321,6 +1323,7 @@ export default function App() {
         setDarkMode={setDarkMode}
         handleLogout={handleLogout}
         isInVoiceRoom={isInVoiceRoom}
+        isChatOpen={activeTab === 'chats' && isChatOpen}
       />
 
       {/* Global Birebir Sesli Arama ve Sesli Oda Davet Modülü Katmanları */}

@@ -41,6 +41,7 @@ export interface BottomNavProps {
   setDarkMode: (val: boolean) => void;
   handleLogout: () => void;
   isInVoiceRoom?: boolean;
+  isChatOpen?: boolean;
 }
 
 export default function BottomNav({
@@ -59,6 +60,7 @@ export default function BottomNav({
   setDarkMode,
   handleLogout,
   isInVoiceRoom = false,
+  isChatOpen = false,
 }: BottomNavProps) {
   const isMoreTabActive = isMobileMoreOpen || [
     'profile', 
@@ -85,8 +87,8 @@ export default function BottomNav({
     }
   }, [isMobileMoreOpen]);
 
-  // Automatically hide bottom navigation bar when user is inside an active voice/video room
-  if (isInVoiceRoom) {
+  // Automatically hide bottom navigation bar when user is inside an active voice/video room or active chat
+  if (isInVoiceRoom || isChatOpen) {
     return null;
   }
 
