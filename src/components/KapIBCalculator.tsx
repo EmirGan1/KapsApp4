@@ -25,7 +25,9 @@ import {
   ArrowRight,
   UserCheck,
   ArrowLeftRight,
-  Check
+  Check,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { 
   initialIBSubjects, 
@@ -42,6 +44,10 @@ import {
   getFinalBoundaries
 } from '../data/gradeBoundaries';
 import { Subject, GradeBoundary } from '../types';
+import { 
+  calculateSubjectFinalPercentage, 
+  restoreSubjectDefaultComponents 
+} from '../utils/calculatorEngine';
 
 const STORAGE_KEY = 'kapsapp_kapsculator_data_v3';
 const CORE_STORAGE_KEY = 'kapsapp_kapsculator_core_points_v3';
@@ -227,89 +233,44 @@ export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculat
     setShowAddSubjectModal(false);
   };
 
-  // Exact weighted arithmetic calculation engine
-  const subjectCalculations = useMemo(() => {
-    return subjects.map(sub => {
-      // 1. Calculate paper weights contribution
-      let totalPaperContrib = 0;
-      let totalPaperWeights = 0;
-
-      sub.papers.forEach(p => {
-        const achieved = Number(p.achievedScore) || 0;
-        const max = Number(p.maxScore) || 1;
-        const weight = p.weight !== undefined ? p.weight : 0;
-        totalPaperWeights += weight;
-        totalPaperContrib += (achieved / max) * weight;
-      });
-
-      // 2. IA / Oral contribution
-      const iaWeight = sub.ia.weight || 20;
-      let finalPercentage = totalPaperContrib;
-      let iaPercentage = 0;
-
-      if (sub.ia.enabled && sub.ia.maxScore !== '' && Number(sub.ia.maxScore) > 0) {
-        const iaAchieved = Number(sub.ia.achievedScore) || 0;
-        iaPercentage = (iaAchieved / Number(sub.ia.maxScore)) * 100;
-        const iaContrib = (iaAchieved / Number(sub.ia.maxScore)) * iaWeight;
-        finalPercentage = totalPaperContrib + iaContrib;
-      } else {
-        // If IA is not enabled, evaluate exams proportionally
-        const paperWeightSum = totalPaperWeights > 0 ? totalPaperWeights : (100 - iaWeight);
-        finalPercentage = paperWeightSum > 0 ? (totalPaperContrib / paperWeightSum) * 100 : 0;
-      }
-
-      const roundedPercentage = Math.round(finalPercentage * 10) / 10;
-
-      // 3. Determine grade with strict null check (null !== 0)
-      const validBoundaries = sub.boundaries.filter(b => b.min !== null);
-      const boundary = validBoundaries.find(b => roundedPercentage >= (b.min as number));
-      const grade = boundary ? boundary.grade : 1;
-
-      // 4. What-if IA projections if IA is NOT enabled
-      let projections = null;
-      if (!sub.ia.enabled) {
-        const lowTotal = totalPaperContrib + (0.35 * iaWeight);
-        const avgTotal = totalPaperContrib + (0.65 * iaWeight);
-        const highTotal = totalPaperContrib + (0.90 * iaWeight);
-
-        const getGradeForPct = (pct: number) => {
-          const b = validBoundaries.find(item => pct >= (item.min as number));
-          return b ? b.grade : 1;
-        };
-
-        // Calculate minimum raw IA score needed for next grade boundary
-        const nextBoundary = validBoundaries.slice().reverse().find(b => b.grade > grade && b.min !== null);
-        let minIANeeded = null;
-
-        if (nextBoundary && nextBoundary.min !== null && sub.ia.maxScore !== '' && Number(sub.ia.maxScore) > 0) {
-          const targetTotal = nextBoundary.min as number;
-          const neededIAContrib = targetTotal - totalPaperContrib;
-          const requiredIAPct = (neededIAContrib / iaWeight) * 100;
-          const rawNeeded = Math.ceil((requiredIAPct / 100) * Number(sub.ia.maxScore));
-
-          minIANeeded = {
-            targetGrade: nextBoundary.grade,
-            targetMinPct: targetTotal,
-            raw: Math.max(0, Math.min(rawNeeded, Number(sub.ia.maxScore))),
-            isPossible: rawNeeded <= Number(sub.ia.maxScore)
-          };
-        }
-
-        projections = {
-          low: getGradeForPct(lowTotal),
-          avg: getGradeForPct(avgTotal),
-          high: getGradeForPct(highTotal),
-          minIANeeded
-        };
-      }
-
+  // Toggle paper active/inactive (dynamic re-weighting)
+  const handleTogglePaper = (subjectId: string, paperId: string, forceState?: boolean) => {
+    setSubjects(prev => prev.map(sub => {
+      if (sub.id !== subjectId) return sub;
       return {
-        id: sub.id,
-        percentage: roundedPercentage,
-        grade,
-        projections
+        ...sub,
+        papers: sub.papers.map(p => {
+          if (p.id !== paperId) return p;
+          const nextState = forceState !== undefined ? forceState : (p.isActive === false ? true : false);
+          return { ...p, isActive: nextState };
+        })
       };
-    });
+    }));
+  };
+
+  // Toggle IA active/inactive (dynamic re-weighting)
+  const handleToggleIA = (subjectId: string, forceState?: boolean) => {
+    setSubjects(prev => prev.map(sub => {
+      if (sub.id !== subjectId) return sub;
+      const nextState = forceState !== undefined ? forceState : (sub.ia.isActive === false ? true : false);
+      return {
+        ...sub,
+        ia: { ...sub.ia, isActive: nextState }
+      };
+    }));
+  };
+
+  // Restore all components for a subject to official default weights and active state
+  const handleRestoreSubjectComponents = (subjectId: string) => {
+    setSubjects(prev => prev.map(sub => {
+      if (sub.id !== subjectId) return sub;
+      return restoreSubjectDefaultComponents(sub);
+    }));
+  };
+
+  // Exact dynamic re-weighting and normalization calculation engine
+  const subjectCalculations = useMemo(() => {
+    return subjects.map(sub => calculateSubjectFinalPercentage(sub));
   }, [subjects]);
 
   const totalSubjectGrade = subjectCalculations.reduce((sum, item) => sum + item.grade, 0);
@@ -610,8 +571,8 @@ export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculat
                   >
                     
                     {/* Card Header */}
-                    <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60 flex items-center justify-between gap-3">
-                      <div>
+                    <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <button
                             onClick={() => handleToggleSubjectLevel(subject.id)}
@@ -625,12 +586,12 @@ export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculat
                             <span>{subject.level}</span>
                             <ArrowLeftRight size={10} className="opacity-70" />
                           </button>
-                          <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+                          <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
                             {subject.name}
                           </h3>
                         </div>
 
-                        {/* Session, Timezone & Source Tags */}
+                        {/* Session, Timezone & Source Tags & Visual Indicator Badge */}
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                             {subject.session || 'M26'}
@@ -659,10 +620,21 @@ export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculat
                               ))}
                             </select>
                           )}
+
+                          {/* User Guidance Visual Indicator (Re-weighted Partial Evaluation) */}
+                          {calc.isPartialEvaluation && (
+                            <span 
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-400/40"
+                              title={`Dersin bazı sınavları devre dışı bırakıldı. Başarı yüzdesi kalan %${Math.round(calc.totalActiveWeight)} ağırlık %100 kabul edilerek dinamik olarak hesaplanmaktadır.`}
+                            >
+                              <AlertTriangle size={11} className="text-amber-500 shrink-0" />
+                              <span>(Kısmi Değerlendirme: Kalan %{Math.round(calc.totalActiveWeight)} üzerinden)</span>
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      {/* Grade Badge & Delete Button */}
+                      {/* Grade Badge & Delete Subject Button */}
                       <div className="flex items-center gap-2">
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-2xl shadow-md transition-transform hover:scale-105 shrink-0 ${getGradeStyle(calc.grade)}`}>
                           {calc.grade}
@@ -687,43 +659,120 @@ export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculat
                             <Sliders size={13} />
                             <span>Yazılı Sınavlar (Papers)</span>
                           </div>
-                          <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">
-                            Ağırlıklı Başarı: %{calc.percentage}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold">
+                              Ağırlıklı Başarı: %{calc.percentage}
+                            </span>
+                            {calc.isPartialEvaluation && (
+                              <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 hidden sm:inline">
+                                (%{Math.round(calc.totalActiveWeight)} üzerinden normalize)
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {subject.papers.map(paper => {
+                          const isPaperActive = paper.isActive !== false;
+                          const comp = calc.components.find(c => c.id === paper.id);
                           const max = typeof paper.maxScore === 'number' ? paper.maxScore : 100;
                           const val = typeof paper.achievedScore === 'number' ? paper.achievedScore : 0;
+                          const origWeight = paper.weight !== undefined ? paper.weight : 0;
+                          const normWeight = comp ? Math.round(comp.normalizedWeight * 10) / 10 : origWeight;
+
+                          if (!isPaperActive) {
+                            // Dimmed / Deactivated Paper row
+                            return (
+                              <div 
+                                key={paper.id} 
+                                className="p-3 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/20 opacity-75 hover:opacity-100 transition-all flex items-center justify-between gap-3"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-semibold text-xs text-slate-500 dark:text-slate-400 line-through truncate">
+                                        {paper.name}
+                                      </span>
+                                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                        Orijinal: %{origWeight}
+                                      </span>
+                                      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                        Hesaplamaya Dahil Edilmiyor
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                                      Maks. {max} puan • Kalan sınavlar %100'e ölçeklendi
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePaper(subject.id, paper.id, true)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 shadow-2xs"
+                                  title="Bu sınavı tekrar hesaplamaya dahil et"
+                                >
+                                  <Plus size={13} />
+                                  <span>Geri Ekle</span>
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          // Active Paper row
                           return (
                             <div key={paper.id} className="p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
                               <div className="flex justify-between items-center text-xs sm:text-sm">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-semibold text-slate-800 dark:text-slate-200">{paper.name}</span>
-                                  {paper.weight !== undefined && (
-                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
-                                      %{paper.weight}
+                                  {calc.isPartialEvaluation ? (
+                                    <span 
+                                      className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300/40 flex items-center gap-1"
+                                      title={`Orijinal: %${origWeight} → Kalan sınavlar içinde ölçeklenmiş ağırlık: %${normWeight}`}
+                                    >
+                                      <span>%{origWeight}</span>
+                                      <span className="text-amber-500">→</span>
+                                      <span className="font-black">%{normWeight} (Norm.)</span>
                                     </span>
+                                  ) : (
+                                    origWeight > 0 && (
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
+                                        %{origWeight}
+                                      </span>
+                                    )
                                   )}
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={paper.achievedScore}
-                                    onChange={(e) => handlePaperScoreChange(subject.id, paper.id, e.target.value)}
-                                    className="w-16 px-2 py-1 text-center font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    placeholder="0"
-                                  />
-                                  <span className="text-slate-400">/</span>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={paper.maxScore}
-                                    onChange={(e) => handlePaperMaxChange(subject.id, paper.id, e.target.value)}
-                                    className="w-14 px-2 py-1 text-center text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    title="Maksimum Puan"
-                                  />
+
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={paper.achievedScore}
+                                      onChange={(e) => handlePaperScoreChange(subject.id, paper.id, e.target.value)}
+                                      className="w-16 px-2 py-1 text-center font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      placeholder="0"
+                                    />
+                                    <span className="text-slate-400">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={paper.maxScore}
+                                      onChange={(e) => handlePaperMaxChange(subject.id, paper.id, e.target.value)}
+                                      className="w-14 px-2 py-1 text-center text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      title="Maksimum Puan"
+                                    />
+                                  </div>
+
+                                  {/* Kaldır / Devre Dışı Bırak Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePaper(subject.id, paper.id, false)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                                    title="Bu sınavı henüz girmediyseniz hesaplamadan çıkarın (Ağırlık kalan sınavlara dağıtılır)"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
                                 </div>
                               </div>
 
@@ -741,112 +790,259 @@ export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculat
                       </div>
 
                       {/* Official Oral / IA Component Section */}
-                      <div className={`p-4 rounded-2xl border transition-colors ${
-                        subject.ia.enabled 
-                          ? 'bg-indigo-50/70 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800/50' 
-                          : 'bg-slate-50 dark:bg-slate-800/20 border-slate-200/80 dark:border-slate-800'
-                      }`}>
-                        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200">
-                              {oralOrIAName}
-                            </span>
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800/40">
-                              %{subject.ia.weight} Ağırlık
-                            </span>
-                          </div>
+                      {(() => {
+                        const isIAActive = subject.ia.isActive !== false;
+                        const iaComp = calc.components.find(c => c.isIA);
+                        const origIAWeight = Number(subject.ia.weight) || 20;
+                        const normIAWeight = iaComp ? Math.round(iaComp.normalizedWeight * 10) / 10 : origIAWeight;
 
+                        if (!isIAActive) {
+                          // Deactivated IA card
+                          return (
+                            <div className="p-3.5 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/20 opacity-75 hover:opacity-100 transition-all flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-semibold text-xs text-slate-500 dark:text-slate-400 line-through truncate">
+                                      {oralOrIAName}
+                                    </span>
+                                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                      Orijinal: %{origIAWeight}
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                      Hesaplamaya Dahil Edilmiyor
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                                    Maks. {subject.ia.maxScore} puan • %{origIAWeight} ağırlık yazılı sınavlara eşit oranda dağıtıldı
+                                  </p>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleToggleIA(subject.id, true)}
+                                className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 shadow-2xs"
+                                title="Bu bileşeni tekrar hesaplamaya dahil et"
+                              >
+                                <Plus size={13} />
+                                <span>Geri Ekle</span>
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        // Active IA Component
+                        return (
+                          <div className={`p-4 rounded-2xl border transition-colors ${
+                            subject.ia.enabled 
+                              ? 'bg-indigo-50/70 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800/50' 
+                              : 'bg-slate-50 dark:bg-slate-800/20 border-slate-200/80 dark:border-slate-800'
+                          }`}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200">
+                                  {oralOrIAName}
+                                </span>
+                                {calc.isPartialEvaluation ? (
+                                  <span 
+                                    className="text-[10px] px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold border border-amber-300/40 flex items-center gap-1"
+                                    title={`Orijinal: %${origIAWeight} → Normalize Ağırlık: %${normIAWeight}`}
+                                  >
+                                    <span>%{origIAWeight}</span>
+                                    <span className="text-amber-500">→</span>
+                                    <span className="font-black">%{normIAWeight} Ağırlık</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800/40">
+                                    %{origIAWeight} Ağırlık
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleIAChange(subject.id, 'enabled', !subject.ia.enabled)}
+                                  className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                                    subject.ia.enabled 
+                                      ? 'bg-indigo-600 text-white shadow-sm' 
+                                      : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {subject.ia.enabled ? 'Not Belli (Aktif)' : 'Henüz Belli Değil'}
+                                </button>
+
+                                {/* Kaldır / Devre Dışı Bırak Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleIA(subject.id, false)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                                  title="Bu bileşeni henüz yapmadıysanız hesaplamadan çıkarın"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {subject.ia.enabled ? (
+                              <div className="space-y-2.5 mt-3 pt-3 border-t border-indigo-200 dark:border-indigo-800/40">
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-slate-500 dark:text-slate-400">
+                                    Alınan Ham Puan (Maks: {subject.ia.maxScore})
+                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={subject.ia.achievedScore}
+                                      onChange={(e) => handleIAChange(subject.id, 'achievedScore', e.target.value)}
+                                      className="w-16 px-2 py-1 text-center font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      placeholder="0"
+                                    />
+                                    <span className="text-slate-400">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={subject.ia.maxScore}
+                                      onChange={(e) => handleIAChange(subject.id, 'maxScore', e.target.value)}
+                                      className="w-14 px-2 py-1 text-center text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max={typeof subject.ia.maxScore === 'number' ? subject.ia.maxScore : 40}
+                                  value={typeof subject.ia.achievedScore === 'number' ? subject.ia.achievedScore : 0}
+                                  onChange={(e) => handleIAChange(subject.id, 'achievedScore', e.target.value)}
+                                  className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                />
+                              </div>
+                            ) : (
+                              calc.projections && (
+                                <div className="mt-3 space-y-2 pt-3 border-t border-slate-200/80 dark:border-slate-800 text-xs">
+                                  <div className="font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                    <Info size={13} className="text-indigo-500" />
+                                    <span>Olası {oralOrIAName.split('(')[0].trim()} Senaryoları (Tahmini Not):</span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60">
+                                      <div className="text-slate-400 text-[10px]">Düşük (%35)</div>
+                                      <div className="font-bold text-sm text-amber-500">{calc.projections.low} / 7</div>
+                                    </div>
+                                    <div className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60">
+                                      <div className="text-slate-400 text-[10px]">Ortalama (%65)</div>
+                                      <div className="font-bold text-sm text-emerald-500">{calc.projections.avg} / 7</div>
+                                    </div>
+                                    <div className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60">
+                                      <div className="text-slate-400 text-[10px]">Yüksek (%90)</div>
+                                      <div className="font-bold text-sm text-purple-500">{calc.projections.high} / 7</div>
+                                    </div>
+                                  </div>
+
+                                  {calc.projections.minIANeeded && (
+                                    <div className="text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 px-3 py-1.5 rounded-xl font-medium flex items-center justify-between text-xs">
+                                      <span>Bir üst nota ({calc.projections.minIANeeded.targetGrade}) çıkmak için:</span>
+                                      <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                                        {calc.projections.minIANeeded.isPossible 
+                                          ? `Min. ${calc.projections.minIANeeded.raw} / ${subject.ia.maxScore} gerekli`
+                                          : 'Maksimum puan alsanız dahi yetmeyebilir'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Deactivated Components Toolbar & Restore Actions */}
+                      {(() => {
+                        const inactiveComponents = calc.components.filter(c => !c.isActive);
+                        if (inactiveComponents.length === 0) return null;
+
+                        return (
+                          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-400/30 space-y-2.5">
+                            <div className="flex items-center justify-between gap-2 text-xs flex-wrap">
+                              <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-bold">
+                                <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                                <span>{inactiveComponents.length} sınav devre dışı (Kalan Ağırlık: %{Math.round(calc.totalActiveWeight)})</span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreSubjectComponents(subject.id)}
+                                className="px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                                title="Bu dersin tüm sınavlarını orijinal ağırlıklarıyla geri getir"
+                              >
+                                <RotateCcw size={12} />
+                                <span>Varsayılan Bileşenleri Sıfırla / Geri Getir</span>
+                              </button>
+                            </div>
+
+                            {/* Quick Add Chips for each inactive component */}
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-amber-400/20">
+                              <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mr-1">
+                                Hızlı Ekle:
+                              </span>
+                              {inactiveComponents.map(comp => (
+                                <button
+                                  key={comp.id}
+                                  type="button"
+                                  onClick={() => {
+                                    if (comp.isIA) {
+                                      handleToggleIA(subject.id, true);
+                                    } else {
+                                      handleTogglePaper(subject.id, comp.id, true);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                                >
+                                  <Plus size={12} className="text-emerald-600 dark:text-emerald-400" />
+                                  <span>+ {comp.name.split(':')[0]} Ekle</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Division by Zero / All components inactive warning */}
+                      {calc.activeComponentsCount === 0 && (
+                        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 text-center space-y-2">
+                          <p className="text-xs font-bold text-rose-700 dark:text-rose-300">
+                            Bu derste aktif sınav kalmadı. Başarı %0 olarak değerlendirilmektedir.
+                          </p>
                           <button
                             type="button"
-                            onClick={() => handleIAChange(subject.id, 'enabled', !subject.ia.enabled)}
-                            className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                              subject.ia.enabled 
-                                ? 'bg-indigo-600 text-white shadow-sm' 
-                                : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'
-                            }`}
+                            onClick={() => handleRestoreSubjectComponents(subject.id)}
+                            className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                           >
-                            {subject.ia.enabled ? 'Not Belli (Aktif)' : 'Henüz Belli Değil'}
+                            <RotateCcw size={13} />
+                            <span>Varsayılan Sınavları Geri Yükle</span>
                           </button>
                         </div>
-
-                        {subject.ia.enabled ? (
-                          <div className="space-y-2.5 mt-3 pt-3 border-t border-indigo-200 dark:border-indigo-800/40">
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-slate-500 dark:text-slate-400">
-                                Alınan Ham Puan (Maks: {subject.ia.maxScore})
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={subject.ia.achievedScore}
-                                  onChange={(e) => handleIAChange(subject.id, 'achievedScore', e.target.value)}
-                                  className="w-16 px-2 py-1 text-center font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                  placeholder="0"
-                                />
-                                <span className="text-slate-400">/</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={subject.ia.maxScore}
-                                  onChange={(e) => handleIAChange(subject.id, 'maxScore', e.target.value)}
-                                  className="w-14 px-2 py-1 text-center text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                />
-                              </div>
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max={typeof subject.ia.maxScore === 'number' ? subject.ia.maxScore : 40}
-                              value={typeof subject.ia.achievedScore === 'number' ? subject.ia.achievedScore : 0}
-                              onChange={(e) => handleIAChange(subject.id, 'achievedScore', e.target.value)}
-                              className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                            />
-                          </div>
-                        ) : (
-                          calc.projections && (
-                            <div className="mt-3 space-y-2 pt-3 border-t border-slate-200/80 dark:border-slate-800 text-xs">
-                              <div className="font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                <Info size={13} className="text-indigo-500" />
-                                <span>Olası {oralOrIAName.split('(')[0].trim()} Senaryoları (Tahmini Not):</span>
-                              </div>
-                              <div className="grid grid-cols-3 gap-2 text-center">
-                                <div className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60">
-                                  <div className="text-slate-400 text-[10px]">Düşük (%35)</div>
-                                  <div className="font-bold text-sm text-amber-500">{calc.projections.low} / 7</div>
-                                </div>
-                                <div className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60">
-                                  <div className="text-slate-400 text-[10px]">Ortalama (%65)</div>
-                                  <div className="font-bold text-sm text-emerald-500">{calc.projections.avg} / 7</div>
-                                </div>
-                                <div className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60">
-                                  <div className="text-slate-400 text-[10px]">Yüksek (%90)</div>
-                                  <div className="font-bold text-sm text-purple-500">{calc.projections.high} / 7</div>
-                                </div>
-                              </div>
-
-                              {calc.projections.minIANeeded && (
-                                <div className="text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 px-3 py-1.5 rounded-xl font-medium flex items-center justify-between text-xs">
-                                  <span>Bir üst nota ({calc.projections.minIANeeded.targetGrade}) çıkmak için:</span>
-                                  <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                                    {calc.projections.minIANeeded.isPossible 
-                                      ? `Min. ${calc.projections.minIANeeded.raw} / ${subject.ia.maxScore} gerekli`
-                                      : 'Maksimum puan alsanız dahi yetmeyebilir'}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        )}
-                      </div>
+                      )}
 
                     </div>
 
                     {/* Card Footer Progress Bar */}
                     <div className="px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 flex flex-col gap-1.5">
                       <div className="flex justify-between items-center text-xs font-bold">
-                        <span className="text-slate-500 dark:text-slate-400">Yüzde Dağılımı</span>
-                        <span className="text-indigo-600 dark:text-indigo-400">%{calc.percentage}</span>
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Yüzde Dağılımı {calc.isPartialEvaluation ? `(Kalan %${Math.round(calc.totalActiveWeight)} üzerinden)` : ''}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {calc.isPartialEvaluation && (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                              Kısmi
+                            </span>
+                          )}
+                          <span className="text-indigo-600 dark:text-indigo-400">%{calc.percentage}</span>
+                        </div>
                       </div>
                       <div className="w-full h-2 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800">
                         <div 
@@ -855,6 +1051,7 @@ export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculat
                         />
                       </div>
                     </div>
+
 
                   </div>
                 );

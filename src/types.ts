@@ -436,6 +436,7 @@ export interface Paper {
   maxScore: number | '';
   achievedScore: number | '';
   weight?: number; // e.g. 19 for 19%
+  isActive?: boolean;
 }
 
 export interface InternalAssessment {
@@ -444,6 +445,18 @@ export interface InternalAssessment {
   achievedScore: number | '';
   weight: number;
   enabled: boolean;
+  isActive?: boolean;
+}
+
+export interface SubjectComponent {
+  id: string; // 'p1', 'p2', 'ia' vb.
+  name: string;
+  maxScore: number;
+  weight: number; // orijinal yüzde (örn: 35)
+  userScore: number;
+  isActive: boolean; // silindiğinde false veya array'den filtrelenir
+  isIA?: boolean;
+  normalizedWeight?: number;
 }
 
 export interface Subject {
