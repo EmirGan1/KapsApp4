@@ -91,6 +91,55 @@ export function cleanParseTopics(topicsData: any, fallbackTag?: any): string[] {
   return Array.from(new Set(clean));
 }
 
+export async function getAuthUserFromRequest(req: Request, client: any) {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ")
+      ? authHeader.substring(7)
+      : ((req.query.token as string) || (req.body?.token as string) || "");
+
+    const xUsername = (
+      (req.headers["x-username"] as string) ||
+      (req.headers["username"] as string) ||
+      (req.query.username as string) ||
+      ""
+    ).trim();
+
+    if (token) {
+      const userRes = await client.execute({
+        sql: "SELECT id, username, avatar, color, is_admin, role FROM users WHERE token = ?",
+        args: [token]
+      });
+      if (userRes.rows.length > 0) return userRes.rows[0];
+    }
+
+    if (xUsername) {
+      const userRes = await client.execute({
+        sql: "SELECT id, username, avatar, color, is_admin, role FROM users WHERE LOWER(username) = LOWER(?)",
+        args: [xUsername]
+      });
+      if (userRes.rows.length > 0) return userRes.rows[0];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function isEmirganOrRootAdmin(user: any): boolean {
+  if (!user) return false;
+  const uname = String(user.username || "").trim().toLowerCase();
+  const role = String(user.role || "").trim().toUpperCase();
+  return (
+    uname === "emirgan" ||
+    role === "ROOT" ||
+    role === "ADMIN" ||
+    Number(user.is_admin) === 1 ||
+    String(user.is_admin) === "1"
+  );
+}
+
 export function registerCourseRoutes(
   app: Express,
   client: any,
@@ -98,9 +147,24 @@ export function registerCourseRoutes(
   io: any,
   deleteUploadedFile: (filePath: string) => Promise<void>
 ) {
-  // Ensure 'topics' and 'doc_type' columns exist in subject_files
+  // Ensure 'topics', 'doc_type', and 'download_count' columns exist in subject_files
   client.execute("ALTER TABLE subject_files ADD COLUMN topics TEXT").catch(() => {});
   client.execute("ALTER TABLE subject_files ADD COLUMN doc_type TEXT").catch(() => {});
+  client.execute("ALTER TABLE subject_files ADD COLUMN download_count INTEGER DEFAULT 0").catch(() => {});
+
+  // Ensure file_downloads audit log table exists with proper indexes
+  client.execute(`
+    CREATE TABLE IF NOT EXISTS file_downloads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_id INTEGER NOT NULL,
+      user_id INTEGER NULL,
+      username TEXT NOT NULL,
+      downloaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      ip_address TEXT NULL
+    )
+  `).catch(() => {});
+  client.execute("CREATE INDEX IF NOT EXISTS idx_file_downloads_file_id ON file_downloads(file_id)").catch(() => {});
+  client.execute("CREATE INDEX IF NOT EXISTS idx_file_downloads_downloaded_at ON file_downloads(downloaded_at DESC)").catch(() => {});
 
   // Database Migration: Update the two requested Math files to 'question_paper'
   client.execute(`
@@ -117,6 +181,10 @@ export function registerCourseRoutes(
     try {
       const folderId = req.params.courseId;
       const requestedTopic = (req.query.topic || req.query.theme) as string | undefined;
+
+      // Access control: only emirgan or ROOT/ADMIN can see download_count
+      const authUser = await getAuthUserFromRequest(req, client);
+      const canViewDownloadCount = isEmirganOrRootAdmin(authUser);
 
       const fileRes = await client.execute({
         sql: `SELECT f.*, u.username as uploader_name, u.avatar as uploader_avatar 
@@ -150,13 +218,22 @@ export function registerCourseRoutes(
           }
         }
 
-        return {
+        const cleanObj: any = {
           ...row,
           topics: topicsArray,
           topic_tag: primaryTag,
           docType: docType,
           doc_type: docType
         };
+
+        // Strictly omit download_count for non-emirgan / non-ROOT users
+        if (canViewDownloadCount) {
+          cleanObj.download_count = Number(row.download_count || 0);
+        } else {
+          delete cleanObj.download_count;
+        }
+
+        return cleanObj;
       });
 
       // Filter by topic if requested
@@ -177,6 +254,218 @@ export function registerCourseRoutes(
       res.status(500).json({ error: "Ders dosyaları alınırken hata oluştu." });
     }
   });
+
+  // GET: Download file with audit logging & counter increment
+  app.get(
+    [
+      "/api/files/:id/download",
+      "/api/courses/files/:id/download",
+      "/api/subjects/files/:id/download"
+    ],
+    async (req: Request, res: Response) => {
+      try {
+        const rawId = req.params.id;
+        const numId = Number(rawId);
+        const isNum = !isNaN(numId);
+
+        let fileRes = await client.execute({
+          sql: "SELECT * FROM subject_files WHERE id = ? OR filename = ?",
+          args: [isNum ? numId : rawId, String(rawId)]
+        });
+
+        if (fileRes.rows.length === 0) {
+          fileRes = await client.execute({
+            sql: "SELECT * FROM uploaded_files WHERE id = ? OR filename = ?",
+            args: [isNum ? numId : rawId, String(rawId)]
+          });
+        }
+
+        if (fileRes.rows.length === 0) {
+          return res.status(404).json({ error: "İndirilecek dosya bulunamadı." });
+        }
+
+        const fileObj = fileRes.rows[0];
+        const fileIdNum = Number(fileObj.id);
+
+        // 1. Identify downloading user (authenticated or anonymous student)
+        const authUser = await getAuthUserFromRequest(req, client);
+        const userId = authUser ? Number(authUser.id) : null;
+        const username = authUser?.username ? String(authUser.username).trim() : "Anonim Öğrenci";
+        
+        // 2. Identify IP address (5651 & security audit)
+        const rawIp =
+          (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+          req.socket.remoteAddress ||
+          "Bilinmiyor";
+        const ipAddress = rawIp.replace(/^::ffff:/, "");
+
+        // 3. Record download in file_downloads audit log
+        try {
+          await client.execute({
+            sql: "INSERT INTO file_downloads (file_id, user_id, username, downloaded_at, ip_address) VALUES (?, ?, ?, ?, ?)",
+            args: [fileIdNum, userId, username, new Date().toISOString(), ipAddress]
+          });
+        } catch (logErr) {
+          console.error("Failed to insert file_downloads log:", logErr);
+        }
+
+        // 4. Increment download_count in subject_files
+        try {
+          await client.execute({
+            sql: "UPDATE subject_files SET download_count = COALESCE(download_count, 0) + 1 WHERE id = ?",
+            args: [fileIdNum]
+          });
+        } catch (cntErr) {
+          console.error("Failed to increment download_count:", cntErr);
+        }
+
+        // 5. Broadcast updated count in real-time
+        try {
+          const countRes = await client.execute({
+            sql: "SELECT download_count FROM subject_files WHERE id = ?",
+            args: [fileIdNum]
+          });
+          const newCount = Number(countRes.rows[0]?.download_count || 1);
+          io.emit("file:downloaded", {
+            fileId: fileIdNum,
+            download_count: newCount,
+            folderId: fileObj.folder_id || fileObj.course_id
+          });
+        } catch (emitErr) {}
+
+        // 6. Deliver file with Content-Disposition header
+        const filename = fileObj.filename;
+        const originalName = fileObj.original_name || fileObj.filename || "dosya.bin";
+        const uploadsDir = path.join(process.cwd(), "uploads");
+        const filePath = path.join(uploadsDir, filename);
+
+        const safeFilename = originalName.replace(/["\r\n\\]/g, "_");
+        const encodedFilename = encodeURIComponent(originalName);
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`
+        );
+        if (fileObj.mimetype) {
+          res.setHeader("Content-Type", fileObj.mimetype);
+        }
+
+        if (fs.existsSync(filePath)) {
+          const stream = fs.createReadStream(filePath);
+          return stream.pipe(res);
+        }
+
+        // Fallback: restore from database if cached
+        const backupRes = await client.execute({
+          sql: "SELECT data, mimetype FROM uploaded_files WHERE filename = ?",
+          args: [filename]
+        });
+
+        if (backupRes.rows.length > 0 && backupRes.rows[0].data) {
+          const buffer = Buffer.from(backupRes.rows[0].data as string, "base64");
+          try {
+            fs.writeFileSync(filePath, buffer);
+          } catch (e) {}
+          res.setHeader("Content-Length", buffer.length);
+          return res.send(buffer);
+        }
+
+        return res.status(404).json({ error: "Dosya fiziksel depolamada bulunamadı." });
+      } catch (err: any) {
+        console.error("File download error:", err);
+        return res.status(500).json({ error: "Dosya indirilirken hata oluştu: " + err.message });
+      }
+    }
+  );
+
+  // GET: Detailed Download History (Audit Log) - EXCLUSIVELY FOR EMIRGAN / ROOT
+  app.get(
+    [
+      "/api/files/:id/download-logs",
+      "/api/courses/files/:id/download-logs",
+      "/api/subjects/files/:id/download-logs"
+    ],
+    async (req: Request, res: Response) => {
+      try {
+        const authUser = await getAuthUserFromRequest(req, client);
+        if (!isEmirganOrRootAdmin(authUser)) {
+          return res.status(403).json({ error: "Bu işlem için yetkiniz bulunmamaktadır. Yalnızca emirgan veya ROOT görebilir." });
+        }
+
+        const rawId = req.params.id;
+        const numId = Number(rawId);
+        const isNum = !isNaN(numId);
+
+        let fileRes = await client.execute({
+          sql: "SELECT id, filename, original_name, download_count FROM subject_files WHERE id = ? OR filename = ?",
+          args: [isNum ? numId : rawId, String(rawId)]
+        });
+
+        if (fileRes.rows.length === 0) {
+          fileRes = await client.execute({
+            sql: "SELECT id, filename, original_name, download_count FROM uploaded_files WHERE id = ? OR filename = ?",
+            args: [isNum ? numId : rawId, String(rawId)]
+          });
+        }
+
+        if (fileRes.rows.length === 0) {
+          return res.status(404).json({ error: "Dosya bulunamadı." });
+        }
+
+        const fileObj = fileRes.rows[0];
+        const fileIdNum = Number(fileObj.id);
+        const totalDownloads = Number(fileObj.download_count || 0);
+
+        // Fetch logs with uploader user profile info
+        const logsRes = await client.execute({
+          sql: `SELECT d.id, d.file_id, d.user_id, d.username, d.downloaded_at, d.ip_address,
+                       u.avatar as user_avatar, u.color as user_color, u.role as user_role
+                FROM file_downloads d
+                LEFT JOIN users u ON d.user_id = u.id
+                WHERE d.file_id = ?
+                ORDER BY d.downloaded_at DESC
+                LIMIT 100`,
+          args: [fileIdNum]
+        });
+
+        const totalLogsCountRes = await client.execute({
+          sql: "SELECT COUNT(*) as cnt FROM file_downloads WHERE file_id = ?",
+          args: [fileIdNum]
+        });
+        const totalLogsInDb = Number(totalLogsCountRes.rows[0]?.cnt || 0);
+
+        // Distinct users count
+        const uniqueUsernames = new Set(
+          logsRes.rows.map((r: any) => String(r.username || "").trim().toLowerCase())
+        );
+        const uniqueDownloadersCount = uniqueUsernames.size;
+
+        // Graceful fallback: pre-feature downloads count
+        const preFeatureCount = Math.max(0, totalDownloads - totalLogsInDb);
+
+        return res.json({
+          file_id: fileIdNum,
+          original_name: fileObj.original_name || fileObj.filename,
+          total_downloads: totalDownloads,
+          unique_downloaders_count: uniqueDownloadersCount,
+          pre_feature_count: preFeatureCount,
+          logs: logsRes.rows.map((r: any) => ({
+            id: Number(r.id),
+            file_id: Number(r.file_id),
+            user_id: r.user_id ? Number(r.user_id) : null,
+            username: r.username,
+            downloaded_at: r.downloaded_at,
+            ip_address: r.ip_address || null,
+            user_avatar: r.user_avatar || null,
+            user_color: r.user_color || null,
+            user_role: r.user_role || null
+          }))
+        });
+      } catch (err: any) {
+        console.error("GET download-logs error:", err);
+        return res.status(500).json({ error: "İndirme geçmişi alınamadı: " + err.message });
+      }
+    }
+  );
 
   // POST: Upload file for course with multi-topic support
   app.post(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], (req: Request, res: Response) => {

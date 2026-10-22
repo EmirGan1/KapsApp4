@@ -124,6 +124,7 @@ export interface CourseMaterialCardProps {
   isEmirgan: boolean;
   onPreviewPdf: (url: string, title: string) => void;
   onInitiateDelete: (file: CourseFileItem) => void;
+  onViewDownloadHistory?: (file: CourseFileItem) => void;
   layoutMode?: 'grid' | 'list';
 }
 
@@ -133,9 +134,19 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
   isEmirgan,
   onPreviewPdf,
   onInitiateDelete,
+  onViewDownloadHistory,
   layoutMode = 'list'
 }) => {
   const [showAllTopicsTooltip, setShowAllTopicsTooltip] = useState(false);
+
+  // Check if current user is authorized to view download counts and audit logs (emirgan / ROOT / ADMIN)
+  const isAuthorizedAdmin = isEmirgan || 
+    (typeof localStorage !== 'undefined' && (
+      (localStorage.getItem("lan_account_role") || "").toUpperCase() === "ROOT" ||
+      (localStorage.getItem("lan_account_role") || "").toUpperCase() === "ADMIN" ||
+      (localStorage.getItem("lan_username") || "").toLowerCase() === "emirgan"
+    ));
+  const canViewDownloads = Boolean(isAuthorizedAdmin || file.download_count !== undefined);
 
   const canDelete = canDeleteFile(file, { id: currentUserId, isEmirgan, username: isEmirgan ? 'emirgan' : '' });
 
@@ -335,7 +346,22 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
       {/* SAĞ BLOK: Boyut / Yükleyen / Tarih & Hızlı Aksiyonlar */}
       <div className="flex items-center justify-between lg:justify-end gap-5 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-800/80">
         {/* Meta Bilgiler */}
-        <div className="flex items-center gap-2.5 text-xs text-slate-400 font-medium">
+        <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-400 font-medium">
+          {canViewDownloads && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onViewDownloadHistory?.(file);
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 hover:text-sky-200 border border-sky-500/30 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+              title="İndirme Geçmişini Görüntüle (Yalnızca Emirgan / ROOT)"
+            >
+              <Download className="w-3.5 h-3.5 text-sky-400" />
+              <span>{file.download_count ?? 0} İndirme</span>
+            </button>
+          )}
           <span className="font-mono text-slate-300 bg-slate-800/80 px-2 py-1 rounded-md border border-slate-700/50">
             {formattedSize}
           </span>
@@ -364,7 +390,7 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
             <Eye className="w-4 h-4 sm:w-5 sm:h-5"/>
           </button>
           <a 
-            href={getApiUrl(file.url)}
+            href={getApiUrl(`/api/files/${file.id}/download`)}
             download={rawFilename}
             target="_blank"
             rel="noreferrer"

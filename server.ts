@@ -350,6 +350,19 @@ async function initDb() {
   } catch(e) {}
   try { await client.execute("ALTER TABLE subject_files ADD COLUMN topic_tag TEXT"); } catch(e){}
   try { await client.execute("ALTER TABLE subject_files ADD COLUMN topics TEXT"); } catch(e){}
+  try { await client.execute("ALTER TABLE subject_files ADD COLUMN download_count INTEGER DEFAULT 0"); } catch(e){}
+  try {
+    await client.execute(`CREATE TABLE IF NOT EXISTS file_downloads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_id INTEGER NOT NULL,
+      user_id INTEGER NULL,
+      username TEXT NOT NULL,
+      downloaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      ip_address TEXT NULL
+    )`);
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_file_downloads_file_id ON file_downloads(file_id)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_file_downloads_downloaded_at ON file_downloads(downloaded_at DESC)");
+  } catch(e) {}
   try { await client.execute("ALTER TABLE users ADD COLUMN uno_wins INTEGER DEFAULT 0"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN signup_ip TEXT"); } catch(e){}
   try { await client.execute("ALTER TABLE users ADD COLUMN last_ip TEXT"); } catch(e){}

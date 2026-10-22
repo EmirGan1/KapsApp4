@@ -22,6 +22,7 @@ import {
 import { getApiUrl, getAuthHeaders } from '../utils/api';
 import FileUploadModal, { DocumentType, FileUploadPayload } from './FileUploadModal';
 import CourseMaterialCard, { formatTopics, parseTopics } from './CourseMaterialCard';
+import DownloadHistoryModal from './DownloadHistoryModal';
 
 export interface CourseFileItem {
   id: number;
@@ -39,6 +40,7 @@ export interface CourseFileItem {
   topics?: string[];
   doc_type?: DocumentType;
   docType?: DocumentType;
+  download_count?: number;
   created_at: string;
 }
 
@@ -146,25 +148,27 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
-  // Preview & Delete State
+  // Preview, Delete & Download History State
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewPdfTitle, setPreviewPdfTitle] = useState<string>('');
+  const [previewFileId, setPreviewFileId] = useState<number | null>(null);
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<CourseFileItem | null>(null);
+  const [downloadHistoryFile, setDownloadHistoryFile] = useState<CourseFileItem | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isEmirgan = currentUsername?.trim().toLowerCase() === 'emirgan';
 
-  // Prevent background body scroll when preview or delete modal is open
+  // Prevent background body scroll when preview, delete or download history modal is open
   useEffect(() => {
-    if (previewPdfUrl || deleteConfirmFile) {
+    if (previewPdfUrl || deleteConfirmFile || downloadHistoryFile) {
       const orig = document.body.style.overflow;
       document.body.style.overflow = "hidden";
       return () => {
         document.body.style.overflow = orig;
       };
     }
-  }, [previewPdfUrl, deleteConfirmFile]);
+  }, [previewPdfUrl, deleteConfirmFile, downloadHistoryFile]);
 
   // Get themes for this specific course (unconditional hook)
   const courseThemes = useMemo(() => {
@@ -213,14 +217,34 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
         }
       };
 
+      const handleFileDownloaded = (data: any) => {
+        if (data && data.fileId) {
+          setFiles((prev) =>
+            prev.map((f) => {
+              if (Number(f.id) === Number(data.fileId)) {
+                return {
+                  ...f,
+                  download_count: typeof data.download_count === 'number' 
+                    ? data.download_count 
+                    : (f.download_count || 0) + 1
+                };
+              }
+              return f;
+            })
+          );
+        }
+      };
+
       socket.on("folder_files_updated", handleFolderUpdated);
       socket.on("subjects_updated", loadFiles);
       socket.on("file:deleted", loadFiles);
+      socket.on("file:downloaded", handleFileDownloaded);
 
       return () => {
         socket.off("folder_files_updated", handleFolderUpdated);
         socket.off("subjects_updated", loadFiles);
         socket.off("file:deleted", loadFiles);
+        socket.off("file:downloaded", handleFileDownloaded);
       };
     }
   }, [courseId, socket, loadFiles]);
@@ -648,8 +672,10 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                 onPreviewPdf={(url, title) => {
                   setPreviewPdfUrl(url);
                   setPreviewPdfTitle(title);
+                  setPreviewFileId(file.id);
                 }}
                 onInitiateDelete={handleInitiateDelete}
+                onViewDownloadHistory={(targetFile) => setDownloadHistoryFile(targetFile)}
               />
             ) : null
           ))}
@@ -756,7 +782,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                   <span className="hidden sm:inline">Tam Ekran</span>
                 </a>
                 <a
-                  href={previewPdfUrl}
+                  href={previewFileId ? getApiUrl(`/api/files/${previewFileId}/download`) : previewPdfUrl}
                   download={previewPdfTitle}
                   target="_blank"
                   rel="noreferrer"
@@ -766,7 +792,10 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                   <span>İndir</span>
                 </a>
                 <button
-                  onClick={() => setPreviewPdfUrl(null)}
+                  onClick={() => {
+                    setPreviewPdfUrl(null);
+                    setPreviewFileId(null);
+                  }}
                   className="p-1.5 text-slate-400 hover:text-slate-200 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X size={20} />
@@ -785,6 +814,13 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* 7. İndirme Geçmişi Modalı (Audit Log - Yalnızca Emirgan / ROOT) */}
+      <DownloadHistoryModal
+        isOpen={Boolean(downloadHistoryFile)}
+        file={downloadHistoryFile}
+        onClose={() => setDownloadHistoryFile(null)}
+      />
 
     </div>
   );
