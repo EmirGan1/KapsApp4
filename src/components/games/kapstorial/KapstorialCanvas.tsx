@@ -54,9 +54,9 @@ function hexToRgb(hex: string): [number, number, number] {
   if (clean.length === 3) {
     clean = clean.split('').map(c => c + c).join('');
   }
-  const r = parseInt(clean.substring(0, 2), 16) || 100;
-  const g = parseInt(clean.substring(2, 4), 16) || 100;
-  const b = parseInt(clean.substring(4, 6), 16) || 100;
+  const r = parseInt(clean.substring(0, 2), 16) ?? 100;
+  const g = parseInt(clean.substring(2, 4), 16) ?? 100;
+  const b = parseInt(clean.substring(4, 6), 16) ?? 100;
   return [r, g, b];
 }
 
@@ -98,6 +98,8 @@ export default function KapstorialCanvas({
     zoom: 1
   });
 
+  const ignoreMouseUntilRef = useRef(0);
+  const pinchCenterRef = useRef({ x: 0, y: 0 });
   const isDraggingRef = useRef<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const cameraStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -139,14 +141,19 @@ export default function KapstorialCanvas({
     }
   }, []);
 
-  // Center camera on initial load
   useEffect(() => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const initialZoom = Math.min(w / MAP_WIDTH, h / MAP_HEIGHT) * 0.92;
-    const initialX = (w - MAP_WIDTH * initialZoom) / 2;
-    const initialY = (h - MAP_HEIGHT * initialZoom) / 2;
-    setCamera({ x: initialX, y: initialY, zoom: initialZoom });
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+    const resize = () => {
+      const { width: w, height: h } = container.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+      const zoom = Math.min(w / MAP_WIDTH, h / MAP_HEIGHT) * 0.96;
+      setCamera({ x: (w - MAP_WIDTH * zoom) / 2, y: (h - MAP_HEIGHT * zoom) / 2, zoom });
+    };
+    const observer = new ResizeObserver(resize); observer.observe(container); resize();
+    return () => observer.disconnect();
   }, []);
 
   const screenToMap = useCallback((screenX: number, screenY: number) => {
@@ -161,7 +168,7 @@ export default function KapstorialCanvas({
     return {
       x: clampedX,
       y: clampedY,
-      pixelIdx: clampedY * MAP_WIDTH + clampedX
+      pixelIdx: mx < 0 || my < 0 || mx >= MAP_WIDTH || my >= MAP_HEIGHT ? -1 : clampedY * MAP_WIDTH + clampedX
     };
   }, [camera]);
 
@@ -178,6 +185,7 @@ export default function KapstorialCanvas({
     if (!offscreen || !offscreenCtx || !imageData) return;
 
     let animId: number;
+    let dirty = true;
 
     const render = () => {
       const data = imageData.data;
@@ -185,6 +193,7 @@ export default function KapstorialCanvas({
       const hasTerrain = terrain && terrain.length === TOTAL_PIXELS;
       const hasOwners = owners && owners.length === TOTAL_PIXELS;
 
+      if (dirty) {
       // Fill pixel buffer safely using RGBA
       for (let y = 0; y < MAP_HEIGHT; y++) {
         const yOffset = y * MAP_WIDTH;
@@ -259,11 +268,15 @@ export default function KapstorialCanvas({
       }
 
       offscreenCtx.putImageData(imageData, 0, 0);
+      dirty = false;
+      }
 
       // Render onto main canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
 
+      const dpr = canvas.width / Math.max(1, canvas.getBoundingClientRect().width);
+      ctx.scale(dpr, dpr);
       ctx.translate(camera.x, camera.y);
       ctx.scale(camera.zoom, camera.zoom);
       ctx.imageSmoothingEnabled = false;
@@ -378,24 +391,12 @@ export default function KapstorialCanvas({
     return () => cancelAnimationFrame(animId);
   }, [terrain, owners, players, boats, emojis, camera, gameStatus, selectedSpawnPixel]);
 
-  // Handle Resize with window.innerWidth / window.innerHeight
-  useEffect(() => {
-    const handleResize = () => {
-      if (!canvasRef.current) return;
-      canvasRef.current.width = window.innerWidth;
-      canvasRef.current.height = window.innerHeight;
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (!canvasRef.current) return;
 
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newZoom = Math.max(0.5, Math.min(10, camera.zoom * zoomFactor));
+    const newZoom = Math.max(0.1, Math.min(20, camera.zoom * zoomFactor));
 
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -408,6 +409,7 @@ export default function KapstorialCanvas({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (Date.now() < ignoreMouseUntilRef.current || e.button !== 0) return;
     isDraggingRef.current = true;
     didDragRef.current = false;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -430,11 +432,13 @@ export default function KapstorialCanvas({
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
+    if (Date.now() < ignoreMouseUntilRef.current) return;
     isDraggingRef.current = false;
 
     if (!didDragRef.current && e.button === 0) {
       const mapPos = screenToMap(e.clientX, e.clientY);
 
+      if (mapPos.pixelIdx < 0) return;
       if (gameStatus === 'spawn_phase') {
         if (terrain && terrain[mapPos.pixelIdx] === 1 && onSelectSpawn) {
           onSelectSpawn(mapPos.pixelIdx);
@@ -450,6 +454,7 @@ export default function KapstorialCanvas({
   const touchStartCameraRef = useRef<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 });
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    ignoreMouseUntilRef.current = Date.now() + 1000;
     if (e.touches.length === 1) {
       const t = e.touches[0];
       isDraggingRef.current = true;
@@ -457,10 +462,14 @@ export default function KapstorialCanvas({
       dragStartRef.current = { x: t.clientX, y: t.clientY };
       cameraStartRef.current = { x: camera.x, y: camera.y };
     } else if (e.touches.length === 2) {
+      didDragRef.current = true;
+      isDraggingRef.current = false;
       const t1 = e.touches[0];
       const t2 = e.touches[1];
       touchStartDistRef.current = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       touchStartCameraRef.current = { ...camera };
+      const rect = canvasRef.current!.getBoundingClientRect();
+      pinchCenterRef.current = { x: (t1.clientX + t2.clientX) / 2 - rect.left, y: (t1.clientY + t2.clientY) / 2 - rect.top };
     }
   };
 
@@ -482,19 +491,21 @@ export default function KapstorialCanvas({
       const t2 = e.touches[1];
       const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       const ratio = currentDist / touchStartDistRef.current;
-      const newZoom = Math.max(0.5, Math.min(10, touchStartCameraRef.current.zoom * ratio));
+      const newZoom = Math.max(0.1, Math.min(20, touchStartCameraRef.current.zoom * ratio));
       setCamera({
-        ...camera,
+        x: pinchCenterRef.current.x - (pinchCenterRef.current.x - touchStartCameraRef.current.x) * newZoom / touchStartCameraRef.current.zoom,
+        y: pinchCenterRef.current.y - (pinchCenterRef.current.y - touchStartCameraRef.current.y) * newZoom / touchStartCameraRef.current.zoom,
         zoom: newZoom
       });
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!didDragRef.current && e.changedTouches.length === 1) {
+    if (!didDragRef.current && touchStartDistRef.current === null && e.changedTouches.length === 1) {
       const t = e.changedTouches[0];
       const mapPos = screenToMap(t.clientX, t.clientY);
 
+      if (mapPos.pixelIdx < 0) return;
       if (gameStatus === 'spawn_phase') {
         if (terrain && terrain[mapPos.pixelIdx] === 1 && onSelectSpawn) {
           onSelectSpawn(mapPos.pixelIdx);
@@ -510,7 +521,7 @@ export default function KapstorialCanvas({
   return (
     <div 
       ref={containerRef} 
-      className="absolute top-0 left-0 w-screen h-screen z-0 bg-slate-950 overflow-hidden select-none cursor-crosshair touch-none"
+      className="absolute inset-0 w-full h-full z-0 bg-slate-950 overflow-hidden select-none cursor-crosshair touch-none"
       onContextMenu={(e) => e.preventDefault()}
     >
       <canvas
@@ -523,8 +534,15 @@ export default function KapstorialCanvas({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={() => { isDraggingRef.current = false; didDragRef.current = true; touchStartDistRef.current = null; }}
+        onMouseLeave={() => { isDraggingRef.current = false; didDragRef.current = true; }}
       />
 
+      <button type="button" aria-label="Haritayı ekrana sığdır" className="absolute left-3 top-1/2 z-10 rounded-xl bg-slate-800 border border-slate-600 text-white p-3 text-xs" onClick={() => {
+        const rect = containerRef.current!.getBoundingClientRect();
+        const zoom = Math.min(rect.width / MAP_WIDTH, rect.height / MAP_HEIGHT) * 0.96;
+        setCamera({x: (rect.width - MAP_WIDTH * zoom) / 2, y: (rect.height - MAP_HEIGHT * zoom) / 2, zoom});
+      }}>Sığdır</button>
       {gameStatus === 'spawn_phase' && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-sky-950/90 backdrop-blur-md border border-sky-500/50 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-pulse pointer-events-none z-10">
           <span className="text-xl">📍</span>

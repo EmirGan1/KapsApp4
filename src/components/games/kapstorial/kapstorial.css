@@ -1,0 +1,6 @@
+.kapstorial-hud > div { min-width: 0; }
+@media (max-height: 500px) and (orientation: landscape) {
+  .kapstorial-hud { flex-direction: row; align-items: flex-start; gap: 12px; }
+  .kapstorial-hud > :first-child { width: 30%; max-height: 45%; overflow-y: auto; }
+  .kapstorial-hud > :last-child { width: 32%; margin: 0; align-self: flex-end; max-height: 85%; overflow-y: auto; }
+}

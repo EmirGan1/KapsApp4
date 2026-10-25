@@ -1,3 +1,4 @@
+import './kapstorial.css';
 import React, { useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import KapstorialLobby from './KapstorialLobby';
@@ -6,7 +7,7 @@ import KapstorialCanvas, { CanvasPlayerInfo, CanvasBoatInfo, CanvasEmojiInfo } f
 import KapstorialHUD from './KapstorialHUD';
 import KapstorialRadialMenu from './KapstorialRadialMenu';
 import KapstorialVictoryModal from './KapstorialVictoryModal';
-import { TOTAL_PIXELS, generateTerrainMap } from '../../../utils/kapstorialMaps';
+import { MAP_WIDTH, TOTAL_PIXELS, generateTerrainMap } from '../../../utils/kapstorialMaps';
 import { Handshake, AlertTriangle, ShieldCheck, UserPlus, Swords } from 'lucide-react';
 
 interface KapstorialGameProps {
@@ -33,9 +34,9 @@ export default function KapstorialGame({
   const [roomState, setRoomState] = useState<any | null>(null);
 
   // Map Grids in React State for reactive rendering with immediate default map
-  const [terrain, setTerrain] = useState<Uint8Array>(() => generateTerrainMap('world'));
+  const [terrain, setTerrain] = useState<Uint8Array>(() => new Uint8Array(TOTAL_PIXELS));
   const [owners, setOwners] = useState<Uint16Array>(() => new Uint16Array(TOTAL_PIXELS));
-  const [gridLoaded, setGridLoaded] = useState(true);
+  const [gridLoaded, setGridLoaded] = useState(false);
 
   // Live Entities
   const [players, setPlayers] = useState<CanvasPlayerInfo[]>([]);
@@ -46,6 +47,7 @@ export default function KapstorialGame({
   // Player controls
   const [selectedSpawnPixel, setSelectedSpawnPixel] = useState<number | null>(null);
   const [attackPercentage, setAttackPercentage] = useState<number>(20);
+  const [radialTargetPixel, setRadialTargetPixel] = useState(0);
   const [radialTargetPlayer, setRadialTargetPlayer] = useState<CanvasPlayerInfo | null>(null);
 
   // Notifications / Modals
@@ -68,12 +70,27 @@ export default function KapstorialGame({
       if (res?.success && res.room) {
         setRoomCode(code);
         setRoomState(res.room);
+        setPlayers(res.room.players || []);
+        setSelectedSpawnPixel(null);
+        setGridLoaded(false);
+        socket.emit('kapstorial:sync', (snapshot: any) => {
+          if (snapshot?.terrain?.length === TOTAL_PIXELS && snapshot?.owners?.length === TOTAL_PIXELS) {
+            setTerrain(new Uint8Array(snapshot.terrain)); setOwners(new Uint16Array(snapshot.owners)); setGridLoaded(true);
+          }
+        });
         setView('room');
       } else {
         alert(res?.error || "Odaya katılınamadı.");
       }
     });
   };
+
+  useEffect(() => {
+    if (!socket || !roomCode) return;
+    const reconnect = () => handleJoinRoom(roomCode);
+    socket.on('connect', reconnect);
+    return () => { socket.off('connect', reconnect); };
+  }, [socket, roomCode]);
 
   // Leave Room Handler
   const handleLeaveRoom = () => {
@@ -84,7 +101,8 @@ export default function KapstorialGame({
     setRoomState(null);
     setTerrain(generateTerrainMap('world'));
     setOwners(new Uint16Array(TOTAL_PIXELS));
-    setGridLoaded(true);
+    setGridLoaded(false);
+    setSelectedSpawnPixel(null); setPlayers([]); setBoats([]); setEmojis([]); setTruces(new Set());
     setView('lobby');
     setGameOverData(null);
   };
@@ -111,6 +129,7 @@ export default function KapstorialGame({
 
     // 3. Game Start (Full Terrain & Owner Matrix sent once)
     const onGameStart = (data: { room: any; terrain: number[]; owners: number[] }) => {
+      if (data.terrain?.length !== TOTAL_PIXELS || data.owners?.length !== TOTAL_PIXELS) return;
       setTerrain(new Uint8Array(data.terrain));
       setOwners(new Uint16Array(data.owners));
       setRoomState(data.room);
@@ -233,7 +252,7 @@ export default function KapstorialGame({
       socket.off("kapstorial:game_over", onGameOver);
       socket.off("kapstorial:invite_received", onInviteReceived);
     };
-  }, [socket, players]);
+  }, [socket]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -246,9 +265,8 @@ export default function KapstorialGame({
   const myPlayerId = myPlayer?.id || null;
 
   const handleSelectSpawn = (pixelIndex: number) => {
-    setSelectedSpawnPixel(pixelIndex);
     if (socket) {
-      socket.emit("kapstorial:set_spawn", { pixelIndex });
+      socket.emit("kapstorial:set_spawn", { pixelIndex }, (res: any) => { if (res?.success) setSelectedSpawnPixel(pixelIndex); else showToast(res?.error || "Bu konum seçilemedi."); });
     }
   };
 
@@ -258,6 +276,7 @@ export default function KapstorialGame({
     if (ownerId > 0 && ownerId !== myPlayerId) {
       const targetP = players.find(p => p.id === ownerId);
       if (targetP) {
+        setRadialTargetPixel(pixelIndex);
         setRadialTargetPlayer(targetP);
         return;
       }
@@ -266,7 +285,7 @@ export default function KapstorialGame({
     socket.emit("kapstorial:attack", {
       targetPixel: pixelIndex,
       percentage: attackPercentage
-    });
+    }, (res: any) => { if (!res?.success && res?.error) showToast(res.error); });
   };
 
   const handleChangeAttackPercentage = (pct: number) => {
@@ -377,8 +396,9 @@ export default function KapstorialGame({
         onMapClick={handleMapClick}
       />
 
+      {!gridLoaded && <div role="status" className="absolute inset-0 z-40 grid place-items-center bg-slate-950 text-white">Harita yükleniyor…</div>}
       {/* Heads-Up Display (HUD) (z-25 on top of canvas) */}
-      <KapstorialHUD
+      {roomState.status !== 'spawn_phase' && <KapstorialHUD
         players={players}
         myPlayerId={myPlayerId}
         totalConquerablePixels={roomState.totalConquerablePixels || 1}
@@ -388,7 +408,8 @@ export default function KapstorialGame({
         onSendEmoji={handleSendEmoji}
         onSurrender={handleLeaveRoom}
         isSpectator={isSpectator}
-      />
+      />}
+      {roomState.status === 'spawn_phase' && <div className="absolute bottom-3 inset-x-3 z-20 flex justify-between items-center text-white text-sm"><span className="rounded-xl bg-slate-900/90 p-3">Başlangıç seçimi: {roomState.spawnCountdownRemaining} sn</span><button className="rounded-xl bg-slate-800 p-3" onClick={handleLeaveRoom}>Ayrıl</button></div>}
 
       {/* Radial / Context Menu on Enemy/Ally Click */}
       {radialTargetPlayer && myPlayer && (
@@ -399,7 +420,7 @@ export default function KapstorialGame({
           onAttack={() => {
             if (socket) {
               socket.emit("kapstorial:attack", {
-                targetPixel: radialTargetPlayer.centroidY * 300 + radialTargetPlayer.centroidX,
+                targetPixel: radialTargetPixel,
                 percentage: attackPercentage
               });
             }

@@ -89,14 +89,14 @@ export default function KapstorialHUD({
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-2 sm:p-4 z-20 overflow-hidden">
+    <div className="kapstorial-hud pointer-events-none absolute inset-0 flex flex-col justify-between p-2 sm:p-4 z-20 overflow-hidden">
       {/* ============================================================ */}
       {/* TOP BAR: LEADERBOARD & STATS & 5S INCOME BAR */}
       {/* ============================================================ */}
       <div className="flex flex-col gap-2 pointer-events-auto">
         <div className="flex items-center justify-between gap-2">
           {/* Top Leaderboard Strip */}
-          <div className="flex-1 max-w-xl bg-slate-900/90 backdrop-blur-md border border-slate-700/60 rounded-xl px-3 py-2 shadow-xl">
+          <div className="min-w-0 flex-1 max-w-xl bg-slate-900/90 backdrop-blur-md border border-slate-700/60 rounded-xl px-3 py-2 shadow-xl">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-300">
                 <Crown className="w-3.5 h-3.5 text-amber-400" />
@@ -140,7 +140,7 @@ export default function KapstorialHUD({
 
           {/* Leave / Surrender Button */}
           <button
-            onClick={onSurrender}
+            aria-label="Oyundan ayrıl" onClick={onSurrender}
             className="bg-rose-950/80 hover:bg-rose-900 border border-rose-500/40 text-rose-300 px-3 py-2 rounded-xl text-xs font-bold shadow-lg transition-colors flex items-center gap-1.5"
           >
             <LogOut className="w-3.5 h-3.5" />

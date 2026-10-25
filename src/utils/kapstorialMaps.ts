@@ -8,8 +8,10 @@
  * 2 = Mountains / Impassable Obstacle
  */
 
-export const MAP_WIDTH = 300;
-export const MAP_HEIGHT = 200;
+const BASE_WIDTH = 300;
+export const MAP_WIDTH = 600;
+const BASE_HEIGHT = 200;
+export const MAP_HEIGHT = 400;
 export const TOTAL_PIXELS = MAP_WIDTH * MAP_HEIGHT;
 
 export type MapType = 'world' | 'europe' | 'anatolia' | 'archipelago' | 'arena';
@@ -138,20 +140,20 @@ class NoiseGenerator {
  * 1: Neutral Land
  * 2: Mountain
  */
-export function generateTerrainMap(type: MapType, seed = Math.floor(Math.random() * 100000)): Uint8Array {
-  const grid = new Uint8Array(TOTAL_PIXELS); // Defaults to 0 (Water)
+function generateBaseTerrainMap(type: MapType, seed = Math.floor(Math.random() * 100000)): Uint8Array {
+  const grid = new Uint8Array(BASE_WIDTH * BASE_HEIGHT); // Defaults to 0 (Water)
   const noise = new NoiseGenerator(seed);
 
-  const getIdx = (x: number, y: number) => y * MAP_WIDTH + x;
+  const getIdx = (x: number, y: number) => y * BASE_WIDTH + x;
 
   if (type === 'arena') {
     // Perfectly balanced circular arena with concentric rings, mountain rings, and 4 bridge chokepoints
-    const cx = MAP_WIDTH / 2;
-    const cy = MAP_HEIGHT / 2;
-    const maxR = Math.min(MAP_WIDTH, MAP_HEIGHT) * 0.44;
+    const cx = BASE_WIDTH / 2;
+    const cy = BASE_HEIGHT / 2;
+    const maxR = Math.min(BASE_WIDTH, BASE_HEIGHT) * 0.44;
 
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      for (let x = 0; x < MAP_WIDTH; x++) {
+    for (let y = 0; y < BASE_HEIGHT; y++) {
+      for (let x = 0; x < BASE_WIDTH; x++) {
         const dx = x - cx;
         const dy = (y - cy) * 1.35; // Aspect correction
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -201,8 +203,8 @@ export function generateTerrainMap(type: MapType, seed = Math.floor(Math.random(
       { x: 225, y: 70, r: 16 }
     ];
 
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      for (let x = 0; x < MAP_WIDTH; x++) {
+    for (let y = 0; y < BASE_HEIGHT; y++) {
+      for (let x = 0; x < BASE_WIDTH; x++) {
         let isLand = false;
         let isMountain = false;
 
@@ -239,10 +241,10 @@ export function generateTerrainMap(type: MapType, seed = Math.floor(Math.random(
     // High accuracy Anatolian peninsula (Turkey):
     // Black sea to North, Mediterranean to South, Aegean & Marmara to West
     // Taurus mountains south, Pontic mountains north, Ararat/Eastern highlands
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      for (let x = 0; x < MAP_WIDTH; x++) {
-        const nx = x / MAP_WIDTH; // 0..1
-        const ny = y / MAP_HEIGHT; // 0..1
+    for (let y = 0; y < BASE_HEIGHT; y++) {
+      for (let x = 0; x < BASE_WIDTH; x++) {
+        const nx = x / BASE_WIDTH; // 0..1
+        const ny = y / BASE_HEIGHT; // 0..1
 
         const nCoast = noise.fbm(x * 0.03, y * 0.03, 4);
         const nMountain = noise.fbm(x * 0.06 + 50, y * 0.06 + 50, 3);
@@ -307,10 +309,10 @@ export function generateTerrainMap(type: MapType, seed = Math.floor(Math.random(
 
   if (type === 'europe') {
     // Europe + Scandinavia + Mediterranean + UK + Iberian peninsula
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      for (let x = 0; x < MAP_WIDTH; x++) {
-        const nx = x / MAP_WIDTH;
-        const ny = y / MAP_HEIGHT;
+    for (let y = 0; y < BASE_HEIGHT; y++) {
+      for (let x = 0; x < BASE_WIDTH; x++) {
+        const nx = x / BASE_WIDTH;
+        const ny = y / BASE_HEIGHT;
         const n = noise.fbm(x * 0.035, y * 0.035, 4);
         const nMount = noise.fbm(x * 0.065 + 100, y * 0.065 + 100, 3);
 
@@ -372,10 +374,10 @@ export function generateTerrainMap(type: MapType, seed = Math.floor(Math.random(
 
   // DEFAULT: 'world'
   // World Map: Americas (West), Eurasia/Africa (Center/East), Australia (Southeast)
-  for (let y = 0; y < MAP_HEIGHT; y++) {
-    for (let x = 0; x < MAP_WIDTH; x++) {
-      const nx = x / MAP_WIDTH;
-      const ny = y / MAP_HEIGHT;
+  for (let y = 0; y < BASE_HEIGHT; y++) {
+    for (let x = 0; x < BASE_WIDTH; x++) {
+      const nx = x / BASE_WIDTH;
+      const ny = y / BASE_HEIGHT;
       const n = noise.fbm(x * 0.03, y * 0.03, 4);
       const nMount = noise.fbm(x * 0.06 + 200, y * 0.06 + 200, 3);
 
@@ -423,6 +425,16 @@ export function generateTerrainMap(type: MapType, seed = Math.floor(Math.random(
   }
 
   return grid;
+}
+
+export function generateTerrainMap(type: MapType, seed = Math.floor(Math.random() * 100000)): Uint8Array {
+  const normalizedSeed = Number.isFinite(seed) ? (Math.abs(Math.trunc(seed)) % 2147483646) + 1 : 1;
+  const base = generateBaseTerrainMap(type, normalizedSeed);
+  const result = new Uint8Array(TOTAL_PIXELS);
+  for (let y = 0; y < MAP_HEIGHT; y++) for (let x = 0; x < MAP_WIDTH; x++) {
+    result[y * MAP_WIDTH + x] = base[Math.floor(y / 2) * BASE_WIDTH + Math.floor(x / 2)];
+  }
+  return result;
 }
 
 /**
