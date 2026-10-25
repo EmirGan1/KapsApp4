@@ -6095,6 +6095,85 @@ async function startServer() {
       io.emit("global:kap_attack_stop");
     });
 
+    // ============================================================
+    // KAPSCARE: High-Volume Sudden Jumpscare Overlay Events
+    // ============================================================
+    socket.on("admin:trigger_kapscare", (data: { targetUserId?: number | string | "all" }, cb?: (res: any) => void) => {
+      const usernameStr = (user?.username as string || "").trim().toLowerCase();
+      const isEmirgan = usernameStr === "emirgan" || Number(user?.is_admin) === 1 || String((user as any)?.role || "").toUpperCase() === "ROOT";
+      if (!isEmirgan) {
+        if (cb) cb({ error: "Yetkisiz işlem: Sadece yönetici emirgan kapscare atabilir." });
+        return;
+      }
+
+      const rawTarget = data?.targetUserId ?? "all";
+      console.log(`[KAPSCARE] Triggered by ${user?.username} to target:`, rawTarget);
+
+      const payload = {
+        targetUserId: rawTarget === "all" || !rawTarget ? "all" : Number(rawTarget),
+        senderName: user.username || "Emirgan",
+        timestamp: Date.now()
+      };
+
+      if (payload.targetUserId === "all") {
+        io.emit("global:kapscare", payload);
+      } else {
+        const targetIdNum = Number(payload.targetUserId);
+        const targetSocketId = onlineUsers.get(targetIdNum);
+        if (targetSocketId) {
+          io.to(targetSocketId).emit("global:kapscare", payload);
+        }
+      }
+
+      if (cb) cb({ success: true, target: payload.targetUserId });
+    });
+
+    // ============================================================
+    // CUSTOM POP-UP: Persistent Text / Media Remote Popup Broadcast
+    // ============================================================
+    socket.on("admin:send_custom_popup", (data: {
+      targetUserId?: number | string | "all";
+      title?: string;
+      message: string;
+      mediaType?: "image" | "video" | "none";
+      mediaUrl?: string | null;
+      theme?: string;
+    }, cb?: (res: any) => void) => {
+      const usernameStr = (user?.username as string || "").trim().toLowerCase();
+      const isEmirgan = usernameStr === "emirgan" || Number(user?.is_admin) === 1 || String((user as any)?.role || "").toUpperCase() === "ROOT";
+      if (!isEmirgan) {
+        if (cb) cb({ error: "Yetkisiz işlem: Yalnızca yönetici emirgan özel pop-up gönderebilir." });
+        return;
+      }
+
+      const rawTarget = data?.targetUserId ?? "all";
+      const payload = {
+        id: `popup_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        targetUserId: rawTarget === "all" || !rawTarget ? "all" : Number(rawTarget),
+        title: (data?.title || "Özel Bildirim").trim(),
+        message: (data?.message || "").trim(),
+        mediaType: data?.mediaType || "none",
+        mediaUrl: data?.mediaUrl || null,
+        theme: data?.theme || "dark",
+        senderName: user.username || "Emirgan",
+        createdAt: new Date().toISOString()
+      };
+
+      console.log(`[CUSTOM POPUP] Sent by ${user?.username} to target:`, payload.targetUserId);
+
+      if (payload.targetUserId === "all") {
+        io.emit("global:custom_popup", payload);
+      } else {
+        const targetIdNum = Number(payload.targetUserId);
+        const targetSocketId = onlineUsers.get(targetIdNum);
+        if (targetSocketId) {
+          io.to(targetSocketId).emit("global:custom_popup", payload);
+        }
+      }
+
+      if (cb) cb({ success: true, popup: payload });
+    });
+
     socket.on("mark_global_read", (messageId) => {
       globalRead.set(Number(user.id), messageId);
       io.emit("global_read_update", Array.from(globalRead.entries()));

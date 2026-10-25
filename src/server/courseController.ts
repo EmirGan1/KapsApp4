@@ -331,6 +331,8 @@ export function registerCourseRoutes(
         const fileObj = fileRes.rows[0];
         const fileIdNum = Number(fileObj.id);
 
+        console.log(`[DEBUG] Download request for file ${fileIdNum}, query:`, req.query);
+
         // 1. Identify downloading user (authenticated or query or anonymous student)
         const authUser = await getAuthUserFromRequest(req, client);
         let userId: number | null = authUser ? Number(authUser.id) : null;
@@ -405,6 +407,8 @@ export function registerCourseRoutes(
         }
 
         // 3. Record download in file_downloads audit log
+        console.log(`[DEBUG] Final identification for file ${fileIdNum}: userId=${userId}, username=${username}, ip=${ipAddress}`);
+
         try {
           await client.execute({
             sql: "INSERT INTO file_downloads (file_id, user_id, username, downloaded_at, ip_address) VALUES (?, ?, ?, ?, ?)",
@@ -581,12 +585,16 @@ export function registerCourseRoutes(
           const finalUserId = r.resolved_user_id ? Number(r.resolved_user_id) : (r.user_id ? Number(r.user_id) : null);
           const finalUsername = r.resolved_username || r.username || "Anonim Öğrenci";
           const finalName = r.user_name || null;
-          const userKey = finalUserId ? `id_${finalUserId}` : `uname_${finalUsername.toLowerCase()}`;
+          
+          // If we identified a user, do not label as 'Anonim Öğrenci'
+          const displayUsername = (finalUserId || (finalUsername !== 'Anonim Öğrenci' && finalUsername !== 'Anonim' && finalUsername !== '')) ? finalUsername : "Anonim Öğrenci";
+
+          const userKey = finalUserId ? `id_${finalUserId}` : `uname_${displayUsername.toLowerCase()}`;
 
           if (!userSummaryMap.has(userKey)) {
             userSummaryMap.set(userKey, {
               user_id: finalUserId,
-              username: finalUsername,
+              username: displayUsername,
               name: finalName,
               avatar: r.user_avatar || null,
               color: r.user_color || null,
@@ -616,7 +624,7 @@ export function registerCourseRoutes(
             id: Number(r.id),
             file_id: Number(r.file_id),
             user_id: finalUserId,
-            username: finalUsername,
+            username: displayUsername,
             name: finalName,
             downloaded_at: r.downloaded_at,
             ip_address: r.ip_address || null,

@@ -6,7 +6,8 @@ import {
   Unlock, Crown, AlertTriangle, Eye, UserX,
   Radio, HardDrive, Terminal, X, Check, Edit3, 
   ShieldAlert, Ban, UserCheck, ShieldCheck, Gamepad2, Tag,
-  Award, Plus, ArrowUp, ArrowDown, Layers, Sparkles, Palette, Flame
+  Award, Plus, ArrowUp, ArrowDown, Layers, Sparkles, Palette, Flame,
+  Volume2, Play, Send, Upload, Image as ImageIcon, Video as VideoIcon
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import { COURSE_ROLES, CourseRole, sortRolesByPosition } from "../types";
@@ -88,7 +89,7 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ socket, currentUsername, onUserClick, onPendingCountChange }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity" | "quote">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "scare" | "logs" | "activity" | "quote">("pending");
   const [loading, setLoading] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   
@@ -100,6 +101,20 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
   const [logs, setLogs] = useState<AccessLogItem[]>([]);
   const [activeTables, setActiveTables] = useState<any[]>([]);
   const [rolesList, setRolesList] = useState<CourseRole[]>(COURSE_ROLES);
+
+  // Kapscare Jumpscare State
+  const [kapscareTarget, setKapscareTarget] = useState<string>("all");
+  const [kapscareLoading, setKapscareLoading] = useState<boolean>(false);
+
+  // Custom Remote Popup State
+  const [popupTarget, setPopupTarget] = useState<string>("all");
+  const [popupTitle, setPopupTitle] = useState<string>("📢 EMİRGAN'DAN ÖZEL BİLDİRİM");
+  const [popupMessage, setPopupMessage] = useState<string>("");
+  const [popupMediaType, setPopupMediaType] = useState<"none" | "image" | "video">("none");
+  const [popupMediaUrl, setPopupMediaUrl] = useState<string>("");
+  const [popupTheme, setPopupTheme] = useState<"dark" | "urgent" | "gold" | "neon">("dark");
+  const [popupUploading, setPopupUploading] = useState<boolean>(false);
+  const [popupSending, setPopupSending] = useState<boolean>(false);
 
   // Daily Quote State
   const [currentQuoteText, setCurrentQuoteText] = useState<string>("");
@@ -334,6 +349,104 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
     } finally {
       setIsUpdatingQuote(false);
     }
+  };
+
+  // --- Kapscare Handlers ---
+  const handleTriggerKapscare = (target: string = kapscareTarget) => {
+    if (!socket) {
+      showToast("Socket bağlantısı bulunamadı!", "error");
+      return;
+    }
+    setKapscareLoading(true);
+    socket.emit("admin:trigger_kapscare", { targetUserId: target });
+    if (target === "all") {
+      showToast("🚨 TÜM KULLANICILARA KAPSCARE GÖNDERİLDİ!", "success");
+    } else {
+      const targetUser = users.find(u => String(u.id) === String(target));
+      showToast(`💀 ${targetUser ? targetUser.username : "Kullanıcı"}'ya Kapscare gönderildi!`, "success");
+    }
+    setTimeout(() => setKapscareLoading(false), 800);
+  };
+
+  const handleTestKapscareLocally = () => {
+    window.dispatchEvent(new CustomEvent("kaps:test_kapscare"));
+    showToast("👁️ Kendi ekranında Kapscare test ediliyor...", "success");
+  };
+
+  // --- Custom Remote Popup Handlers ---
+  const handleUploadPopupMedia = async (file: File) => {
+    setPopupUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const token = localStorage.getItem("token") || localStorage.getItem("lan_token") || "";
+      const res = await fetch(getApiUrl("/api/upload"), {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "X-Username": "emirgan"
+        },
+        body: formData
+      });
+      if (!res.ok) throw new Error("Yükleme başarısız");
+      const data = await res.json();
+      setPopupMediaUrl(data.url);
+      if (data.media_type === "video" || file.type.startsWith("video/")) {
+        setPopupMediaType("video");
+      } else {
+        setPopupMediaType("image");
+      }
+      showToast("Medya başarıyla yüklendi!", "success");
+    } catch (err: any) {
+      showToast("Medya yüklenirken hata: " + err.message, "error");
+    } finally {
+      setPopupUploading(false);
+    }
+  };
+
+  const handleSendCustomPopup = () => {
+    if (!socket) {
+      showToast("Socket bağlantısı bulunamadı!", "error");
+      return;
+    }
+    if (!popupMessage.trim() && !popupMediaUrl.trim()) {
+      showToast("Lütfen bir mesaj metni veya medya girin!", "error");
+      return;
+    }
+    setPopupSending(true);
+    socket.emit("admin:send_custom_popup", {
+      targetUserId: popupTarget,
+      title: popupTitle.trim() || "Özel Bildirim",
+      message: popupMessage.trim(),
+      mediaType: popupMediaType,
+      mediaUrl: popupMediaUrl.trim() || null,
+      theme: popupTheme
+    }, (res: any) => {
+      setPopupSending(false);
+      if (res?.success) {
+        showToast(popupTarget === "all" ? "🚀 Canlı pop-up herkese gönderildi!" : "🚀 Özel pop-up hedefe gönderildi!", "success");
+        setPopupMessage("");
+        setPopupMediaUrl("");
+      } else {
+        showToast(res?.error || "Pop-up gönderilemedi.", "error");
+      }
+    });
+  };
+
+  const handleTestCustomPopupLocally = () => {
+    window.dispatchEvent(new CustomEvent("kaps:test_custom_popup", {
+      detail: {
+        id: "test_" + Date.now(),
+        targetUserId: "all",
+        title: popupTitle.trim() || "Özel Bildirim",
+        message: popupMessage.trim() || "Bu bir önizleme mesajıdır. Kullanıcı çarpı (X) tuşuna basana kadar bu pop-up ekranda sabit kalacaktır.",
+        mediaType: popupMediaType,
+        mediaUrl: popupMediaUrl.trim() || null,
+        theme: popupTheme,
+        senderName: "Emirgan (Önizleme)",
+        createdAt: new Date().toISOString()
+      }
+    }));
   };
 
   const handleCreateRole = async (e: React.FormEvent) => {
@@ -622,10 +735,10 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
   };
 
   // Tab change handler
-  const handleTabChange = (tab: "pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "logs" | "activity" | "quote") => {
+  const handleTabChange = (tab: "pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "scare" | "logs" | "activity" | "quote") => {
     setActiveTab(tab);
     if (tab === "pending") fetchPendingUsers();
-    if (tab === "users") fetchUsers();
+    if (tab === "users" || tab === "scare") fetchUsers();
     if (tab === "roles") fetchRoles();
     if (tab === "tables") fetchActiveTables();
     if (tab === "hardware") fetchBannedHardware();
@@ -1077,6 +1190,18 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
         >
           <Megaphone size={16} />
           <span>📢 Canlı Duyuru</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange("scare")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
+            activeTab === "scare"
+              ? "bg-slate-950 text-red-400 border-red-500 shadow-sm"
+              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
+          }`}
+        >
+          <Flame size={16} className="text-red-500 animate-pulse" />
+          <span>💀 Kapscare & Pop-up</span>
         </button>
 
         <button
@@ -2117,6 +2242,452 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
                     <span>🛑 KAP ATTACK DURDUR</span>
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* QUICK LINK TO KAPSCARE & POPUP */}
+            <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-red-950/50 via-purple-950/30 to-slate-900 border border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-red-600/20 text-red-400 shrink-0">
+                  <Flame size={20} className="animate-pulse" />
+                </div>
+                <div>
+                  <div className="text-xs sm:text-sm font-extrabold text-white flex items-center gap-1.5">
+                    <span>💀 Kapscare & Özel Pop-up Konsolu</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500/20 text-red-300 font-bold border border-red-500/30">YENİ</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Kullanıcılara anlık Foxy jumpscare videosu atın veya kalıcı resim/video/metin pop-up'ı yayınlayın.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleTabChange("scare")}
+                className="self-start sm:self-center px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer shrink-0"
+              >
+                Konsola Git →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 4.5: KAPSCARE & ÖZEL POP-UP KONSOLU                   */}
+        {/* ========================================================= */}
+        {activeTab === "scare" && (
+          <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in duration-200">
+            {/* Top Info Banner */}
+            <div className="bg-gradient-to-r from-red-950/60 via-slate-900 to-slate-900 border border-red-500/30 rounded-3xl p-5 sm:p-6 shadow-xl">
+              <div className="flex items-start gap-4">
+                <div className="p-3.5 bg-red-600/20 text-red-400 border border-red-500/40 rounded-2xl shrink-0 mt-0.5">
+                  <Flame className="w-7 h-7 text-red-500 animate-pulse" />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black uppercase tracking-wider text-red-400">
+                      EMİRGAN ÖZEL AKSİYON KONSOLU
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      ROOT ONLY
+                    </span>
+                  </div>
+                  <h2 className="text-lg sm:text-xl font-black text-white">
+                    💀 Kapscare (Jumpscare) & Özel Pop-up Yönetimi
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                    Kullanıcıların ekranında anlık yüksek sesli jumpscare patlatabilir veya kullanıcılar çarpı (X) tuşuna basıp kapatana kadar ekranda kalıcı özel duyuru/resim/video pop-up'ı gönderebilirsiniz.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 1. KAPSCARE (JUMPSCARE MODU) */}
+            <div className="bg-slate-900 border border-red-500/30 rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl relative overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4 flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-red-500/10 text-red-400 border border-red-500/30">
+                    <AlertTriangle className="w-5 h-5 text-red-400 animate-bounce" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                      <span>1. Kapscare Jumpscare Patlatma</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-red-950 text-red-400 border border-red-800">
+                        Anlık & Yüksek Ses
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Hedef kullanıcının ekranında Foxy Jumpscare videosu anında belirecek ve yüksek sesle oynatılacaktır.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTestKapscareLocally}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:border-slate-600 active:scale-95"
+                  title="Kendi ekranında nasıl göründüğünü test et"
+                >
+                  <Eye size={14} className="text-amber-400" />
+                  <span>Kendi Ekranında Test Et</span>
+                </button>
+              </div>
+
+              {/* Video Preview & Specs Strip */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 items-center">
+                <div className="relative aspect-video rounded-xl overflow-hidden bg-black border border-red-900/40 flex items-center justify-center group shadow-md">
+                  <video 
+                    src="/assets/aistudio/Ads_z_tasar_m_cc5bf91b.mp4" 
+                    playsInline 
+                    muted 
+                    loop 
+                    autoPlay
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                  <div className="absolute inset-0 bg-red-950/20 pointer-events-none border border-red-500/30 rounded-xl"></div>
+                  <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded bg-black/80 text-[10px] font-mono text-red-300 font-bold border border-red-500/30">
+                    FNAF Foxy Jumpscare
+                  </span>
+                </div>
+
+                <div className="md:col-span-2 space-y-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Volume2 size={16} className="text-red-400 shrink-0" />
+                    <span className="font-bold text-slate-200">Maksimum Ses Seviyesi:</span>
+                    <span className="font-mono text-red-400 font-extrabold bg-red-950/60 px-2 py-0.5 rounded border border-red-800/50">
+                      %100 + Web Audio Bass Boost
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span>Oynatma Süresi: <strong>~2.8 saniye</strong> (Otomatik Kapanır veya ESC)</span>
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Hedef kullanıcı sitede gezinirken, mesajlaşırken veya oyun oynarken bir anda tam ekran olarak ortaya çıkar!
+                  </p>
+                </div>
+              </div>
+
+              {/* Target User Selector */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-300 flex items-center justify-between">
+                  <span>Hedef Kullanıcı Seçimi</span>
+                  <span className="text-[11px] text-slate-400">
+                    {kapscareTarget === "all" ? "🌐 Herkeste Çıkacak" : `👤 Seçilen Kullanıcı: ID #${kapscareTarget}`}
+                  </span>
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Option 1: Herkes */}
+                  <button
+                    type="button"
+                    onClick={() => setKapscareTarget("all")}
+                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                      kapscareTarget === "all"
+                        ? "bg-red-600/15 border-red-500 text-white shadow-md shadow-red-950"
+                        : "bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center font-bold">
+                        🌐
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs sm:text-sm text-slate-100">Tüm Kullanıcılar (Global)</div>
+                        <div className="text-[10px] text-slate-400">Aktif bağlı herkesin ekranında patlasın</div>
+                      </div>
+                    </div>
+                    {kapscareTarget === "all" && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                    )}
+                  </button>
+
+                  {/* Option 2: Select Specific User Dropdown */}
+                  <div className="relative">
+                    <select
+                      value={kapscareTarget === "all" ? "" : kapscareTarget}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setKapscareTarget(val || "all");
+                      }}
+                      className="w-full h-full min-h-[58px] bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100 focus:outline-none focus:border-red-500 transition-colors cursor-pointer"
+                    >
+                      <option value="">👤 Belirli Bir Kullanıcı Seçin...</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.isOnline ? "🟢 " : "⚪ "} @{u.username} (ID: #{u.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                {/* Specific Target Button */}
+                <button
+                  type="button"
+                  onClick={() => handleTriggerKapscare(kapscareTarget)}
+                  disabled={kapscareLoading || kapscareTarget === "all"}
+                  className="py-3 px-4 rounded-2xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-red-900/30 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Flame size={16} />
+                  <span>
+                    {kapscareTarget === "all" 
+                      ? "Lütfen Kullanıcı Seçin" 
+                      : `💀 Seçilen Kullanıcıya At (ID #${kapscareTarget})`}
+                  </span>
+                </button>
+
+                {/* Instant Herkeste Çıkar Button */}
+                <button
+                  type="button"
+                  onClick={() => handleTriggerKapscare("all")}
+                  disabled={kapscareLoading}
+                  className="py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 hover:from-amber-500 hover:via-orange-500 hover:to-red-500 text-white font-black text-xs sm:text-sm shadow-xl shadow-orange-950 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <AlertTriangle size={16} className="text-amber-200 animate-pulse" />
+                  <span>🚨 HERKESTE ÇIKAR (TÜM KULLANICILAR)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. ÖZEL POP-UP GÖNDER (METİN / RESİM / VİDEO) */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4 flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                    <Megaphone className="w-5 h-5 text-sky-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                      <span>2. Özel Ekran Pop-up Gönderimi</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-950 text-sky-300 border border-sky-800">
+                        Kalıcı Kapanmayan Pop-up
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Kullanıcıların ekranında özel metin, resim veya video pop-up'ı çıkartın. Kullanıcı çarpı (X) tuşuna basana kadar ekranda kalır.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTestCustomPopupLocally}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:border-slate-600 active:scale-95"
+                  title="Pop-up'ın nasıl göründüğünü kendi ekranında test et"
+                >
+                  <Eye size={14} className="text-sky-400" />
+                  <span>Pop-up'ı Önizle</span>
+                </button>
+              </div>
+
+              {/* Form Controls */}
+              <div className="space-y-4">
+                {/* Hedef Kullanıcı */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                    Hedef Kitle / Kullanıcı
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPopupTarget("all")}
+                      className={`p-3 rounded-xl border text-left text-xs font-bold flex items-center justify-between cursor-pointer transition-all ${
+                        popupTarget === "all"
+                          ? "bg-sky-600/15 border-sky-500 text-white shadow-sm"
+                          : "bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>🌐</span>
+                        <span>Tüm Kullanıcılar (Genel)</span>
+                      </div>
+                      {popupTarget === "all" && <span className="w-2 h-2 rounded-full bg-sky-400"></span>}
+                    </button>
+
+                    <select
+                      value={popupTarget === "all" ? "" : popupTarget}
+                      onChange={(e) => setPopupTarget(e.target.value || "all")}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-sky-500 cursor-pointer"
+                    >
+                      <option value="">👤 Belirli Bir Kullanıcı Seç...</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.isOnline ? "🟢 " : "⚪ "} @{u.username} (ID: #{u.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Başlık ve Tema */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Pop-up Başlığı
+                    </label>
+                    <input
+                      type="text"
+                      value={popupTitle}
+                      onChange={(e) => setPopupTitle(e.target.value)}
+                      placeholder="Örn: 📢 EMİRGAN'DAN ÖZEL DUYURU"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Görsel Tema
+                    </label>
+                    <select
+                      value={popupTheme}
+                      onChange={(e) => setPopupTheme(e.target.value as any)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-sky-500 cursor-pointer"
+                    >
+                      <option value="dark">🌑 Koyu Modern</option>
+                      <option value="urgent">🚨 Acil Kırmızı</option>
+                      <option value="gold">👑 Altın VIP</option>
+                      <option value="neon">⚡ Siber Neon</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Mesaj İçeriği */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Mesaj / Metin İçeriği
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={popupMessage}
+                    onChange={(e) => setPopupMessage(e.target.value)}
+                    placeholder="Kullanıcıların ekranında belirecek açıklama veya mesajı buraya yazın..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs sm:text-sm text-white focus:outline-none focus:border-sky-500 leading-relaxed"
+                  />
+                </div>
+
+                {/* Medya Ekleme (Resim / Video) */}
+                <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <ImageIcon size={14} className="text-sky-400" />
+                      <span>Medya Ekle (Opsiyonel: Resim veya Video)</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPopupMediaType("none");
+                          setPopupMediaUrl("");
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                          popupMediaType === "none"
+                            ? "bg-slate-800 text-white"
+                            : "text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        Yok
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPopupMediaType("image")}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                          popupMediaType === "image"
+                            ? "bg-sky-600 text-white"
+                            : "text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        <ImageIcon size={12} />
+                        <span>Resim</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPopupMediaType("video")}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                          popupMediaType === "video"
+                            ? "bg-purple-600 text-white"
+                            : "text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        <VideoIcon size={12} />
+                        <span>Video</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {popupMediaType !== "none" && (
+                    <div className="space-y-3 pt-1">
+                      {/* Upload or URL input */}
+                      <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                        <label className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0">
+                          <Upload size={14} />
+                          <span>{popupUploading ? "Yükleniyor..." : "Dosya Yükle (Resim/Video)"}</span>
+                          <input
+                            type="file"
+                            accept="image/*,video/*"
+                            disabled={popupUploading}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleUploadPopupMedia(file);
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+
+                        <input
+                          type="text"
+                          value={popupMediaUrl}
+                          onChange={(e) => setPopupMediaUrl(e.target.value)}
+                          placeholder="Veya doğrudan medya URL'si yapıştırın (https://... veya /uploads/...)"
+                          className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+
+                      {/* Live Media Preview if URL is set */}
+                      {popupMediaUrl && (
+                        <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black/60 max-h-48 flex items-center justify-center p-2">
+                          {popupMediaType === "video" || /\.(mp4|webm|mov|mkv)$/i.test(popupMediaUrl) ? (
+                            <video 
+                              src={popupMediaUrl} 
+                              controls 
+                              className="max-h-44 rounded-lg object-contain"
+                            />
+                          ) : (
+                            <img 
+                              src={popupMediaUrl} 
+                              alt="Medya Önizleme" 
+                              className="max-h-44 rounded-lg object-contain"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setPopupMediaUrl("")}
+                            className="absolute top-2 right-2 p-1.5 rounded-full bg-black/80 hover:bg-red-600 text-white text-xs transition-colors"
+                            title="Medyayı Kaldır"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Send Button */}
+                <button
+                  type="button"
+                  onClick={handleSendCustomPopup}
+                  disabled={popupSending || (!popupMessage.trim() && !popupMediaUrl.trim())}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-sky-600 via-indigo-600 to-blue-600 hover:from-sky-500 hover:via-indigo-500 hover:to-blue-500 text-white font-extrabold text-sm shadow-xl shadow-sky-950 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Send size={16} />
+                  <span>
+                    {popupSending ? "Pop-up Gönderiliyor..." : "🚀 ÖZEL POP-UP'I CANLI YAYINLA"}
+                  </span>
+                </button>
               </div>
             </div>
           </div>

@@ -58,6 +58,8 @@ import IncomingCallNotification from "./components/IncomingCallNotification";
 import ActiveCallPanel from "./components/ActiveCallPanel";
 import VoiceCallInviteModal, { VoiceCallInvite } from "./components/VoiceCallInviteModal";
 import KapAttackOverlay from "./components/KapAttackOverlay";
+import KapscareOverlay from "./components/KapscareOverlay";
+import RemotePopupOverlay from "./components/RemotePopupOverlay";
 import { getSocketUrl, getApiUrl } from "./utils/api";
 import { getCachedHardwareFingerprint, getHardwareFingerprint } from "./utils/deviceFingerprint";
 import { isVisibleToUser } from "./types";
@@ -1348,6 +1350,12 @@ export default function App() {
       />
       {/* Global Screen Shake & Flying "kap" Text Overlay */}
       <KapAttackOverlay socket={socket} />
+
+      {/* Kapscare Jumpscare Video Overlay (FNAF Foxy Jumpscare) */}
+      <KapscareOverlay socket={socket} currentUserId={currentUserId} />
+
+      {/* Remote Custom Popup Overlay (Text, Image, Video Pop-up from Emirgan) */}
+      <RemotePopupOverlay socket={socket} currentUserId={currentUserId} />
     </div>
     </CallProvider>
   );
