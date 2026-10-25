@@ -288,6 +288,7 @@ interface VideoRoomViewProps {
   currentUserId: number;
   isHost: boolean;
   localStream: MediaStream | null;
+  localScreenStream?: MediaStream | null;
   remoteStreams: Map<string, MediaStream>;
   isMuted: boolean;
   isVideoOff: boolean;
@@ -331,6 +332,7 @@ export function VideoRoomView({
   currentUserId,
   isHost,
   localStream,
+  localScreenStream,
   remoteStreams,
   isMuted,
   isVideoOff,
@@ -613,7 +615,9 @@ export function VideoRoomView({
             <div className="w-full flex-1 min-h-[220px] max-h-[62vh] sm:max-h-[66vh] rounded-2xl overflow-hidden shadow-2xl">
               {(() => {
                 const isSelf = screenSharer.id === currentUserId;
-                const stream = isSelf ? localStream : (remoteStreams.get(screenSharer.socketId) || null);
+                const stream = isSelf 
+                  ? (localScreenStream || localStream) 
+                  : (remoteStreams.get(`${screenSharer.socketId}-screen`) || remoteStreams.get(screenSharer.socketId) || null);
                 return (
                   <VideoTile
                     participant={screenSharer}
@@ -639,7 +643,6 @@ export function VideoRoomView({
             {participants.length > 1 && (
               <div className="w-full grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 shrink-0 max-h-[120px] sm:max-h-[140px]">
                 {participants
-                  .filter((p) => p.id !== screenSharer.id)
                   .map((participant) => {
                     const isSelf = participant.id === currentUserId;
                     const stream = isSelf ? localStream : (remoteStreams.get(participant.socketId) || null);
@@ -673,9 +676,10 @@ export function VideoRoomView({
             <div className={getGridClasses(count)}>
               {participants.map((participant) => {
                 const isSelf = participant.id === currentUserId;
+                const isScreenShareTile = isSelf ? isScreenSharing : Boolean(participant.isScreenSharing);
                 const stream = isSelf 
-                  ? localStream 
-                  : (remoteStreams.get(participant.socketId) || null);
+                  ? (isScreenShareTile ? (localScreenStream || localStream) : localStream) 
+                  : (isScreenShareTile ? (remoteStreams.get(`${participant.socketId}-screen`) || remoteStreams.get(participant.socketId)) : remoteStreams.get(participant.socketId)) || null;
 
                 return (
                   <div key={participant.id} className="w-full h-full flex items-center justify-center min-h-0 overflow-hidden">

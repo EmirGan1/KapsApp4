@@ -32,6 +32,7 @@ export function useWebRTC({
   participantCount = 1
 }: UseWebRTCOptions) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
@@ -178,6 +179,8 @@ export function useWebRTC({
   } | null>(null);
   const mixedAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const cameraSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
+  const screenSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const remoteAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -603,7 +606,11 @@ export function useWebRTC({
       });
       localStreamRef.current = null;
     }
+    
+    cameraSendersRef.current.clear();
+    screenSendersRef.current.clear();
     setLocalStream(null);
+    setLocalScreenStream(null);
     setIsScreenSharing(false);
     setIsScreenAudioEnabled(false);
 
@@ -784,9 +791,20 @@ export function useWebRTC({
 
     if (videoTrack) {
       const sender = pc.addTrack(videoTrack, currentLocalStream!);
+      cameraSendersRef.current.set(remoteSocketId, sender);
       applySenderBitrateLimit(sender, participantCountRef.current, resolutionRef.current);
     } else {
       pc.addTransceiver('video', { direction: 'sendrecv' });
+    }
+
+    // Add screen track if currently sharing
+    if (isScreenSharingRef.current && screenStreamRef.current) {
+      const screenTrack = screenStreamRef.current.getVideoTracks()[0];
+      if (screenTrack) {
+        const sender = pc.addTrack(screenTrack, screenStreamRef.current);
+        screenSendersRef.current.set(remoteSocketId, sender);
+        applySenderBitrateLimit(sender, participantCountRef.current, 'auto', true);
+      }
     }
 
     // 2. ICE Candidate Event
@@ -802,29 +820,47 @@ export function useWebRTC({
     // 3. Remote Track Handling (ontrack with single track fallback and onunmute trigger)
     pc.ontrack = (event) => {
       const track = event.track;
-      console.log(`[WebRTC] ontrack received: peer=${remoteSocketId}, kind=${track.kind}, id=${track.id}`);
+      const stream = event.streams[0] || new MediaStream([track]);
+      
+      // Determine if this is a screen share track
+      // Logic: screen share streams usually have a different ID, or we can use contentHint if available
+      const isScreenTrack = track.kind === 'video' && (
+        (track.label && (track.label.toLowerCase().includes('screen') || track.label.toLowerCase().includes('monitor'))) ||
+        (stream.id && stream.id.toLowerCase().includes('screen')) ||
+        (track.contentHint === 'detail')
+      );
 
-      // Track unmute event: when first data packet arrives from remote peer
+      const streamKey = isScreenTrack ? `${remoteSocketId}-screen` : remoteSocketId;
+      console.log(`[WebRTC] ontrack received: peer=${remoteSocketId}, kind=${track.kind}, type=${isScreenTrack ? 'screen' : 'camera'}, id=${track.id}`);
+
       track.onunmute = () => {
-        console.log(`[WebRTC] Remote track onunmute (active data): peer=${remoteSocketId}, kind=${track.kind}`);
+        console.log(`[WebRTC] Remote track onunmute: peer=${remoteSocketId}, type=${isScreenTrack ? 'screen' : 'camera'}`);
         setRemoteStreams((prev) => {
           const next = new Map(prev);
-          const current = next.get(remoteSocketId);
+          const current = next.get(streamKey);
           if (current) {
-            next.set(remoteSocketId, new MediaStream(current.getTracks()));
+            next.set(streamKey, new MediaStream(current.getTracks()));
           }
           return next;
         });
       };
 
       track.onmute = () => {
-        console.log(`[WebRTC] Remote track onmute: peer=${remoteSocketId}, kind=${track.kind}`);
+        console.log(`[WebRTC] Remote track onmute: peer=${remoteSocketId}, type=${isScreenTrack ? 'screen' : 'camera'}`);
       };
 
-      // Add to remoteStreams Map with fallback MediaStream([event.track])
+      track.onended = () => {
+        console.log(`[WebRTC] Remote track onended: peer=${remoteSocketId}, type=${isScreenTrack ? 'screen' : 'camera'}`);
+        setRemoteStreams((prev) => {
+          const next = new Map(prev);
+          next.delete(streamKey);
+          return next;
+        });
+      };
+
       setRemoteStreams((prev) => {
         const next = new Map(prev);
-        const existing = next.get(remoteSocketId);
+        const existing = next.get(streamKey);
         if (existing) {
           const oldSameKind = existing.getTracks().find((t) => t.kind === track.kind);
           if (oldSameKind && oldSameKind.id !== track.id) {
@@ -833,18 +869,14 @@ export function useWebRTC({
           } else if (!oldSameKind) {
             existing.addTrack(track);
           }
-          next.set(remoteSocketId, new MediaStream(existing.getTracks()));
+          next.set(streamKey, new MediaStream(existing.getTracks()));
         } else {
-          const newStream = (event.streams && event.streams[0]) 
-            ? event.streams[0] 
-            : new MediaStream([event.track]);
-          next.set(remoteSocketId, newStream);
+          next.set(streamKey, stream);
         }
         return next;
       });
 
-      // Background HTMLAudioElement for uninterrupted audio playback
-      if (track.kind === 'audio') {
+      if (track.kind === 'audio' && !isScreenTrack) {
         let audioEl = remoteAudioElementsRef.current.get(remoteSocketId);
         if (!audioEl) {
           audioEl = new Audio();
@@ -1086,20 +1118,16 @@ export function useWebRTC({
       replacementTrack = null;
     }
 
-    // 4. Replace video track on all active RTCPeerConnections and renegotiate with peers
+    // 4. Remove screen tracks from all connections and renegotiate
     for (const [sId, pc] of peerConnectionsRef.current.entries()) {
-      const senders = pc.getSenders();
-      const videoSender = senders.find((s) => s.track?.kind === 'video') || senders.find((s) => !s.track);
-      if (videoSender) {
-        await videoSender.replaceTrack(replacementTrack).catch((err) => {
-          console.warn('[WebRTC] Revert replaceTrack error:', err);
-        });
-        if (replacementTrack) {
-          applySenderBitrateLimit(videoSender, participantCountRef.current, resolutionRef.current);
-        }
+      const screenSender = screenSendersRef.current.get(sId);
+      if (screenSender) {
+        try {
+          pc.removeTrack(screenSender);
+        } catch (e) {}
+        screenSendersRef.current.delete(sId);
       }
 
-      // Taze SDP Offer göndererek karşı tarafın video streamini sorunsuz güncelle
       try {
         const rawOffer = await pc.createOffer();
         const tunedSdp = tuneSdpForAudioOpus(rawOffer.sdp || '');
@@ -1111,15 +1139,13 @@ export function useWebRTC({
       }
     }
 
-    // 5. Update local stream
-    if (localStreamRef.current) {
-      const videoTracks = localStreamRef.current.getVideoTracks();
-      videoTracks.forEach((t) => localStreamRef.current?.removeTrack(t));
-      if (replacementTrack) {
-        localStreamRef.current.addTrack(replacementTrack);
-      }
-      setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-    }
+    // 5. Update local state
+    setLocalScreenStream(null);
+    setLocalStream((prev) => {
+      if (!prev) return null;
+      const tracks = prev.getTracks().filter(t => t.kind !== 'video' || t.id !== screenStreamRef.current?.getVideoTracks()[0]?.id);
+      return new MediaStream(tracks);
+    });
 
     // 6. Notify socket room
     if (socket && roomIdRef.current) {
@@ -1211,18 +1237,20 @@ export function useWebRTC({
         setIsScreenAudioEnabled(false);
       }
 
-      // 3. Video Track Replacement on all active RTCPeerConnections & Renegotiation
+      // 3. Add Screen Track to all active RTCPeerConnections & Renegotiation
       for (const [sId, pc] of peerConnectionsRef.current.entries()) {
-        const senders = pc.getSenders();
-        const videoSender = senders.find((s) => s.track && s.track.kind === 'video') || senders.find((s) => !s.track);
-        if (videoSender) {
-          await videoSender.replaceTrack(screenVideoTrack).catch((err) => {
-            console.warn('[WebRTC] Screen share replaceTrack warning:', err);
-          });
-          applySenderBitrateLimit(videoSender, participantCountRef.current);
-        } else {
+        try {
           const sender = pc.addTrack(screenVideoTrack, screenStream);
-          applySenderBitrateLimit(sender, participantCountRef.current);
+          screenSendersRef.current.set(sId, sender);
+          applySenderBitrateLimit(sender, participantCountRef.current, 'auto', true);
+        } catch (addTrackErr) {
+          console.warn('[WebRTC] addTrack for screen share failed, falling back to replace:', addTrackErr);
+          const senders = pc.getSenders();
+          const videoSender = senders.find((s) => s.track && s.track.kind === 'video') || senders.find((s) => !s.track);
+          if (videoSender) {
+            await videoSender.replaceTrack(screenVideoTrack).catch(() => {});
+            applySenderBitrateLimit(videoSender, participantCountRef.current, 'auto', true);
+          }
         }
 
         // Taze SDP Offer göndererek karşı tarafta siyah ekran kalmasını önle
@@ -1237,16 +1265,11 @@ export function useWebRTC({
         }
       }
 
-      // 4. Update local stream to display screen share locally in UI
+      // 4. Update local streams
+      setLocalScreenStream(screenStream);
       if (localStreamRef.current) {
-        const currentTracks = localStreamRef.current.getVideoTracks();
-        currentTracks.forEach((t) => localStreamRef.current?.removeTrack(t));
-        localStreamRef.current.addTrack(screenVideoTrack);
+        // Keep camera in localStream, just update UI-bound state if needed
         setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-      } else {
-        const newLocal = new MediaStream([screenVideoTrack]);
-        localStreamRef.current = newLocal;
-        setLocalStream(newLocal);
       }
 
       setIsScreenSharing(true);
@@ -1594,6 +1617,7 @@ export function useWebRTC({
 
   return {
     localStream,
+    localScreenStream,
     remoteStreams,
     isMuted,
     isVideoOff,

@@ -28,28 +28,29 @@ export type VideoFitMode = 'cover' | 'contain';
  */
 export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: { ideal: true },
-  noiseSuppression: false, // Prevents browser double-filtering and voice muffling
+  noiseSuppression: { ideal: true },
   autoGainControl: { ideal: true },
   // @ts-ignore
   googEchoCancellation: { ideal: true },
   // @ts-ignore
   googAutoGainControl: { ideal: true },
   // @ts-ignore
-  googNoiseSuppression: { ideal: false },
+  googNoiseSuppression: { ideal: true },
   // @ts-ignore
   googHighpassFilter: { ideal: true },
-  sampleRate: 48000,
-  channelCount: 1
+  channelCount: { ideal: 2 }, // Stereo support
+  sampleRate: { ideal: 48000 },
+  sampleSize: { ideal: 16 }
 };
 
 /**
- * Flexible Camera & Audio Constraints with Ideal Dimensions (prevents camera initialization crashes)
+ * Flexible Camera & Audio Constraints with High Quality (1080p/30-60fps)
  */
 export const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
   video: {
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
-    frameRate: { ideal: 30, max: 30 },
+    width: { ideal: 1920, max: 1920 },
+    height: { ideal: 1080, max: 1080 },
+    frameRate: { ideal: 30, max: 60 },
     facingMode: 'user'
   },
   audio: AUDIO_CONSTRAINTS
@@ -184,79 +185,43 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
   const isMobile = isMobileOrTablet();
   let stream: MediaStream | null = null;
 
-  // Strateji 1: 
-  // Mobilde/Tablette veya sessiz paylaşımda İLK ve EN KARARLI parametre: { video: true } (audio anahtarı ASLA eklenmez!)
-  // Masaüstünde ve withAudio=true ise: { video: true, audio: true }
+  const displayConstraints: DisplayMediaStreamOptions = {
+    video: {
+      width: { ideal: 1920, max: 3840 },
+      height: { ideal: 1080, max: 2160 },
+      frameRate: { ideal: 60, max: 60 },
+      // @ts-ignore
+      displaySurface: 'monitor',
+      // @ts-ignore
+      cursor: 'always'
+    },
+    audio: withAudio ? {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      // @ts-ignore
+      suppressLocalAudioPlayback: false
+    } : false,
+    // @ts-ignore
+    systemAudio: withAudio ? 'include' : 'exclude',
+    // @ts-ignore
+    selfBrowserSurface: 'exclude'
+  };
+
   try {
     if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
-      if (isMobile || !withAudio) {
-        stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      } else {
-        try {
-          stream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: {
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false
-            },
-            // @ts-ignore
-            systemAudio: 'include'
-          });
-        } catch (subErr: any) {
-          if (subErr?.name === 'NotAllowedError' || subErr?.name === 'AbortError') {
-            throw subErr;
-          }
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        }
-      }
+      stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints);
     }
   } catch (err1: any) {
-    console.warn('[ScreenShare] 1. Düzey ekran yakalama sonucu:', err1?.name, err1?.message);
-
-    // Kullanıcı sistem onay penceresinde "İptal" veya "Vazgeç" dedi
-    if (err1?.name === 'NotAllowedError') {
-      if (!err1?.message?.toLowerCase().includes('not supported') && 
-          !err1?.message?.toLowerCase().includes('user gesture') && 
-          !err1?.message?.toLowerCase().includes('transient')) {
-        console.warn('[ScreenShare] Kullanıcı ekran yakalama iznini iptal etti.');
-        return null;
-      }
-    }
+    console.warn('[ScreenShare] High-quality attempt failed:', err1?.name, err1?.message);
     
-    if (err1?.name === 'AbortError' || err1?.name === 'PermissionDeniedError') {
-      return null;
-    }
-  }
-
-  // Strateji 2: Parametresiz getDisplayMedia() çağrısı
-  if (!stream) {
-    try {
-      if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
-        stream = await (navigator.mediaDevices as any).getDisplayMedia();
+    // Fallback to basic if high quality rejected but not by user
+    if (err1?.name !== 'NotAllowedError' && err1?.name !== 'AbortError') {
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: withAudio });
+      } catch (err2) {
+        console.warn('[ScreenShare] Fallback failed:', err2);
       }
-    } catch (err2: any) {
-      console.warn('[ScreenShare] 2. Düzey parametresiz getDisplayMedia sonucu:', err2?.name, err2?.message);
-    }
-  }
-
-  // Strateji 3: Boş nesne ile çağırma ({})
-  if (!stream) {
-    try {
-      if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
-        stream = await navigator.mediaDevices.getDisplayMedia({} as any);
-      }
-    } catch (err3: any) {
-      console.warn('[ScreenShare] 3. Düzey boş nesne getDisplayMedia({}) sonucu:', err3?.name, err3?.message);
-    }
-  }
-
-  // Strateji 4: Eski tarayıcı / vendor prefix uyumluluğu
-  if (!stream && typeof (navigator as any).getDisplayMedia === 'function') {
-    try {
-      stream = await (navigator as any).getDisplayMedia({ video: true });
-    } catch (err4: any) {
-      console.warn('[ScreenShare] 4. Düzey legacy getDisplayMedia denenemedi:', err4);
     }
   }
 
@@ -276,33 +241,47 @@ export function isMobileBrowser(): boolean {
 export async function applySenderBitrateLimit(
   sender: RTCRtpSender,
   participantCount: number = 1,
-  resolution?: CameraResolutionMode
+  resolution?: CameraResolutionMode,
+  isScreenShare: boolean = false
 ): Promise<void> {
   if (!sender || sender.track?.kind !== 'video') return;
 
-  let targetBitrateBps = 600_000; // 600 kbps default
+  let targetBitrateBps = 800_000;
   let maxFps = 30;
 
-  if (resolution === '1080p') {
-    targetBitrateBps = 1_800_000; // 1.8 Mbps for crisp 1080p
-    maxFps = 30;
-  } else if (resolution === '720p') {
-    targetBitrateBps = 900_000; // 900 kbps for smooth 720p
-    maxFps = 30;
-  } else if (resolution === '480p') {
-    targetBitrateBps = 380_000; // 380 kbps for data-saving / performance
-    maxFps = 24;
+  if (isScreenShare) {
+    // High-quality screen sharing: 5 Mbps target for 1080p/60fps
+    targetBitrateBps = 5_000_000;
+    maxFps = 60;
+    
+    // Apply contentHint for sharpness
+    if ('contentHint' in sender.track) {
+      try {
+        (sender.track as any).contentHint = 'detail';
+      } catch (e) {}
+    }
   } else {
-    // Auto based on room density
-    if (participantCount > 12) {
-      targetBitrateBps = 280_000;
-      maxFps = 20;
-    } else if (participantCount > 6) {
-      targetBitrateBps = 400_000;
+    if (resolution === '1080p') {
+      targetBitrateBps = 2_500_000;
+      maxFps = 30;
+    } else if (resolution === '720p') {
+      targetBitrateBps = 1_200_000;
+      maxFps = 30;
+    } else if (resolution === '480p') {
+      targetBitrateBps = 500_000;
       maxFps = 24;
     } else {
-      targetBitrateBps = 750_000;
-      maxFps = 30;
+      // Auto based on room density
+      if (participantCount > 10) {
+        targetBitrateBps = 400_000;
+        maxFps = 20;
+      } else if (participantCount > 5) {
+        targetBitrateBps = 800_000;
+        maxFps = 24;
+      } else {
+        targetBitrateBps = 1_500_000;
+        maxFps = 30;
+      }
     }
   }
 
@@ -311,10 +290,11 @@ export async function applySenderBitrateLimit(
     if (!params.encodings || params.encodings.length === 0) {
       params.encodings = [{}];
     }
+    
     params.encodings[0].maxBitrate = targetBitrateBps;
     params.encodings[0].maxFramerate = maxFps;
-    params.encodings[0].priority = 'low';
-    params.encodings[0].networkPriority = 'low';
+    params.encodings[0].priority = isScreenShare ? 'high' : 'medium';
+    params.encodings[0].networkPriority = isScreenShare ? 'high' : 'medium';
 
     await sender.setParameters(params);
   } catch (err) {
@@ -323,7 +303,7 @@ export async function applySenderBitrateLimit(
 }
 
 /**
- * Fine-tunes SDP to enforce Opus codec at 32-48 kbps, mono, with DTX enabled.
+ * Fine-tunes SDP to enforce Opus codec at 64-128 kbps, stereo, with DTX enabled.
  */
 export function tuneSdpForAudioOpus(sdp: string): string {
   if (!sdp) return sdp;
@@ -335,7 +315,8 @@ export function tuneSdpForAudioOpus(sdp: string): string {
   const fmtpRegex = new RegExp(`a=fmtp:${payloadType} (.*)`, 'i');
   const fmtpMatch = sdp.match(fmtpRegex);
 
-  const opusParams = 'minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;usedtx=1;maxaveragebitrate=36000';
+  // High quality Opus parameters
+  const opusParams = 'minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;usedtx=1;maxaveragebitrate=128000';
 
   if (fmtpMatch) {
     return sdp.replace(fmtpRegex, `a=fmtp:${payloadType} ${opusParams};${fmtpMatch[1]}`);
