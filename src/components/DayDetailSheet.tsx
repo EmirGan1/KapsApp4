@@ -40,7 +40,7 @@ export default function DayDetailSheet({
 
   return (
     <div
-      className={`fixed inset-0 z-50 md:hidden transition-all duration-300 ${
+      className={`mobile-window fixed inset-0 z-50 lg:hidden transition-all duration-300 ${
         isOpen && selectedDate ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       }`}
     >

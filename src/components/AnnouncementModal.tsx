@@ -49,7 +49,7 @@ export default function AnnouncementModal({
   return (
     <AnimatePresence>
       <div 
-        className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center p-3 sm:p-6 select-text pt-4 sm:pt-6"
+        className="mobile-window fixed inset-0 z-[9999] flex items-start sm:items-center justify-center p-3 sm:p-6 select-text pt-4 sm:pt-6"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
@@ -59,7 +59,7 @@ export default function AnnouncementModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm cursor-pointer"
+          className="mobile-window fixed inset-0 bg-slate-950/60 backdrop-blur-sm cursor-pointer"
         />
 
         {/* Drop-down Animated Modal from Top-Center */}

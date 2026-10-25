@@ -60,3 +60,22 @@ html, body, #root {
   }
 }
 
+
+/* Mobile/tablet layout only: desktop geometry is kept intact. */
+@media (max-width: 1023px) {
+  html, body, #root { touch-action: pan-x pan-y pinch-zoom; }
+  .app-shell { height: var(--visible-height, 100dvh); }
+  .app-content { padding-bottom: 56px; }
+  html[data-keyboard-open="true"] .app-content { padding-bottom: 0; }
+  html[data-keyboard-open="true"] nav[aria-label="Mobil alt gezinti menüsü"] { display: none; }
+  .app-content > * { min-width: 0; }
+  .mobile-window { top: var(--visible-top, 0px); bottom: auto; height: var(--visible-height, 100dvh); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .mobile-window > div:last-child { max-height: calc(var(--visible-height, 100dvh) - 24px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .mobile-window .overflow-y-auto { min-height: 0; -webkit-overflow-scrolling: touch; }
+  .mobile-window { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, select { font-size: 16px !important; }
+  .touch-pan-y { touch-action: pan-y pinch-zoom !important; }
+}
+@media (max-width: 1023px) and (pointer: coarse) {
+  .mobile-window button, .app-shell > header button { min-height: 44px; }
+}

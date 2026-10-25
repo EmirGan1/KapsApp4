@@ -97,7 +97,7 @@ export default function BottomNav({
   return (
     <>
       {/* Mobile Fixed Bottom Nav Bar (4 Ana Sekme + 1 'Daha Fazla' Çekmecesi) */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 border-t border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe shrink-0 z-40 select-none shadow-lg">
+      <div className="lg:hidden fixed bottom-0 inset-x-0 border-t border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe shrink-0 z-40 select-none shadow-lg">
         <nav 
           aria-label="Mobil alt gezinti menüsü"
           className="grid grid-cols-5 items-center px-1 h-14 relative"
@@ -154,7 +154,7 @@ export default function BottomNav({
       {/* Mobile "Daha Fazla" Sheet / Drawer Modal */}
       {isMobileMoreOpen && (
         <div 
-          className="fixed inset-0 z-[9999] md:hidden flex flex-col justify-end bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+          className="mobile-window fixed inset-0 z-[9999] lg:hidden flex flex-col justify-end bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
           onClick={() => setIsMobileMoreOpen(false)}
         >
           <div 

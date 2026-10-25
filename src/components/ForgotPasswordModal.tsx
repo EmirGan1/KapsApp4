@@ -44,7 +44,7 @@ export default function ForgotPasswordModal({ isOpen, onClose, initialUsername =
   if (!isOpen) return null;
   if (view === 'SET_NEW_PASSWORD' && token && ticket) return <ResetPasswordView token={token} username={ticket.username} requesterKey={ticket.requesterKey}
     onCancel={onClose} onSuccess={() => { clearResetTicket(ticket.username); setToken(''); setView('FORGOT_REQUEST'); setNotice('Şifreniz güncellendi. Giriş ekranından yeni şifrenizle giriş yapın.'); }} />;
-  return <div role="dialog" aria-modal="true" aria-labelledby="reset-heading" className="fixed inset-0 z-[99999] flex items-center justify-center overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-xs">
+  return <div role="dialog" aria-modal="true" aria-labelledby="reset-heading" className="mobile-window fixed inset-0 z-[99999] flex items-center justify-center overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-xs">
     <div className="my-auto w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 sm:p-8 shadow-2xl space-y-5 text-slate-900 dark:text-slate-100">
       <h2 id="reset-heading" className="flex items-center gap-2 font-bold text-lg"><KeyRound size={22} />Şifremi Unuttum</h2>
       {view === 'WAITING_APPROVAL' ? <div role="status" className="rounded-2xl p-4 border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 space-y-3">

@@ -99,7 +99,7 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
   return (
     <div
       id="media-modal-backdrop"
-      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-0 md:p-6 select-none animate-fadeIn"
+      className="mobile-window fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-0 md:p-6 select-none animate-fadeIn"
       onClick={(e) => {
         if ((e.target as HTMLElement).id === "media-modal-backdrop") {
           onClose();

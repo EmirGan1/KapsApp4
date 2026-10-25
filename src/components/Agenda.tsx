@@ -1006,7 +1006,7 @@ export default function Agenda({
       {/* 4. DEDICATED EXAM DETAIL POPUP MODAL (Pre-Mock 3 Card) */}
       {selectedExamEvent && (
         <div 
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
+          className="mobile-window fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={() => setSelectedExamEvent(null)}
         >
           <div
@@ -1189,7 +1189,7 @@ export default function Agenda({
       {/* 5. Dedicated Food Menu Modal / Bottom Drawer */}
       {selectedFoodEvent && (
         <div 
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-xs transition-opacity duration-200"
+          className="mobile-window fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-xs transition-opacity duration-200"
           onClick={() => setSelectedFoodEvent(null)}
         >
           <div
@@ -1336,7 +1336,7 @@ export default function Agenda({
       {isDayDrawerOpen && selectedDayDate && (
         <div 
           onClick={() => setIsDayDrawerOpen(false)}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity duration-200"
+          className="mobile-window fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity duration-200"
         >
           <div
             className="w-full sm:max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[88dvh] sm:max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-2 duration-200 relative pb-safe"
@@ -1561,7 +1561,7 @@ export default function Agenda({
       {isFormModalOpen && isEmirgan && (
         <div 
           onClick={() => setIsFormModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          className="mobile-window fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
         >
           <div
             className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90dvh] pb-safe"

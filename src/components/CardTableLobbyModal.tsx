@@ -132,7 +132,7 @@ export default function CardTableLobbyModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div className="mobile-window fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
       <div className="bg-slate-900 border-2 border-slate-700/80 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 flex flex-col max-h-[90vh]">
         
         {/* Header */}
@@ -487,3 +487,4 @@ export default function CardTableLobbyModal({
     </div>
   );
 }
+

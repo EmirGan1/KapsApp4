@@ -70,7 +70,7 @@ export const VoiceCallInviteModal: React.FC<VoiceCallInviteModalProps> = ({
         }
       `}</style>
 
-      <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="mobile-window fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
         <div className="bg-slate-900 border border-blue-500/40 shadow-2xl shadow-blue-500/20 rounded-3xl p-6 text-white max-w-sm w-full flex flex-col items-center text-center relative overflow-hidden">
           
           {/* Radial Glowing Background Element */}

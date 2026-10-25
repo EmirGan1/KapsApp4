@@ -974,7 +974,7 @@ export default function App() {
         });
       }}
     >
-      <div className="flex flex-col md:flex-row h-[100dvh] w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <div className="app-shell flex flex-col lg:flex-row h-[100dvh] w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
       {/* Semantic Top Heading for Search Crawlers & Accessibility */}
       <h1 className="sr-only">KapsApp - Canlı Harita ve Çevrimiçi Oyun Platformu</h1>
 
@@ -1006,7 +1006,7 @@ export default function App() {
       />
 
       {/* Mobile Top Header with Dark Mode Toggle & Quick Controls */}
-      <div className="md:hidden flex items-center justify-between px-3.5 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shrink-0 z-20 transition-colors duration-200">
+      <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shrink-0 z-20 transition-colors duration-200">
         <div className="flex items-center gap-2">
           <span className="text-xl font-black text-blue-600 dark:text-blue-500 tracking-tight">KapsApp</span>
           {isEmirgan && (
@@ -1035,7 +1035,7 @@ export default function App() {
       </div>
 
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex w-24 lg:w-64 flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-colors duration-200">
+      <div className="hidden lg:flex w-24 lg:w-64 flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-colors duration-200">
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-black text-blue-600 tracking-tight hidden lg:block">KapsApp</h1>
@@ -1143,7 +1143,7 @@ export default function App() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-full overflow-hidden">
+      <div className="app-content flex-1 flex flex-col min-h-0 min-w-0 relative w-full max-w-full overflow-hidden">
         {activeTab === 'dashboard' && (
           <Dashboard 
             socket={socket} 

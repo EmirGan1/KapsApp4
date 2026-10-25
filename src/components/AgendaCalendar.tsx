@@ -193,7 +193,7 @@ export default function AgendaCalendar({
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     setSelectedDateStr(todayStr);
     // Mobilde bugünü seçip çekmeceyi aç
-    if (typeof window !== "undefined" && window.innerWidth < 768) {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setIsMobileSheetOpen(true);
     }
   };
@@ -224,7 +224,7 @@ export default function AgendaCalendar({
     <div className={`flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden overflow-x-hidden w-full max-w-full ${className}`}>
       
       {/* 1. MOCK EXAM PERIOD INFORMATION BANNER */}
-      <div className="bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-indigo-500/15 border-b border-amber-500/30 p-3.5 sm:p-4 md:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-indigo-500/15 border-b border-amber-500/30 p-3.5 sm:p-4 lg:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center font-black text-base sm:text-lg shadow-sm shrink-0">
             📝
@@ -273,7 +273,7 @@ export default function AgendaCalendar({
 
       {/* 2. CALENDAR HEADER / TOOLBAR */}
       {/* 2A. Mobile View Toolbar (< md) */}
-      <div className="flex md:hidden items-center justify-between w-full px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60">
+      <div className="flex lg:hidden items-center justify-between w-full px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60">
         <button
           type="button"
           onClick={handlePrevMonth}
@@ -309,7 +309,7 @@ export default function AgendaCalendar({
       </div>
 
       {/* 2B. Desktop View Toolbar (>= md) */}
-      <div className="hidden md:flex p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 items-center justify-between gap-3">
+      <div className="hidden lg:flex p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
             <CalendarIcon size={18} />
@@ -352,12 +352,12 @@ export default function AgendaCalendar({
       </div>
 
       {/* 3. GRID & DETAIL SPLIT VIEW */}
-      <div className="grid grid-cols-1 md:grid-cols-12 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800 w-full overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800 w-full overflow-hidden">
         
         {/* Left Side: Calendar Grid (7 columns) */}
-        <div className="w-full md:col-span-7 lg:col-span-7 p-2 sm:p-3 md:p-5 overflow-hidden">
+        <div className="w-full lg:col-span-7 lg:col-span-7 p-2 sm:p-3 lg:p-5 overflow-hidden">
           {/* Weekday Names */}
-          <div className="grid grid-cols-7 mb-1.5 md:mb-2 text-center text-[11px] sm:text-xs font-bold text-slate-400">
+          <div className="grid grid-cols-7 mb-1.5 lg:mb-2 text-center text-[11px] sm:text-xs font-bold text-slate-400">
             {WEEKDAY_NAMES_TR.map((wd, i) => (
               <div key={wd} className={i >= 5 ? "text-rose-500 font-bold" : ""}>
                 {wd}
@@ -378,7 +378,7 @@ export default function AgendaCalendar({
                   key={day.dateStr}
                   type="button"
                   onClick={() => handleDaySelect(day.dateStr)}
-                  className={`w-full aspect-square min-h-[42px] sm:min-h-[48px] md:min-h-[76px] md:aspect-auto p-1 sm:p-1.5 rounded-xl md:rounded-2xl flex flex-col justify-between transition-all cursor-pointer relative text-left border overflow-hidden ${
+                  className={`w-full aspect-square min-h-[42px] sm:min-h-[48px] lg:min-h-[76px] lg:aspect-auto p-1 sm:p-1.5 rounded-xl lg:rounded-2xl flex flex-col justify-between transition-all cursor-pointer relative text-left border overflow-hidden ${
                     isSelected
                       ? "border-sky-500 ring-2 ring-sky-500 bg-sky-500/10 dark:bg-sky-500/15 font-bold"
                       : day.isInMockPeriod
@@ -402,12 +402,12 @@ export default function AgendaCalendar({
 
                     {/* Masaüstünde Nabız Noktası */}
                     {hasEnrolledExam && (
-                      <span className="hidden md:inline-block w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-400/30 animate-pulse" />
+                      <span className="hidden lg:inline-block w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-400/30 animate-pulse" />
                     )}
                   </div>
 
                   {/* MOBİL İÇİN RENKLİ DURUM NOKTALARI (DOTS / INDICATORS) (< md) */}
-                  <div className="flex md:hidden items-center justify-center gap-0.5 sm:gap-1 mt-auto pb-0.5 w-full">
+                  <div className="flex lg:hidden items-center justify-center gap-0.5 sm:gap-1 mt-auto pb-0.5 w-full">
                     {/* Sınav Noktası (Sarı/Amber) */}
                     {dayExams.length > 0 && (
                       <span 
@@ -429,7 +429,7 @@ export default function AgendaCalendar({
 
                   {/* MASAÜSTÜ İÇİN DETAYLI ETİKETLER (>= md) */}
                   {dayExams.length > 0 && (
-                    <div className="hidden md:block space-y-0.5 mt-1 w-full">
+                    <div className="hidden lg:block space-y-0.5 mt-1 w-full">
                       {dayExams.slice(0, 2).map((ex) => {
                         const isEnrolled = isUserEnrolledInExam(ex, currentUserRoles);
                         return (
@@ -465,7 +465,7 @@ export default function AgendaCalendar({
         </div>
 
         {/* Right Side: Desktop Day Schedule & Overlay Detail Panel (HIDDEN ON MOBILE) */}
-        <div className="hidden md:flex md:col-span-5 lg:col-span-5 p-4 sm:p-5 bg-slate-50/50 dark:bg-slate-900/40 flex-col justify-between min-w-0">
+        <div className="hidden lg:flex lg:col-span-5 lg:col-span-5 p-4 sm:p-5 bg-slate-50/50 dark:bg-slate-900/40 flex-col justify-between min-w-0">
           <div>
             <div className="flex items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-200/80 dark:border-slate-800">
               <div className="min-w-0">
@@ -590,7 +590,7 @@ export default function AgendaCalendar({
       {/* 5. MOCK SINAV VE İKAME DERS DETAY POPUP / MODAL (z-[60] ÜSTTE AÇILIR) */}
       {selectedExamDetail && (
         <div 
-          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
+          className="mobile-window fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={() => setSelectedExamDetail(null)}
         >
           <div 
