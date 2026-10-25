@@ -40,6 +40,42 @@ export function getApiUrl(path: string = ""): string {
 }
 
 /**
+ * Returns authenticated download URL for a file.
+ * Appends token, username, and userId query parameters so standard browser <a> clicks
+ * and downloads are attributed to the active user in the audit logs.
+ */
+export function getFileDownloadUrl(fileId: number | string): string {
+  let token = "";
+  let username = "";
+  let userId = "";
+
+  if (typeof localStorage !== "undefined") {
+    token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token") || "";
+    username = localStorage.getItem("lan_username") || localStorage.getItem("username") || "";
+    userId = localStorage.getItem("lan_user_id") || localStorage.getItem("userId") || localStorage.getItem("user_id") || "";
+
+    if (!username || !userId) {
+      try {
+        const userJson = localStorage.getItem("lan_user") || localStorage.getItem("user") || localStorage.getItem("currentUser");
+        if (userJson) {
+          const u = JSON.parse(userJson);
+          if (!username && u.username) username = u.username;
+          if (!userId && u.id) userId = String(u.id);
+        }
+      } catch (e) {}
+    }
+  }
+
+  const params = new URLSearchParams();
+  if (token) params.set("token", token);
+  if (username) params.set("username", username);
+  if (userId) params.set("userId", userId);
+
+  const qs = params.toString();
+  return getApiUrl(`/api/files/${fileId}/download${qs ? `?${qs}` : ""}`);
+}
+
+/**
  * Returns Socket.IO URL
  */
 export function getSocketUrl(): string {

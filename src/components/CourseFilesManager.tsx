@@ -19,7 +19,7 @@ import {
   Sparkles,
   ExternalLink
 } from 'lucide-react';
-import { getApiUrl, getAuthHeaders } from '../utils/api';
+import { getApiUrl, getAuthHeaders, getFileDownloadUrl } from '../utils/api';
 import FileUploadModal, { DocumentType, FileUploadPayload } from './FileUploadModal';
 import CourseMaterialCard, { formatTopics, parseTopics } from './CourseMaterialCard';
 import DownloadHistoryModal from './DownloadHistoryModal';
@@ -782,7 +782,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
                   <span className="hidden sm:inline">Tam Ekran</span>
                 </a>
                 <a
-                  href={previewFileId ? getApiUrl(`/api/files/${previewFileId}/download`) : previewPdfUrl}
+                  href={previewFileId ? getFileDownloadUrl(previewFileId) : previewPdfUrl}
                   download={previewPdfTitle}
                   target="_blank"
                   rel="noreferrer"

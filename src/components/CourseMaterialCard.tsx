@@ -20,7 +20,7 @@ import {
   Info
 } from 'lucide-react';
 import { CourseFileItem } from './CourseFilesManager';
-import { getApiUrl } from '../utils/api';
+import { getApiUrl, getFileDownloadUrl } from '../utils/api';
 
 export type DocumentType = 'question_paper' | 'mark_scheme' | 'notes' | 'summary' | 'other';
 
@@ -390,7 +390,7 @@ export const CourseMaterialCard: React.FC<CourseMaterialCardProps> = ({
             <Eye className="w-4 h-4 sm:w-5 sm:h-5"/>
           </button>
           <a 
-            href={getApiUrl(`/api/files/${file.id}/download`)}
+            href={getFileDownloadUrl(file.id)}
             download={rawFilename}
             target="_blank"
             rel="noreferrer"

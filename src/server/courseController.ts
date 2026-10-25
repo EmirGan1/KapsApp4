@@ -94,31 +94,75 @@ export function cleanParseTopics(topicsData: any, fallbackTag?: any): string[] {
 export async function getAuthUserFromRequest(req: Request, client: any) {
   try {
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ")
-      ? authHeader.substring(7)
-      : ((req.query.token as string) || (req.body?.token as string) || "");
+    const token = (
+      authHeader?.startsWith("Bearer ")
+        ? authHeader.substring(7)
+        : ((req.query.token as string) || (req.body?.token as string) || "")
+    ).trim();
 
     const xUsername = (
       (req.headers["x-username"] as string) ||
       (req.headers["username"] as string) ||
       (req.query.username as string) ||
+      (req.query.u as string) ||
+      (req.body?.username as string) ||
       ""
     ).trim();
 
+    const rawUserId = req.query.userId || req.query.user_id || req.body?.userId;
+
+    // 1. Check by token in users table
     if (token) {
       const userRes = await client.execute({
-        sql: "SELECT id, username, avatar, color, is_admin, role FROM users WHERE token = ?",
+        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE token = ?",
         args: [token]
+      });
+      if (userRes.rows.length > 0) return userRes.rows[0];
+
+      // Also check user_sessions
+      try {
+        const sessRes = await client.execute({
+          sql: `SELECT u.id, u.username, u.name, u.avatar, u.color, u.is_admin, u.role 
+                FROM user_sessions s 
+                JOIN users u ON s.user_id = u.id 
+                WHERE s.token = ?`,
+          args: [token]
+        });
+        if (sessRes.rows.length > 0) return sessRes.rows[0];
+      } catch (sessErr) {}
+    }
+
+    // 2. Check by username
+    if (xUsername) {
+      const userRes = await client.execute({
+        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE LOWER(username) = LOWER(?)",
+        args: [xUsername]
       });
       if (userRes.rows.length > 0) return userRes.rows[0];
     }
 
-    if (xUsername) {
+    // 3. Check by numeric userId
+    if (rawUserId && !isNaN(Number(rawUserId))) {
       const userRes = await client.execute({
-        sql: "SELECT id, username, avatar, color, is_admin, role FROM users WHERE LOWER(username) = LOWER(?)",
-        args: [xUsername]
+        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE id = ?",
+        args: [Number(rawUserId)]
       });
       if (userRes.rows.length > 0) return userRes.rows[0];
+    }
+
+    // 4. Fallback: check by client IP address
+    const clientIp = (
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+      req.socket.remoteAddress ||
+      ""
+    ).replace(/^::ffff:/, "").trim();
+
+    if (clientIp && clientIp !== "127.0.0.1" && clientIp !== "localhost") {
+      const ipRes = await client.execute({
+        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE last_ip = ? OR signup_ip = ? ORDER BY id DESC LIMIT 1",
+        args: [clientIp, clientIp]
+      });
+      if (ipRes.rows.length > 0) return ipRes.rows[0];
     }
 
     return null;
@@ -287,10 +331,57 @@ export function registerCourseRoutes(
         const fileObj = fileRes.rows[0];
         const fileIdNum = Number(fileObj.id);
 
-        // 1. Identify downloading user (authenticated or anonymous student)
+        // 1. Identify downloading user (authenticated or query or anonymous student)
         const authUser = await getAuthUserFromRequest(req, client);
-        const userId = authUser ? Number(authUser.id) : null;
-        const username = authUser?.username ? String(authUser.username).trim() : "Anonim Öğrenci";
+        let userId: number | null = authUser ? Number(authUser.id) : null;
+        let username = authUser?.username ? String(authUser.username).trim() : "";
+
+        const queryUserId = Number(req.query.userId || req.query.user_id);
+        if (!userId && !isNaN(queryUserId) && queryUserId > 0) {
+          userId = queryUserId;
+        }
+
+        const queryUsername = (
+          (req.query.username as string) ||
+          (req.query.u as string) ||
+          (req.headers["x-username"] as string) ||
+          ""
+        ).trim();
+
+        if (!username && queryUsername) {
+          username = queryUsername;
+        }
+
+        // If username found but userId missing, resolve id from users table
+        if (username && !userId) {
+          try {
+            const uRes = await client.execute({
+              sql: "SELECT id, username FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1",
+              args: [username]
+            });
+            if (uRes.rows.length > 0) {
+              userId = Number(uRes.rows[0].id);
+              username = String(uRes.rows[0].username);
+            }
+          } catch (e) {}
+        }
+
+        // If userId found but username missing or anonymous, resolve username from users table
+        if (userId && (!username || username === "Anonim Öğrenci")) {
+          try {
+            const uRes = await client.execute({
+              sql: "SELECT id, username FROM users WHERE id = ? LIMIT 1",
+              args: [userId]
+            });
+            if (uRes.rows.length > 0) {
+              username = String(uRes.rows[0].username);
+            }
+          } catch (e) {}
+        }
+
+        if (!username) {
+          username = "Anonim Öğrenci";
+        }
         
         // 2. Identify IP address (5651 & security audit)
         const rawIp =
@@ -298,6 +389,20 @@ export function registerCourseRoutes(
           req.socket.remoteAddress ||
           "Bilinmiyor";
         const ipAddress = rawIp.replace(/^::ffff:/, "");
+
+        // If user is still anonymous, attempt to identify by IP from recent user logins
+        if ((!userId || username === "Anonim Öğrenci") && ipAddress && ipAddress !== "127.0.0.1" && ipAddress !== "localhost") {
+          try {
+            const ipMatchRes = await client.execute({
+              sql: "SELECT id, username FROM users WHERE last_ip = ? OR signup_ip = ? ORDER BY id DESC LIMIT 1",
+              args: [ipAddress, ipAddress]
+            });
+            if (ipMatchRes.rows.length > 0) {
+              userId = Number(ipMatchRes.rows[0].id);
+              username = String(ipMatchRes.rows[0].username);
+            }
+          } catch (e) {}
+        }
 
         // 3. Record download in file_downloads audit log
         try {
@@ -415,15 +520,39 @@ export function registerCourseRoutes(
         const fileIdNum = Number(fileObj.id);
         const totalDownloads = Number(fileObj.download_count || 0);
 
-        // Fetch logs with uploader user profile info
+        // Retroactively reconcile previous anonymous downloads with users if matching IP or username
+        try {
+          await client.execute(`
+            UPDATE file_downloads 
+            SET user_id = (SELECT u.id FROM users u WHERE u.last_ip = file_downloads.ip_address OR u.signup_ip = file_downloads.ip_address LIMIT 1),
+                username = (SELECT u.username FROM users u WHERE u.last_ip = file_downloads.ip_address OR u.signup_ip = file_downloads.ip_address LIMIT 1)
+            WHERE (username = 'Anonim Öğrenci' OR username = 'Anonim' OR user_id IS NULL)
+              AND ip_address IS NOT NULL
+              AND EXISTS (SELECT 1 FROM users u WHERE u.last_ip = file_downloads.ip_address OR u.signup_ip = file_downloads.ip_address)
+          `);
+        } catch (reconcileErr) {}
+
+        // Fetch logs joined with users table to get full user name, avatar, color, role, and resolved ID
         const logsRes = await client.execute({
           sql: `SELECT d.id, d.file_id, d.user_id, d.username, d.downloaded_at, d.ip_address,
-                       u.avatar as user_avatar, u.color as user_color, u.role as user_role
+                       COALESCE(u.id, u_by_name.id, u_by_ip.id, d.user_id) as resolved_user_id,
+                       COALESCE(u.username, u_by_name.username, u_by_ip.username, d.username) as resolved_username,
+                       COALESCE(u.name, u_by_name.name, u_by_ip.name) as user_name,
+                       COALESCE(u.avatar, u_by_name.avatar, u_by_ip.avatar) as user_avatar,
+                       COALESCE(u.color, u_by_name.color, u_by_ip.color) as user_color,
+                       COALESCE(u.role, u_by_name.role, u_by_ip.role) as user_role
                 FROM file_downloads d
-                LEFT JOIN users u ON d.user_id = u.id
+                LEFT JOIN users u ON (d.user_id IS NOT NULL AND d.user_id = u.id)
+                LEFT JOIN users u_by_name ON (u.id IS NULL AND d.username IS NOT NULL AND d.username NOT IN ('Anonim Öğrenci', 'Anonim', '') AND LOWER(d.username) = LOWER(u_by_name.username))
+                LEFT JOIN (
+                  SELECT last_ip, id, username, name, avatar, color, role
+                  FROM users
+                  WHERE last_ip IS NOT NULL AND last_ip != '' AND last_ip != '127.0.0.1' AND last_ip != 'localhost'
+                  GROUP BY last_ip
+                ) u_by_ip ON (u.id IS NULL AND u_by_name.id IS NULL AND d.ip_address IS NOT NULL AND d.ip_address = u_by_ip.last_ip)
                 WHERE d.file_id = ?
                 ORDER BY d.downloaded_at DESC
-                LIMIT 100`,
+                LIMIT 500`,
           args: [fileIdNum]
         });
 
@@ -433,11 +562,75 @@ export function registerCourseRoutes(
         });
         const totalLogsInDb = Number(totalLogsCountRes.rows[0]?.cnt || 0);
 
+        // Group by user for aggregated "User Name, No (#ID), Download Count, and Download Times"
+        const userSummaryMap = new Map<string, {
+          user_id: number | null;
+          username: string;
+          name: string | null;
+          avatar: string | null;
+          color: string | null;
+          role: string | null;
+          download_count: number;
+          last_downloaded_at: string;
+          first_downloaded_at: string;
+          download_times: string[];
+          ip_addresses: string[];
+        }>();
+
+        const formattedLogs = logsRes.rows.map((r: any) => {
+          const finalUserId = r.resolved_user_id ? Number(r.resolved_user_id) : (r.user_id ? Number(r.user_id) : null);
+          const finalUsername = r.resolved_username || r.username || "Anonim Öğrenci";
+          const finalName = r.user_name || null;
+          const userKey = finalUserId ? `id_${finalUserId}` : `uname_${finalUsername.toLowerCase()}`;
+
+          if (!userSummaryMap.has(userKey)) {
+            userSummaryMap.set(userKey, {
+              user_id: finalUserId,
+              username: finalUsername,
+              name: finalName,
+              avatar: r.user_avatar || null,
+              color: r.user_color || null,
+              role: r.user_role || null,
+              download_count: 0,
+              last_downloaded_at: r.downloaded_at,
+              first_downloaded_at: r.downloaded_at,
+              download_times: [],
+              ip_addresses: []
+            });
+          }
+
+          const uEntry = userSummaryMap.get(userKey)!;
+          uEntry.download_count += 1;
+          uEntry.download_times.push(r.downloaded_at);
+          if (r.ip_address && !uEntry.ip_addresses.includes(r.ip_address)) {
+            uEntry.ip_addresses.push(r.ip_address);
+          }
+          if (new Date(r.downloaded_at) > new Date(uEntry.last_downloaded_at)) {
+            uEntry.last_downloaded_at = r.downloaded_at;
+          }
+          if (new Date(r.downloaded_at) < new Date(uEntry.first_downloaded_at)) {
+            uEntry.first_downloaded_at = r.downloaded_at;
+          }
+
+          return {
+            id: Number(r.id),
+            file_id: Number(r.file_id),
+            user_id: finalUserId,
+            username: finalUsername,
+            name: finalName,
+            downloaded_at: r.downloaded_at,
+            ip_address: r.ip_address || null,
+            user_avatar: r.user_avatar || null,
+            user_color: r.user_color || null,
+            user_role: r.user_role || null
+          };
+        });
+
+        // Sort users summary by download_count DESC
+        const usersSummary = Array.from(userSummaryMap.values()).sort((a, b) => b.download_count - a.download_count);
+
         // Distinct users count
-        const uniqueUsernames = new Set(
-          logsRes.rows.map((r: any) => String(r.username || "").trim().toLowerCase())
-        );
-        const uniqueDownloadersCount = uniqueUsernames.size;
+        const uniqueDownloadersCount = usersSummary.length;
 
         // Graceful fallback: pre-feature downloads count
         const preFeatureCount = Math.max(0, totalDownloads - totalLogsInDb);
@@ -448,17 +641,8 @@ export function registerCourseRoutes(
           total_downloads: totalDownloads,
           unique_downloaders_count: uniqueDownloadersCount,
           pre_feature_count: preFeatureCount,
-          logs: logsRes.rows.map((r: any) => ({
-            id: Number(r.id),
-            file_id: Number(r.file_id),
-            user_id: r.user_id ? Number(r.user_id) : null,
-            username: r.username,
-            downloaded_at: r.downloaded_at,
-            ip_address: r.ip_address || null,
-            user_avatar: r.user_avatar || null,
-            user_color: r.user_color || null,
-            user_role: r.user_role || null
-          }))
+          users_summary: usersSummary,
+          logs: formattedLogs
         });
       } catch (err: any) {
         console.error("GET download-logs error:", err);
