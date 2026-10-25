@@ -70,6 +70,7 @@ import { BattleRoyaleManager, runHeadlessBattleRoyaleTest } from "./src/server/b
 import { runBattleRoyaleChaosSimulation } from "./src/server/battleRoyaleChaosTest.ts";
 import { PartyManager, runHeadlessPartyTest } from "./src/server/partyServer.ts";
 import { BilliardsManager } from "./src/server/billiardsServer.ts";
+import { KapstorialManager } from "./src/server/kapstorialServer.ts";
 
 dotenv.config();
 
@@ -206,6 +207,9 @@ async function initDb() {
   } catch (e) {}
   try {
     await client.execute(`ALTER TABLE users ADD COLUMN royale_matches INTEGER DEFAULT 0`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN kapstorial_wins INTEGER DEFAULT 0`);
   } catch (e) {}
   await client.execute(`CREATE TABLE IF NOT EXISTS friends (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2331,6 +2335,7 @@ async function startServer() {
   const battleRoyaleManager = new BattleRoyaleManager(io, client);
   const partyManager = new PartyManager(io, client);
   const billiardsManager = new BilliardsManager(io, client);
+  const kapstorialManager = new KapstorialManager(io, client);
   let closeAnyTableAndNotify: (tableId: string) => boolean;
   let refundBlackjackTableBets: (tableId: string, reason: string) => Promise<boolean>;
 
@@ -2499,6 +2504,15 @@ async function startServer() {
       const tid = String(bTable.id);
       if (!addedIds.has(tid)) {
         list.push(bTable as any);
+        addedIds.add(tid);
+      }
+    }
+
+    // 9. Kapstorial tables (Territorial.io clone)
+    for (const kTable of kapstorialManager.getUnifiedTables()) {
+      const tid = String(kTable.id);
+      if (!addedIds.has(tid)) {
+        list.push(kTable as any);
         addedIds.add(tid);
       }
     }
@@ -7239,6 +7253,7 @@ async function startServer() {
             gameType === 'batak' ? 'batak_wins' : 
             (gameType as string) === 'poker' ? 'poker_wins' : 
             (gameType as string) === 'royale' ? 'royale_wins' : 
+            (gameType as string) === 'kapstorial' ? 'kapstorial_wins' : 
             'okey_wins';
 
           result = await client.execute({
@@ -7249,7 +7264,8 @@ async function startServer() {
                          COALESCE(blackjack_wins, 0) AS blackjack_wins, 
                          COALESCE(batak_wins, 0) AS batak_wins,
                          COALESCE(poker_wins, 0) AS poker_wins,
-                         COALESCE(royale_wins, 0) AS royale_wins 
+                         COALESCE(royale_wins, 0) AS royale_wins,
+                         COALESCE(kapstorial_wins, 0) AS kapstorial_wins 
                   FROM users ORDER BY COALESCE(${orderCol}, 0) DESC, id ASC LIMIT 10`,
             args: []
           });
@@ -7505,6 +7521,13 @@ async function startServer() {
         socket.join(tid);
         const room = battleRoyaleManager.rooms.get(tid);
         if (cb) cb({ success: true, tableId: tid, room: room ? battleRoyaleManager.getPublicRoomState(room) : null });
+        return;
+      }
+      if (gameType === "kapstorial" || kapstorialManager.rooms.has(tid)) {
+        socket.data.currentKapstorialRoom = tid;
+        socket.join(`kapstorial:${tid}`);
+        const room = kapstorialManager.rooms.get(tid);
+        if (cb) cb({ success: true, tableId: tid, room: room ? kapstorialManager.getPublicRoomState(room) : null });
         return;
       }
       if (cb) cb({ success: true });
@@ -8066,6 +8089,25 @@ async function startServer() {
         if (cb) cb(res);
       } catch (err: any) {
         if (cb) cb({ success: false, error: err.message });
+      }
+    });
+
+    // ============================================================
+    // KAPSTORIAL (TERRITORIAL.IO CLONE) SOCKET HANDLERS
+    // ============================================================
+    kapstorialManager.handleSocketEvents(socket, user);
+
+    socket.on("kapstorial:send_invite", (data: { targetUserId: number; roomCode: string; mapName?: string; bet?: number }) => {
+      const targetSockId = onlineUsers.get(Number(data.targetUserId));
+      if (targetSockId) {
+        io.to(targetSockId).emit("kapstorial:invite_received", {
+          roomCode: data.roomCode,
+          inviterId: user.id,
+          inviterName: user.username,
+          inviterAvatar: user.avatar,
+          mapName: data.mapName || "Dünya",
+          bet: data.bet || 0
+        });
       }
     });
 
@@ -11806,6 +11848,16 @@ async function startServer() {
       for (const [pId, pRoom] of partyManager.rooms.entries()) {
         if (pRoom.players.some(p => p.userId === userIdNum)) {
           partyManager.leaveRoom(pId, userIdNum);
+        }
+      }
+
+      const kapstorialRoomId = socket.data.currentKapstorialRoom;
+      if (kapstorialRoomId) {
+        kapstorialManager.leaveRoom(kapstorialRoomId, userIdNum);
+      }
+      for (const [kId, kRoom] of kapstorialManager.rooms.entries()) {
+        if (kRoom.players.some(p => p.userId === userIdNum)) {
+          kapstorialManager.leaveRoom(kId, userIdNum);
         }
       }
       broadcastActiveTables();
