@@ -647,9 +647,11 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
     fetchRoles();
 
     const interval = setInterval(() => {
-      fetchPendingUsers();
-      fetchActiveTables();
-    }, 5000);
+      if (document.visibilityState === "visible") {
+        fetchPendingUsers();
+        fetchActiveTables();
+      }
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [fetchPendingUsers, fetchUsers, fetchOverview, fetchActiveTables, fetchRoles]);

@@ -236,12 +236,15 @@ export default function App() {
     };
   }, []);
 
-  // Active Screen Time Tracking Heartbeat (Every 15s)
+  // Active Screen Time Tracking Heartbeat (Every 60s, only while tab is visible)
   useEffect(() => {
     if (!token) return;
 
-    const intervalSeconds = 15;
+    const intervalSeconds = 60;
     const interval = setInterval(async () => {
+      // Avoid firing background requests if the user switched tabs or minimized browser
+      if (document.visibilityState !== "visible") return;
+
       try {
         await fetch(getApiUrl("/api/user/screen-time"), {
           method: "POST",

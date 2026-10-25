@@ -36,7 +36,11 @@ export default function PasswordResetRequests({ socket }: { socket: Socket | nul
   }, []);
   useEffect(() => {
     void fetchRequests();
-    const timer = setInterval(() => { void fetchRequests(); }, 15000);
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchRequests();
+      }
+    }, 60000);
     socket?.on('password_reset_updated', fetchRequests);
     return () => { clearInterval(timer); socket?.off('password_reset_updated', fetchRequests); };
   }, [socket, fetchRequests]);

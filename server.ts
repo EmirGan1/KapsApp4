@@ -583,13 +583,20 @@ async function initDb() {
     await client.execute("CREATE INDEX IF NOT EXISTS idx_global_messages_created ON global_messages(created_at DESC)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id, created_at DESC)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_posts_subject ON posts(subject)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_followers_pair ON followers(follower_id, following_id)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_followers_following ON followers(following_id)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_likes_post_user ON likes(post_id, user_id)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_comments_post_created ON comments(post_id, created_at ASC)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id, created_at DESC)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_friends_pair ON friends(user1, user2)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_friends_u1 ON friends(user1)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_friends_u2 ON friends(user2)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)");
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_agenda_events_date ON agenda_events(event_date)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(token)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)");
     await client.execute("CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token)");
@@ -1014,11 +1021,55 @@ async function startServer() {
         ...row,
         roles: parseRoles(row.roles)
       };
-      userCache.set(numId, { data: u, expiresAt: now + 45000 });
+      userCache.set(numId, { data: u, expiresAt: now + 60000 });
       return u;
     } catch (e) {
       return null;
     }
+  };
+
+  // High-performance batch user fetcher to eliminate N+1 database queries
+  const getUsersBatch = async (userIds: number[]): Promise<Map<number, any>> => {
+    const userMap = new Map<number, any>();
+    if (!Array.isArray(userIds) || userIds.length === 0) return userMap;
+
+    const now = Date.now();
+    const missingIds: number[] = [];
+
+    for (const rawId of userIds) {
+      const id = Number(rawId);
+      if (!id) continue;
+      const cached = userCache.get(id);
+      if (cached && cached.expiresAt > now) {
+        userMap.set(id, cached.data);
+      } else {
+        missingIds.push(id);
+      }
+    }
+
+    if (missingIds.length > 0) {
+      const uniqueMissing = Array.from(new Set(missingIds));
+      const placeholders = uniqueMissing.map(() => "?").join(",");
+      try {
+        const res = await client.execute({
+          sql: `SELECT id, username, avatar, color, chips, okey_wins, uno_wins, blackjack_wins, batak_wins, signup_ip, last_ip, isBanned, locationConsent, is_admin, roles FROM users WHERE id IN (${placeholders})`,
+          args: uniqueMissing
+        });
+        for (const row of res.rows) {
+          const u = {
+            ...row,
+            roles: parseRoles((row as any).roles)
+          };
+          const uid = Number((row as any).id);
+          userCache.set(uid, { data: u, expiresAt: now + 60000 });
+          userMap.set(uid, u);
+        }
+      } catch (err) {
+        console.error("getUsersBatch error:", err);
+      }
+    }
+
+    return userMap;
   };
 
 
@@ -6117,11 +6168,21 @@ async function startServer() {
 
       if (payload.targetUserId === "all") {
         io.emit("global:kapscare", payload);
+        io.emit("kapscare:trigger", payload);
       } else {
         const targetIdNum = Number(payload.targetUserId);
+        let deliveredCount = 0;
+        io.sockets.sockets.forEach((s) => {
+          if (Number(s.data.user?.id) === targetIdNum) {
+            s.emit("global:kapscare", payload);
+            s.emit("kapscare:trigger", payload);
+            deliveredCount++;
+          }
+        });
         const targetSocketId = onlineUsers.get(targetIdNum);
-        if (targetSocketId) {
+        if (targetSocketId && deliveredCount === 0) {
           io.to(targetSocketId).emit("global:kapscare", payload);
+          io.to(targetSocketId).emit("kapscare:trigger", payload);
         }
       }
 
@@ -6163,11 +6224,21 @@ async function startServer() {
 
       if (payload.targetUserId === "all") {
         io.emit("global:custom_popup", payload);
+        io.emit("custom_popup:trigger", payload);
       } else {
         const targetIdNum = Number(payload.targetUserId);
+        let deliveredCount = 0;
+        io.sockets.sockets.forEach((s) => {
+          if (Number(s.data.user?.id) === targetIdNum) {
+            s.emit("global:custom_popup", payload);
+            s.emit("custom_popup:trigger", payload);
+            deliveredCount++;
+          }
+        });
         const targetSocketId = onlineUsers.get(targetIdNum);
-        if (targetSocketId) {
+        if (targetSocketId && deliveredCount === 0) {
           io.to(targetSocketId).emit("global:custom_popup", payload);
+          io.to(targetSocketId).emit("custom_popup:trigger", payload);
         }
       }
 
@@ -6506,14 +6577,18 @@ async function startServer() {
         }
 
         const postIds = postsRes.rows.map((p: any) => p.id);
+        const userIds = postsRes.rows.map((p: any) => Number(p.user_id)).filter(Boolean);
+        
         let likesRes: any = { rows: [] };
         if (postIds.length > 0) {
           const placeholders = postIds.map(() => "?").join(",");
           likesRes = await client.execute({ sql: `SELECT id, post_id, user_id FROM likes WHERE post_id IN (${placeholders})`, args: postIds });
         }
         
-        const populated = await Promise.all(postsRes.rows.map(async (p: any) => {
-          const pUser = await getUser(p.user_id as number);
+        const usersMap = await getUsersBatch(userIds);
+
+        const populated = postsRes.rows.map((p: any) => {
+          const pUser = usersMap.get(Number(p.user_id));
           const postLikes = likesRes.rows.filter((l: any) => l.post_id === p.id);
           const is_liked = postLikes.some((l: any) => l.user_id === user.id);
           const ext = (p.image as string || "").split(".").pop()?.toLowerCase();
@@ -6528,7 +6603,7 @@ async function startServer() {
             likes_count: postLikes.length, 
             is_liked 
           };
-        }));
+        });
         if (typeof callback === "function") callback(populated);
       } catch(e) {
         if (typeof callback === "function") callback([]);
@@ -6688,15 +6763,21 @@ async function startServer() {
     });
 
     socket.on("get_comments", async (postId, cb) => {
-      const commentsRes = await client.execute({
-        sql: "SELECT id, post_id, user_id, content, created_at FROM comments WHERE post_id = ? ORDER BY created_at ASC",
-        args: [postId]
-      });
-      const populated = await Promise.all(commentsRes.rows.map(async (c: any) => {
-        const cUser = await getUser(c.user_id as number);
-        return { ...c, username: cUser?.username, avatar: cUser?.avatar, color: cUser?.color };
-      }));
-      cb(populated);
+      try {
+        const commentsRes = await client.execute({
+          sql: "SELECT id, post_id, user_id, content, created_at FROM comments WHERE post_id = ? ORDER BY created_at ASC",
+          args: [postId]
+        });
+        const userIds = commentsRes.rows.map((c: any) => Number(c.user_id)).filter(Boolean);
+        const usersMap = await getUsersBatch(userIds);
+        const populated = commentsRes.rows.map((c: any) => {
+          const cUser = usersMap.get(Number(c.user_id));
+          return { ...c, username: cUser?.username || "Kullanıcı", avatar: cUser?.avatar || null, color: cUser?.color || null };
+        });
+        if (typeof cb === "function") cb(populated);
+      } catch (e) {
+        if (typeof cb === "function") cb([]);
+      }
     });
 
     const handleSocketAddComment = async (data: any, cb?: any) => {
@@ -6930,16 +7011,22 @@ async function startServer() {
 
     // Stories (last 24 hours)
     socket.on("get_stories", async (cb) => {
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const storiesRes = await client.execute({
-        sql: "SELECT id, user_id, image, created_at FROM stories WHERE created_at >= ? ORDER BY created_at DESC",
-        args: [oneDayAgo]
-      });
-      const populated = await Promise.all(storiesRes.rows.map(async (s: any) => {
-        const sUser = await getUser(s.user_id as number);
-        return { ...s, username: sUser?.username, avatar: sUser?.avatar, color: sUser?.color };
-      }));
-      cb(populated);
+      try {
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const storiesRes = await client.execute({
+          sql: "SELECT id, user_id, image, created_at FROM stories WHERE created_at >= ? ORDER BY created_at DESC",
+          args: [oneDayAgo]
+        });
+        const userIds = storiesRes.rows.map((s: any) => Number(s.user_id)).filter(Boolean);
+        const usersMap = await getUsersBatch(userIds);
+        const populated = storiesRes.rows.map((s: any) => {
+          const sUser = usersMap.get(Number(s.user_id));
+          return { ...s, username: sUser?.username || "Kullanıcı", avatar: sUser?.avatar || null, color: sUser?.color || null };
+        });
+        if (typeof cb === "function") cb(populated);
+      } catch (e) {
+        if (typeof cb === "function") cb([]);
+      }
     });
     
     socket.on("create_story", async (image, cb) => {

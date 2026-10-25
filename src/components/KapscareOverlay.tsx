@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Socket } from "socket.io-client";
-import { X, Volume2, Flame, AlertTriangle } from "lucide-react";
+import { X, Volume2, AlertTriangle, VolumeX } from "lucide-react";
 
 interface KapscareOverlayProps {
   socket: Socket | null;
@@ -16,114 +16,110 @@ interface KapscareEventPayload {
 export default function KapscareOverlay({ socket, currentUserId }: KapscareOverlayProps) {
   const [isActive, setIsActive] = useState<boolean>(false);
   const [hasError, setHasError] = useState<boolean>(false);
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  const [showTapToUnmute, setShowTapToUnmute] = useState<boolean>(false);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isAudioUnlockedRef = useRef<boolean>(false);
 
   const videoSrc = "/assets/aistudio/Ads_z_tasar_m_cc5bf91b.mp4";
 
-  // Trigger high-intensity screen jumpscare
+  // Pre-unlock audio on user gesture anywhere on screen
+  useEffect(() => {
+    const handleUserGesture = () => {
+      isAudioUnlockedRef.current = true;
+      if (videoRef.current) {
+        // Pre-warm video element on first touch
+        videoRef.current.load();
+      }
+      window.removeEventListener("touchstart", handleUserGesture);
+      window.removeEventListener("click", handleUserGesture);
+    };
+
+    window.addEventListener("touchstart", handleUserGesture, { passive: true, once: true });
+    window.addEventListener("click", handleUserGesture, { passive: true, once: true });
+
+    return () => {
+      window.removeEventListener("touchstart", handleUserGesture);
+      window.removeEventListener("click", handleUserGesture);
+    };
+  }, []);
+
+  // Trigger high-intensity jumpscare with video's own sound
   const triggerJumpscare = () => {
-    // Clear any previous timer
-    if (autoCloseTimerRef.current) {
-      clearTimeout(autoCloseTimerRef.current);
-      autoCloseTimerRef.current = null;
+    if (safetyTimeoutRef.current) {
+      clearTimeout(safetyTimeoutRef.current);
+      safetyTimeoutRef.current = null;
     }
 
     setHasError(false);
+    setShowTapToUnmute(false);
+    setIsAudioMuted(false);
     setIsActive(true);
 
-    // Screen Shake on body for extra chaotic punch
+    // Screen Shake on body for intense punch
     document.body.classList.add("kap-shake-active");
 
-    // Audio boost: Play sudden loud jumpscare screech using Web Audio API in case video audio is muted or low
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtx) {
-        const ctx = new AudioCtx();
-        audioContextRef.current = ctx;
-        const now = ctx.currentTime;
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = 0;
+      video.volume = 1.0;
+      video.muted = false;
 
-        // Oscillators for intense horror screech
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc1.type = "sawtooth";
-        osc1.frequency.setValueAtTime(320, now);
-        osc1.frequency.exponentialRampToValueAtTime(1600, now + 0.15);
-        osc1.frequency.exponentialRampToValueAtTime(220, now + 0.8);
-
-        osc2.type = "square";
-        osc2.frequency.setValueAtTime(140, now);
-        osc2.frequency.linearRampToValueAtTime(880, now + 0.3);
-
-        // High loud volume gain
-        gain.gain.setValueAtTime(0.85, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 1.8);
-
-        osc1.connect(gain);
-        osc2.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc1.start(now);
-        osc2.start(now);
-        osc1.stop(now + 1.8);
-        osc2.stop(now + 1.8);
-      }
-    } catch (e) {
-      // Audio autoplay policy fallback
-    }
-
-    // Play video with maximum volume
-    setTimeout(() => {
-      if (videoRef.current) {
-        videoRef.current.currentTime = 0;
-        videoRef.current.volume = 1.0;
-        videoRef.current.muted = false;
-        
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((err) => {
-            console.warn("[Kapscare] Autoplay with sound restricted, attempting unmuted retry:", err);
-            // If browser blocked unmuted autoplay, retry with muted=true then unmute
-            if (videoRef.current) {
-              videoRef.current.muted = true;
-              videoRef.current.play().then(() => {
-                if (videoRef.current) videoRef.current.muted = false;
-              }).catch(() => {
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            // Playing with unmuted sound successfully
+            setIsAudioMuted(false);
+            setShowTapToUnmute(false);
+          })
+          .catch((err) => {
+            console.warn("[Kapscare] Unmuted autoplay restricted on mobile, starting muted:", err);
+            // If mobile browser blocks sound autoplay, play muted first so video NEVER freezes!
+            video.muted = true;
+            video.play()
+              .then(() => {
+                setIsAudioMuted(true);
+                setShowTapToUnmute(true);
+              })
+              .catch(() => {
                 setHasError(true);
               });
-            }
           });
-        }
       }
-    }, 50);
+    }
 
-    // Auto-close after video finishes (~2.5 - 3 seconds)
-    autoCloseTimerRef.current = setTimeout(() => {
+    // Safety fallback: auto-close if ended event does not fire within 4.5 seconds
+    safetyTimeoutRef.current = setTimeout(() => {
       closeJumpscare();
-    }, 3200);
+    }, 4500);
+  };
+
+  const unmuteSound = (e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) e.stopPropagation();
+    if (videoRef.current) {
+      videoRef.current.muted = false;
+      videoRef.current.volume = 1.0;
+      setIsAudioMuted(false);
+      setShowTapToUnmute(false);
+    }
   };
 
   const closeJumpscare = () => {
     setIsActive(false);
+    setShowTapToUnmute(false);
     document.body.classList.remove("kap-shake-active");
-    if (autoCloseTimerRef.current) {
-      clearTimeout(autoCloseTimerRef.current);
-      autoCloseTimerRef.current = null;
+    if (safetyTimeoutRef.current) {
+      clearTimeout(safetyTimeoutRef.current);
+      safetyTimeoutRef.current = null;
     }
     if (videoRef.current) {
       try {
         videoRef.current.pause();
         videoRef.current.currentTime = 0;
       } catch (e) {}
-    }
-    if (audioContextRef.current) {
-      try {
-        audioContextRef.current.close().catch(() => {});
-      } catch (e) {}
-      audioContextRef.current = null;
     }
   };
 
@@ -132,10 +128,21 @@ export default function KapscareOverlay({ socket, currentUserId }: KapscareOverl
     const handleRemoteKapscare = (payload: KapscareEventPayload) => {
       if (!payload) return;
       const target = payload.targetUserId;
-      const myId = Number(currentUserId);
+
+      // Resolve my ID from props or fallback to localStorage
+      let myId = Number(currentUserId);
+      if (!myId || myId <= 0) {
+        const storedId = localStorage.getItem("lan_user_id") || localStorage.getItem("user_id");
+        if (storedId) myId = Number(storedId);
+      }
 
       // Check if event targets everyone ('all') or this specific user
-      if (target === "all" || target === undefined || target === null || (myId > 0 && Number(target) === myId)) {
+      if (
+        target === "all" || 
+        target === undefined || 
+        target === null || 
+        (myId > 0 && (Number(target) === myId || String(target) === String(myId)))
+      ) {
         triggerJumpscare();
       }
     };
@@ -158,7 +165,7 @@ export default function KapscareOverlay({ socket, currentUserId }: KapscareOverl
       }
       window.removeEventListener("kaps:test_kapscare", handleLocalTest);
       document.body.classList.remove("kap-shake-active");
-      if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
+      if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
     };
   }, [socket, currentUserId]);
 
@@ -174,94 +181,110 @@ export default function KapscareOverlay({ socket, currentUserId }: KapscareOverl
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isActive]);
 
-  if (!isActive) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[99999999] bg-black flex items-center justify-center overflow-hidden select-none animate-in fade-in duration-75"
-      style={{
-        animation: "kapscareGlitch 0.15s infinite alternate"
-      }}
-      onClick={closeJumpscare}
-    >
-      {/* Red Horror Flashing Vignette */}
-      <div 
-        className="absolute inset-0 pointer-events-none z-10"
-        style={{
-          boxShadow: "inset 0 0 120px 40px rgba(220, 38, 38, 0.85)",
-          animation: "kapscareFlash 0.2s infinite alternate"
+    <>
+      {/* Video element permanently mounted in DOM for fast caching & preloading */}
+      <video
+        ref={videoRef}
+        src={videoSrc}
+        preload="auto"
+        playsInline
+        webkit-playsinline="true"
+        x5-playsinline="true"
+        onEnded={closeJumpscare}
+        onError={() => {
+          if (isActive) setHasError(true);
         }}
+        className={
+          isActive
+            ? "fixed inset-0 z-[99999995] w-full h-full object-contain md:object-cover scale-105 pointer-events-none"
+            : "hidden"
+        }
       />
 
-      {/* Static / Noise Overlay */}
-      <div 
-        className="absolute inset-0 pointer-events-none opacity-25 z-20 mix-blend-screen bg-repeat"
-        style={{
-          backgroundImage: "radial-gradient(rgba(255,255,255,0.2) 1px, transparent 0)",
-          backgroundSize: "4px 4px"
-        }}
-      />
-
-      {/* Video Jumpscare Container */}
-      <div className="relative w-full h-full flex items-center justify-center max-w-full max-h-full">
-        <video
-          ref={videoRef}
-          src={videoSrc}
-          playsInline
-          autoPlay
-          preload="auto"
-          className="w-full h-full object-contain md:object-cover scale-105 filter drop-shadow-2xl"
-          onEnded={closeJumpscare}
-          onError={() => {
-            console.error("[Kapscare] Video playback error");
-            setHasError(true);
+      {isActive && (
+        <div
+          className="fixed inset-0 z-[99999990] bg-black overflow-hidden select-none animate-in fade-in duration-75"
+          style={{
+            animation: "kapscareGlitch 0.12s infinite alternate"
           }}
-        />
+          onClick={showTapToUnmute ? unmuteSound : closeJumpscare}
+        >
+          {/* Red Horror Flashing Vignette */}
+          <div 
+            className="absolute inset-0 pointer-events-none z-[99999996]"
+            style={{
+              boxShadow: "inset 0 0 140px 50px rgba(220, 38, 38, 0.9)",
+              animation: "kapscareFlash 0.18s infinite alternate"
+            }}
+          />
 
-        {/* Fallback Graphic if video takes a second or has decode issue */}
-        {hasError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950 text-white p-6 text-center space-y-4">
-            <AlertTriangle className="w-24 h-24 text-red-500 animate-bounce" />
-            <h1 className="text-4xl md:text-6xl font-black tracking-widest text-red-500 animate-pulse">
-              💀 KAPSCARE! 💀
-            </h1>
-            <p className="text-xl font-bold text-slate-200">
-              BOO! Emirgan sana jumpscare yolladı!
-            </p>
+          {/* Static / Noise Overlay */}
+          <div 
+            className="absolute inset-0 pointer-events-none opacity-20 z-[99999997] mix-blend-screen bg-repeat"
+            style={{
+              backgroundImage: "radial-gradient(rgba(255,255,255,0.2) 1px, transparent 0)",
+              backgroundSize: "4px 4px"
+            }}
+          />
+
+          {/* Fallback Graphic if video decode fails */}
+          {hasError && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950 text-white p-6 text-center space-y-4 z-[99999998]">
+              <AlertTriangle className="w-24 h-24 text-red-500 animate-bounce" />
+              <h1 className="text-4xl md:text-6xl font-black tracking-widest text-red-500 animate-pulse">
+                💀 KAPSCARE! 💀
+              </h1>
+              <p className="text-xl font-bold text-slate-200">
+                BOO! Emirgan sana jumpscare yolladı!
+              </p>
+            </div>
+          )}
+
+          {/* Tap to Unmute Banner if mobile browser blocked audio autoplay */}
+          {showTapToUnmute && (
+            <button
+              type="button"
+              onClick={unmuteSound}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[99999999] px-6 py-4 rounded-3xl bg-red-600/95 text-white text-base font-black shadow-2xl border-2 border-white animate-pulse flex items-center gap-3 cursor-pointer backdrop-blur-md"
+            >
+              <VolumeX size={26} className="text-white animate-bounce" />
+              <span>SESİ AÇMAK İÇİN DOKUN! 🔊</span>
+            </button>
+          )}
+
+          {/* Close Button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              closeJumpscare();
+            }}
+            className="absolute top-4 right-4 z-[99999999] p-3 rounded-full bg-black/70 hover:bg-black/95 text-white/80 hover:text-white border border-white/20 transition-all cursor-pointer backdrop-blur-md"
+            title="Kapat (ESC)"
+          >
+            <X size={22} />
+          </button>
+
+          {/* Audio Indicator: Only original video sound */}
+          <div className="absolute bottom-4 left-4 z-[99999999] flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-950/85 text-white text-xs font-mono font-bold border border-red-500/60 backdrop-blur-md">
+            <Volume2 size={15} className={`text-red-400 ${isAudioMuted ? "opacity-50" : "animate-pulse"}`} />
+            <span>KAPSCARE 🔊</span>
           </div>
-        )}
-      </div>
 
-      {/* Discreet Close Button (in top corner so user can escape if needed) */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          closeJumpscare();
-        }}
-        className="absolute top-4 right-4 z-30 p-2.5 rounded-full bg-black/60 hover:bg-black/90 text-white/70 hover:text-white border border-white/20 transition-all cursor-pointer backdrop-blur-md"
-        title="Kapat (ESC)"
-      >
-        <X size={20} />
-      </button>
-
-      {/* Audio Indicator */}
-      <div className="absolute bottom-4 left-4 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-900/80 text-white text-xs font-mono font-bold border border-red-500/50 backdrop-blur-md">
-        <Volume2 size={14} className="animate-pulse text-red-400" />
-        <span>KAPSCARE 🔊</span>
-      </div>
-
-      <style>{`
-        @keyframes kapscareFlash {
-          0% { opacity: 0.6; filter: brightness(1); }
-          100% { opacity: 1; filter: brightness(1.4); }
-        }
-        @keyframes kapscareGlitch {
-          0% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(-4px, 3px) scale(1.02); }
-          100% { transform: translate(4px, -2px) scale(0.99); }
-        }
-      `}</style>
-    </div>
+          <style>{`
+            @keyframes kapscareFlash {
+              0% { opacity: 0.65; filter: brightness(1); }
+              100% { opacity: 1; filter: brightness(1.5); }
+            }
+            @keyframes kapscareGlitch {
+              0% { transform: translate(0, 0) scale(1.02); }
+              50% { transform: translate(-5px, 3px) scale(1.04); }
+              100% { transform: translate(4px, -3px) scale(1.01); }
+            }
+          `}</style>
+        </div>
+      )}
+    </>
   );
 }

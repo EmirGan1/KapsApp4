@@ -75,8 +75,12 @@ export default function OpenLobbiesWidget({
     socket.on("active_tables_updated", handleTablesUpdate);
     socket.emit("get_active_tables", handleTablesUpdate);
 
-    // Periodic refresh fallback
-    const interval = setInterval(fetchTables, 15000);
+    // Periodic refresh fallback (relaxed since active_tables_updated provides live socket pushes)
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        fetchTables();
+      }
+    }, 60000);
 
     return () => {
       socket.off("active_tables_updated", handleTablesUpdate);

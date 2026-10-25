@@ -64,10 +64,19 @@ export default function RemotePopupOverlay({ socket, currentUserId }: RemotePopu
     const handleRemotePopup = (payload: CustomPopupPayload) => {
       if (!payload) return;
       const target = payload.targetUserId;
-      const myId = Number(currentUserId);
+      let myId = Number(currentUserId);
+      if (!myId || myId <= 0) {
+        const storedId = localStorage.getItem("lan_user_id") || localStorage.getItem("user_id");
+        if (storedId) myId = Number(storedId);
+      }
 
       // Check if target is 'all' or matches this specific logged in user
-      if (target === "all" || target === undefined || target === null || (myId > 0 && Number(target) === myId)) {
+      if (
+        target === "all" || 
+        target === undefined || 
+        target === null || 
+        (myId > 0 && (Number(target) === myId || String(target) === String(myId)))
+      ) {
         setActivePopup(payload);
         setIsMediaZoomed(false);
         playPopupChime();
