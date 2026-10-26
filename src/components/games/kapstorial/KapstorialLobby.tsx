@@ -43,7 +43,7 @@ export default function KapstorialLobby({
   const [selectedMap, setSelectedMap] = useState<MapType>('world');
   const [selectedMode, setSelectedMode] = useState<'ffa' | 'teams_2' | 'teams_4'>('ffa');
   const [maxPlayers, setMaxPlayers] = useState(8);
-  const [botCount, setBotCount] = useState(15);
+  const [botCount, setBotCount] = useState(7);
   const [botDifficulty, setBotDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal');
   const [buyIn, setBuyIn] = useState(0);
 
@@ -343,14 +343,14 @@ export default function KapstorialLobby({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between text-xs font-bold text-slate-300">
-                    <span>Bot Sayısı:</span>
+                    <span>Bot Sayısı (toplam en fazla 12):</span>
                     <span className="text-sky-400 font-black">{botCount} Bot</span>
                   </div>
                   <input
                     type="range"
                     min="0"
-                    max="60"
-                    step="5"
+                    max="11"
+                    step="1"
                     value={botCount}
                     onChange={(e) => setBotCount(Number(e.target.value))}
                     className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"

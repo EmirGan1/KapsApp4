@@ -15,7 +15,7 @@ try{for(const [width,height] of [[390,844],[844,390],[768,1024],[1440,900]]){
  assert.equal((await manager.startSpawnPhase(room.roomCode,1)).success,true);clearInterval(room.spawnTimerInterval);
  await page.waitForSelector('canvas');await page.waitForTimeout(300);
  const canvas=page.locator('canvas');const box=(await canvas.boundingBox())!;assert.equal(Math.round(box.width),width);assert.equal(Math.round(box.height),height);
- const land=room.terrain.findIndex((t:number,i:number)=>t===1&&i>MAP_WIDTH*100&&room.terrain[i-1]===1&&room.terrain[i+1]===1&&room.terrain[i-MAP_WIDTH]===1&&room.terrain[i+MAP_WIDTH]===1);const zoom=Math.min(width/600,height/400)*.96;const x=(width-600*zoom)/2+(land%600+.5)*zoom;const y=(height-400*zoom)/2+(Math.floor(land/600)+.5)*zoom;
+ const land=room.terrain.findIndex((t:number,i:number)=>t===1&&i>MAP_WIDTH*100&&room.terrain[i-1]===1&&room.terrain[i+1]===1&&room.terrain[i-MAP_WIDTH]===1&&room.terrain[i+MAP_WIDTH]===1);const zoom=Math.min(width/960,height/640)*.96;const x=(width-960*zoom)/2+(land%960+.5)*zoom;const y=(height-640*zoom)/2+(Math.floor(land/960)+.5)*zoom;
  await page.mouse.click(Math.round(x),Math.round(y));await page.waitForTimeout(200);
  assert.ok(room.players[0].spawnPixel !== null, 'Browser selection must reach server');
  assert.equal(room.terrain[room.players[0].spawnPixel],1);

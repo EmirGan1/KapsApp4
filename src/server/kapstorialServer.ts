@@ -1,10 +1,11 @@
+import { TERRITORY_COLORS, chooseTerritoryColor } from '../utils/kapstorialColors';
 import { Server, Socket } from "socket.io";
 import { 
   MAP_WIDTH, 
   MAP_HEIGHT, 
   TOTAL_PIXELS, 
   MapType, 
-  generateTerrainMap 
+  generateTerrainMap, getValidSpawnPixels
 } from "../utils/kapstorialMaps";
 
 export interface KapstorialPlayer {
@@ -106,28 +107,17 @@ export interface KapstorialRoomState {
   createdAt: number;
 }
 
-export const PLAYER_COLORS = [
-  '#ef4444', // Crimson Red
-  '#3b82f6', // Royal Blue
-  '#10b981', // Emerald Green
-  '#8b5cf6', // Electric Purple
-  '#f59e0b', // Sun Gold
-  '#06b6d4', // Cyan
-  '#ec4899', // Hot Pink
-  '#f97316', // Sunset Orange
-  '#14b8a6', // Teal
-  '#a855f7', // Violet
-  '#84cc16', // Lime
-  '#e11d48', // Rose
-  '#6366f1', // Indigo
-  '#d97706', // Amber
-  '#0284c7', // Sky Blue
-  '#4ade80'  // Light Mint
-];
+export const PLAYER_COLORS = TERRITORY_COLORS;
 
 export class KapstorialManager {
   private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private startingRooms = new Set<string>();
+  private spawnPixels = new WeakMap<Uint8Array, Set<number>>();
+  private getSpawnPixels(room: KapstorialRoomState) {
+    let pixels = this.spawnPixels.get(room.terrain);
+    if (!pixels) { pixels = new Set(getValidSpawnPixels(room.terrain)); this.spawnPixels.set(room.terrain, pixels); }
+    return pixels;
+  }
   private io: Server;
   private client: any;
   public rooms: Map<string, KapstorialRoomState> = new Map();
@@ -267,7 +257,7 @@ export class KapstorialManager {
       if (terrain[i] === 1) totalConquerablePixels++;
     }
 
-    const hostColor = user.color && user.color.startsWith('#') ? user.color : PLAYER_COLORS[0];
+    const hostColor = PLAYER_COLORS[0];
 
     const hostPlayer: KapstorialPlayer = {
       id: 1,
@@ -296,8 +286,8 @@ export class KapstorialManager {
       status: 'waiting',
       mapType,
       gameMode: ['ffa', 'teams_2', 'teams_4'].includes(options.gameMode!) ? options.gameMode! : 'ffa',
-      maxPlayers: Math.max(2, Math.min(16, Math.trunc(Number(options.maxPlayers) || 8))),
-      botCount: Math.max(0, Math.min(60, Math.trunc((options.botCount === undefined ? 12 : Number(options.botCount)) || 0))),
+      maxPlayers: Math.max(2, Math.min(12, Math.trunc(Number(options.maxPlayers) || 8))),
+      botCount: Math.max(0, Math.min(11, Math.trunc((options.botCount === undefined ? 12 : Number(options.botCount)) || 0))),
       botDifficulty: options.botDifficulty || 'normal',
       buyIn: Number.isFinite(Number(options.buyIn)) ? Math.max(0, Math.min(1000000, Math.trunc(Number(options.buyIn)))) : 0,
       pot: Math.max(0, Number(options.buyIn) || 0),
@@ -339,7 +329,7 @@ export class KapstorialManager {
 
     // Pick unused color
     const usedColors = new Set(room.players.map((p) => p.color.toLowerCase()));
-    let assignedColor = PLAYER_COLORS.find((c) => !usedColors.has(c.toLowerCase())) || PLAYER_COLORS[room.players.length % PLAYER_COLORS.length];
+    let assignedColor = chooseTerritoryColor([...usedColors]);
 
     const nextId = Math.max(0, ...room.players.map(p => p.id)) + 1;
     let assignedTeam = 0;
@@ -483,10 +473,10 @@ export class KapstorialManager {
       "Yıldırım Bot", "Kılıçarslan Bot", "Aksungur Bot", "Selçuk Bot"
     ];
 
-    const currentHumanCount = room.players.length;
+    room.botCount = Math.min(room.botCount, 12 - room.players.length);
     for (let i = 0; i < room.botCount; i++) {
       const bId = Math.max(0, ...room.players.map(p => p.id)) + 1;
-      const bColor = PLAYER_COLORS[bId % PLAYER_COLORS.length];
+      const bColor = chooseTerritoryColor(room.players.map(p => p.color));
       const botName = botNames[i % botNames.length] + (i >= botNames.length ? ` #${Math.floor(i / botNames.length) + 1}` : "");
       
       let botTeam = 0;
@@ -545,12 +535,7 @@ export class KapstorialManager {
    */
   private finishSpawnPhaseAndStartGame(room: KapstorialRoomState) {
     // Find all valid neutral land pixels
-    const validLandPixels: number[] = [];
-    for (let i = 0; i < TOTAL_PIXELS; i++) {
-      if (room.terrain[i] === 1) {
-        validLandPixels.push(i);
-      }
-    }
+    const validLandPixels = [...this.getSpawnPixels(room)];
 
     if (validLandPixels.length === 0) {
       return;
@@ -561,7 +546,7 @@ export class KapstorialManager {
 
     // Collect already picked human positions
     for (const p of room.players) {
-      if (p.spawnPixel !== null && room.terrain[p.spawnPixel] === 1) {
+      if (p.spawnPixel !== null && this.getSpawnPixels(room).has(p.spawnPixel)) {
         const sx = p.spawnPixel % MAP_WIDTH;
         const sy = Math.floor(p.spawnPixel / MAP_WIDTH);
         chosenPositions.push({ x: sx, y: sy });
@@ -570,7 +555,7 @@ export class KapstorialManager {
 
     // For any player/bot without spawn, find a spot well-spaced from others
     for (const p of room.players) {
-      if (p.spawnPixel === null || room.terrain[p.spawnPixel] !== 1) {
+      if (p.spawnPixel === null || !this.getSpawnPixels(room).has(p.spawnPixel)) {
         let bestPixel = validLandPixels[Math.floor(Math.random() * validLandPixels.length)];
         let maxMinDist = -1;
 
@@ -600,28 +585,20 @@ export class KapstorialManager {
     }
 
     // Now seed each player with ~12 pixels in a small circle around their spawn
-    const seedRadius = 2.2;
     for (const p of room.players) {
       if (p.spawnPixel === null) continue;
       const cx = p.spawnPixel % MAP_WIDTH;
       const cy = Math.floor(p.spawnPixel / MAP_WIDTH);
       let pixelCount = 0;
-
-      for (let dy = -3; dy <= 3; dy++) {
-        for (let dx = -3; dx <= 3; dx++) {
-          const px = cx + dx;
-          const py = cy + dy;
-          if (px >= 0 && px < MAP_WIDTH && py >= 0 && py < MAP_HEIGHT) {
-            const dist = Math.hypot(dx, dy);
-            if (dist <= seedRadius) {
-              const idx = py * MAP_WIDTH + px;
-              if (room.terrain[idx] === 1 && (room.owners[idx] === 0 || room.owners[idx] === p.id)) {
-                room.owners[idx] = p.id;
-                pixelCount++;
-              }
-            }
-          }
-        }
+      const queue = [p.spawnPixel]; const visited = new Set<number>();
+      for (let cursor = 0; cursor < queue.length && pixelCount < 37; cursor++) {
+        const idx = queue[cursor];
+        if (visited.has(idx)) continue; visited.add(idx);
+        if (room.terrain[idx] !== 1 || room.owners[idx] !== 0) continue;
+        room.owners[idx] = p.id; pixelCount++;
+        const x = idx % MAP_WIDTH, y = Math.floor(idx / MAP_WIDTH);
+        if (x > 0) queue.push(idx - 1); if (x < MAP_WIDTH - 1) queue.push(idx + 1);
+        if (y > 0) queue.push(idx - MAP_WIDTH); if (y < MAP_HEIGHT - 1) queue.push(idx + MAP_WIDTH);
       }
 
       p.pixels = pixelCount;
@@ -957,7 +934,26 @@ export class KapstorialManager {
       } else {
         // Mid / Late Game: Find adjacent enemy borders
         const enemyNeighbors = this.findEnemyNeighbors(room, bot.id);
-        if (enemyNeighbors.length === 0) continue;
+        if (enemyNeighbors.length === 0) {
+          const coasts = this.findBorderPixelsAdjacentTo(room, bot.id, 0, true);
+          if (coasts.length && room.boats.filter(b => b.ownerId === bot.id).length < 2) {
+            const coast = coasts[Math.floor(Math.random() * coasts.length)];
+            const x = coast % MAP_WIDTH, y = Math.floor(coast / MAP_WIDTH);
+            for (let attempt = 0; attempt < 6; attempt++) {
+              const angle = Math.random() * Math.PI * 2;
+              let target = -1;
+              for (let step = 1; step < 30; step++) {
+                const px = Math.round(x + Math.cos(angle) * step), py = Math.round(y + Math.sin(angle) * step);
+                if (px < 0 || py < 0 || px >= MAP_WIDTH || py >= MAP_HEIGHT) break;
+                if (room.terrain[py * MAP_WIDTH + px] === 0) { target = py * MAP_WIDTH + px; break; }
+              }
+              let launched = false;
+              if (target >= 0) this.executeAttack(room, bot.userId, { targetPixel: target, percentage: 25 }, result => { launched = result.success; });
+              if (launched) break;
+            }
+          }
+          continue;
+        }
 
         // Hard bot: Crown targeting (if leader owns > 35% of land, target leader!)
         const leader = [...room.players]
@@ -1013,8 +1009,8 @@ export class KapstorialManager {
 
   private findBorderPixelsAdjacentTo(room: KapstorialRoomState, ownerId: number, targetOwnerId: number, water = false): number[] {
     const borders: number[] = [];
-    for (let y = 1; y < MAP_HEIGHT - 1; y++) {
-      for (let x = 1; x < MAP_WIDTH - 1; x++) {
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      for (let x = 0; x < MAP_WIDTH; x++) {
         const idx = y * MAP_WIDTH + x;
         if (room.owners[idx] === ownerId) {
           // Check 4 neighbors
@@ -1024,10 +1020,10 @@ export class KapstorialManager {
           const right = y * MAP_WIDTH + (x + 1);
 
           if (
-            (room.owners[up] === targetOwnerId && room.terrain[up] === (water ? 0 : 1)) ||
-            (room.owners[down] === targetOwnerId && room.terrain[down] === (water ? 0 : 1)) ||
-            (room.owners[left] === targetOwnerId && room.terrain[left] === (water ? 0 : 1)) ||
-            (room.owners[right] === targetOwnerId && room.terrain[right] === (water ? 0 : 1))
+            (y > 0 && room.owners[up] === targetOwnerId && room.terrain[up] === (water ? 0 : 1)) ||
+            (y < MAP_HEIGHT - 1 && room.owners[down] === targetOwnerId && room.terrain[down] === (water ? 0 : 1)) ||
+            (x > 0 && room.owners[left] === targetOwnerId && room.terrain[left] === (water ? 0 : 1)) ||
+            (x < MAP_WIDTH - 1 && room.owners[right] === targetOwnerId && room.terrain[right] === (water ? 0 : 1))
           ) {
             borders.push(idx);
           }
@@ -1040,8 +1036,8 @@ export class KapstorialManager {
   private findEnemyNeighbors(room: KapstorialRoomState, botId: number): Array<{ targetId: number; borderPixels: number[] }> {
     const neighborMap = new Map<number, number[]>();
 
-    for (let y = 1; y < MAP_HEIGHT - 1; y++) {
-      for (let x = 1; x < MAP_WIDTH - 1; x++) {
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      for (let x = 0; x < MAP_WIDTH; x++) {
         const idx = y * MAP_WIDTH + x;
         if (room.owners[idx] === botId) {
           const adj = [
@@ -1050,7 +1046,7 @@ export class KapstorialManager {
             y * MAP_WIDTH + (x - 1),
             y * MAP_WIDTH + (x + 1)
           ];
-          for (const a of adj) {
+          for (const a of adj.filter(a => a >= 0 && a < TOTAL_PIXELS && Math.abs((a % MAP_WIDTH) - x) + Math.abs(Math.floor(a / MAP_WIDTH) - y) === 1)) {
             const o = room.owners[a];
             if (o > 0 && o !== botId && room.terrain[a] === 1) {
               if (!neighborMap.has(o)) neighborMap.set(o, []);
@@ -1123,6 +1119,11 @@ export class KapstorialManager {
         }
       }
     } else {
+      const totals = new Map<number, number>();
+      for (const player of alivePlayers) totals.set(player.team, (totals.get(player.team) || 0) + player.pixels);
+      for (const [team, pixels] of totals) if (team > 0 && pixels / room.totalConquerablePixels >= .85) {
+        this.declareWinner(room, null, team, `${team}. Takım haritanın %85'ini kontrol ediyor!`); return;
+      }
       // Teams Victory Check
       const aliveTeams = new Set(alivePlayers.map((p) => p.team));
       if (aliveTeams.size === 1) {
@@ -1161,124 +1162,7 @@ export class KapstorialManager {
     });
   }
 
-  // ==========================================
-  // SOCKET INTERACTION HANDLERS
-  // ==========================================
-
-  public handleSocketEvents(socket: Socket, user: any) {
-    const userIdNum = Number(user.id);
-    socket.on('kapstorial:sync', (cb: any) => {
-      const room = this.rooms.get(socket.data.currentKapstorialRoom);
-      if (typeof cb === 'function' && room && room.players.some(p => p.userId === userIdNum)) cb(this.getSnapshot(room));
-    });
-
-    // 1. Get Room List
-    socket.on("kapstorial:get_rooms", (cb?: (rooms: any[]) => void) => {
-      const rooms = this.getActiveRoomsList();
-      if (cb) cb(rooms);
-    });
-
-    // 2. Create Room
-    socket.on("kapstorial:create_room", (options: any, cb?: (res: any) => void) => {
-      try {
-        const previous = socket.data.currentKapstorialRoom;
-        if (previous) { const existing = this.rooms.get(previous); if (existing) return cb?.({ success: false, error: 'Önce mevcut masadan ayrılın.' }); }
-        const u = {
-          id: userIdNum,
-          username: user.username || "Oyuncu",
-          avatar: user.avatar || null,
-          color: user.color || PLAYER_COLORS[0]
-        };
-        const room = this.createRoom(u, options || {});
-        socket.join(`kapstorial:${room.roomCode}`);
-        socket.data.currentKapstorialRoom = room.roomCode;
-        room.players[0].socketId = socket.id;
-        if (cb) cb({ success: true, room: this.getPublicRoomState(room) });
-      } catch (err: any) {
-        if (cb) cb({ success: false, error: err.message || "Oda oluşturulamadı." });
-      }
-    });
-
-    // 3. Join Room
-    socket.on("kapstorial:join_room", (data: { roomCode: string }, cb?: (res: any) => void) => {
-      try {
-        const u = {
-          id: userIdNum,
-          username: user.username || "Oyuncu",
-          avatar: user.avatar || null,
-          color: user.color || PLAYER_COLORS[0],
-          socketId: socket.id
-        };
-        const res = this.joinRoom(data.roomCode, u);
-        if (res.success && res.room) {
-          socket.join(`kapstorial:${data.roomCode}`);
-          socket.data.currentKapstorialRoom = data.roomCode;
-          if (cb) cb({ success: true, room: this.getPublicRoomState(res.room) });
-        } else {
-          if (cb) cb({ success: false, error: res.error });
-        }
-      } catch (err: any) {
-        if (cb) cb({ success: false, error: err.message || "Odaya katılınamadı." });
-      }
-    });
-
-    // 4. Leave Room
-    socket.on("kapstorial:leave_room", (cb?: (res: any) => void) => {
-      const code = socket.data.currentKapstorialRoom;
-      if (code) {
-        this.leaveRoom(code, userIdNum);
-        socket.leave(`kapstorial:${code}`);
-        delete socket.data.currentKapstorialRoom;
-      }
-      if (cb) cb({ success: true });
-    });
-
-    // 5. Select Spawn Pixel (Spawn Phase)
-    socket.on("kapstorial:set_spawn", (data: { pixelIndex: number }, cb?: (res: any) => void) => {
-      const code = socket.data.currentKapstorialRoom;
-      if (!code) return cb && cb({ success: false });
-      const room = this.rooms.get(code);
-      if (!room || room.status !== 'spawn_phase') return cb && cb({ success: false });
-
-      const player = room.players.find((p) => p.userId === userIdNum);
-      if (!player) return cb && cb({ success: false });
-
-      const idx = Number(data.pixelIndex);
-      if (Number.isInteger(idx) && idx >= 0 && idx < TOTAL_PIXELS && room.terrain[idx] === 1 && !room.players.some(p => p.id !== player.id && p.spawnPixel !== null && Math.hypot((p.spawnPixel % MAP_WIDTH) - (idx % MAP_WIDTH), Math.floor(p.spawnPixel / MAP_WIDTH) - Math.floor(idx / MAP_WIDTH)) < 8)) {
-        player.spawnPixel = idx;
-        player.centroidX = idx % MAP_WIDTH;
-        player.centroidY = Math.floor(idx / MAP_WIDTH);
-        this.io.to(`kapstorial:${code}`).emit("kapstorial:spawn_selected", {
-          playerId: player.id,
-          pixelIndex: idx,
-          x: player.centroidX,
-          y: player.centroidY
-        });
-        if (cb) cb({ success: true });
-      } else {
-        if (cb) cb({ success: false, error: "Geçersiz spawn konumu (Sadece karaya yerleşebilirsiniz)." });
-      }
-    });
-
-    // 6. Set Attack Percentage Slider
-    socket.on("kapstorial:set_attack_percentage", (data: { percentage: number }) => {
-      const code = socket.data.currentKapstorialRoom;
-      if (!code) return;
-      const room = this.rooms.get(code);
-      if (!room) return;
-      const player = room.players.find((p) => p.userId === userIdNum);
-      if (player) {
-        player.attackPercentage = Math.max(1, Math.min(100, Number(data.percentage) || 20));
-      }
-    });
-
-    // 7. Attack or Expand Action (Click on map)
-    socket.on("kapstorial:attack", (data: { targetPixel: number; percentage?: number }, cb?: (res: any) => void) => {
-      const code = socket.data.currentKapstorialRoom;
-      if (!code) return cb && cb({ success: false });
-      const room = this.rooms.get(code);
-      if (!room || room.status !== 'running') return cb && cb({ success: false });
-
+  private executeAttack(room: KapstorialRoomState, userIdNum: number, data: {targetPixel: number; percentage?: number}, cb?: (response: any) => void) {
       const attacker = room.players.find((p) => p.userId === userIdNum);
       if (!attacker || !attacker.isAlive || attacker.troops <= 10) return cb && cb({ success: false });
 
@@ -1379,6 +1263,128 @@ export class KapstorialManager {
       });
 
       if (cb) cb({ success: true, mode: 'land' });
+  }
+
+  // ==========================================
+  // SOCKET INTERACTION HANDLERS
+  // ==========================================
+
+  public handleSocketEvents(socket: Socket, user: any) {
+    const userIdNum = Number(user.id);
+    socket.on('kapstorial:sync', (cb: any) => {
+      const room = this.rooms.get(socket.data.currentKapstorialRoom);
+      if (typeof cb === 'function' && room && room.players.some(p => p.userId === userIdNum)) cb(this.getSnapshot(room));
+    });
+
+    // 1. Get Room List
+    socket.on("kapstorial:get_rooms", (cb?: (rooms: any[]) => void) => {
+      const rooms = this.getActiveRoomsList();
+      if (cb) cb(rooms);
+    });
+
+    // 2. Create Room
+    socket.on("kapstorial:create_room", (options: any, cb?: (res: any) => void) => {
+      try {
+        const previous = socket.data.currentKapstorialRoom;
+        if (previous) { const existing = this.rooms.get(previous); if (existing) return cb?.({ success: false, error: 'Önce mevcut masadan ayrılın.' }); }
+        const u = {
+          id: userIdNum,
+          username: user.username || "Oyuncu",
+          avatar: user.avatar || null,
+          color: user.color || PLAYER_COLORS[0]
+        };
+        const room = this.createRoom(u, options || {});
+        socket.join(`kapstorial:${room.roomCode}`);
+        socket.data.currentKapstorialRoom = room.roomCode;
+        room.players[0].socketId = socket.id;
+        if (cb) cb({ success: true, room: this.getPublicRoomState(room) });
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message || "Oda oluşturulamadı." });
+      }
+    });
+
+    // 3. Join Room
+    socket.on("kapstorial:join_room", (data: { roomCode: string }, cb?: (res: any) => void) => {
+      try {
+        const u = {
+          id: userIdNum,
+          username: user.username || "Oyuncu",
+          avatar: user.avatar || null,
+          color: user.color || PLAYER_COLORS[0],
+          socketId: socket.id
+        };
+        const res = this.joinRoom(data.roomCode, u);
+        if (res.success && res.room) {
+          socket.join(`kapstorial:${data.roomCode}`);
+          socket.data.currentKapstorialRoom = data.roomCode;
+          if (cb) cb({ success: true, room: this.getPublicRoomState(res.room) });
+        } else {
+          if (cb) cb({ success: false, error: res.error });
+        }
+      } catch (err: any) {
+        if (cb) cb({ success: false, error: err.message || "Odaya katılınamadı." });
+      }
+    });
+
+    // 4. Leave Room
+    socket.on("kapstorial:leave_room", (cb?: (res: any) => void) => {
+      const code = socket.data.currentKapstorialRoom;
+      if (code) {
+        this.leaveRoom(code, userIdNum);
+        socket.leave(`kapstorial:${code}`);
+        delete socket.data.currentKapstorialRoom;
+      }
+      if (cb) cb({ success: true });
+    });
+
+    // 5. Select Spawn Pixel (Spawn Phase)
+    socket.on("kapstorial:set_spawn", (data: { pixelIndex: number }, cb?: (res: any) => void) => {
+      const code = socket.data.currentKapstorialRoom;
+      if (!code) return cb && cb({ success: false });
+      const room = this.rooms.get(code);
+      if (!room || room.status !== 'spawn_phase') return cb && cb({ success: false });
+
+      const player = room.players.find((p) => p.userId === userIdNum);
+      if (!player) return cb && cb({ success: false });
+
+      const idx = Number(data.pixelIndex);
+      if (Number.isInteger(idx) && idx >= 0 && idx < TOTAL_PIXELS && this.getSpawnPixels(room).has(idx) && !room.players.some(p => p.id !== player.id && p.spawnPixel !== null && Math.hypot((p.spawnPixel % MAP_WIDTH) - (idx % MAP_WIDTH), Math.floor(p.spawnPixel / MAP_WIDTH) - Math.floor(idx / MAP_WIDTH)) < 8)) {
+        player.spawnPixel = idx;
+        player.centroidX = idx % MAP_WIDTH;
+        player.centroidY = Math.floor(idx / MAP_WIDTH);
+        this.io.to(`kapstorial:${code}`).emit("kapstorial:spawn_selected", {
+          playerId: player.id,
+          pixelIndex: idx,
+          x: player.centroidX,
+          y: player.centroidY
+        });
+        if (cb) cb({ success: true });
+      } else {
+        if (cb) cb({ success: false, error: "Geçersiz spawn konumu (Sadece karaya yerleşebilirsiniz)." });
+      }
+    });
+
+    // 6. Set Attack Percentage Slider
+    socket.on("kapstorial:set_attack_percentage", (data: { percentage: number }) => {
+      const code = socket.data.currentKapstorialRoom;
+      if (!code) return;
+      const room = this.rooms.get(code);
+      if (!room) return;
+      const player = room.players.find((p) => p.userId === userIdNum);
+      if (player) {
+        player.attackPercentage = Math.max(1, Math.min(100, Number(data.percentage) || 20));
+      }
+    });
+
+    // 7. Attack or Expand Action (Click on map)
+    socket.on("kapstorial:attack", (data: { targetPixel: number; percentage?: number }, cb?: (res: any) => void) => {
+      const code = socket.data.currentKapstorialRoom;
+      if (!code) return cb && cb({ success: false });
+      const room = this.rooms.get(code);
+      if (!room || room.status !== 'running') return cb && cb({ success: false });
+
+      this.executeAttack(room, userIdNum, data, cb);
+
     });
 
     // 8. Diplomacy: Propose Truce / NAP
@@ -1512,7 +1518,7 @@ export class KapstorialManager {
       const player = room.players.find((p) => p.userId === userIdNum);
       if (!player) return cb && cb({ success: false });
 
-      if (data.color && PLAYER_COLORS.includes(data.color)) {
+      if (data.color && PLAYER_COLORS.includes(data.color) && !room.players.some(p => p.id !== player.id && p.color === data.color)) {
         player.color = data.color;
       }
       if (Number.isInteger(data.team) && data.team! >= 1 && data.team! <= (room.gameMode === 'teams_4' ? 4 : 2) && room.gameMode !== 'ffa') {

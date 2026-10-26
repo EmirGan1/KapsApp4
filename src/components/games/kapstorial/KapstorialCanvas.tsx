@@ -319,8 +319,8 @@ export default function KapstorialCanvas({
           if (!p.isAlive || p.pixels < 8) continue;
 
           const scaleFactor = Math.min(2.8, Math.max(0.9, Math.sqrt(p.pixels) * 0.1));
-          const nameFontSize = Math.round(4.5 * scaleFactor);
-          const troopsFontSize = Math.round(5.5 * scaleFactor);
+          const nameFontSize = Math.max((p.id === myPlayerId ? 11 : 8) / camera.zoom, Math.round(4.5 * scaleFactor));
+          const troopsFontSize = Math.max((p.id === myPlayerId ? 12 : 9) / camera.zoom, Math.round(5.5 * scaleFactor));
 
           const cx = p.centroidX;
           const cy = p.centroidY;
