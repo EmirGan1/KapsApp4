@@ -23,6 +23,7 @@ import {
   Calendar,
   Compass,
   ArrowRight,
+  ArrowLeft,
   UserCheck,
   ArrowLeftRight,
   Check,
@@ -54,9 +55,15 @@ const CORE_STORAGE_KEY = 'kapsapp_kapsculator_core_points_v3';
 
 interface KapIBCalculatorProps {
   currentUserRoles?: string[];
+  onBackToHub?: () => void;
+  onSwitchToKilicKepenek?: () => void;
 }
 
-export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculatorProps) {
+export default function KapIBCalculator({
+  currentUserRoles = [],
+  onBackToHub,
+  onSwitchToKilicKepenek
+}: KapIBCalculatorProps) {
   // 1. Auto-populate from user profile roles or saved local storage
   const [subjects, setSubjects] = useState<Subject[]>(() => {
     try {
@@ -308,6 +315,36 @@ export default function KapIBCalculator({ currentUserRoles = [] }: KapIBCalculat
   return (
     <div className="flex-1 flex flex-col w-full h-full min-h-0 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto">
       
+      {/* KapsCulator Navigation Bar */}
+      {(onBackToHub || onSwitchToKilicKepenek) && (
+        <div className="bg-slate-900 text-white px-4 sm:px-6 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs sticky top-0 z-40 shadow-sm shrink-0">
+          <div className="flex items-center gap-2.5">
+            {onBackToHub && (
+              <button
+                onClick={onBackToHub}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold transition-all border border-slate-700 hover:border-slate-600 cursor-pointer shadow-xs active:scale-95"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-indigo-400" />
+                <span>KapsCulator Ana Sayfası</span>
+              </button>
+            )}
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-bold border border-indigo-500/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+              KapsCulator Original Aktif
+            </span>
+          </div>
+          {onSwitchToKilicKepenek && (
+            <button
+              onClick={onSwitchToKilicKepenek}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-md shadow-emerald-600/30 cursor-pointer active:scale-95"
+            >
+              <span>Kılıç Kepenek Version'a Geç</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Role Auto-Load Feedback Toast */}
       {roleAutoLoadNotice && (
         <div className="bg-emerald-500 text-white px-4 py-2 text-xs font-bold text-center shadow-md animate-in fade-in duration-200">

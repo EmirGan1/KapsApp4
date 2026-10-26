@@ -45,7 +45,7 @@ import VoiceChat from "./components/VoiceChat";
 import LiveMap from "./components/LiveMap";
 import WeatherDashboard from "./components/WeatherDashboard";
 import Announcements, { AnnouncementItem } from "./components/Announcements";
-import KapIBCalculator from "./components/KapIBCalculator";
+import KapsculatorHub from "./components/KapsculatorHub";
 import AnnouncementModal from "./components/AnnouncementModal";
 import ToastContainer, { ToastItem } from "./components/ToastContainer";
 import DeviceBanScreen from "./components/DeviceBanScreen";
@@ -1185,7 +1185,7 @@ export default function App() {
           />
         )}
         {activeTab === 'ib-calculator' && (
-          <KapIBCalculator currentUserRoles={currentUserRoles} />
+          <KapsculatorHub currentUserRoles={currentUserRoles} />
         )}
         {activeTab === 'agenda' && (
           <Agenda 
