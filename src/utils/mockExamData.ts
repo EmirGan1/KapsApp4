@@ -78,7 +78,7 @@ export interface ScheduleEntry {
 }
 
 export const MOCK_EXAM_START_DATE = "2026-10-12";
-export const MOCK_EXAM_END_DATE = "2026-10-26";
+export const MOCK_EXAM_END_DATE = "2026-10-27";
 
 /**
  * Returns true if the provided date is within the official two-week mock exam window
@@ -527,8 +527,8 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     subject: "Mathematics",
     level: "SL/HL",
     date: "2026-10-26",
-    startTime: "08:50",
-    endTime: "11:00",
+    startTime: "09:00",
+    endTime: "11:10",
     slDurationMinutes: 90,
     hlDurationMinutes: 130,
     slEndTime: "10:20",
@@ -548,8 +548,8 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     subject: "Mathematics",
     level: "SL/HL",
     date: "2026-10-27",
-    startTime: "08:50",
-    endTime: "10:50",
+    startTime: "09:00",
+    endTime: "11:00",
     slDurationMinutes: 90,
     hlDurationMinutes: 120,
     slEndTime: "10:20",
@@ -566,20 +566,20 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     id: "mock_20261027_math_p3",
     title: "Mathematics Paper 3 (Rescheduled)",
     subject: "Mathematics",
-    level: "HL",
+    level: "SL/HL",
     date: "2026-10-27",
-    startTime: "13:35",
-    endTime: "14:50",
-    slDurationMinutes: 0,
+    startTime: "14:00",
+    endTime: "15:15",
+    slDurationMinutes: 75,
     hlDurationMinutes: 75,
-    slEndTime: "13:35",
-    hlEndTime: "14:50",
-    targetRoles: ["math_hl"],
+    slEndTime: "15:15",
+    hlEndTime: "15:15",
+    targetRoles: ["math_sl", "math_hl", "math", "matematik"],
     targetCourses: ["Mathematics"],
     room: "Derslik 301",
     paper: "Paper 3",
     durationMin: 75,
-    description: "IB DP Pre-Mock 3 • Mathematics HL Paper 3 (Rescheduled)",
+    description: "IB DP Pre-Mock 3 • Mathematics Paper 3 (75 dk bitiş: 15:15)",
     affectedCourseIds: ["math"]
   },
 
