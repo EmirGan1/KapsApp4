@@ -62,7 +62,7 @@ export const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
 export function getAudioTrackConstraints(mode: NoiseSuppressionMode = 'standard'): MediaTrackConstraints {
   return {
     echoCancellation: { ideal: true },
-    noiseSuppression: false, // In-app Web Audio pipeline handles noise suppression cleanly
+    noiseSuppression: { ideal: mode !== 'off' },
     autoGainControl: { ideal: true },
     // @ts-ignore
     googEchoCancellation: { ideal: true },
@@ -101,8 +101,8 @@ export function getVideoConstraints(participantCount: number = 1): MediaTrackCon
 
   // Small room (1-4 users): 720p / 480p ideal
   return {
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
     frameRate: { ideal: 30, max: 30 },
     facingMode: 'user'
   };
@@ -189,7 +189,7 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
     video: {
       width: { ideal: 1920, max: 3840 },
       height: { ideal: 1080, max: 2160 },
-      frameRate: { ideal: 60, max: 60 },
+      frameRate: { ideal: 30, max: 30 },
       // @ts-ignore
       displaySurface: 'monitor',
       // @ts-ignore
@@ -251,8 +251,8 @@ export async function applySenderBitrateLimit(
 
   if (isScreenShare) {
     // High-quality screen sharing: 5 Mbps target for 1080p/60fps
-    targetBitrateBps = 5_000_000;
-    maxFps = 60;
+    targetBitrateBps = 2_000_000;
+    maxFps = 30;
     
     // Apply contentHint for sharpness
     if ('contentHint' in sender.track) {
@@ -327,3 +327,4 @@ export function tuneSdpForAudioOpus(sdp: string): string {
     );
   }
 }
+

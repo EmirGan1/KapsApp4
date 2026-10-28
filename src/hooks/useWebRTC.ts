@@ -1,3 +1,4 @@
+import { tuneConnection } from "../utils/rtcAdaptation";
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -112,7 +113,7 @@ export function useWebRTC({
 
           for (const [, pc] of peerConnectionsRef.current.entries()) {
             const senders = pc.getSenders();
-            const videoSender = senders.find((s) => s.track?.kind === 'video') || senders.find((s) => !s.track);
+            const videoSender = cameraSendersRef.current.get([...peerConnectionsRef.current].find(([, connection]) => connection === pc)?.[0] || '');
             if (videoSender) {
               await videoSender.replaceTrack(freshTrack).catch(() => {});
             }
@@ -180,6 +181,7 @@ export function useWebRTC({
   const mixedAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const cameraSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
+  const remoteScreenIdsRef = useRef<Map<string, string>>(new Map());
   const screenSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const remoteAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
@@ -529,7 +531,7 @@ export function useWebRTC({
             // Refresh video senders on active peer connections
             peerConnectionsRef.current.forEach((pc) => {
               const senders = pc.getSenders();
-              const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
+              const videoSender = screenSendersRef.current.get([...peerConnectionsRef.current].find(([, connection]) => connection === pc)?.[0] || '');
               if (videoSender) {
                 videoSender.replaceTrack(videoTrack).catch(() => {});
               }
@@ -609,6 +611,7 @@ export function useWebRTC({
     
     cameraSendersRef.current.clear();
     screenSendersRef.current.clear();
+    remoteScreenIdsRef.current.clear();
     setLocalStream(null);
     setLocalScreenStream(null);
     setIsScreenSharing(false);
@@ -657,6 +660,9 @@ export function useWebRTC({
       }
     }
     pendingCandidatesRef.current.delete(remoteSocketId);
+    cameraSendersRef.current.delete(remoteSocketId);
+    screenSendersRef.current.delete(remoteSocketId);
+    remoteScreenIdsRef.current.delete(remoteSocketId);
   };
 
   // Setup Local Media (Audio + Video) with flexible constraints to prevent camera crashes
@@ -794,14 +800,14 @@ export function useWebRTC({
       cameraSendersRef.current.set(remoteSocketId, sender);
       applySenderBitrateLimit(sender, participantCountRef.current, resolutionRef.current);
     } else {
-      pc.addTransceiver('video', { direction: 'sendrecv' });
+      cameraSendersRef.current.set(remoteSocketId, pc.addTransceiver('video', { direction: 'sendrecv' }).sender);
     }
 
     // Add screen track if currently sharing
     if (isScreenSharingRef.current && screenStreamRef.current) {
       const screenTrack = screenStreamRef.current.getVideoTracks()[0];
       if (screenTrack) {
-        const sender = pc.addTrack(screenTrack, screenStreamRef.current);
+        const sender = pc.addTransceiver(screenTrack, {direction:'sendonly', streams:[screenStreamRef.current]}).sender;
         screenSendersRef.current.set(remoteSocketId, sender);
         applySenderBitrateLimit(sender, participantCountRef.current, 'auto', true);
       }
@@ -825,6 +831,7 @@ export function useWebRTC({
       // Determine if this is a screen share track
       // Logic: screen share streams usually have a different ID, or we can use contentHint if available
       const isScreenTrack = track.kind === 'video' && (
+        stream.id === remoteScreenIdsRef.current.get(remoteSocketId) ||
         (track.label && (track.label.toLowerCase().includes('screen') || track.label.toLowerCase().includes('monitor'))) ||
         (stream.id && stream.id.toLowerCase().includes('screen')) ||
         (track.contentHint === 'detail')
@@ -853,7 +860,7 @@ export function useWebRTC({
         console.log(`[WebRTC] Remote track onended: peer=${remoteSocketId}, type=${isScreenTrack ? 'screen' : 'camera'}`);
         setRemoteStreams((prev) => {
           const next = new Map(prev);
-          next.delete(streamKey);
+          if (next.get(streamKey)?.getTracks().some(t => t.id === track.id)) next.delete(streamKey);
           return next;
         });
       };
@@ -897,7 +904,7 @@ export function useWebRTC({
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         console.log(`[WebRTC] Connection lost with ${remoteSocketId}, attempting automatic ICE restart...`);
         try {
-          const offer = await pc.createOffer({ iceRestart: true });
+          const offer = { ...await pc.createOffer({ iceRestart: true }), screenStreamId: screenStreamRef.current?.id || null };
           await pc.setLocalDescription(offer);
           if (socket && roomIdRef.current) {
             socket.emit('voice_offer', { targetSocketId: remoteSocketId, offer });
@@ -961,7 +968,7 @@ export function useWebRTC({
       // Replace sender track with null across all active peer connections
       peerConnectionsRef.current.forEach((pc) => {
         const senders = pc.getSenders();
-        const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
+        const videoSender = cameraSendersRef.current.get([...peerConnectionsRef.current].find(([, connection]) => connection === pc)?.[0] || '');
         if (videoSender) {
           videoSender.replaceTrack(null).catch(() => {});
         }
@@ -999,20 +1006,21 @@ export function useWebRTC({
           // Update each peer connection
           for (const [sId, pc] of peerConnectionsRef.current.entries()) {
             const senders = pc.getSenders();
-            const videoSender = senders.find((s) => s.track?.kind === 'video') || senders.find((s) => !s.track);
+            const videoSender = cameraSendersRef.current.get([...peerConnectionsRef.current].find(([, connection]) => connection === pc)?.[0] || '');
 
             if (videoSender) {
               await videoSender.replaceTrack(newVideoTrack).catch(() => {});
               applySenderBitrateLimit(videoSender, participantCountRef.current, resolutionRef.current);
             } else {
               const sender = pc.addTrack(newVideoTrack, localStreamRef.current);
+              cameraSendersRef.current.set(sId, sender);
               applySenderBitrateLimit(sender, participantCountRef.current, resolutionRef.current);
             }
 
             try {
               const rawOffer = await pc.createOffer();
               const tunedSdp = tuneSdpForAudioOpus(rawOffer.sdp || '');
-              const offer = { type: rawOffer.type, sdp: tunedSdp };
+              const offer = { type: rawOffer.type, sdp: tunedSdp, screenStreamId: screenStreamRef.current?.id || null };
               await pc.setLocalDescription(offer);
               socket?.emit('voice_offer', { targetSocketId: sId, offer });
             } catch (renegErr) {
@@ -1131,7 +1139,7 @@ export function useWebRTC({
       try {
         const rawOffer = await pc.createOffer();
         const tunedSdp = tuneSdpForAudioOpus(rawOffer.sdp || '');
-        const offer = { type: rawOffer.type, sdp: tunedSdp };
+        const offer = { type: rawOffer.type, sdp: tunedSdp, screenStreamId: null };
         await pc.setLocalDescription(offer);
         socket?.emit('voice_offer', { targetSocketId: sId, offer });
       } catch (renegErr) {
@@ -1204,18 +1212,20 @@ export function useWebRTC({
             }
 
             const destination = audioCtx.createMediaStreamDestination();
+            const mixBus = audioCtx.createDynamicsCompressor();
+            mixBus.connect(destination);
 
             // Connect local mic stream if present
             const micTrack = localStreamRef.current?.getAudioTracks()[0];
             if (micTrack && micTrack.readyState === 'live') {
               originalMicTrackRef.current = micTrack;
               const micSource = audioCtx.createMediaStreamSource(new MediaStream([micTrack]));
-              micSource.connect(destination);
+              micSource.connect(mixBus);
             }
 
             // Connect system audio stream
             const screenSource = audioCtx.createMediaStreamSource(new MediaStream([screenAudioTrack]));
-            screenSource.connect(destination);
+            screenSource.connect(mixBus);
 
             const mixedTrack = destination.stream.getAudioTracks()[0];
             mixedAudioTrackRef.current = mixedTrack;
@@ -1240,24 +1250,19 @@ export function useWebRTC({
       // 3. Add Screen Track to all active RTCPeerConnections & Renegotiation
       for (const [sId, pc] of peerConnectionsRef.current.entries()) {
         try {
-          const sender = pc.addTrack(screenVideoTrack, screenStream);
+          const sender = pc.addTransceiver(screenVideoTrack, {direction:'sendonly', streams:[screenStream]}).sender;
           screenSendersRef.current.set(sId, sender);
           applySenderBitrateLimit(sender, participantCountRef.current, 'auto', true);
         } catch (addTrackErr) {
-          console.warn('[WebRTC] addTrack for screen share failed, falling back to replace:', addTrackErr);
-          const senders = pc.getSenders();
-          const videoSender = senders.find((s) => s.track && s.track.kind === 'video') || senders.find((s) => !s.track);
-          if (videoSender) {
-            await videoSender.replaceTrack(screenVideoTrack).catch(() => {});
-            applySenderBitrateLimit(videoSender, participantCountRef.current, 'auto', true);
-          }
+          console.warn('[WebRTC] Separate screen sender could not be added:', addTrackErr);
+          continue;
         }
 
         // Taze SDP Offer göndererek karşı tarafta siyah ekran kalmasını önle
         try {
           const rawOffer = await pc.createOffer();
           const tunedSdp = tuneSdpForAudioOpus(rawOffer.sdp || '');
-          const offer = { type: rawOffer.type, sdp: tunedSdp };
+          const offer = { type: rawOffer.type, sdp: tunedSdp, screenStreamId: screenStreamRef.current?.id || null };
           await pc.setLocalDescription(offer);
           socket?.emit('voice_offer', { targetSocketId: sId, offer });
         } catch (renegErr) {
@@ -1273,7 +1278,6 @@ export function useWebRTC({
       }
 
       setIsScreenSharing(true);
-      setIsVideoOff(false);
 
       // 5. Notify socket room
       if (socket && roomIdRef.current) {
@@ -1300,14 +1304,7 @@ export function useWebRTC({
         console.log('[WebRTC] Screen video track onmute (uygulama/sekme arka planda)');
       };
       screenVideoTrack.onunmute = () => {
-        console.log('[WebRTC] Screen video track onunmute (uygulama/sekme ön planda)');
-        peerConnectionsRef.current.forEach((pc) => {
-          const senders = pc.getSenders();
-          const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
-          if (videoSender) {
-            videoSender.replaceTrack(screenVideoTrack).catch(() => {});
-          }
-        });
+        screenSendersRef.current.forEach(sender => { void sender.replaceTrack(screenVideoTrack).catch(() => {}); });
       };
       screenVideoTrack.onended = () => {
         console.log('[WebRTC] Ekran paylaşımı sonlandırıldı (onended)');
@@ -1362,7 +1359,7 @@ export function useWebRTC({
     }
     peerConnectionsRef.current.forEach((pc) => {
       const senders = pc.getSenders();
-      const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
+      const videoSender = cameraSendersRef.current.get([...peerConnectionsRef.current].find(([, connection]) => connection === pc)?.[0] || '');
       if (videoSender) {
         videoSender.replaceTrack(null).catch(() => {});
       }
@@ -1387,7 +1384,7 @@ export function useWebRTC({
     try {
       const rawOffer = await pc.createOffer();
       const tunedSdp = tuneSdpForAudioOpus(rawOffer.sdp || '');
-      const offer = { type: rawOffer.type, sdp: tunedSdp };
+      const offer = { type: rawOffer.type, sdp: tunedSdp, screenStreamId: screenStreamRef.current?.id || null };
       await pc.setLocalDescription(offer);
 
       socket.emit('voice_offer', {
@@ -1407,6 +1404,9 @@ export function useWebRTC({
       peerConnectionsRef.current.delete(remoteSocketId);
     }
     pendingCandidatesRef.current.delete(remoteSocketId);
+    cameraSendersRef.current.delete(remoteSocketId);
+    screenSendersRef.current.delete(remoteSocketId);
+    remoteScreenIdsRef.current.delete(remoteSocketId);
 
     const audioEl = remoteAudioElementsRef.current.get(remoteSocketId);
     if (audioEl) {
@@ -1422,6 +1422,20 @@ export function useWebRTC({
     });
   }, []);
 
+  useEffect(() => {
+    const states = new WeakMap<RTCPeerConnection, {budget?:number;good?:number}>();
+    let sampling = false;
+    const timer = setInterval(async () => {
+      if (sampling) return; sampling = true;
+      try { await Promise.allSettled([...peerConnectionsRef.current].map(async ([id, pc]) => {
+        if (pc.connectionState !== 'connected') return;
+        let state = states.get(pc); if (!state) { state = {}; states.set(pc, state); }
+        await tuneConnection(pc, cameraSendersRef.current.get(id), screenSendersRef.current.get(id), peerConnectionsRef.current.size, state);
+      })); } finally { sampling = false; }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, []);
+
   // WebRTC Signaling Socket Listeners (handles both initial and renegotiation offers)
   useEffect(() => {
     if (!socket) return;
@@ -1434,12 +1448,18 @@ export function useWebRTC({
       const pc = peerConnectionsRef.current.get(data.senderSocketId) || createPeerConnection(data.senderSocketId, stream);
 
       try {
+        if (pc.signalingState !== 'stable') {
+          const polite = (socket.id || '').localeCompare(data.senderSocketId) > 0;
+          if (!polite) return;
+          await pc.setLocalDescription({ type: 'rollback' });
+        }
+        remoteScreenIdsRef.current.set(data.senderSocketId, data.offer.screenStreamId || "");
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
         await processQueuedCandidates(data.senderSocketId, pc);
 
         const rawAnswer = await pc.createAnswer();
         const tunedSdp = tuneSdpForAudioOpus(rawAnswer.sdp || '');
-        const answer = { type: rawAnswer.type, sdp: tunedSdp };
+        const answer = { type: rawAnswer.type, sdp: tunedSdp, screenStreamId: screenStreamRef.current?.id || null };
         await pc.setLocalDescription(answer);
 
         socket.emit('voice_answer', {
@@ -1454,8 +1474,9 @@ export function useWebRTC({
     const handleVoiceAnswer = async (data: { senderSocketId: string; answer: any }) => {
       console.log(`[WebRTC] Received voice_answer from ${data.senderSocketId}`);
       const pc = peerConnectionsRef.current.get(data.senderSocketId);
-      if (pc) {
+      if (pc && pc.signalingState === 'have-local-offer') {
         try {
+          remoteScreenIdsRef.current.set(data.senderSocketId, data.answer.screenStreamId || "");
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
           await processQueuedCandidates(data.senderSocketId, pc);
         } catch (err) {
@@ -1549,7 +1570,7 @@ export function useWebRTC({
       if (updatedTrack) {
         for (const [sId, pc] of peerConnectionsRef.current.entries()) {
           const senders = pc.getSenders();
-          const videoSender = senders.find((s) => s.track?.kind === 'video') || senders.find((s) => !s.track);
+          const videoSender = cameraSendersRef.current.get([...peerConnectionsRef.current].find(([, connection]) => connection === pc)?.[0] || '');
           if (videoSender) {
             if (needsNewTrack) {
               await videoSender.replaceTrack(updatedTrack).catch(() => {});
@@ -1561,7 +1582,7 @@ export function useWebRTC({
             try {
               const rawOffer = await pc.createOffer();
               const tunedSdp = tuneSdpForAudioOpus(rawOffer.sdp || '');
-              const offer = { type: rawOffer.type, sdp: tunedSdp };
+              const offer = { type: rawOffer.type, sdp: tunedSdp, screenStreamId: screenStreamRef.current?.id || null };
               await pc.setLocalDescription(offer);
               socket?.emit('voice_offer', { targetSocketId: sId, offer });
             } catch (renegErr) {
@@ -1652,3 +1673,4 @@ export function useWebRTC({
     handleRemoteForceCameraOff
   };
 }
+

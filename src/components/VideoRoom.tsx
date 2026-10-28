@@ -86,7 +86,7 @@ export const VideoTile = React.memo(({
 
   // Check if stream has active video track
   const videoTrack = stream ? stream.getVideoTracks()[0] : null;
-  const isSharingActive = isScreenSharing || Boolean(participant.isScreenSharing);
+  const isSharingActive = isScreenSharing;
   const hasLiveVideoTrack = Boolean(
     videoTrack && 
     (videoTrack.readyState === 'live' || isVideoPlaying) && 
@@ -656,7 +656,7 @@ export function VideoRoomView({
                           isCurrentRoomHost={isHost}
                           stream={stream}
                           isDeafened={isDeafened}
-                          isScreenSharing={isSelf ? isScreenSharing : Boolean(participant.isScreenSharing)}
+                          isScreenSharing={false}
                           aspectRatioMode={aspectRatioMode}
                           fitMode={fitMode}
                           onKick={onKickUser}
@@ -926,3 +926,4 @@ export function VideoRoomView({
     </div>
   );
 }
+
