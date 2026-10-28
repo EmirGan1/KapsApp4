@@ -70,6 +70,7 @@ import { BattleRoyaleManager, runHeadlessBattleRoyaleTest } from "./src/server/b
 import { runBattleRoyaleChaosSimulation } from "./src/server/battleRoyaleChaosTest.ts";
 import { PartyManager, runHeadlessPartyTest } from "./src/server/partyServer.ts";
 import { BilliardsManager } from "./src/server/billiardsServer.ts";
+import { DungeonManager } from "./src/server/dungeonServer.ts";
 import { KapstorialManager } from "./src/server/kapstorialServer.ts";
 
 dotenv.config();
@@ -2336,6 +2337,8 @@ async function startServer() {
   const partyManager = new PartyManager(io, client);
   const billiardsManager = new BilliardsManager(io, client);
   const kapstorialManager = new KapstorialManager(io, client);
+  const dungeonManager = new DungeonManager(io, client);
+  await dungeonManager.initialize().catch(() => console.error("Dungeon progression storage is unavailable; game remains playable."));
   let closeAnyTableAndNotify: (tableId: string) => boolean;
   let refundBlackjackTableBets: (tableId: string, reason: string) => Promise<boolean>;
 
@@ -8096,6 +8099,7 @@ async function startServer() {
     // KAPSTORIAL (TERRITORIAL.IO CLONE) SOCKET HANDLERS
     // ============================================================
     kapstorialManager.handleSocketEvents(socket, user);
+    dungeonManager.register(socket, user);
 
     socket.on("kapstorial:send_invite", (data: { targetUserId: number; roomCode: string; mapName?: string; bet?: number }) => {
       const targetSockId = onlineUsers.get(Number(data.targetUserId));

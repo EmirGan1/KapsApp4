@@ -15,6 +15,7 @@ import TexasHoldemPokerGame from './TexasHoldemPokerGame';
 import MiniBattleRoyale from './MiniBattleRoyale';
 import PartyMode from './PartyMode';
 import BilliardsGame from './BilliardsGame';
+import DungeonGame from './games/dungeon/DungeonGame';
 import KapstorialGame from './games/kapstorial/KapstorialGame';
 import CardTableLobbyModal, { CardTableInfo, CreateTableOptions } from './CardTableLobbyModal';
 import AdminChipManagerModal from './AdminChipManagerModal';
@@ -49,7 +50,7 @@ interface LeaderboardUser {
 }
 
 type GameCategory = 'all' | 'cards' | 'arcade' | 'strategy' | 'active_lobbies';
-type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party' | 'billiards' | 'kapstorial';
+type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party' | 'billiards' | 'kapstorial' | 'dungeon';
 
 export default function Games({
   socket,
@@ -59,7 +60,7 @@ export default function Games({
   color,
   onUserClick
 }: GamesProps) {
-  const [selectedGame, setSelectedGame] = useState<SelectedGameType>('hub');
+  const [selectedGame, setSelectedGame] = useState<SelectedGameType>(() => new URLSearchParams(window.location.search).get('oyun') === 'dungeon' ? 'dungeon' : 'hub');
   const [activeCategory, setActiveCategory] = useState<GameCategory>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -398,6 +399,8 @@ export default function Games({
     );
   }
 
+  if (selectedGame === 'dungeon') return <DungeonGame socket={socket} currentUserId={currentUserId} onBack={() => setSelectedGame('hub')} />;
+
   // Route: Kapstorial (Territorial.io clone)
   if (selectedGame === 'kapstorial') {
     return (
@@ -418,6 +421,14 @@ export default function Games({
 
   // Games definition list
   const allGames = [
+    {
+      id: 'dungeon', title: 'Zindan Kuşatması', subtitle: '2–4 Kişilik · Çevrim İçi Co-Op Roguelite',
+      category: ['strategy', 'arcade'], badge: 'YENİ CO-OP', badgeColor: 'bg-amber-200 text-slate-950',
+      gradient: 'from-slate-800 via-stone-800 to-slate-900', icon: '⚔️', capacity: '2–4 Gerçek Oyuncu', activeRooms: 0,
+      features: ['Savaşçı, Büyücü ve Şifacı · Birlikte savaş ve canlandırma', 'Üç kat, değişen zindanlar ve üç farklı kat muhafızı', 'Kişisel ganimet, gerçek zamanlı savaş ve mobil kontroller'],
+      preview: <div className="flex justify-center gap-6 py-2 font-mono text-2xl"><span className="text-blue-300">W</span><span className="text-purple-300">M</span><span className="text-green-300">H</span></div>,
+      actionPrimary: 'Zindana Gir', onClick: () => setSelectedGame('dungeon')
+    },
     {
       id: 'blackjack',
       title: 'Blackjack (21)',

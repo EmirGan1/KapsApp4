@@ -14,7 +14,11 @@
     "test:security": "node --import tsx --test tests/passwordReset.test.ts",
     "test:battle": "node --import tsx --test tests/battleRoyale.test.ts",
     "test:kapstorial": "node --import tsx --test tests/kapstorial.test.ts",
-    "test:kapstorial:browser": "node --import tsx tests/kapstorial.browser.ts"
+    "test:kapstorial:browser": "node --import tsx tests/kapstorial.browser.ts",
+    "test:dungeon": "node --import tsx --test tests/dungeon.test.ts tests/dungeon.network.test.ts tests/dungeon.expeditions.test.ts",
+    "test:dungeon:browser": "node --import tsx tests/dungeon.browser.ts",
+    "test:dungeon:expedition": "node --import tsx tests/dungeon.full-browser.ts",
+    "test:dungeon:performance": "node --import tsx tests/dungeon.performance.ts"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",
