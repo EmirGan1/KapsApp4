@@ -177,6 +177,24 @@ export function checkCanScreenShare(): boolean {
  * Directly triggers native display media without complex constraints, popups or blocking alerts.
  * Exclusively captures the system screen (NEVER falls back to camera).
  */
+/** Exclude call playback while preserving the selected content's audio. */
+export function screenAudioOptions(withAudio: boolean, canRestrictOwnAudio: boolean) {
+  return {
+    audio: withAudio ? {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      restrictOwnAudio: { ideal: true },
+      suppressLocalAudioPlayback: false
+    } : false,
+    // Without own-document exclusion, whole-system capture includes remote voices.
+    systemAudio: withAudio && canRestrictOwnAudio ? 'include' : 'exclude',
+    windowAudio: withAudio ? 'window' : 'exclude',
+    selfBrowserSurface: 'exclude',
+    preferCurrentTab: false
+  };
+}
+
 export async function requestScreenStream(withAudio: boolean = false): Promise<MediaStream | null> {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
     return null;
@@ -185,32 +203,23 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
   const isMobile = isMobileOrTablet();
   let stream: MediaStream | null = null;
 
-  const displayConstraints: DisplayMediaStreamOptions = {
+  const displayConstraints = {
     video: {
       width: { ideal: 1920, max: 3840 },
       height: { ideal: 1080, max: 2160 },
       frameRate: { ideal: 30, max: 30 },
       // @ts-ignore
-      displaySurface: 'monitor',
+      displaySurface: 'browser',
       // @ts-ignore
       cursor: 'always'
     },
-    audio: withAudio ? {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-      // @ts-ignore
-      suppressLocalAudioPlayback: false
-    } : false,
-    // @ts-ignore
-    systemAudio: withAudio ? 'include' : 'exclude',
-    // @ts-ignore
-    selfBrowserSurface: 'exclude'
+    ...screenAudioOptions(withAudio, Boolean((navigator.mediaDevices?.getSupportedConstraints?.() as any)?.restrictOwnAudio))
+
   };
 
   try {
     if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
-      stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints);
+      stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints as DisplayMediaStreamOptions);
     }
   } catch (err1: any) {
     console.warn('[ScreenShare] High-quality attempt failed:', err1?.name, err1?.message);
@@ -218,7 +227,7 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
     // Fallback to basic if high quality rejected but not by user
     if (err1?.name !== 'NotAllowedError' && err1?.name !== 'AbortError') {
       try {
-        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: withAudio });
+        stream = await navigator.mediaDevices.getDisplayMedia({ ...displayConstraints, video: true } as DisplayMediaStreamOptions);
       } catch (err2) {
         console.warn('[ScreenShare] Fallback failed:', err2);
       }

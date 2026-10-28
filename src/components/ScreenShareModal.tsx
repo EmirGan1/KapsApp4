@@ -63,7 +63,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               Ses Paylaşım Seçeneği
             </label>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Bilgisayarınızda çalan video, müzik veya oyun seslerini diğer katılımcıların da duymasını ister misiniz?
+              Paylaştığınız video, müzik veya oyun seslerini de iletmek ister misiniz? KapsApp aramasının bulunduğu sekmeyi seçmeyin.
             </p>
           </div>
 
@@ -93,7 +93,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                   {shareAudio && <Check size={16} className="text-blue-400 shrink-0 ml-1" />}
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                  YouTube, oyun, Spotify veya sekme sesleri odadakilere yüksek kalitede aktarılır.
+                  Paylaşacağınız içeriğin sekmesini veya penceresini seçin. İçerik sesi iletilirken bu aramadaki konuşmaların geri gönderilmesi engellenir.
                 </p>
               </div>
             </div>
@@ -131,7 +131,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               <div className="space-y-0.5 leading-snug">
                 <span className="font-bold text-amber-200">Tarayıcı Ekran Seçim İpucu:</span>
                 <p className="text-[11px] text-amber-300/90">
-                  Açılacak pencerenin sol altındaki <strong className="text-white">"Sistem sesini de paylaş"</strong> veya <strong className="text-white">"Sekme sesini paylaş"</strong> onay kutusunun işaretli olduğundan emin olun.
+                  İçeriğin bulunduğu sekmeyi veya pencereyi seçin ve <strong className="text-white">"Sekme sesini paylaş"</strong> seçeneğini açın. Arama sesini dışlayamayan tarayıcılarda tüm sistem sesi sunulmaz; içerik sekmesinin sesi paylaşılabilir.
                 </p>
               </div>
             </div>
