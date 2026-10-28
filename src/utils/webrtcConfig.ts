@@ -205,9 +205,9 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
 
   const displayConstraints = {
     video: {
-      width: { ideal: 1920, max: 3840 },
-      height: { ideal: 1080, max: 2160 },
-      frameRate: { ideal: 30, max: 30 },
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
+      frameRate: { ideal: 60, max: 60 },
       // @ts-ignore
       displaySurface: 'browser',
       // @ts-ignore
@@ -260,13 +260,13 @@ export async function applySenderBitrateLimit(
 
   if (isScreenShare) {
     // High-quality screen sharing: 5 Mbps target for 1080p/60fps
-    targetBitrateBps = 2_000_000;
-    maxFps = 30;
+    targetBitrateBps = 5_000_000;
+    maxFps = 60;
     
     // Apply contentHint for sharpness
     if ('contentHint' in sender.track) {
       try {
-        (sender.track as any).contentHint = 'detail';
+        (sender.track as any).contentHint = 'motion';
       } catch (e) {}
     }
   } else {

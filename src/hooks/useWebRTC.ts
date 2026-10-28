@@ -181,6 +181,7 @@ export function useWebRTC({
   const mixedAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const cameraSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
+  const screenMixCleanupRef = useRef<(() => void) | null>(null);
   const remoteScreenIdsRef = useRef<Map<string, string>>(new Map());
   const screenSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
@@ -610,6 +611,7 @@ export function useWebRTC({
     }
     
     cameraSendersRef.current.clear();
+    screenMixCleanupRef.current?.(); screenMixCleanupRef.current = null;
     screenSendersRef.current.clear();
     remoteScreenIdsRef.current.clear();
     setLocalStream(null);
@@ -1062,6 +1064,9 @@ export function useWebRTC({
 
   // Stop Screen Share (Revert to camera or off, and restore clean microphone audio)
   const stopScreenShare = useCallback(async () => {
+    screenMixCleanupRef.current?.(); screenMixCleanupRef.current = null;
+    const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (cameraTrack?.readyState === "live") void cameraTrack.applyConstraints(getVideoConstraintsForResolution(resolutionRef.current, participantCountRef.current)).catch(() => {});
     // 1. Stop all screen media tracks (both video & system audio)
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((track) => {
@@ -1197,6 +1202,10 @@ export function useWebRTC({
       }
 
       screenStreamRef.current = screenStream;
+      // Reduce capture/encoding work for the thumbnail while the full-rate screen is active.
+      if (existingCamTrack?.readyState === 'live') {
+        void existingCamTrack.applyConstraints({width:{ideal:1280,max:1280},height:{ideal:720,max:720},frameRate:{ideal:30,max:30}}).catch(() => {});
+      }
 
       // 2. Audio Handling & Mixing (Web Audio API for simultaneous Mic + System Audio)
       const screenAudioTrack = screenStream.getAudioTracks()[0];
@@ -1213,6 +1222,9 @@ export function useWebRTC({
 
             const destination = audioCtx.createMediaStreamDestination();
             const mixBus = audioCtx.createDynamicsCompressor();
+            const mixSources: MediaStreamAudioSourceNode[] = [];
+            screenMixCleanupRef.current?.();
+            screenMixCleanupRef.current = () => { mixSources.forEach(source => source.disconnect()); mixBus.disconnect(); };
             mixBus.connect(destination);
 
             // Connect local mic stream if present
@@ -1221,11 +1233,13 @@ export function useWebRTC({
               originalMicTrackRef.current = micTrack;
               const micSource = audioCtx.createMediaStreamSource(new MediaStream([micTrack]));
               micSource.connect(mixBus);
+              mixSources.push(micSource);
             }
 
             // Connect system audio stream
             const screenSource = audioCtx.createMediaStreamSource(new MediaStream([screenAudioTrack]));
             screenSource.connect(mixBus);
+            mixSources.push(screenSource);
 
             const mixedTrack = destination.stream.getAudioTracks()[0];
             mixedAudioTrackRef.current = mixedTrack;
