@@ -17,6 +17,11 @@ export interface Solid {
   color: string;
   axis?: "x" | "z";
   detail?: boolean;
+  hidden?: boolean;
+  shape?: "cylinder" | "cone";
+  surface?: "plaster" | "stone" | "brick" | "metal" | "asphalt" | "concrete" | "wood" | "glass" | "water" | "fabric";
+  glow?: boolean;
+  label?: string;
 }
 export interface TargetDefinition {
   id: string;
@@ -34,6 +39,8 @@ export interface MapDefinition {
   spawns: Vec3[];
   targets: TargetDefinition[];
   hazard: { x: number; z: number; r: number };
+  routes?: { name: string; points: Vec3[] }[];
+  landmarks?: string[];
 }
 export interface InputCommand {
   sequence: number;

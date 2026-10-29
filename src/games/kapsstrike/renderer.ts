@@ -1,5 +1,6 @@
 import { createCharacter } from "./character";
 import { cleanSkin } from "./skins";
+import { surfaceTexture } from "./surfaceTextures";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
@@ -23,9 +24,10 @@ import {
   CombatEvent,
   WeaponId,
   Vec3,
+  Solid,
 } from "./types";
 import { WEAPONS, WEAPON_ORDER, PHYSICS as C, TARGET_HITBOXES, detectAutoQuality } from "./config";
-import { raySolid, clamp } from "./physics";
+import { raySolid, clamp, collisionSolids } from "./physics";
 import { aimDirection } from "./combat";
 /** All input belongs to StrikeController; avoid a second device/gamepad listener graph. */
 class StrikeScene extends Scene {
@@ -99,8 +101,8 @@ export class StrikeRenderer {
       this.scene = new StrikeScene(this.engine);
       this.scene.clearColor = Color4.FromHexString(map.sky + "ff");
       this.scene.fogMode = Scene.FOGMODE_LINEAR;
-      this.scene.fogStart = 55;
-      this.scene.fogEnd = 110;
+      this.scene.fogStart = 68;
+      this.scene.fogEnd = 175;
       this.scene.fogColor = Color3.FromHexString(map.sky);
       this.scene.skipPointerMovePicking = true;
       this.scene.autoClear = true;
@@ -127,19 +129,22 @@ export class StrikeRenderer {
         this.scene,
       );
       this.camera.minZ = 0.035;
-      this.camera.maxZ = 120;
+      this.camera.maxZ = 220;
       this.camera.inputs.clear();
       this.camera.fov = (settings.fov * Math.PI) / 180;
       this.scene.activeCamera = this.camera;
       const ground = MeshBuilder.CreateGround(
         "ground",
-        { width: map.bounds * 2, height: map.bounds * 2 },
+        { width: 320, height: 320 },
         this.scene,
       );
-      ground.material = this.material(map.floor);
+      ground.material = this.material(map.floor,false,map.id==='dust'?'plaster':'concrete');
+      this.worldUV(ground);
       ground.receiveShadows = true;
       const batches = new Map<StandardMaterial, Mesh[]>();
       for (const s of map.solids) {
+        if(s.hidden)continue;
+        if(effectiveQuality==='low'&&s.detail&&(Math.abs(s.x)>40||Math.abs(s.z)>40)&&Math.max(s.w,s.h,s.d)<8)continue;
         let mesh: Mesh | ReturnType<Mesh["createInstance"]>;
         if (s.kind === "ramp") {
           const x = s.w / 2,
@@ -185,11 +190,13 @@ export class StrikeRenderer {
           mesh = new Mesh(s.id, this.scene);
           data.applyToMesh(mesh);
           mesh.convertToFlatShadedMesh();
-          mesh.material = this.material(s.color, !!s.detail && map.id === "neon" && ["#9e78c7","#61d7d0","#71d6df","#6ebfc9"].includes(s.color));
+          mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
         } else {
-          mesh = MeshBuilder.CreateBox(s.id,{width:s.w,height:s.h,depth:s.d},this.scene);
-          mesh.material = this.material(s.color, !!s.detail && map.id === "neon" && ["#9e78c7","#61d7d0","#71d6df","#6ebfc9"].includes(s.color));
+          mesh = s.shape ? MeshBuilder.CreateCylinder(s.id,{height:s.h,diameter:s.w,diameterTop:s.shape==='cone'?0:s.w,tessellation:s.shape==='cone'?8:12},this.scene) : MeshBuilder.CreateBox(s.id,{width:s.w,height:s.h,depth:s.d},this.scene);
+          if(s.shape)mesh.scaling.z=s.d/s.w;
+          mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
         }
+        if(s.surface&&!s.label&&!s.shape)this.worldUV(mesh as Mesh);
         mesh.position.set(s.x, s.y + (s.kind === "box" ? s.h / 2 : 0), s.z);
         mesh.isPickable = false;
         mesh.receiveShadows = true;
@@ -395,16 +402,30 @@ export class StrikeRenderer {
       throw error;
     }
   }
-  private material(color: string, emissive = false) {
-    const key = color + emissive;
+  private worldUV(mesh:Mesh){
+    const positions=mesh.getVerticesData(VertexBuffer.PositionKind),normals=mesh.getVerticesData(VertexBuffer.NormalKind);
+    if(!positions||!normals)return;
+    const uv:number[]=[];
+    for(let i=0;i<positions.length;i+=3){
+      const nx=Math.abs(normals[i]),ny=Math.abs(normals[i+1]);
+      uv.push((nx>.5?positions[i+2]:positions[i])/2,(ny>.5?positions[i+2]:positions[i+1])/2);
+    }
+    mesh.setVerticesData(VertexBuffer.UVKind,uv);
+  }
+  private material(color: string, emissive = false, surface?:Solid['surface'],label?:string) {
+    const key = color + emissive + (surface||'') + (label||'');
     let m = this.materials.get(key);
     if (!m) {
       m = new StandardMaterial(key, this.scene);
       m.diffuseColor = Color3.FromHexString(color);
+      const texture=surfaceTexture(this.scene,key,color,surface,label);
+      if(texture){m.diffuseTexture=texture;m.diffuseColor=Color3.White();}
       m.specularColor = color === "#253140" ? new Color3(.22,.25,.3) : new Color3(0.035, 0.035, 0.035);
+      if(surface==='water'||surface==='glass') {m.specularColor=new Color3(.45,.52,.57);m.specularPower=64;}
       if(color === "#253140")m.specularPower=64;
       if (emissive) {
         m.emissiveColor = m.diffuseColor;
+        if(texture)m.emissiveTexture=texture;
         m.disableLighting = true;
       }
       m.freeze();
@@ -488,7 +509,7 @@ export class StrikeRenderer {
       : 0;
     const dir = aimDirection(yaw, pitch);
     let wall = 1;
-    for (const s of this.map.solids)
+    for (const s of collisionSolids(this.map))
       if (!s.detail)
         wall = Math.min(wall, raySolid(this.camera.position, dir, s, 1));
     const near = clamp(1 - wall, 0, 1);

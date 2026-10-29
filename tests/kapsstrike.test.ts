@@ -227,6 +227,7 @@ for (const id of WEAPON_ORDER.filter(id => id !== "knife"))
 test("head/body hits are distinct, cover blocks damage, shotgun emits eight pellet rays", () => {
   for (const head of [false, true]) {
     const s = createTraining("warehouse");
+    s.player.movement.position = {x:0,y:0,z:-28};
     s.targets = [
       { id: "t", position: { x: 0, y: 0, z: -25 }, hp: 100, respawnAt: 0 },
     ];
