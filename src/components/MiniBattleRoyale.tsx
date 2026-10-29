@@ -5,7 +5,7 @@ import {
   Flame, Crosshair, Volume2, VolumeX, Maximize2, Minimize2, 
   Smartphone, Keyboard, AlertTriangle, Zap, Skull,
   HelpCircle, MousePointer, Info, CheckCircle2, Move, Clock, Swords,
-  Sparkles, RotateCcw, Award, ChevronRight, Eye
+  Sparkles, RotateCcw, Award, ChevronRight, Eye, Compass
 } from 'lucide-react';
 import Avatar from './Avatar';
 import { 
@@ -217,9 +217,51 @@ export default function MiniBattleRoyale({
 
   // Control Mode: 'touch' (Virtual Joystick) vs 'desktop' (WASD + Arrows/Mouse)
   const [controlMode, setControlMode] = useState<'touch' | 'desktop'>(() => {
-    const isMobileOrTablet = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 1024;
-    return isMobileOrTablet ? 'touch' : 'desktop';
+    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const isMobileOrTabletUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Tablet|Macintosh/i.test(navigator.userAgent);
+    const isTabletOrMobileScreen = window.innerWidth <= 1280;
+    return (hasTouch && (isMobileOrTabletUA || isTabletOrMobileScreen)) ? 'touch' : 'desktop';
   });
+
+  // Gyroscope Aiming Mode (Tablets & Mobile / iOS & Android)
+  const [isGyroEnabled, setIsGyroEnabled] = useState<boolean>(false);
+  const [gyroSensitivity, setGyroSensitivity] = useState<number>(0.016); // Default sensitivity
+  const [, setGyroPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
+  const lastGyroData = useRef<{ alpha: number | null; beta: number | null; gamma: number | null }>({ alpha: null, beta: null, gamma: null });
+  const [showCalibrationModal, setShowCalibrationModal] = useState<boolean>(false);
+
+  // Enable / Disable Gyroscope with iOS 13+ DeviceOrientation permission handling
+  const enableGyroscope = async () => {
+    if (isGyroEnabled) {
+      setIsGyroEnabled(false);
+      return;
+    }
+
+    const DeviceOrientationEventAny = DeviceOrientationEvent as any;
+    if (typeof DeviceOrientationEventAny !== 'undefined' && typeof DeviceOrientationEventAny.requestPermission === 'function') {
+      try {
+        const permission = await DeviceOrientationEventAny.requestPermission();
+        if (permission === 'granted') {
+          setGyroPermissionStatus('granted');
+          setIsGyroEnabled(true);
+        } else {
+          setGyroPermissionStatus('denied');
+          setIsGyroEnabled(false);
+          alert('Jiroskop erişim izni verilmedi. iOS Safari ayarlarından izin verebilirsiniz.');
+        }
+      } catch (err) {
+        console.error('[Gyro Permission Error]:', err);
+        setGyroPermissionStatus('denied');
+        alert('Jiroskop izni alınamadı.');
+      }
+    } else if (window.DeviceOrientationEvent) {
+      setGyroPermissionStatus('granted');
+      setIsGyroEnabled(true);
+    } else {
+      alert('Cihazınızda jiroskop (DeviceOrientation) sensörü desteklenmiyor.');
+      setGyroPermissionStatus('unsupported');
+    }
+  };
 
   // Game UI & Fullscreen
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -991,6 +1033,67 @@ export default function MiniBattleRoyale({
       window.removeEventListener('touchcancel', onWindowTouchEnd);
     };
   }, [view]);
+
+  // Gyroscope Device Orientation Aiming Listener (Tablets & Phones)
+  useEffect(() => {
+    if (!isGyroEnabled || view !== 'game') return;
+
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      const { beta, gamma } = e;
+      if (beta === null || gamma === null) return;
+
+      const prevBeta = lastGyroData.current.beta;
+      const prevGamma = lastGyroData.current.gamma;
+
+      lastGyroData.current = { alpha: e.alpha, beta, gamma };
+
+      if (prevBeta === null || prevGamma === null) return;
+
+      const dBeta = beta - prevBeta;
+      const dGamma = gamma - prevGamma;
+
+      // Filter out huge sudden jumps (device flip or glitch)
+      if (Math.abs(dBeta) > 30 || Math.abs(dGamma) > 30) return;
+
+      // Orientation compensation (Portrait vs Landscape)
+      const orientationAngle = typeof window.orientation !== 'undefined'
+        ? Number(window.orientation)
+        : (screen.orientation?.angle || 0);
+
+      let yawDelta = 0;
+
+      if (orientationAngle === 90) {
+        // Landscape Left
+        yawDelta = -dBeta * gyroSensitivity;
+      } else if (orientationAngle === -90 || orientationAngle === 270) {
+        // Landscape Right
+        yawDelta = dBeta * gyroSensitivity;
+      } else if (orientationAngle === 180) {
+        // Portrait Upside Down
+        yawDelta = -dGamma * gyroSensitivity;
+      } else {
+        // Portrait Default (0)
+        yawDelta = dGamma * gyroSensitivity;
+      }
+
+      if (Math.abs(yawDelta) > 0.001) {
+        virtualAimAngle.current += yawDelta;
+        while (virtualAimAngle.current < -Math.PI) virtualAimAngle.current += Math.PI * 2;
+        while (virtualAimAngle.current > Math.PI) virtualAimAngle.current -= Math.PI * 2;
+
+        virtualCrosshairOffset.current = {
+          x: Math.cos(virtualAimAngle.current) * 160,
+          y: Math.sin(virtualAimAngle.current) * 160
+        };
+      }
+    };
+
+    window.addEventListener('deviceorientation', handleOrientation, true);
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation, true);
+      lastGyroData.current = { alpha: null, beta: null, gamma: null };
+    };
+  }, [isGyroEnabled, view]);
 
   // 60 FPS HTML5 Canvas Render Loop
   useEffect(() => {
@@ -2934,6 +3037,30 @@ export default function MiniBattleRoyale({
                   {controlMode === 'touch' ? '📱 Dokunmatik' : '⌨️ Klavye'}
                 </button>
 
+                {/* Gyroscope Aiming Toggle Button */}
+                <button
+                  onClick={enableGyroscope}
+                  className={`px-2.5 py-1.5 rounded-xl backdrop-blur-md text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                    isGyroEnabled
+                      ? 'bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-sm shadow-purple-500/20'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                  title="Jiroskop Nişan Alma Modu (Tablet & Telefon)"
+                >
+                  <Compass size={13} className={isGyroEnabled ? 'text-purple-400 animate-spin' : 'text-slate-500'} />
+                  <span>Jiroskop: <strong className={isGyroEnabled ? 'text-purple-400' : 'text-slate-500'}>{isGyroEnabled ? 'AÇIK' : 'KAPALI'}</strong></span>
+                </button>
+
+                {isGyroEnabled && (
+                  <button
+                    onClick={() => setShowCalibrationModal(true)}
+                    className="px-2.5 py-1.5 rounded-xl bg-purple-950/80 backdrop-blur-md border border-purple-800 text-[11px] font-bold text-purple-300 hover:text-white transition-colors cursor-pointer"
+                    title="Jiroskopu Kalibre Et"
+                  >
+                    🛠️ Kalibre
+                  </button>
+                )}
+
                 <button
                   onClick={() => setShowControlsModal(true)}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-900/80 backdrop-blur-md border border-amber-500/40 text-[11px] font-bold text-amber-300 hover:text-amber-100 hover:border-amber-400 transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
@@ -3175,18 +3302,33 @@ export default function MiniBattleRoyale({
                 🔥
               </button>
 
-              {/* Touch Action Buttons: Reload & Pickup */}
+              {/* Touch Action Buttons: Reload, Pickup & Gyroscope */}
               <div className="absolute bottom-40 right-6 pointer-events-auto flex flex-col gap-2 z-20">
                 <button
+                  onTouchStart={(e) => { e.preventDefault(); enableGyroscope(); }}
+                  onClick={enableGyroscope}
+                  className={`w-12 h-12 rounded-2xl text-xs font-black shadow-lg flex flex-col items-center justify-center active:scale-90 border transition-all cursor-pointer ${
+                    isGyroEnabled
+                      ? 'bg-purple-600/90 text-white border-purple-400 shadow-purple-600/40'
+                      : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
+                  }`}
+                  title="Jiroskop Nişan Alma Modu"
+                >
+                  <Compass size={16} className={isGyroEnabled ? 'animate-spin' : ''} />
+                  <span className="text-[8px] mt-0.5 font-bold">{isGyroEnabled ? 'JİRO: AÇ' : 'JİRO: KAP'}</span>
+                </button>
+
+                <button
                   onTouchStart={() => socket?.emit('royale:input', { reload: true })}
-                  className="w-12 h-12 rounded-2xl bg-amber-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-amber-400"
+                  className="w-12 h-12 rounded-2xl bg-amber-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-amber-400 cursor-pointer"
                   title="Şarjör Doldur"
                 >
                   R
                 </button>
+
                 <button
                   onTouchStart={() => socket?.emit('royale:input', { pickup: true, swapWeapon: true })}
-                  className="w-12 h-12 rounded-2xl bg-emerald-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-emerald-400"
+                  className="w-12 h-12 rounded-2xl bg-emerald-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-emerald-400 cursor-pointer"
                   title="Eşya Al / Silah Takas Et"
                 >
                   E
@@ -3296,6 +3438,36 @@ export default function MiniBattleRoyale({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Gyroscope Calibration Modal */}
+      {showCalibrationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in pointer-events-auto">
+          <div className="w-full max-w-sm bg-slate-900 border border-purple-700/80 rounded-3xl shadow-2xl p-6 space-y-5">
+            <h3 className="text-lg font-black text-white">Jiroskop Kalibrasyonu</h3>
+            <p className="text-xs text-slate-400">Nişan hassasiyetini cihazına göre ayarla.</p>
+            
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-purple-300">Hassasiyet: {gyroSensitivity.toFixed(3)}</label>
+              <input
+                type="range"
+                min="0.005"
+                max="0.05"
+                step="0.001"
+                value={gyroSensitivity}
+                onChange={(e) => setGyroSensitivity(parseFloat(e.target.value))}
+                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+            </div>
+            
+            <button
+              onClick={() => setShowCalibrationModal(false)}
+              className="w-full py-3 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-black text-sm transition-all"
+            >
+              Kaydet ve Kapat
+            </button>
+          </div>
         </div>
       )}
 
@@ -3415,6 +3587,19 @@ export default function MiniBattleRoyale({
                 </div>
                 <div className="flex items-center gap-1 self-start sm:self-auto">
                   <kbd className="px-2.5 py-1 rounded-lg bg-amber-950/80 border border-amber-800/80 font-mono font-black text-amber-300 shadow-sm text-xs">R</kbd>
+                </div>
+              </div>
+
+              {/* Gyroscope & Mobile/Tablet Info */}
+              <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-purple-300 text-sm block">📱 Tablet & Telefon: Jiroskop (DeviceOrientation)</span>
+                  <p className="text-purple-200/80 text-[11px]">Cihazınızı sağa/sola ve yukarı/aşağı eğerek 360° hassas nişan alın. iOS cihazlarda butona dokunarak izin vermeniz yeterlidir. Üst bardaki "Dokunmatik / Klavye" butonu ile istediğiniz zaman klavyeye geçebilirsiniz.</p>
+                </div>
+                <div className="flex items-center gap-1 self-start sm:self-auto">
+                  <span className="px-2.5 py-1 rounded-lg bg-purple-600 text-white font-black text-xs flex items-center gap-1">
+                    <Compass size={14} /> JİRO
+                  </span>
                 </div>
               </div>
             </div>

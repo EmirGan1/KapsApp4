@@ -43,7 +43,7 @@ export default function Auth({ onAuthSuccess, onNavigateToReset }: AuthProps) {
         body: JSON.stringify({
           username: username.trim(),
           password,
-          ...(isLogin ? { requesterKey: readResetTicket(username)?.requesterKey } : {}),
+          ...(isLogin && readResetTicket(username) ? { requesterKey: readResetTicket(username)!.requesterKey } : {}),
           ...(isLogin ? {} : { locationConsent, kvkkAccepted, termsAccepted: kvkkAccepted })
         }),
       });
