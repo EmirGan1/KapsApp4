@@ -9,6 +9,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
@@ -44,6 +45,9 @@ export class StrikeRenderer {
       body: Mesh;
       head: Mesh;
       tagPlane?: Mesh;
+      gun?: Mesh;
+      tagTex?: DynamicTexture;
+      tagMat?: StandardMaterial;
     }
   >();
   private gunRoot: TransformNode;
@@ -557,15 +561,39 @@ export class StrikeRenderer {
 
         const tagPlane = MeshBuilder.CreatePlane(
           "remote-tag-" + p.id,
-          { width: 1.1, height: 0.22 },
+          { width: 1.2, height: 0.28 },
           this.scene
         );
-        tagPlane.position.y = TARGET_HITBOXES.head.max + 0.3;
+        tagPlane.position.y = TARGET_HITBOXES.head.max + 0.35;
         tagPlane.parent = root;
         tagPlane.billboardMode = Mesh.BILLBOARDMODE_ALL;
-        tagPlane.material = this.material(teamColor, true);
 
-        item = { root, body, head, tagPlane };
+        const tagTex = new DynamicTexture(
+          "remote-tag-tex-" + p.id,
+          { width: 256, height: 64 },
+          this.scene,
+          false
+        );
+        tagTex.hasAlpha = true;
+        const displayName = (p.username || "Oyuncu").slice(0, 16);
+        tagTex.drawText(displayName, null, 42, "bold 26px monospace", "#ffffff", teamColor, true);
+
+        const tagMat = new StandardMaterial("remote-tag-mat-" + p.id, this.scene);
+        tagMat.diffuseTexture = tagTex;
+        tagMat.emissiveColor = Color3.White();
+        tagMat.disableLighting = true;
+        tagPlane.material = tagMat;
+
+        const gun = MeshBuilder.CreateBox(
+          "remote-gun-" + p.id,
+          { width: 0.08, height: 0.12, depth: 0.45 },
+          this.scene
+        );
+        gun.position.set(0.25, 0.9, 0.25);
+        gun.parent = root;
+        gun.material = this.material("#1e293b");
+
+        item = { root, body, head, tagPlane, gun, tagTex, tagMat };
         this.remotePlayerMeshes.set(p.id, item);
       }
 
@@ -585,6 +613,8 @@ export class StrikeRenderer {
 
     for (const [id, item] of this.remotePlayerMeshes.entries()) {
       if (!activeIds.has(id)) {
+        item.tagTex?.dispose();
+        item.tagMat?.dispose();
         item.root.dispose();
         this.remotePlayerMeshes.delete(id);
       }
@@ -607,6 +637,8 @@ export class StrikeRenderer {
     this.tracerPool = [];
     this.impactPool = [];
     for (const p of this.remotePlayerMeshes.values()) {
+      p.tagTex?.dispose();
+      p.tagMat?.dispose();
       p.root.dispose();
     }
     this.remotePlayerMeshes.clear();

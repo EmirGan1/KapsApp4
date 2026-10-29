@@ -80,6 +80,11 @@ export default function KapsStrikeGame({
   // Multiplayer Room State
   const [rooms, setRooms] = useState<StrikeRoomSummary[]>([]);
   const [currentRoom, setCurrentRoom] = useState<StrikeRoomState | null>(null);
+  const currentRoomRef = useRef<StrikeRoomState | null>(null);
+  const updateCurrentRoom = useCallback((r: StrikeRoomState | null) => {
+    currentRoomRef.current = r;
+    setCurrentRoom(r);
+  }, []);
   const [roomFilter, setRoomFilter] = useState("");
   const [roomModeFilter, setRoomModeFilter] = useState<"all" | "ffa" | "tdm">("all");
   const [joinCodeInput, setJoinCodeInput] = useState("");
@@ -151,9 +156,12 @@ export default function KapsStrikeGame({
     };
   }, [socket, currentUserId, username]);
 
-  // Request room list
+  // Request room list (supports both strike:get_rooms and strike:list_rooms)
   const refreshRooms = useCallback(() => {
     if (!socket || !socket.connected) return;
+    socket.emit("strike:get_rooms", (res: StrikeRoomSummary[]) => {
+      if (Array.isArray(res)) setRooms(res);
+    });
     socket.emit("strike:list_rooms", (res: StrikeRoomSummary[]) => {
       if (Array.isArray(res)) setRooms(res);
     });
@@ -164,16 +172,38 @@ export default function KapsStrikeGame({
     if (!socket) return;
 
     refreshRooms();
-    const interval = setInterval(refreshRooms, 4000);
+    const interval = setInterval(refreshRooms, 3000);
 
-    const onRoomState = (state: StrikeRoomState) => {
-      setCurrentRoom(state);
-      if (view === "menu") setView("lobby");
+    const onRoomsList = (list: StrikeRoomSummary[]) => {
+      if (Array.isArray(list)) {
+        setRooms(list);
+      }
     };
 
-    const onMatchStarted = (data: { map: MapId; mode: StrikeGameMode; duration: number }) => {
-      setMap(data.map);
-      startMultiplayerGame(data.map);
+    const onRoomState = (state: StrikeRoomState) => {
+      updateCurrentRoom(state);
+      if (state.status === "in_progress" && view === "lobby") {
+        startMultiplayerGame(state);
+      } else if (view === "menu") {
+        setView("lobby");
+      }
+    };
+
+    const onMatchStarted = (data: any) => {
+      if (data && typeof data === "object") {
+        if (data.map) setMap(data.map);
+        if (data.roomCode) {
+          updateCurrentRoom(data);
+        }
+        startMultiplayerGame(data);
+      }
+    };
+
+    const onMatchReset = (state: StrikeRoomState) => {
+      updateCurrentRoom(state);
+      game.current?.dispose();
+      game.current = null;
+      setView("lobby");
     };
 
     const onKill = (kill: KillFeedEntry) => {
@@ -183,39 +213,87 @@ export default function KapsStrikeGame({
       }, 5000);
     };
 
-    const onMatchEnded = (stats: MatchStats) => {
+    const onMatchEnded = (payload: any) => {
+      let stats: MatchStats;
+      if (payload && Array.isArray(payload.players)) {
+        const roomState = payload as StrikeRoomState;
+        const me = roomState.players.find((p) => p.userId === currentUserId);
+        const sorted = [...roomState.players].sort((a, b) => b.kills - a.kills || b.damage - a.damage);
+        const top = sorted[0];
+        const isWin =
+          (roomState.mode === "tdm" && me?.team === roomState.winner?.team && roomState.winner?.team !== "none") ||
+          (roomState.mode === "ffa" && me?.userId === roomState.winner?.userId);
+        stats = {
+          kills: me?.kills || 0,
+          deaths: me?.deaths || 0,
+          headshots: me?.headshots || 0,
+          damage: me?.damage || 0,
+          score: me?.score || 0,
+          won: isWin,
+          mode: roomState.mode,
+          winnerTeam: roomState.winner?.team,
+          winnerName: roomState.winner?.username,
+          mvp: top ? { userId: top.userId, username: top.username, kills: top.kills, damage: top.damage } : undefined,
+        };
+      } else if (payload && typeof payload === "object") {
+        stats = payload as MatchStats;
+      } else {
+        stats = {
+          kills: 0,
+          deaths: 0,
+          headshots: 0,
+          damage: 0,
+          score: 0,
+          won: false,
+          mode: "ffa",
+        };
+      }
       setMatchStats(stats);
       setView("match_end");
       game.current?.dispose();
       game.current = null;
     };
 
-    const onError = (data: { message: string }) => {
-      setError(data.message);
+    const onError = (data: { message?: string; error?: string }) => {
+      setError(data.message || data.error || "Ağ hatası oluştu.");
     };
 
+    socket.on("strike:rooms_list", onRoomsList);
+    socket.on("strike:room_list", onRoomsList);
     socket.on("strike:room_state", onRoomState);
     socket.on("strike:match_started", onMatchStarted);
+    socket.on("strike:match_reset_to_lobby", onMatchReset);
     socket.on("strike:kill", onKill);
+    socket.on("strike:kill_feed", onKill);
     socket.on("strike:match_ended", onMatchEnded);
+    socket.on("strike:game_over", onMatchEnded);
     socket.on("strike:error", onError);
 
     // Direct room join via targetRoomId prop
     if (targetRoomId) {
-      socket.emit("strike:join_room", { roomId: targetRoomId }, (res: any) => {
-        if (res?.success) {
-          setCurrentRoom(res.room);
-          setView("lobby");
+      socket.emit("strike:join_room", { roomCode: targetRoomId, roomId: targetRoomId, code: targetRoomId }, (res: any) => {
+        if (res?.success && res.room) {
+          updateCurrentRoom(res.room);
+          if (res.room.status === "in_progress") {
+            startMultiplayerGame(res.room);
+          } else {
+            setView("lobby");
+          }
         }
       });
     }
 
     return () => {
       clearInterval(interval);
+      socket.off("strike:rooms_list", onRoomsList);
+      socket.off("strike:room_list", onRoomsList);
       socket.off("strike:room_state", onRoomState);
       socket.off("strike:match_started", onMatchStarted);
+      socket.off("strike:match_reset_to_lobby", onMatchReset);
       socket.off("strike:kill", onKill);
+      socket.off("strike:kill_feed", onKill);
       socket.off("strike:match_ended", onMatchEnded);
+      socket.off("strike:game_over", onMatchEnded);
       socket.off("strike:error", onError);
     };
   }, [socket, view, targetRoomId, refreshRooms]);
@@ -252,12 +330,28 @@ export default function KapsStrikeGame({
   };
 
   // Launch Online Multiplayer Match
-  const startMultiplayerGame = (gameMap: MapId) => {
+  const startMultiplayerGame = (roomOrMap?: any) => {
     setPanel(null);
     setError("");
     try {
       localStorage.setItem("kapsstrike-settings", JSON.stringify(settings));
     } catch {}
+
+    const targetRoom: StrikeRoomState | null =
+      roomOrMap && typeof roomOrMap === "object" && roomOrMap.roomCode
+        ? (roomOrMap as StrikeRoomState)
+        : currentRoomRef.current || currentRoom;
+
+    const gameMap: MapId =
+      roomOrMap && typeof roomOrMap === "object" && roomOrMap.map
+        ? roomOrMap.map
+        : typeof roomOrMap === "string"
+        ? (roomOrMap as MapId)
+        : targetRoom?.map || map || "warehouse";
+
+    const activeRoomCode = targetRoom?.roomCode;
+    const myTeam: StrikeTeam =
+      targetRoom?.players?.find((p) => p.userId === currentUserId)?.team || "none";
 
     try {
       game.current?.dispose();
@@ -272,10 +366,10 @@ export default function KapsStrikeGame({
         undefined,
         {
           socket,
-          roomCode: currentRoom?.roomCode,
+          roomCode: activeRoomCode,
           userId: currentUserId,
           username,
-          team: currentRoom?.players.find((p) => p.userId === currentUserId)?.team || "none",
+          team: myTeam,
           isMultiplayer: true,
           onScoreboardToggle: (open) => setScoreboardOpen(open),
           onPttChange: (active) => voice.current?.setPttActive(active),
@@ -285,10 +379,10 @@ export default function KapsStrikeGame({
       game.current.start();
 
       // Connect voice room with other players
-      if (voice.current && currentRoom) {
+      if (voice.current && targetRoom) {
         voice.current.joinRoomVoice(
-          currentRoom.roomCode,
-          currentRoom.players.map((p) => p.userId)
+          targetRoom.roomCode,
+          targetRoom.players.map((p) => p.userId)
         );
       }
     } catch (e) {
@@ -311,9 +405,9 @@ export default function KapsStrikeGame({
     game.current = null;
     voice.current?.leaveVoice();
     setHUD(null);
-    if (currentRoom && socket) {
+    if ((currentRoom || currentRoomRef.current) && socket) {
       socket.emit("strike:leave_room");
-      setCurrentRoom(null);
+      updateCurrentRoom(null);
     }
     setView("menu");
     setPanel(null);
@@ -338,9 +432,10 @@ export default function KapsStrikeGame({
       },
       (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
         if (res.success && res.room) {
-          setCurrentRoom(res.room);
+          updateCurrentRoom(res.room);
           setPanel(null);
           setView("lobby");
+          refreshRooms();
         } else {
           setError(res.error || "Oda kurulamadı.");
         }
@@ -356,8 +451,12 @@ export default function KapsStrikeGame({
       {},
       (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
         if (res.success && res.room) {
-          setCurrentRoom(res.room);
-          setView("lobby");
+          updateCurrentRoom(res.room);
+          if (res.room.status === "in_progress") {
+            startMultiplayerGame(res.room);
+          } else {
+            setView("lobby");
+          }
         } else {
           setError(res.error || "Hızlı maç bulunamadı.");
         }
@@ -374,11 +473,15 @@ export default function KapsStrikeGame({
     setError("");
     socket.emit(
       "strike:join_room",
-      { roomId },
+      { roomCode: roomId, roomId, code: roomId },
       (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
         if (res.success && res.room) {
-          setCurrentRoom(res.room);
-          setView("lobby");
+          updateCurrentRoom(res.room);
+          if (res.room.status === "in_progress") {
+            startMultiplayerGame(res.room);
+          } else {
+            setView("lobby");
+          }
         } else {
           setError(res.error || "Odaya katılınamadı.");
         }
@@ -391,13 +494,22 @@ export default function KapsStrikeGame({
     setError("");
     socket.emit(
       "strike:join_room",
-      { roomId: passwordModalRoomId, password: passwordInput },
+      {
+        roomCode: passwordModalRoomId,
+        roomId: passwordModalRoomId,
+        code: passwordModalRoomId,
+        password: passwordInput,
+      },
       (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
         if (res.success && res.room) {
-          setCurrentRoom(res.room);
+          updateCurrentRoom(res.room);
           setPasswordModalRoomId(null);
           setPasswordInput("");
-          setView("lobby");
+          if (res.room.status === "in_progress") {
+            startMultiplayerGame(res.room);
+          } else {
+            setView("lobby");
+          }
         } else {
           setError(res.error || "Hatalı oda şifresi.");
         }
@@ -409,23 +521,36 @@ export default function KapsStrikeGame({
     e.preventDefault();
     if (!socket || !joinCodeInput) return;
     const clean = joinCodeInput.trim().toUpperCase();
-    const matched = rooms.find((r) => r.roomCode === clean);
-    if (matched) {
-      handleJoinRoom(matched.roomCode, matched.hasPassword);
-    } else {
-      socket.emit(
-        "strike:join_room",
-        { code: clean },
-        (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
-          if (res.success && res.room) {
-            setCurrentRoom(res.room);
-            setView("lobby");
-          } else {
-            setError(res.error || "Oda kodu bulunamadı.");
-          }
-        }
-      );
+    setError("");
+
+    const matched = rooms.find(
+      (r) =>
+        r.roomCode.toUpperCase() === clean ||
+        r.roomCode.toUpperCase() === `KS-${clean}` ||
+        r.roomCode.toUpperCase().replace(/[^A-Z0-9]/g, "") === clean.replace(/[^A-Z0-9]/g, "")
+    );
+
+    if (matched && matched.hasPassword) {
+      handleJoinRoom(matched.roomCode, true);
+      return;
     }
+
+    socket.emit(
+      "strike:join_room",
+      { roomCode: clean, roomId: clean, code: clean },
+      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
+        if (res.success && res.room) {
+          updateCurrentRoom(res.room);
+          if (res.room.status === "in_progress") {
+            startMultiplayerGame(res.room);
+          } else {
+            setView("lobby");
+          }
+        } else {
+          setError(res.error || "Oda kodu bulunamadı.");
+        }
+      }
+    );
   };
 
   const toggleReady = () => {
@@ -441,7 +566,22 @@ export default function KapsStrikeGame({
 
   const startMatchAsHost = () => {
     if (!socket || !currentRoom) return;
-    socket.emit("strike:start_match");
+    setError("");
+    socket.emit("strike:start_game", (res?: { success: boolean; error?: string }) => {
+      if (res && !res.success && res.error) {
+        setError(res.error);
+      }
+    });
+    socket.emit("strike:start_match", (res?: { success: boolean; error?: string }) => {
+      if (res && !res.success && res.error) {
+        setError(res.error);
+      }
+    });
+  };
+
+  const returnToLobbyAsHost = () => {
+    if (!socket || !currentRoom) return;
+    socket.emit("strike:return_to_lobby");
   };
 
   const toggleVoice = async () => {

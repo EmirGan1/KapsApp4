@@ -447,7 +447,6 @@ export default function Games({
 
   // Games definition list
   const allGames = [
-    {id:'kapsstrike',title:'KapsStrike',subtitle:'Özgün 3D FPS · Yerel Antrenman',category:['arcade'],badge:'3D FPS · YENİ',badgeColor:'bg-amber-200 text-slate-950',gradient:'from-slate-800 via-stone-700 to-slate-900',icon:'🎯',capacity:'Tek Oyunculu Antrenman',activeRooms:0,features:['Üç özgün harita, beş silah ve kafa/gövde hitbox’ları','Slide, bunny hop, ADS ve 120 Hz sabit adımlı hareket','Masaüstü fare kilidi, grafik profilleri ve DPS ölçümü'],preview:<div className="text-center py-2 font-black tracking-widest text-amber-200">KAPS<span className="text-white">STRIKE</span></div>,actionPrimary:'Antrenmana Gir',onClick:()=>setSelectedGame('kapsstrike')},
     {
       id: 'dungeon', title: 'Zindan Kuşatması', subtitle: '2–4 Kişilik · Çevrim İçi Co-Op Roguelite',
       category: ['strategy', 'arcade'], badge: 'YENİ CO-OP', badgeColor: 'bg-amber-200 text-slate-950',
@@ -935,6 +934,7 @@ export default function Games({
                           socket.emit('join_table', { tableId: t.id, gameType: t.gameType });
                         }
                         const targetRoute: SelectedGameType = 
+                          (t.gameType as any) === 'strike' || (t.gameType as any) === 'kapsstrike' ? 'kapsstrike' :
                           t.gameType === 'poker' ? 'poker' :
                           t.gameType === 'okey101' ? 'okey101' :
                           t.gameType === 'okey' ? 'okey' :

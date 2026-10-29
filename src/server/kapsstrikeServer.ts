@@ -370,6 +370,7 @@ export class KapsStrikeServerManager {
   private broadcastRoomsList() {
     const summaries = this.getRoomsList();
     this.io.emit("strike:rooms_list", summaries);
+    this.io.emit("strike:room_list", summaries);
     this.io.emit("active_tables_updated", this.getUnifiedTables());
   }
 
@@ -377,6 +378,32 @@ export class KapsStrikeServerManager {
     const state = room.getPublicRoomState();
     this.io.to(`strike:${room.roomCode}`).emit("strike:room_state", state);
     this.broadcastRoomsList();
+  }
+
+  public findRoomByCode(rawCode: string): StrikeRoom | undefined {
+    if (!rawCode || typeof rawCode !== "string") return undefined;
+    const clean = rawCode.trim().toUpperCase();
+    if (!clean) return undefined;
+
+    // 1. Exact match
+    if (this.rooms.has(clean)) return this.rooms.get(clean);
+
+    // 2. Match with "KS-" prefix
+    const withPrefix = clean.startsWith("KS-") ? clean : `KS-${clean}`;
+    if (this.rooms.has(withPrefix)) return this.rooms.get(withPrefix);
+
+    // 3. Match without "KS-" prefix
+    const withoutPrefix = clean.startsWith("KS-") ? clean.slice(3) : clean;
+    if (this.rooms.has(withoutPrefix)) return this.rooms.get(withoutPrefix);
+
+    // 4. Match pure alphanumeric characters (e.g. "KS AB12" -> "KSAB12")
+    const cleanAlpha = clean.replace(/[^A-Z0-9]/g, "");
+    for (const [code, r] of this.rooms.entries()) {
+      const codeAlpha = code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (codeAlpha === cleanAlpha) return r;
+      if (code.toUpperCase() === clean || code.toUpperCase() === withPrefix) return r;
+    }
+    return undefined;
   }
 
   public createRoom(
@@ -445,9 +472,9 @@ export class KapsStrikeServerManager {
     socketId: string,
     password?: string
   ): { success: boolean; room?: StrikeRoom; error?: string } {
-    const room = this.rooms.get(roomCode);
+    const room = this.findRoomByCode(roomCode);
     if (!room) {
-      return { success: false, error: "Oda bulunamadı." };
+      return { success: false, error: "Oda bulunamadı veya kapatılmış olabilir." };
     }
 
     if (room.password && room.password !== (password || "").trim()) {
@@ -598,8 +625,8 @@ export class KapsStrikeServerManager {
       return { success: false, error: "Yalnızca oda kurucusu maçı başlatabilir." };
     }
 
-    if (room.players.size < 2 && process.env.NODE_ENV === "production") {
-      return { success: false, error: "En az 2 oyuncu gereklidir." };
+    if (room.players.size < 1) {
+      return { success: false, error: "Odada en az 1 oyuncu olmalıdır." };
     }
 
     room.status = "in_progress";
@@ -1021,6 +1048,7 @@ export class KapsStrikeServerManager {
     }
 
     this.io.to(`strike:${room.roomCode}`).emit("strike:kill_feed", feedEntry);
+    this.io.to(`strike:${room.roomCode}`).emit("strike:kill", feedEntry);
     this.checkMatchEndConditions(room);
   }
 
@@ -1129,6 +1157,41 @@ export class KapsStrikeServerManager {
 
     const state = room.getPublicRoomState();
     this.io.to(`strike:${room.roomCode}`).emit("strike:game_over", state);
+    this.io.to(`strike:${room.roomCode}`).emit("strike:match_ended", state);
+
+    // Also emit per-player MatchStats directly to each player
+    const sortedPlayers = Array.from(room.players.values()).sort(
+      (a, b) => b.kills - a.kills || b.damage - a.damage
+    );
+    const topPlayer = sortedPlayers[0];
+
+    room.players.forEach((p) => {
+      const isWin =
+        (room.mode === "tdm" && p.team === winner.team && winner.team !== "none") ||
+        (room.mode === "ffa" && p.userId === winner.userId);
+
+      const pStats = {
+        kills: p.kills,
+        deaths: p.deaths,
+        headshots: p.headshots,
+        damage: p.damage,
+        score: p.score,
+        won: isWin,
+        mode: room.mode,
+        winnerTeam: winner.team,
+        winnerName: winner.username || (winner.team ? `${winner.team === "red" ? "Kırmızı" : "Mavi"} Takım` : undefined),
+        mvp: topPlayer
+          ? {
+              userId: topPlayer.userId,
+              username: topPlayer.username,
+              kills: topPlayer.kills,
+              damage: topPlayer.damage,
+            }
+          : undefined,
+      };
+      this.io.to(p.id).emit("strike:match_ended", pStats);
+    });
+
     this.broadcastRoomsList();
   }
 
@@ -1151,12 +1214,18 @@ export class KapsStrikeServerManager {
       color: user.color || "#3b82f6",
     };
 
-    // 1. Get Room List
-    socket.on("strike:get_rooms", (cb?: (rooms: StrikeRoomSummary[]) => void) => {
+    // 1. Get Room List (supports both strike:get_rooms and strike:list_rooms)
+    const sendRooms = (cb?: (rooms: StrikeRoomSummary[]) => void) => {
+      const summaries = this.getRoomsList();
       if (typeof cb === "function") {
-        cb(this.getRoomsList());
+        cb(summaries);
+      } else {
+        socket.emit("strike:rooms_list", summaries);
+        socket.emit("strike:room_list", summaries);
       }
-    });
+    };
+    socket.on("strike:get_rooms", sendRooms);
+    socket.on("strike:list_rooms", sendRooms);
 
     // 2. Create Room
     socket.on(
@@ -1172,20 +1241,25 @@ export class KapsStrikeServerManager {
       }
     );
 
-    // 3. Join Room
+    // 3. Join Room (robust: accepts roomCode, roomId, or code)
     socket.on(
       "strike:join_room",
       (
-        data: { roomCode: string; password?: string },
+        data: { roomCode?: string; roomId?: string; code?: string; password?: string },
         cb?: (res: { success: boolean; room?: StrikeRoomState; error?: string }) => void
       ) => {
         try {
-          const res = this.joinRoom(data.roomCode, u, socket.id, data.password);
+          const rawCode = (data?.roomCode || data?.roomId || data?.code || "").trim();
+          if (!rawCode) {
+            if (cb) cb({ success: false, error: "Lütfen bir oda kodu girin." });
+            return;
+          }
+          const res = this.joinRoom(rawCode, u, socket.id, data.password);
           if (res.success && res.room) {
             socket.join(`strike:${res.room.roomCode}`);
             if (cb) cb({ success: true, room: res.room.getPublicRoomState() });
           } else {
-            if (cb) cb({ success: false, error: res.error });
+            if (cb) cb({ success: false, error: res.error || "Odaya katılınamadı." });
           }
         } catch (e: any) {
           if (cb) cb({ success: false, error: e.message || "Odaya katılınamadı." });
@@ -1231,11 +1305,13 @@ export class KapsStrikeServerManager {
       if (cb) cb({ success: ok });
     });
 
-    // 8. Start Game (Host only)
-    socket.on("strike:start_game", (cb?: (res: { success: boolean; error?: string }) => void) => {
+    // 8. Start Game (Host only - supports strike:start_game and strike:start_match)
+    const handleStartMatch = (cb?: (res: { success: boolean; error?: string }) => void) => {
       const res = this.startGame(socket.id);
       if (cb) cb(res);
-    });
+    };
+    socket.on("strike:start_game", handleStartMatch);
+    socket.on("strike:start_match", handleStartMatch);
 
     // 9. Return To Lobby (Host only)
     socket.on("strike:return_to_lobby", (cb?: (res: { success: boolean }) => void) => {
@@ -1278,7 +1354,39 @@ export class KapsStrikeServerManager {
       }
     });
 
-    // 13. Invite Friends via KapsApp
+    // 13. WebRTC Voice Signaling Relay (Offers, Answers, Candidates)
+    socket.on(
+      "strike:voice_signal",
+      (payload: { targetUserId?: number; data?: any; speaking?: boolean }) => {
+        const roomCode = this.socketToRoom.get(socket.id);
+        if (!roomCode) return;
+        const room = this.rooms.get(roomCode);
+        if (!room) return;
+
+        if (typeof payload?.targetUserId === "number") {
+          for (const [pSockId, p] of room.players.entries()) {
+            if (p.userId === payload.targetUserId && pSockId !== socket.id) {
+              this.io.to(pSockId).emit("strike:voice_signal", {
+                fromUserId: user.id,
+                fromSocketId: socket.id,
+                data: payload.data,
+                speaking: payload.speaking,
+              });
+              break;
+            }
+          }
+        } else {
+          socket.to(`strike:${roomCode}`).emit("strike:voice_signal", {
+            fromUserId: user.id,
+            fromSocketId: socket.id,
+            data: payload?.data,
+            speaking: payload?.speaking,
+          });
+        }
+      }
+    );
+
+    // 14. Invite Friends via KapsApp
     socket.on(
       "strike:send_invite",
       (data: { targetUserId: number; roomCode: string; roomName?: string }) => {

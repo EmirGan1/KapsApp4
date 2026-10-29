@@ -7562,6 +7562,25 @@ async function startServer() {
         if (cb) cb({ success: true, tableId: tid, room: room ? kapstorialManager.getPublicRoomState(room) : null });
         return;
       }
+      if (gameType === "strike" || gameType === "kapsstrike" || kapsstrikeManager.rooms.has(tid)) {
+        const room = kapsstrikeManager.findRoomByCode(tid);
+        if (room) {
+          const res = kapsstrikeManager.joinRoom(room.roomCode, {
+            id: Number(user.id),
+            username: user.username || "Oyuncu",
+            avatar: user.avatar || null,
+            color: user.color || "#3b82f6",
+          }, socket.id);
+          if (res.success && res.room) {
+            socket.join(`strike:${res.room.roomCode}`);
+            if (cb) cb({ success: true, tableId: res.room.roomCode, room: res.room.getPublicRoomState() });
+            return;
+          } else {
+            if (cb) cb({ success: false, error: res.error || "Odaya katılınamadı." });
+            return;
+          }
+        }
+      }
       if (cb) cb({ success: true });
     });
 

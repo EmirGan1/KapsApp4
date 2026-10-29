@@ -445,3 +445,125 @@ test("KapsStrikeServerManager - High latency & packet delay simulation (150ms-30
   manager.leaveRoom("sock-1", 1);
   manager.leaveRoom("sock-2", 2);
 });
+
+test("KapsStrikeServerManager - Robust room code lookup (case-insensitive, prefix-free, spaces)", () => {
+  const io = createMockIo() as any;
+  const manager = new KapsStrikeServerManager(io);
+
+  const host = { id: 10, username: "RoomCreator", avatar: null };
+  const room = manager.createRoom(host, "sock-host-10", { name: "Test Lookup Room" });
+
+  const rawCode = room.roomCode; // e.g. "KS-AB12"
+  const bareCode = rawCode.replace("KS-", ""); // e.g. "AB12"
+
+  // 1. Exact match
+  assert.ok(manager.findRoomByCode(rawCode));
+
+  // 2. Lowercase match
+  assert.ok(manager.findRoomByCode(rawCode.toLowerCase()));
+
+  // 3. Bare code without "KS-"
+  assert.ok(manager.findRoomByCode(bareCode));
+
+  // 4. Bare code lowercase
+  assert.ok(manager.findRoomByCode(bareCode.toLowerCase()));
+
+  // 5. Code with surrounding spaces
+  assert.ok(manager.findRoomByCode(`  ${rawCode}  `));
+
+  // 6. Join with bare lowercase code succeeds
+  const joiner = { id: 11, username: "Joiner", avatar: null };
+  const joinRes = manager.joinRoom(bareCode.toLowerCase(), joiner, "sock-joiner-11");
+  assert.equal(joinRes.success, true);
+  assert.equal(joinRes.room?.roomCode, rawCode);
+
+  manager.leaveRoom("sock-host-10", 10);
+  manager.leaveRoom("sock-joiner-11", 11);
+});
+
+test("KapsStrikeServerManager - Dual event compatibility and payload flexibility", () => {
+  const io = createMockIo() as any;
+  const manager = new KapsStrikeServerManager(io);
+
+  // Mock socket implementation for register testing
+  const registeredEvents = new Map<string, Function>();
+  const mockSocket = {
+    id: "mock-sock-user-20",
+    join: (_room: string) => {},
+    leave: (_room: string) => {},
+    on(event: string, fn: Function) {
+      registeredEvents.set(event, fn);
+    },
+    emit: (_event: string, _data: any) => {},
+    to: (_r: string) => ({
+      emit: (_event: string, _data: any) => {},
+    }),
+  } as any;
+
+  manager.register(mockSocket, { id: 20, username: "SocketTester", avatar: null });
+
+  // Verify dual event listeners exist
+  assert.ok(registeredEvents.has("strike:get_rooms"), "strike:get_rooms must be registered");
+  assert.ok(registeredEvents.has("strike:list_rooms"), "strike:list_rooms must be registered");
+  assert.ok(registeredEvents.has("strike:start_game"), "strike:start_game must be registered");
+  assert.ok(registeredEvents.has("strike:start_match"), "strike:start_match must be registered");
+  assert.ok(registeredEvents.has("strike:voice_signal"), "strike:voice_signal must be registered");
+
+  // Create room via socket handler
+  let createRes: any = null;
+  registeredEvents.get("strike:create_room")!({ name: "Socket Room" }, (res: any) => {
+    createRes = res;
+  });
+  assert.equal(createRes?.success, true);
+  const code = createRes.room.roomCode;
+
+  // Second user connects and joins via { roomId: code }
+  const mockSocket2 = {
+    id: "mock-sock-user-21",
+    join: (_room: string) => {},
+    leave: (_room: string) => {},
+    on(event: string, fn: Function) {
+      registeredEvents.set("u2_" + event, fn);
+    },
+    emit: (_event: string, _data: any) => {},
+    to: (_r: string) => ({ emit: (_e: string, _d: any) => {} }),
+  } as any;
+
+  manager.register(mockSocket2, { id: 21, username: "Joiner2", avatar: null });
+
+  let joinRes: any = null;
+  // Test joining with { roomId: code } (frontend format)
+  registeredEvents.get("u2_strike:join_room")!({ roomId: code }, (res: any) => {
+    joinRes = res;
+  });
+  assert.equal(joinRes?.success, true);
+  assert.equal(joinRes.room.players.length, 2);
+
+  // Test WebRTC voice signaling relay between the two players
+  let voiceSignalReceived = false;
+  io.to = (sockId: string) => ({
+    emit(event: string, data: any) {
+      if (sockId === "mock-sock-user-21" && event === "strike:voice_signal") {
+        voiceSignalReceived = true;
+      }
+    },
+  });
+
+  registeredEvents.get("strike:voice_signal")!({
+    targetUserId: 21,
+    data: { type: "offer", sdp: "dummy-sdp" },
+  });
+  assert.equal(voiceSignalReceived, true, "Voice signal must be relayed to target user");
+
+  // Host starts match via strike:start_match
+  let startRes: any = null;
+  registeredEvents.get("strike:start_match")!((res: any) => {
+    startRes = res;
+  });
+  assert.equal(startRes?.success, true);
+
+  // Clean up
+  manager.leaveRoom("mock-sock-user-20", 20);
+  manager.leaveRoom("mock-sock-user-21", 21);
+});
+
