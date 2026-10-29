@@ -18,9 +18,14 @@
     "test:dungeon": "node --import tsx --test tests/dungeon.test.ts tests/dungeon.network.test.ts tests/dungeon.expeditions.test.ts",
     "test:dungeon:browser": "node --import tsx tests/dungeon.browser.ts",
     "test:dungeon:expedition": "node --import tsx tests/dungeon.full-browser.ts",
-    "test:dungeon:performance": "node --import tsx tests/dungeon.performance.ts"
+    "test:dungeon:performance": "node --import tsx tests/dungeon.performance.ts",
+    "test:strike": "node --import tsx --test tests/kapsstrike.test.ts tests/kapsstrike.scene.test.ts",
+    "test:strike:browser": "node --import tsx tests/kapsstrike.browser.ts",
+    "test:strike:menu": "node --import tsx tests/kapsstrike.menu.browser.ts",
+    "test:strike:controller": "node --import tsx tests/kapsstrike.browser.ts --null"
   },
   "dependencies": {
+    "@babylonjs/core": "8.50.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.2",
     "@fingerprintjs/fingerprintjs": "^5.2.0",
@@ -72,7 +77,7 @@
     "@types/sqlite3": "^5.1.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.28.0",
-    "playwright": "^1.51.1",
+    "playwright": "1.51.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"

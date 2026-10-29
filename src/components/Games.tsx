@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { 
   Gamepad2, Users, ChevronRight, Trophy, Sparkles, Bot, ShieldCheck, 
   Crown, Medal, RefreshCw, Palette, Search, Flame, Layers, Zap, Brain, Play, Plus,
@@ -15,6 +15,8 @@ import TexasHoldemPokerGame from './TexasHoldemPokerGame';
 import MiniBattleRoyale from './MiniBattleRoyale';
 import PartyMode from './PartyMode';
 import BilliardsGame from './BilliardsGame';
+import StrikeBoundary from './games/kapsstrike/StrikeBoundary';
+const KapsStrikeGame = lazy(() => import('./games/kapsstrike/KapsStrikeGame'));
 import DungeonGame from './games/dungeon/DungeonGame';
 import KapstorialGame from './games/kapstorial/KapstorialGame';
 import CardTableLobbyModal, { CardTableInfo, CreateTableOptions } from './CardTableLobbyModal';
@@ -50,7 +52,7 @@ interface LeaderboardUser {
 }
 
 type GameCategory = 'all' | 'cards' | 'arcade' | 'strategy' | 'active_lobbies';
-type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party' | 'billiards' | 'kapstorial' | 'dungeon';
+type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party' | 'billiards' | 'kapstorial' | 'dungeon' | 'kapsstrike';
 
 export default function Games({
   socket,
@@ -60,7 +62,7 @@ export default function Games({
   color,
   onUserClick
 }: GamesProps) {
-  const [selectedGame, setSelectedGame] = useState<SelectedGameType>(() => new URLSearchParams(window.location.search).get('oyun') === 'dungeon' ? 'dungeon' : 'hub');
+  const [selectedGame, setSelectedGame] = useState<SelectedGameType>(() => new URLSearchParams(window.location.search).get('oyun') === 'kapsstrike' ? 'kapsstrike' : new URLSearchParams(window.location.search).get('oyun') === 'dungeon' ? 'dungeon' : 'hub');
   const [activeCategory, setActiveCategory] = useState<GameCategory>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -399,6 +401,8 @@ export default function Games({
     );
   }
 
+  if (selectedGame === 'kapsstrike') return <StrikeBoundary onBack={() => setSelectedGame('hub')}><Suspense fallback={<div className="p-8 text-white" role="status">KapsStrike 3D motoru yükleniyor…</div>}><KapsStrikeGame onBack={() => setSelectedGame('hub')} /></Suspense></StrikeBoundary>;
+
   if (selectedGame === 'dungeon') return <DungeonGame socket={socket} currentUserId={currentUserId} onBack={() => setSelectedGame('hub')} />;
 
   // Route: Kapstorial (Territorial.io clone)
@@ -421,6 +425,7 @@ export default function Games({
 
   // Games definition list
   const allGames = [
+    {id:'kapsstrike',title:'KapsStrike',subtitle:'Özgün 3D FPS · Yerel Antrenman',category:['arcade'],badge:'3D FPS · YENİ',badgeColor:'bg-amber-200 text-slate-950',gradient:'from-slate-800 via-stone-700 to-slate-900',icon:'🎯',capacity:'Tek Oyunculu Antrenman',activeRooms:0,features:['Üç özgün harita, beş silah ve kafa/gövde hitbox’ları','Slide, bunny hop, ADS ve 120 Hz sabit adımlı hareket','Masaüstü fare kilidi, grafik profilleri ve DPS ölçümü'],preview:<div className="text-center py-2 font-black tracking-widest text-amber-200">KAPS<span className="text-white">STRIKE</span></div>,actionPrimary:'Antrenmana Gir',onClick:()=>setSelectedGame('kapsstrike')},
     {
       id: 'dungeon', title: 'Zindan Kuşatması', subtitle: '2–4 Kişilik · Çevrim İçi Co-Op Roguelite',
       category: ['strategy', 'arcade'], badge: 'YENİ CO-OP', badgeColor: 'bg-amber-200 text-slate-950',

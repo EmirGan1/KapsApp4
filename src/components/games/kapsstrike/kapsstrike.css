@@ -1,0 +1,454 @@
+.ks-root {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: #111922;
+  color: #eaf0f2;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
+  isolation: isolate;
+}
+.ks-root * {
+  box-sizing: border-box;
+}
+.ks-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  touch-action: none;
+}
+.ks-root button {
+  border: 1px solid #47535c;
+  border-radius: 6px;
+  background: #27313a;
+  color: #eaf0f2;
+  padding: 12px 18px;
+  min-height: 44px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ks-root button:hover {
+  border-color: #ecc17b;
+  background: #35404a;
+}
+.ks-root button:focus-visible,
+.ks-root input:focus-visible,
+.ks-root select:focus-visible {
+  outline: 3px solid #f3ca87;
+  outline-offset: 3px;
+}
+.ks-root button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ks-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, #101820fb, #18222aef);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: clamp(20px, 5vw, 70px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ks-menu {
+  max-width: 1120px;
+  width: 100%;
+  padding: 10px;
+}
+.ks-menu h1 {
+  font-size: clamp(42px, 8vw, 84px);
+  font-weight: 900;
+  letter-spacing: -0.06em;
+  line-height: 1.05;
+  margin: 14px 0;
+}
+.ks-menu h1 span {
+  color: #edbd76;
+}
+.ks-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: #b3c2cd;
+}
+.ks-menu p {
+  color: #b2c0c9;
+  line-height: 1.6;
+}
+.ks-status {
+  font: 10px monospace;
+  letter-spacing: 0.09em;
+  color: #e1bc80;
+  margin-top: 20px;
+}
+.ks-maps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 28px 0 18px;
+}
+.ks-maps button {
+  text-align: left;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.ks-maps b {
+  padding: 14px 14px 6px;
+}
+.ks-maps small {
+  padding: 0 14px 18px;
+  font-size: 12px;
+  color: #aebdc6;
+  line-height: 1.5;
+}
+.ks-maps .selected {
+  border-color: #e6bc7b;
+  background: #32332d;
+}
+.ks-map-art {
+  height: 105px;
+  width: 100%;
+  background: #455661;
+  position: relative;
+  overflow: hidden;
+  display: block;
+}
+.ks-map-art i {
+  position: absolute;
+  background: #ba7b4e;
+  width: 30%;
+  height: 50px;
+  bottom: 0;
+  left: 10%;
+  transform: skewY(-10deg);
+  box-shadow: 4px -4px #ffffff0a;
+}
+.ks-map-art i:nth-child(2) {
+  left: 60%;
+  height: 85px;
+  background: #6e8991;
+}
+.ks-map-art i:nth-child(3) {
+  left: 38%;
+  height: 30px;
+  background: #9b8b6b;
+}
+.ks-map-art.dust {
+  background: #bf9e75;
+}
+.ks-map-art.dust i {
+  background: #a87e59;
+}
+.ks-map-art.dust i:nth-child(2) {
+  background: #dec29a;
+}
+.ks-map-art.neon {
+  background: #1e2e4a;
+}
+.ks-map-art.neon i {
+  background: #426079;
+  border-top: 3px solid #5edbdb;
+}
+.ks-map-art.neon i:nth-child(2) {
+  background: #485d7b;
+  border-top: 3px solid #b896ed;
+}
+.ks-root .ks-primary {
+  background: #edbd76;
+  color: #141c23;
+  border-color: #edbd76;
+  font-weight: 800;
+  min-width: 220px;
+}
+.ks-menu footer {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #33414c;
+}
+.ks-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  min-height: 44px;
+  color: #cad4da;
+}
+.ks-check input {
+  width: 18px;
+  height: 18px;
+}
+.ks-hint {
+  font-size: 12px;
+}
+.ks-error {
+  background: #573c30;
+  padding: 12px;
+  border: 1px solid #b47e61;
+  border-radius: 6px;
+  color: #ffe2bd !important;
+}
+.ks-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 24px;
+  max-width: 800px;
+  margin-top: 24px;
+}
+.ks-settings h2,
+.ks-settings p {
+  grid-column: 1/-1;
+}
+.ks-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #c4d0d8;
+  font-size: 14px;
+}
+.ks-settings .ks-check {
+  flex-direction: row;
+}
+.ks-settings select {
+  background: #26333d;
+  color: white;
+  padding: 12px;
+  font-size: 16px;
+  border: 1px solid #4b5b66;
+  border-radius: 5px;
+}
+.ks-settings input[type="range"] {
+  width: 100%;
+  accent-color: #eac082;
+}
+.ks-controls {
+  max-width: 800px;
+  margin-top: 25px;
+}
+.ks-controls dl {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 10px;
+  font-size: 14px;
+}
+.ks-controls dt {
+  color: #edbd76;
+  font-family: monospace;
+}
+.ks-controls dd {
+  color: #bdcbd4;
+}
+.ks-paused {
+  margin: 28px 0;
+}
+.ks-paused button {
+  margin-right: 10px;
+}
+.ks-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  padding: 24px;
+  text-shadow: 0 2px 4px #0009;
+}
+.ks-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+.ks-top > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ks-top strong {
+  letter-spacing: 0.15em;
+  color: #f6d5a1;
+}
+.ks-top span {
+  font: 12px monospace;
+  color: #e2ebef;
+}
+.ks-top > div:last-child {
+  text-align: right;
+}
+.ks-top b {
+  font: 24px monospace;
+}
+.ks-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.ks-crosshair i {
+  position: absolute;
+  background: #ffffed;
+  box-shadow: 0 0 2px black;
+}
+.ks-crosshair i:first-child {
+  width: 14px;
+  height: 2px;
+  left: -7px;
+  top: -1px;
+}
+.ks-crosshair i:nth-child(2) {
+  height: 14px;
+  width: 2px;
+  left: -1px;
+  top: -7px;
+}
+.ks-crosshair > span {
+  position: absolute;
+  left: -14px;
+  top: -17px;
+  font-size: 28px;
+  color: white;
+}
+.ks-crosshair > span.head {
+  color: #ffd28b;
+}
+.ks-crosshair b {
+  position: absolute;
+  left: 30px;
+  top: -20px;
+  white-space: nowrap;
+  font: 13px monospace;
+}
+.ks-bottom {
+  position: absolute;
+  bottom: 54px;
+  left: 24px;
+  right: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+}
+.ks-health,
+.ks-ammo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ks-ammo {
+  text-align: right;
+}
+.ks-bottom strong {
+  font: bold 42px monospace;
+}
+.ks-bottom strong span {
+  font-size: 18px;
+  color: #c2d1d8;
+}
+.ks-bottom small {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.ks-bottom > div > span {
+  font: 11px monospace;
+}
+.ks-health meter {
+  width: 180px;
+  height: 8px;
+  accent-color: #8fdeb2;
+}
+.ks-perf {
+  position: absolute;
+  bottom: 16px;
+  left: 24px;
+  font: 11px monospace;
+  color: #e6edef;
+}
+.ks-hurt {
+  position: absolute;
+  left: calc(50% - 12px);
+  top: calc(50% - 70px);
+  transform-origin: 12px 70px;
+  color: #ff755e;
+  font-size: 28px;
+}
+.ks-death {
+  position: absolute;
+  inset: 0;
+  background: #111b24a8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+.ks-death h2 {
+  font-size: 36px;
+  color: #f4c481;
+}
+.ks-death p {
+  font-size: 20px;
+}
+.ks-death span {
+  font-size: 13px;
+  color: #c2d3df;
+}
+@media (max-width: 700px) {
+  .ks-overlay {
+    padding: 14px;
+    align-items: start;
+  }
+  .ks-maps {
+    grid-template-columns: 1fr;
+  }
+  .ks-map-art {
+    height: 70px;
+  }
+  .ks-settings {
+    grid-template-columns: 1fr;
+  }
+  .ks-menu h1 {
+    font-size: 48px;
+  }
+  .ks-hud {
+    padding: 12px;
+  }
+  .ks-top span {
+    font-size: 9px;
+  }
+  .ks-perf {
+    font-size: 9px;
+    left: 12px;
+    right: 12px;
+  }
+  .ks-bottom {
+    left: 12px;
+    right: 12px;
+  }
+  .ks-controls dl {
+    grid-template-columns: 120px 1fr;
+  }
+  .ks-menu footer button {
+    flex: 1;
+  }
+  .ks-bottom strong {
+    font-size: 30px;
+  }
+}
+@media (max-height: 650px) {
+  .ks-overlay {
+    align-items: start;
+  }
+  .ks-map-art {
+    height: 65px;
+  }
+  .ks-menu h1 {
+    font-size: 50px;
+  }
+  .ks-maps {
+    margin-top: 16px;
+  }
+}
