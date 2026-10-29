@@ -49,6 +49,12 @@ try {
     await page
       .getByText("Bu oyun WebGL destekli", { exact: false })
       .waitFor();
+    await page.getByRole("button", { name: "Karakterini seç", exact: true }).click();
+    await page.getByRole("heading", { name: "Karakter / Skin", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Karakter / Skin", exact: true }).click();
+    await page.getByRole("button", { name: "Kontrolleri düzenle", exact: true }).click();
+    await page.getByRole("heading", { name: "Kontroller", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Kontroller", exact: true }).click();
     await page.getByRole("button", { name: /Tek Oyunculu Antrenman/ }).click();
     assert.ok(
       await page

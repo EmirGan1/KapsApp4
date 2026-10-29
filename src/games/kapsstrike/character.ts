@@ -7,7 +7,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { cleanSkin, SKINS } from './skins';
 import { TARGET_HITBOXES as H } from './config';
 /** Cosmetics never become collision/hit geometry. All variants retain identical server hitboxes. */
-export function createCharacter(scene:Scene,id:string,skinValue:unknown,team='none',outline=false){
+export function createCharacter(scene:Scene,id:string,skinValue:unknown,team='none',outline=false,outlineColor='#ff315d'){
  const skin=SKINS[cleanSkin(skinValue)];
  const root=new TransformNode(`character-${id}`,scene);
  const materials:StandardMaterial[]=[];
@@ -38,7 +38,11 @@ export function createCharacter(scene:Scene,id:string,skinValue:unknown,team='no
  if(skin.gear==='cap') {gear('cap',0,1.84,0,.48,.13,.47,skin.trim);gear('cap-brim',0,1.81,.3,.5,.035,.25,skin.trim);gear('pad-r',.43,1.3,0,.25,.19,.35,skin.trim);}
  if(outline) for(const mesh of [body,head]) {
   const shell=MeshBuilder.CreateBox(`${id}-${mesh.name}-outline`,{width:mesh===body?H.body.radius*2:H.head.radius*2,height:mesh===body?H.body.max-H.body.min:H.head.radius*2,depth:mesh===body?H.body.radius*2:H.head.radius*2,sideOrientation:Mesh.BACKSIDE},scene);
-  shell.parent=mesh;shell.scaling.setAll(1.025);shell.material=material('#28333e');shell.isPickable=false;
+  shell.parent=mesh;shell.scaling.setAll(1.045);
+  const rim=new StandardMaterial(`${id}-outline-${outlineColor}`,scene);
+  rim.diffuseColor=Color3.FromHexString(outlineColor);rim.emissiveColor=rim.diffuseColor;
+  rim.specularColor=Color3.Black();rim.disableLighting=true;rim.alpha=1;rim.backFaceCulling=false;rim.freeze();materials.push(rim);
+  shell.material=rim;shell.isPickable=false;
  }
  const normal=body.material;
  return {root,body,head,gearRoot,skin:cleanSkin(skinValue),team,flash:(enabled:boolean)=>{body.material=enabled?material('#f9e7cf',true):normal;},dispose:()=>{root.dispose();for(const m of materials)m.dispose();}};

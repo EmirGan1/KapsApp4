@@ -554,7 +554,8 @@ export class StrikeRenderer {
       selectedWeapon?: WeaponId;
       skin?: string;
     }>,
-    localPlayerId?: string
+    localPlayerId?: string,
+    localTeam?: string
   ) {
     const activeIds = new Set<string>();
 
@@ -574,7 +575,11 @@ export class StrikeRenderer {
               ? "#3b82f6"
               : p.color || "#10b981";
 
-        const model = createCharacter(this.scene,p.id,p.skin,p.team || "none",this.settings.quality !== "low" && (this.settings.quality !== "auto" || detectAutoQuality() !== "low"));
+        const teammate = !!localTeam && localTeam !== "none" && p.team === localTeam;
+        const rim = teammate ? "#48c7ff" : "#ff315d";
+        // The silhouette stays readable on Low settings too. It remains depth-tested,
+        // so walls still correctly occlude players.
+        const model = createCharacter(this.scene,p.id,p.skin,p.team || "none",true,rim);
         const {root,body,head} = model;
         body.name = "remote-body-" + p.id;
         head.name = "remote-head-" + p.id;

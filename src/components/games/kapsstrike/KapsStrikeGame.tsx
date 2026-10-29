@@ -1229,6 +1229,11 @@ export default function KapsStrikeGame({
                 </div>
               </div>
 
+              <div className="ks-feature-shortcuts ks-lobby-shortcuts" aria-label="Oyun ayarları">
+                <button type="button" onClick={() => setPanel("skins")}>Karakter / Skin</button>
+                <button type="button" onClick={() => setPanel("controls")}>Kontroller</button>
+              </div>
+
               {/* TDM TEAMS OR FFA LIST */}
               {currentRoom.mode === "tdm" ? (
                 <div className="ks-teams-grid">
@@ -1382,6 +1387,11 @@ export default function KapsStrikeGame({
                   🏹 Tek Oyunculu Antrenman (Offline)
                 </button>
               </div>
+              <div className="ks-feature-shortcuts" aria-label="Oyun özelleştirmeleri">
+                <button type="button" onClick={() => setPanel("skins")}>Karakterini seç</button>
+                <button type="button" onClick={() => setPanel("controls")}>Kontrolleri düzenle</button>
+              </div>
+              <p className="ks-visibility-note">Maçta diğer oyuncular takım rengiyle çevrelenir; duvarlar oyuncuları örtmeye devam eder.</p>
             </header>
 
             {error && (
@@ -1865,9 +1875,25 @@ export default function KapsStrikeGame({
                 </button>
                 <button onClick={exit}>Menüye dön</button>
                 <button onClick={() => setPanel(panel === "controls" ? null : "controls")}>Kontroller</button>
+                <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
               </div>
               {panel === "controls" && <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />}
+              {panel === "skins" && <StrikeSkins socket={socket} />}
             </div>
+          </div>
+        </div>
+      )}
+
+      {view === "lobby" && (panel === "controls" || panel === "skins") && (
+        <div className="ks-overlay ks-feature-overlay">
+          <div className="ks-menu ks-feature-card">
+            {panel === "skins" ? <StrikeSkins socket={socket} /> : (
+              <div className="ks-controls">
+                <h2>Kontroller</h2>
+                <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />
+              </div>
+            )}
+            <button type="button" onClick={() => setPanel(null)}>Lobiye dön</button>
           </div>
         </div>
       )}

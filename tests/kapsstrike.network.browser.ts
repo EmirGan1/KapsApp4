@@ -69,6 +69,12 @@ try {
   const code=(await a.locator('.ks-lobby-code').textContent())!.trim();
   await b.getByPlaceholder('Oda kodu',{exact:true}).fill(code);
   await b.getByRole('button',{name:'Koda Katıl',exact:true}).click();
+  await a.getByRole('button',{name:'Karakter / Skin',exact:true}).click();
+  await a.getByRole('heading',{name:'Karakter / Skin',exact:true}).waitFor();
+  await a.getByRole('button',{name:'Lobiye dön',exact:true}).click();
+  await a.getByRole('button',{name:'Kontroller',exact:true}).click();
+  await a.getByRole('heading',{name:'Kontroller',exact:true}).waitFor();
+  await a.getByRole('button',{name:'Lobiye dön',exact:true}).click();
   await b.getByRole("button",{name:"HAZIR OL",exact:true}).click();
   await a.getByRole("button",{name:/MAÇI BAŞLAT/i}).click();
   for (const p of [a,b]) await p.waitForFunction(() => (window as any).strike?.remotePlayerList.length === 2);

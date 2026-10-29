@@ -582,7 +582,7 @@ export class StrikeController {
       };
     });
 
-    this.renderer.renderRemotePlayers(interpolatedPlayers, myId);
+    this.renderer.renderRemotePlayers(interpolatedPlayers, myId, this.localTeam);
   }
 
   private feedback(e: CombatEvent, predicted=false) {

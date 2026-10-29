@@ -9,8 +9,11 @@ import { StrikeProfiles } from '../src/server/strikeProfiles';
 test('eight original character geometries share body/head geometry and dispose owned materials',()=>{
  const engine=new NullEngine();const scene=new Scene(engine);const variants=new Set<string>();
  for (const id of Object.keys(SKINS)) {
-  const model=createCharacter(scene,'test',id,'blue',true);
+  const model=createCharacter(scene,'test',id,'blue',true,'#ff315d');
   variants.add(model.gearRoot.getChildMeshes().map(m=>m.name).sort().join(','));
+  const shells=scene.meshes.filter(m=>m.name.endsWith('-outline'));
+  assert.equal(shells.length,2);
+  assert.ok(shells.every(m=>(m.material as any).emissiveColor.toHexString().toLowerCase()==='#ff315d'));
   assert.equal(model.body.getBoundingInfo().boundingBox.extendSize.x,.34);
   assert.equal(model.head.getBoundingInfo().boundingBox.extendSize.x,.22);
   model.dispose();assert.equal(scene.meshes.length,0);assert.equal(scene.materials.filter(m=>!['default material','lineShader'].includes(m.name)).length,0);
