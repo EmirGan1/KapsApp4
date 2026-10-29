@@ -1,3 +1,6 @@
+import { randomBytes } from "node:crypto";
+import { StrikeProfiles } from "./strikeProfiles";
+import { SkinId } from "../games/kapsstrike/skins";
 import { Server, Socket } from "socket.io";
 import { Client as LibsqlClient } from "@libsql/client";
 import {
@@ -19,23 +22,22 @@ import {
   StrikeRoomState,
   StrikeRoomSummary,
   MatchStats,
-  SkinId,
 } from "../games/kapsstrike/types";
 import { MAPS } from "../games/kapsstrike/maps";
 import { PHYSICS as C, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "../games/kapsstrike/config";
 import { newMovement, move, fits, clamp, raySolid, rayBox } from "../games/kapsstrike/physics";
-import { aimDirection, eye } from "../games/kapsstrike/combat";
+import { aimDirection, eye, fireDelay, spreadFor, weaponDamage } from "../games/kapsstrike/combat";
 
 export interface StrikeServerConfig {
   tickRate: number; // 60 Hz
-  snapshotRate: number; // 30 Hz (every 2 ticks)
-  maxLagCompTicks: number; // 30 ticks = 500ms
+  snapshotRate: number; // 30 Hz, independent of 120 Hz physics
+  maxLagCompTicks: number; // 60 shared physics ticks = 500ms
 }
 
 export const SERVER_CONFIG: StrikeServerConfig = {
   tickRate: 60,
   snapshotRate: 30,
-  maxLagCompTicks: 30,
+  maxLagCompTicks: 60,
 };
 
 interface HistoricalPosition {
@@ -48,6 +50,7 @@ interface HistoricalPosition {
 }
 
 export class StrikeServerPlayer {
+  skin: SkinId = "classic";
   id: string; // Socket ID
   userId: number;
   username: string;
@@ -57,6 +60,7 @@ export class StrikeServerPlayer {
   isHost: boolean;
   ready: boolean;
   state: PlayerState;
+  damageCredits = new Map<string,{amount:number;tick:number}>();
   kills = 0;
   deaths = 0;
   assists = 0;
@@ -66,12 +70,12 @@ export class StrikeServerPlayer {
   ping = 0;
   lastPingTime = 0;
   lastSequence = -1;
+  lastQueuedSequence = -1;
   lastInputTick = 0;
   inputQueue: InputCommand[] = [];
   history: HistoricalPosition[] = [];
   isSpeaking = false;
   isMuted = false;
-  skin: SkinId = "classic_soldier";
 
   constructor(
     socketId: string,
@@ -81,8 +85,7 @@ export class StrikeServerPlayer {
     color: string,
     team: StrikeTeam,
     spawnPos: Vec3,
-    isHost = false,
-    skin: SkinId = "classic_soldier"
+    isHost = false
   ) {
     this.id = socketId;
     this.userId = userId;
@@ -92,7 +95,6 @@ export class StrikeServerPlayer {
     this.team = team;
     this.isHost = isHost;
     this.ready = isHost; // Host starts ready
-    this.skin = skin;
 
     const ammo = Object.fromEntries(
       WEAPON_ORDER.map((k) => [k, WEAPONS[k].capacity])
@@ -223,6 +225,7 @@ export class StrikeRoom {
       id: p.id,
       userId: p.userId,
       username: p.username,
+      skin: p.skin,
       avatar: p.avatar,
       color: p.color,
       team: p.team,
@@ -275,6 +278,7 @@ export class StrikeRoom {
       id: p.id,
       userId: p.userId,
       username: p.username,
+      skin: p.skin,
       team: p.team,
       color: p.color,
       hp: p.state.hp,
@@ -289,12 +293,14 @@ export class StrikeRoom {
       kills: p.kills,
       deaths: p.deaths,
       score: p.score,
+      assists:p.assists, damage:p.damage, headshots:p.headshots,
       ping: p.ping,
-      skin: p.skin,
     }));
 
     return {
       tick: this.tick,
+      roomCode:this.roomCode,
+      localState: targetPlayer ? structuredClone(targetPlayer.state) : undefined,
       serverTime: Date.now(),
       ackSequence,
       players: playerSnapshots,
@@ -320,10 +326,11 @@ export class KapsStrikeServerManager {
   private userToRoom: Map<number, string> = new Map();
   private socketToRoom: Map<string, string> = new Map();
 
+  readonly profiles: StrikeProfiles;
   constructor(
     private io: Server,
     private dbClient?: LibsqlClient
-  ) {}
+  ) { this.profiles = new StrikeProfiles(dbClient); }
 
   public getRoomsList(): StrikeRoomSummary[] {
     const list: StrikeRoomSummary[] = [];
@@ -424,10 +431,11 @@ export class KapsStrikeServerManager {
       password?: string;
     }
   ): StrikeRoom {
-    // Generate clean 6-character room code
+    this.removePreviousMembership(user.id, socketId);
+    // Cryptographically random 64-bit room code; UI also accepts the prefix-free form.
     let roomCode = "";
     do {
-      roomCode = "KS-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+      roomCode = "KS-" + randomBytes(8).toString("hex").toUpperCase();
     } while (this.rooms.has(roomCode));
 
     const mapId: MapId = options.map && MAPS[options.map] ? options.map : "warehouse";
@@ -462,6 +470,7 @@ export class KapsStrikeServerManager {
       true
     );
 
+    hostPlayer.skin = this.profiles.cache.get(user.id) || "classic";
     room.players.set(socketId, hostPlayer);
     this.rooms.set(roomCode, room);
     this.userToRoom.set(user.id, roomCode);
@@ -482,26 +491,27 @@ export class KapsStrikeServerManager {
       return { success: false, error: "Oda bulunamadı veya kapatılmış olabilir." };
     }
 
+    roomCode = room.roomCode; // Store canonical codes even when users join without KS-.
     if (room.password && room.password !== (password || "").trim()) {
       return { success: false, error: "Hatalı oda şifresi." };
     }
 
-    if (room.players.size >= room.maxPlayers) {
-      return { success: false, error: "Oda dolu." };
-    }
-
-    // Check duplicate session for same user
+    // A reconnect replaces the previous controller even when the room is full.
     for (const [sId, p] of room.players.entries()) {
       if (p.userId === user.id) {
-        // Replace previous socket with new one
-        p.id = socketId;
-        room.players.delete(sId);
-        room.players.set(socketId, p);
-        this.socketToRoom.set(socketId, roomCode);
-        this.broadcastRoomState(room);
-        return { success: true, room };
+        if(sId === socketId) return {success:true,room};
+        this.socketToRoom.delete(sId);
+        const previous=this.io.sockets?.sockets?.get(sId);
+        previous?.emit("strike:session_replaced");previous?.leave(`strike:${roomCode}`);
+        p.id = socketId;p.state.id=socketId;p.lastSequence=-1;p.lastQueuedSequence=-1;
+        p.inputQueue=[];p.history=[];p.state.weapon.triggerHeld=false;
+        room.players.delete(sId);room.players.set(socketId,p);
+        this.socketToRoom.set(socketId,roomCode);this.userToRoom.set(user.id,roomCode);
+        this.broadcastRoomState(room);return {success:true,room};
       }
     }
+    if (room.players.size >= room.maxPlayers) return {success:false,error:"Oda dolu."};
+    this.removePreviousMembership(user.id,socketId);
 
     let team: StrikeTeam = "none";
     if (room.mode === "tdm") {
@@ -526,6 +536,7 @@ export class KapsStrikeServerManager {
       false
     );
 
+    player.skin = this.profiles.cache.get(user.id) || "classic";
     room.players.set(socketId, player);
     this.userToRoom.set(user.id, roomCode);
     this.socketToRoom.set(socketId, roomCode);
@@ -556,17 +567,28 @@ export class KapsStrikeServerManager {
     return { success: true, room: created };
   }
 
-  public leaveRoom(socketId: string, userId: number): void {
-    const roomCode = this.socketToRoom.get(socketId) || this.userToRoom.get(userId);
-    if (!roomCode) return;
+  private removePreviousMembership(userId:number, socketId:string) {
+    const previousCode=this.userToRoom.get(userId) || this.socketToRoom.get(socketId);
+    const previous=previousCode ? this.rooms.get(previousCode) : undefined;
+    if(!previous)return;
+    for(const [id,p] of previous.players)if(p.userId===userId){
+      const old=this.io.sockets?.sockets?.get(id);
+      old?.leave(`strike:${previous.roomCode}`);
+      if(id!==socketId)old?.emit("strike:session_replaced");
+      this.leaveRoom(id,userId);break;
+    }
+  }
 
+  public leaveRoom(socketId: string, userId: number): void {
+    const roomCode = this.socketToRoom.get(socketId);
+    if (!roomCode) return;
     const room = this.rooms.get(roomCode);
-    if (!room) return;
+    if (!room || room.players.get(socketId)?.userId !== userId) return;
 
     const wasHost = room.players.get(socketId)?.isHost;
     room.players.delete(socketId);
     this.socketToRoom.delete(socketId);
-    this.userToRoom.delete(userId);
+    if(this.userToRoom.get(userId)===roomCode)this.userToRoom.delete(userId);
 
     if (room.players.size === 0) {
       if (room.loopInterval) {
@@ -634,6 +656,8 @@ export class KapsStrikeServerManager {
       return { success: false, error: "Odada en az 1 oyuncu olmalıdır." };
     }
 
+    // Both supported event aliases must never reset an already running round.
+    if (room.status === "in_progress") return { success: true };
     room.status = "in_progress";
     room.timeLeft = room.timeLimit;
     room.teamScores = { red: 0, blue: 0 };
@@ -644,6 +668,7 @@ export class KapsStrikeServerManager {
     // Reset all players and position them at spawns
     let idx = 0;
     room.players.forEach((p) => {
+      p.damageCredits.clear();
       p.kills = 0;
       p.deaths = 0;
       p.assists = 0;
@@ -651,6 +676,7 @@ export class KapsStrikeServerManager {
       p.damage = 0;
       p.headshots = 0;
       p.lastSequence = -1;
+      p.lastQueuedSequence = -1;
       p.inputQueue = [];
       p.history = [];
 
@@ -711,7 +737,11 @@ export class KapsStrikeServerManager {
     if (
       !command ||
       !Number.isSafeInteger(command.sequence) ||
-      command.sequence <= player.lastSequence ||
+      command.sequence < 0 ||
+      command.sequence <= Math.max(player.lastSequence, player.lastQueuedSequence) ||
+      !Number.isSafeInteger(command.tick) || command.tick < 0 ||
+      Math.abs(command.moveX) > 1 || Math.abs(command.moveZ) > 1 ||
+      (command.weapon !== undefined && !WEAPON_ORDER.includes(command.weapon)) ||
       ![command.yaw, command.pitch, command.moveX, command.moveZ].every(Number.isFinite) ||
       [command.jump, command.sprint, command.crouch, command.fire, command.ads, command.reload].some(
         (v) => typeof v !== "boolean"
@@ -721,11 +751,13 @@ export class KapsStrikeServerManager {
     }
 
     // Cap input queue to prevent packet flooding/replay abuse
-    if (player.inputQueue.length > 20) {
-      player.inputQueue.shift();
-    }
-
-    player.inputQueue.push(command);
+    if (player.inputQueue.length >= 24) return;
+    player.lastQueuedSequence = command.sequence;
+    // Whitelist fields; never retain arbitrary objects supplied by clients.
+    player.inputQueue.push({ sequence:command.sequence, tick:command.tick,
+      yaw:command.yaw, pitch:command.pitch, moveX:command.moveX, moveZ:command.moveZ,
+      jump:command.jump, sprint:command.sprint, crouch:command.crouch,
+      fire:command.fire, ads:command.ads, reload:command.reload, weapon:command.weapon });
   }
 
   /**
@@ -739,15 +771,18 @@ export class KapsStrikeServerManager {
     room.tick++;
     const now = Date.now();
 
+    // Sample a consistent start-of-step history before applying any player's input.
+    const pendingHits:(()=>void)[]=[];
+    room.players.forEach(player=>player.recordHistory(room.tick,now));
     // 1. Process player inputs & movement simulation
     room.players.forEach((player) => {
-      player.recordHistory(room.tick, now);
 
       // Handle respawn when dead
       if (player.state.hp <= 0) {
         if (room.tick >= player.state.deadUntil) {
           const spawnPos = room.getSpawnPosition(player.team, Math.floor(Math.random() * 10));
           player.state.movement = newMovement(spawnPos);
+          player.damageCredits.clear();
           player.state.hp = 100;
           player.state.protectedUntil = room.tick + C.protectionTicks;
           player.state.deadUntil = 0;
@@ -766,9 +801,14 @@ export class KapsStrikeServerManager {
       }
 
       // Process queued inputs
-      while (player.inputQueue.length > 0) {
-        const input = player.inputQueue.shift()!;
-        player.lastSequence = input.sequence;
+      {
+        // One command per fixed physics step: packet volume cannot buy movement time.
+        const queued = player.inputQueue.shift();
+        const input: InputCommand = queued || { sequence:player.lastSequence, tick:room.tick,
+          yaw:player.state.yaw, pitch:player.state.pitch, moveX:0, moveZ:0,
+          jump:player.state.movement.jumpHeld,sprint:false,crouch:player.state.movement.stance !== "stand",
+          fire:false,ads:false,reload:false };
+        if (queued) player.lastSequence = input.sequence;
         player.lastInputTick = room.tick;
 
         player.state.yaw = input.yaw;
@@ -776,9 +816,10 @@ export class KapsStrikeServerManager {
 
         // Handle weapon switch request
         if (input.weapon && input.weapon !== player.state.weapon.selected) {
-          if (room.tick >= player.state.weapon.switchUntil && !player.state.weapon.reloadUntil) {
+          { // A new selection restarts the equip delay; it cannot bypass fire cooldown.
+            player.state.weapon.reloadUntil = 0;
             player.state.weapon.selected = input.weapon;
-            player.state.weapon.switchUntil = room.tick + 15;
+            player.state.weapon.switchUntil = room.tick + 24;
           }
         }
 
@@ -803,17 +844,22 @@ export class KapsStrikeServerManager {
         }
 
         // Apply movement physics using authored map geometry
-        move(player.state.movement, input, mapDef, room.tick);
+        move(player.state.movement, { ...input, weapon:curWeapon }, mapDef, room.tick);
 
         // Authoritative Shoot verification & Lag Compensation
-        if (input.fire) {
-          this.verifyAndExecuteShot(room, player, input.ads, input.tick, !!input.heavyAttack);
+        if (input.fire && (wDef.automatic || !player.state.weapon.triggerHeld)) {
+          this.verifyAndExecuteShot(room, player, input.ads, input.tick, pendingHits);
         }
+        if (queued) player.state.weapon.triggerHeld = input.fire;
       }
     });
 
+    // Resolve all valid same-step shots after every player has had a chance to fire.
+    for(const hit of pendingHits)hit();
+    this.checkMatchEndConditions(room);
+
     // 2. Broadcast snapshots at snapshotRate (30 Hz)
-    if (room.tick % 2 === 0) {
+    if (room.tick % Math.round(1 / C.dt / SERVER_CONFIG.snapshotRate) === 0) {
       room.players.forEach((p) => {
         const snapshot = room.getSnapshotForPlayer(p.id);
         this.io.to(p.id).emit("strike:snapshot", snapshot);
@@ -824,7 +870,7 @@ export class KapsStrikeServerManager {
     }
 
     // 3. Match Timer Countdown & Win Condition Checks (Every second = 60 ticks)
-    if (room.tick % SERVER_CONFIG.tickRate === 0) {
+    if (room.tick % Math.round(1 / C.dt) === 0) {
       room.timeLeft = Math.max(0, room.timeLeft - 1);
       this.checkMatchEndConditions(room);
     }
@@ -835,9 +881,18 @@ export class KapsStrikeServerManager {
       clearInterval(room.loopInterval);
     }
 
+    let last = performance.now();
+    let accumulator = 0;
     room.loopInterval = setInterval(() => {
       try {
-        this.tickSimulation(room);
+        const now = performance.now();
+        accumulator += Math.min(0.15, (now - last) / 1000);
+        last = now;
+        let steps = 0;
+        while (accumulator >= C.dt && steps++ < 18 && room.status === "in_progress") {
+          this.tickSimulation(room);
+          accumulator -= C.dt;
+        }
       } catch (err) {
         console.error(`[Strike Simulation Error in room ${room.roomCode}]:`, err);
       }
@@ -859,7 +914,7 @@ export class KapsStrikeServerManager {
     shooter: StrikeServerPlayer,
     ads: boolean,
     clientShotTick: number,
-    heavyAttack = false
+    pendingHits?: (()=>void)[]
   ): void {
     const pState = shooter.state;
     const wState = pState.weapon;
@@ -872,18 +927,14 @@ export class KapsStrikeServerManager {
       room.tick < wState.nextFire ||
       room.tick < wState.switchUntil ||
       wState.reloadUntil > 0 ||
-      (weaponId !== "knife" && wState.ammo[weaponId] <= 0)
+      wState.ammo[weaponId] <= 0
     ) {
       return;
     }
 
     // Deduct ammo & enforce RPM fire cooldown
-    if (weaponId !== "knife") {
-      wState.ammo[weaponId]--;
-    }
-    const cdMult = weaponId === "knife" && heavyAttack ? 1.5 : 1;
-    const rpmCooldownTicks = Math.max(1, Math.round((60 / def.rpm) * cdMult * SERVER_CONFIG.tickRate));
-    wState.nextFire = room.tick + rpmCooldownTicks;
+    if (weaponId !== "knife") wState.ammo[weaponId]--;
+    wState.nextFire = Math.max(wState.nextFire,room.tick-1)+fireDelay(weaponId,ads);
     wState.shotIndex++;
 
     const origin = eye(pState);
@@ -895,12 +946,7 @@ export class KapsStrikeServerManager {
     );
 
     // Pellet spread calculations
-    const isMoving = Math.hypot(pState.movement.velocity.x, pState.movement.velocity.z) > 4;
-    const spread =
-      def.spread *
-      (ads ? def.ads : 1) *
-      (pState.movement.grounded ? 1 : 1.8) *
-      (isMoving ? 1.4 : 1);
+    const spread = spreadFor(pState,ads);
 
     const mapDef = MAPS[room.map];
 
@@ -937,7 +983,9 @@ export class KapsStrikeServerManager {
         const pos = hist.position;
 
         for (const region of ["body", "head"] as const) {
-          const { radius: r, min: low, max: high } = TARGET_HITBOXES[region];
+          const { radius: r, min: rawLow, max: rawHigh } = TARGET_HITBOXES[region];
+          const offset = C.standing - hist.height;
+          const low = Math.max(0.08, rawLow - offset), high = rawHigh - offset;
           const dist = rayBox(
             origin,
             dir,
@@ -971,23 +1019,22 @@ export class KapsStrikeServerManager {
 
       // Apply damage if target hit
       if (hitPlayer) {
-        const falloff =
-          weaponId === "shotgun"
-            ? clamp(1 - nearest / 40, 0.25, 1)
-            : clamp(1 - nearest / (def.range * 2.5), 0.7, 1);
+        const victim=hitPlayer;
+        const apply=()=>{
+          if(victim.state.hp<=0)return;
+        const damagePerPellet = weaponDamage(weaponId,nearest,isHeadshot,ads);
+        const finalDamage = Math.min(victim.state.hp, damagePerPellet);
 
-        const baseDmg = weaponId === "knife" ? (heavyAttack ? 65 : 40) : def.damage;
-        const damagePerPellet = (baseDmg / def.pellets) * (isHeadshot ? 2 : 1) * (weaponId === "knife" ? 1 : falloff);
-        const finalDamage = Math.min(hitPlayer.state.hp, damagePerPellet);
-
-        hitPlayer.state.hp = Math.max(0, hitPlayer.state.hp - finalDamage);
+        victim.state.hp = Math.max(0, victim.state.hp - finalDamage);
         shooter.damage += finalDamage;
+        const credit=victim.damageCredits.get(shooter.id);
+        victim.damageCredits.set(shooter.id,{amount:(credit?.amount||0)+finalDamage,tick:room.tick});
 
         // Register hit event
         room.addEvent({
           actor: shooter.id,
           kind: "hit",
-          target: hitPlayer.id,
+          target: victim.id,
           damage: finalDamage,
           head: isHeadshot,
           weapon: weaponId,
@@ -996,20 +1043,22 @@ export class KapsStrikeServerManager {
 
         // Register damage event for victim (shows directional red indicator)
         const hitDirection =
-          Math.atan2(origin.x - hitPlayer.state.movement.position.x, origin.z - hitPlayer.state.movement.position.z) -
-          hitPlayer.state.yaw;
+          Math.atan2(origin.x - victim.state.movement.position.x, origin.z - victim.state.movement.position.z) -
+          victim.state.yaw;
 
         room.addEvent({
-          actor: hitPlayer.id,
+          actor: victim.id,
           kind: "damage",
           damage: finalDamage,
           direction: hitDirection,
         });
 
         // Kill check
-        if (hitPlayer.state.hp <= 0) {
-          this.handlePlayerKill(room, shooter, hitPlayer, weaponId, isHeadshot);
+        if (victim.state.hp <= 0) {
+          this.handlePlayerKill(room, shooter, victim, weaponId, isHeadshot, !!pendingHits);
         }
+        };
+        if(pendingHits)pendingHits.push(apply);else apply();
       }
     }
   }
@@ -1019,8 +1068,14 @@ export class KapsStrikeServerManager {
     killer: StrikeServerPlayer,
     victim: StrikeServerPlayer,
     weapon: WeaponId,
-    headshot: boolean
+    headshot: boolean,
+    deferEnd = false
   ): void {
+    for(const [id,credit] of victim.damageCredits) {
+      const helper=room.players.get(id);
+      if(id!==killer.id && helper && credit.amount>=20 && room.tick-credit.tick<=8/C.dt){helper.assists++;helper.score+=25;}
+    }
+    victim.damageCredits.clear();
     victim.deaths++;
     victim.state.deadUntil = room.tick + C.respawnTicks;
 
@@ -1059,7 +1114,7 @@ export class KapsStrikeServerManager {
 
     this.io.to(`strike:${room.roomCode}`).emit("strike:kill_feed", feedEntry);
     this.io.to(`strike:${room.roomCode}`).emit("strike:kill", feedEntry);
-    this.checkMatchEndConditions(room);
+    if(!deferEnd)this.checkMatchEndConditions(room);
   }
 
   private checkMatchEndConditions(room: StrikeRoom): void {
@@ -1071,27 +1126,16 @@ export class KapsStrikeServerManager {
     let winnerUsername: string | undefined;
     let winReason = "";
 
-    // 1. TDM Score limit
-    if (room.mode === "tdm") {
-      if (room.teamScores.red >= room.scoreLimit) {
-        matchEnded = true;
-        winnerTeam = "red";
-        winReason = "Kırmızı Takım skor sınırına ulaştı!";
-      } else if (room.teamScores.blue >= room.scoreLimit) {
-        matchEnded = true;
-        winnerTeam = "blue";
-        winReason = "Mavi Takım skor sınırına ulaştı!";
-      }
-    } else {
-      // FFA Score limit
-      for (const p of room.players.values()) {
-        if (p.kills >= room.scoreLimit) {
-          matchEnded = true;
-          winnerUserId = p.userId;
-          winnerUsername = p.username;
-          winReason = `${p.username} ${room.scoreLimit} öldürme hedefine ulaştı!`;
-          break;
-        }
+    // Evaluate score limits after the full combat step, including trades.
+    if (room.mode === "tdm" && Math.max(room.teamScores.red,room.teamScores.blue)>=room.scoreLimit) {
+      matchEnded=true;
+      winnerTeam=room.teamScores.red===room.teamScores.blue ? "none" : room.teamScores.red>room.teamScores.blue ? "red":"blue";
+      winReason=winnerTeam==="none"?"Skor sınırında beraberlik!":`${winnerTeam==="red"?"Kırmızı":"Mavi"} Takım skor sınırına ulaştı!`;
+    } else if(room.mode === "ffa") {
+      const reached=[...room.players.values()].filter(p=>p.kills>=room.scoreLimit).sort((a,b)=>b.score-a.score);
+      if(reached.length){matchEnded=true;
+        if(reached.length>1 && reached[0].score===reached[1].score){winnerTeam="none";winReason="Skor sınırında beraberlik!";}
+        else {winnerUserId=reached[0].userId;winnerUsername=reached[0].username;winReason=`${winnerUsername} öldürme hedefine ulaştı!`;}
       }
     }
 
@@ -1111,7 +1155,8 @@ export class KapsStrikeServerManager {
         }
       } else {
         const sorted = Array.from(room.players.values()).sort((a, b) => b.score - a.score);
-        if (sorted.length > 0) {
+        if (sorted.length > 1 && sorted[0].score === sorted[1].score) {winnerTeam="none";winReason="Süre bitti. Maç berabere tamamlandı!";}
+        else if (sorted.length > 0) {
           winnerUserId = sorted[0].userId;
           winnerUsername = sorted[0].username;
           winReason = `Süre bitti. En yüksek skora sahip ${sorted[0].username} kazandı!`;
@@ -1189,7 +1234,7 @@ export class KapsStrikeServerManager {
         won: isWin,
         mode: room.mode,
         winnerTeam: winner.team,
-        winnerName: winner.username || (winner.team ? `${winner.team === "red" ? "Kırmızı" : "Mavi"} Takım` : undefined),
+        winnerName: winner.username || (winner.team === "none" ? "Berabere" : winner.team ? `${winner.team === "red" ? "Kırmızı" : "Mavi"} Takım` : undefined),
         mvp: topPlayer
           ? {
               userId: topPlayer.userId,
@@ -1217,6 +1262,28 @@ export class KapsStrikeServerManager {
    */
   public register(socket: Socket, user: any): void {
     const userIdNum = Number(user.id);
+    const applyProfile = (skin: SkinId) => {
+      const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
+      const player = room?.players.get(socket.id);
+      if (player && room) {player.skin=skin;this.broadcastRoomState(room);}
+    };
+    void this.profiles.get(userIdNum).then(applyProfile).catch(() => {});
+    let lastProfileGet = 0, lastProfileSet = 0;
+    socket.on("strike:profile_get", async (cb) => {
+      if(Date.now()-lastProfileGet<1000 && this.profiles.cache.has(userIdNum)){if(typeof cb === "function")cb({success:true,skin:this.profiles.cache.get(userIdNum),saved:this.profiles.persisted.has(userIdNum)});return;}lastProfileGet=Date.now();
+      try { const skin = await this.profiles.get(userIdNum); if(typeof cb === "function") cb({success:true,skin,saved:this.profiles.persisted.has(userIdNum)}); }
+      catch { if(typeof cb === "function") cb({success:false,error:"Karakter profili yüklenemedi."}); }
+    });
+    socket.on("strike:profile_set", async (data, cb) => {
+      if(Date.now()-lastProfileSet<1000){if(typeof cb === "function")cb({success:false,error:"Bir saniye bekle."});return;}lastProfileSet=Date.now();
+      try {
+        const skin = await this.profiles.set(userIdNum,data?.skin);
+        const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
+        const player = room?.players.get(socket.id);
+        if(player && room) { player.skin=skin; this.broadcastRoomState(room); }
+        if(typeof cb === "function") cb({success:true,skin});
+      } catch(e) { if(typeof cb === "function") cb({success:false,error:e instanceof Error?e.message:"Karakter kaydedilemedi."}); }
+    });
     const u = {
       id: userIdNum,
       username: user.username || "Oyuncu",
@@ -1396,22 +1463,25 @@ export class KapsStrikeServerManager {
       }
     );
 
-    // 14. Invite Friends via KapsApp
-    socket.on(
-      "strike:send_invite",
-      (data: { targetUserId: number; roomCode: string; roomName?: string }) => {
-        const targetSockId = this.io.sockets.sockets.get(String(data.targetUserId))?.id;
-        // Broadcast direct invitation event to target user
-        this.io.emit("strike:invite_received", {
-          targetUserId: data.targetUserId,
-          roomCode: data.roomCode,
-          roomName: data.roomName || "KapsStrike Maçı",
-          inviterId: user.id,
-          inviterName: user.username,
-          inviterAvatar: user.avatar,
-        });
-      }
-    );
+    let inviteWindow=0,inviteCount=0;
+    socket.on("strike:send_invite",async(data,cb)=>{
+      const respond=(success:boolean,error?:string)=>{if(typeof cb === "function")cb({success,error});};
+      const room=this.rooms.get(this.socketToRoom.get(socket.id)||"");
+      const target=Number(data?.targetUserId);
+      if(!room || !room.players.has(socket.id) || !Number.isSafeInteger(target) || target<=0 || target===userIdNum){respond(false,"Davet yetkisi yok.");return;}
+      if(Date.now()-inviteWindow>10000){inviteWindow=Date.now();inviteCount=0;}
+      if(++inviteCount>3){respond(false,"Davet göndermeden önce biraz bekle.");return;}
+      if(!this.dbClient){respond(false,"Arkadaş doğrulaması yapılandırılmamış.");return;}
+      try {
+        const friends=await this.dbClient.execute({sql:"SELECT id FROM friends WHERE status=1 AND ((user1=? AND user2=?) OR (user1=? AND user2=?)) LIMIT 1",args:[userIdNum,target,target,userIdNum]});
+        if(!friends.rows.length){respond(false,"Yalnızca arkadaşlarına davet gönderebilirsin.");return;}
+        let delivered=false;
+        for(const peer of this.io.sockets.sockets.values())if(Number(peer.data.user?.id)===target){
+          peer.emit("strike:invite_received",{targetUserId:target,roomCode:room.roomCode,roomName:room.name,inviterId:userIdNum,inviterName:user.username,inviterAvatar:user.avatar});delivered=true;
+        }
+        respond(delivered,delivered?undefined:"Arkadaşın şu anda bağlı değil.");
+      } catch {respond(false,"Davet gönderilemedi.");}
+    });
   }
 
   public handleDisconnect(socket: Socket, userId: number): void {

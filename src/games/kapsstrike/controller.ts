@@ -1,3 +1,4 @@
+import { cleanBindings, held, Bindings, Action } from "./controls";
 import type { Socket } from "socket.io-client";
 import { StrikeRenderer } from "./renderer";
 import { StrikeAudio } from "./audio";
@@ -14,8 +15,8 @@ import {
 } from "./types";
 import { MAPS } from "./maps";
 import { createTraining, simulate } from "./combat";
-import { PHYSICS as C, WEAPONS, WEAPON_ORDER, DEFAULT_KEYBINDS } from "./config";
-import { clamp } from "./physics";
+import { PHYSICS as C, WEAPONS, WEAPON_ORDER } from "./config";
+import { clamp, fits } from "./physics";
 
 export interface StrikeHUD {
   hp: number;
@@ -33,7 +34,8 @@ export interface StrikeHUD {
   drawCalls: number;
   meshes: number;
   hit?: { damage: number; head: boolean; until: number };
-  hurt?: { direction: number; until: number };
+  hurt?: { direction: number; until: number; damage?: number };
+  ads?: boolean;
   dead: boolean;
   respawn: number;
   protection: number;
@@ -41,6 +43,7 @@ export interface StrikeHUD {
   dropped: number;
   activeMeshes: number;
   ping?: number;
+  jitter?: number;
   isMultiplayer?: boolean;
   team?: StrikeTeam;
   redScore?: number;
@@ -58,6 +61,8 @@ export interface MultiplayerOptions {
   username?: string;
   team?: StrikeTeam;
   isMultiplayer?: boolean;
+  onSynchronized?: () => void;
+  onLoadingStage?: (stage:string) => void;
   onScoreboardToggle?: (open: boolean) => void;
   onPttChange?: (active: boolean) => void;
 }
@@ -74,11 +79,15 @@ export class StrikeController {
   readonly renderer: StrikeRenderer;
   readonly audio = new StrikeAudio();
   private keys = new Set<string>();
+  private bindings: Bindings;
+  private callbacks?: MultiplayerOptions;
+  private previousWeapon: WeaponId = "rifle";
   private mouseFire = false;
   private ads = false;
   private ignoreInitialMouseMove = false;
   private pendingReload = false;
   private pendingWeapon?: WeaponId;
+  private lastWheel = -Infinity;
   private yaw = 0;
   private pitch = 0;
   private sequence = 0;
@@ -88,7 +97,7 @@ export class StrikeController {
   private accumulator = 0;
   private lastHUD = 0;
   private processed = 0;
-  private lastShotTick = -1;
+  private shotSounds = new Map<string,number>();
   private dropped = 0;
   private previous = { x: 0, y: 0, z: 0 };
   private lastHit?: StrikeHUD["hit"];
@@ -101,6 +110,10 @@ export class StrikeController {
   private roomCode?: string;
   private localUserId?: number;
   private ping = 0;
+  private jitter = 0;
+  private snapshotArrival = 0;
+  private receivedInitialState = false;
+  private notifiedReady = false;
   private lastPingSent = 0;
   private pingInterval: any = null;
   private unacknowledgedInputs: InputCommand[] = [];
@@ -131,6 +144,8 @@ export class StrikeController {
     renderer?: StrikeRenderer,
     mpOptions?: MultiplayerOptions
   ) {
+    this.bindings = cleanBindings(settings.bindings);
+    this.callbacks = mpOptions;
     this.isMultiplayer = !!mpOptions?.isMultiplayer;
     this.socket = mpOptions?.socket;
     this.roomCode = mpOptions?.roomCode;
@@ -169,123 +184,50 @@ export class StrikeController {
     };
 
     listen(document, "pointerlockchange", () => {
-      if (document.pointerLockElement === canvas) {
+      if (document.pointerLockElement === canvas)
         this.ignoreInitialMouseMove = true;
-      }
+      else if (this.active && !this.isTouchDevice) this.pause();
     });
 
     listen(document, "pointerlockerror", () => {
-      // Opportunistic pointer lock failure (e.g. no direct gesture on match start), ignore without pausing loop!
-    });
-
-    listen(canvas, "click", () => {
-      if (this.active && !this.isTouchDevice && document.pointerLockElement !== canvas) {
-        this.canvas.requestPointerLock?.();
+      if (!this.isTouchDevice) {
+        this.pause("Fare kilitlenemedi. Oyuna dön düğmesine yeniden bas.");
       }
     });
 
     listen(window, "blur", () => {
-      if (!this.isTouchDevice && !this.isMultiplayer) this.pause();
+      if (!this.isTouchDevice) this.pause();
     });
     listen(document, "visibilitychange", () => {
-      if (document.hidden && !this.isMultiplayer) this.pause();
+      if (document.hidden) this.pause();
     });
 
     listen(canvas, "strike-context-lost", () =>
       this.pause("WebGL bağlantısı kesildi. Menüden haritayı yeniden başlat.")
     );
 
-    const binds = { ...DEFAULT_KEYBINDS, ...(settings.binds || {}) };
-
     listen(window, "keydown", ((e: KeyboardEvent) => {
       if (
         !this.active ||
+        (!this.isTouchDevice && document.pointerLockElement !== canvas) ||
         (e.target as HTMLElement)?.closest(
           'input,textarea,select,[contenteditable="true"]'
         )
       )
         return;
 
-      const key = e.code;
-      if (key === "Escape") {
-        e.preventDefault();
-        this.pause();
-        return;
-      }
-
-      // Tab or mapped key for Scoreboard
-      if (key === (binds.scoreboard || "Tab") || key === "Tab") {
-        e.preventDefault();
-        if (!this.scoreboardOpen) {
-          this.scoreboardOpen = true;
-          mpOptions?.onScoreboardToggle?.(true);
-          this.pushHUD();
-        }
-        return;
-      }
-
-      // V for Push-to-Talk voice
-      if (key === "KeyV" && !e.repeat) {
-        e.preventDefault();
-        this.pttActive = true;
-        mpOptions?.onPttChange?.(true);
-        if (this.socket && this.roomCode) {
-          this.socket.emit("strike:voice_status", { isSpeaking: true });
-        }
-        this.pushHUD();
-        return;
-      }
-
-      // Prevent default for mapped action keys
-      const mappedKeys = Object.values(binds);
-      if (mappedKeys.includes(key) || ["Space", "ControlLeft", "ShiftLeft", "KeyR", "Digit1", "Digit2", "Digit3"].includes(key)) {
-        e.preventDefault();
-      }
-
-      this.keys.add(key);
-
-      if (key === (binds.reload || "KeyR") && !e.repeat) this.pendingReload = true;
-      if (key === (binds.primary || "Digit1") && !e.repeat) this.pendingWeapon = "rifle";
-      if (key === (binds.secondary || "Digit2") && !e.repeat) this.pendingWeapon = "pistol";
-      if (key === (binds.knife || "Digit3") && !e.repeat) this.pendingWeapon = "knife";
-
-      if (/^Digit[1-6]$/.test(key) && !e.repeat) {
-        const idx = Number(key.at(-1)) - 1;
-        if (idx >= 0 && idx < WEAPON_ORDER.length) {
-          this.pendingWeapon = WEAPON_ORDER[idx];
-        }
-      }
+      if (e.code === "Escape") { e.preventDefault(); this.pause(); return; }
+      this.keys.add(e.code);
+      if (this.handleActions(e.repeat)) e.preventDefault();
     }) as EventListener);
 
     listen(window, "keyup", ((e: KeyboardEvent) => {
-      const key = e.code;
-      this.keys.delete(key);
-
-      const binds = { ...DEFAULT_KEYBINDS, ...(settings.binds || {}) };
-
-      if (key === (binds.scoreboard || "Tab") || key === "Tab") {
-        e.preventDefault();
-        this.scoreboardOpen = false;
-        mpOptions?.onScoreboardToggle?.(false);
-        this.pushHUD();
-        return;
-      }
-
-      if (key === "KeyV") {
-        e.preventDefault();
-        this.pttActive = false;
-        mpOptions?.onPttChange?.(false);
-        if (this.socket && this.roomCode) {
-          this.socket.emit("strike:voice_status", { isSpeaking: false });
-        }
-        this.pushHUD();
-        return;
-      }
+      this.keys.delete(e.code);
+      if (this.active) this.updateHeldActions();
     }) as EventListener);
 
     listen(window, "mousemove", ((e: MouseEvent) => {
-      if (!this.active) return;
-      if (!this.isTouchDevice && document.pointerLockElement !== canvas) return;
+      if (!this.active || document.pointerLockElement !== canvas) return;
       if (this.ignoreInitialMouseMove) {
         this.ignoreInitialMouseMove = false;
         return;
@@ -304,61 +246,96 @@ export class StrikeController {
     }) as EventListener);
 
     listen(canvas, "mousedown", ((e: MouseEvent) => {
-      if (!this.active) return;
+      if (!this.active || document.pointerLockElement !== canvas) return;
       e.preventDefault();
-      if (e.button === 0) this.mouseFire = true;
-      if (e.button === 2) {
-        if (this.state.player.weapon.selected === "knife") {
-          this.heavyAttack = true;
-          this.mouseFire = true;
-        } else {
-          this.ads = true;
-        }
-      }
+      this.keys.add(`Mouse${e.button}`);
+      this.handleActions(false);
     }) as EventListener);
 
     listen(window, "mouseup", ((e: MouseEvent) => {
-      if (e.button === 0) {
-        this.mouseFire = false;
-        this.heavyAttack = false;
-      }
-      if (e.button === 2) {
-        this.ads = false;
-        this.heavyAttack = false;
-        this.mouseFire = false;
-      }
+      this.keys.delete(`Mouse${e.button}`);
+      this.updateHeldActions();
     }) as EventListener);
 
+    listen(canvas,"auxclick",e=>{if(this.active)e.preventDefault();});
     listen(canvas, "contextmenu", (e) => e.preventDefault());
 
     listen(
       canvas,
       "wheel",
       ((e: WheelEvent) => {
-        if (!this.active) return;
+        if (!this.active || (!this.isTouchDevice && document.pointerLockElement !== canvas)) return;
         e.preventDefault();
-        const currentId = this.pendingWeapon || this.state.player.weapon.selected;
-        const currentIdx = WEAPON_ORDER.indexOf(currentId);
-        const nextIdx =
-          (currentIdx + (e.deltaY > 0 ? 1 : -1) + WEAPON_ORDER.length) %
-          WEAPON_ORDER.length;
-        this.pendingWeapon = WEAPON_ORDER[nextIdx];
+        if (e.deltaY === 0 || performance.now() - this.lastWheel < 140) return;
+        this.lastWheel = performance.now();
+        const code = e.deltaY > 0 ? "WheelDown" : "WheelUp";
+        this.keys.add(code);
+        this.handleActions(false);
+
       }) as EventListener,
       { passive: false }
     );
 
     // Setup Multiplayer Socket Handlers
     if (this.isMultiplayer && this.socket) {
-      this.setupMultiplayerSocket(this.socket);
+      this.setupMultiplayerSocket(this.socket, mpOptions?.onSynchronized);
     }
 
     this.pushHUD();
   }
 
-  private setupMultiplayerSocket(socket: Socket) {
+  private down(action: Action) { return held(this.bindings[action], this.keys); }
+
+  setBindings(value: Bindings) {
+    this.bindings = cleanBindings(value);
+    this.clearInput();
+  }
+
+  private updateHeldActions() {
+    const scoreboard = this.active && this.down("scoreboard");
+    const ptt = this.active && this.down("ptt");
+    if (scoreboard !== this.scoreboardOpen) {
+      this.scoreboardOpen = scoreboard;
+      this.callbacks?.onScoreboardToggle?.(scoreboard);
+    }
+    if (ptt !== this.pttActive) {
+      this.pttActive = ptt;
+      this.callbacks?.onPttChange?.(ptt);
+    }
+  }
+
+  private handleActions(repeat: boolean): boolean {
+    this.updateHeldActions();
+    if (this.down("menu")) { this.pause(); return true; }
+    if (!repeat) {
+      if (this.down("reload")) this.pendingReload = true;
+      const current = this.pendingWeapon || this.state.player.weapon.selected;
+      let weapon: WeaponId | undefined = WEAPON_ORDER.find(w => this.down(w));
+      if (this.down("next") || this.down("previous")) {
+        weapon = WEAPON_ORDER[(WEAPON_ORDER.indexOf(current) + (this.down("next") ? 1 : -1) + WEAPON_ORDER.length) % WEAPON_ORDER.length];
+      }
+      if (this.down("last")) weapon = this.previousWeapon;
+      if (weapon && current !== weapon) { this.previousWeapon = current; this.pendingWeapon = weapon; }
+    }
+    return (Object.keys(this.bindings) as Action[]).some(a => this.down(a));
+  }
+
+  private setupMultiplayerSocket(socket: Socket, onSynchronized?: () => void) {
+    const disconnected = () => this.pause("Bağlantı kesildi. Menüye dönüp odaya yeniden katılabilirsin.");
+    socket.on("disconnect", disconnected);
+    this.removers.push(() => socket.off("disconnect", disconnected));
+    const replaced = () => this.pause("Bu hesap başka bir sekmede oyuna katıldı. Menüden tekrar katılabilirsin.");
+    socket.on("strike:session_replaced",replaced);
+    this.removers.push(()=>socket.off("strike:session_replaced",replaced));
+    let synchronized = false;
+    let lastSnapshotTick = -1;
     // 1. Authoritative Server Snapshot Handler
     const handleSnapshot = (snapshot: StrikeSnapshot) => {
-      if (!snapshot || !Array.isArray(snapshot.players)) return;
+      if (!snapshot || (snapshot.roomCode && snapshot.roomCode !== this.roomCode) || !Array.isArray(snapshot.players) || snapshot.tick <= lastSnapshotTick) return;
+      lastSnapshotTick = snapshot.tick;
+      const arrival=performance.now();
+      if(this.snapshotArrival)this.jitter += .15*(Math.abs(arrival-this.snapshotArrival-1000/30)-this.jitter);
+      this.snapshotArrival=arrival;
 
       if (snapshot.teamScores) {
         this.teamScores = snapshot.teamScores;
@@ -388,6 +365,11 @@ export class StrikeController {
       );
 
       if (myServerState) {
+        if (!synchronized) {
+          synchronized = true;
+          this.receivedInitialState = true;
+          this.callbacks?.onLoadingStage?.("Grafikler hazırlanıyor…");
+        }
         this.state.player.hp = myServerState.hp;
         this.state.score = myServerState.score;
         this.state.player.deadUntil = myServerState.deadUntil;
@@ -400,30 +382,30 @@ export class StrikeController {
           (cmd) => cmd.sequence > ackSeq
         );
 
-        // Server reconciliation: if predicted position differs significantly, reconcile
-        const currentPos = this.state.player.movement.position;
-        const srvPos = myServerState.position;
-        const distSq =
-          (currentPos.x - srvPos.x) ** 2 +
-          (currentPos.y - srvPos.y) ** 2 +
-          (currentPos.z - srvPos.z) ** 2;
-
-        if (distSq > 0.04) {
-          // Snap to authoritative server position & replay remaining unacknowledged inputs
-          this.state.player.movement.position = { ...srvPos };
-          this.state.player.movement.velocity = { ...myServerState.velocity };
-          const mapDef = MAPS[this.state.map];
+        // Restore all authoritative timers/stance/weapon state, then replay only
+        // unacknowledged commands. Replaying with the old lastSequence rejects every input.
+        if (snapshot.localState) {
+          this.state.player = structuredClone(snapshot.localState);
+          this.state.tick = snapshot.tick;
+          this.state.lastSequence = ackSeq;
           for (const cmd of this.unacknowledgedInputs) {
-            simulate(this.state, cmd);
+            if (this.state.player.hp > 0) simulate(this.state, cmd, !this.isMultiplayer);
           }
+          this.previous = { ...this.state.player.movement.position };
+        } else {
+          this.state.player.movement.position = { ...myServerState.position };
+          this.state.player.movement.velocity = { ...myServerState.velocity };
         }
+
       }
 
       // Process Combat Events from Server (Remote shots, hits, etc.)
       if (Array.isArray(snapshot.events)) {
         const unseenEvents = snapshot.events.filter((e) => e.id > this.processed);
-        this.renderer.process(unseenEvents);
-        for (const e of unseenEvents) {
+        for(const e of unseenEvents)this.processed=Math.max(this.processed,e.id);
+        const effects=unseenEvents.filter(e=>!(e.actor===this.state.player.id && (e.kind==="shot" || e.kind==="reload")));
+        this.renderer.process(effects, this.state.player.id);
+        for (const e of effects) {
           this.feedback(e);
         }
       }
@@ -445,12 +427,10 @@ export class StrikeController {
     this.removers.push(() => clearInterval(this.pingInterval));
   }
 
-  private heavyAttack = false;
-
   private loop = () => {
     if (!this.active || this.disposed) return;
     if (!this.canvas.getClientRects().length) {
-      // Return early without pausing if canvas is temporarily unrendered
+      this.pause();
       return;
     }
     try {
@@ -460,17 +440,10 @@ export class StrikeController {
       this.accumulator += elapsed;
       let steps = 0;
 
-      const binds = { ...DEFAULT_KEYBINDS, ...(this.settings.binds || {}) };
-
       while (this.accumulator >= C.dt && steps < 8) {
         this.previous = { ...this.state.player.movement.position };
-        const keyMoveX =
-          Number(this.keys.has(binds.right || "KeyD")) -
-          Number(this.keys.has(binds.left || "KeyA"));
-        const keyMoveZ =
-          Number(this.keys.has(binds.forward || "KeyW")) -
-          Number(this.keys.has(binds.backward || "KeyS"));
-
+        const keyMoveX = Number(this.down("right")) - Number(this.down("left"));
+        const keyMoveZ = Number(this.down("forward")) - Number(this.down("backward"));
         const cmd: InputCommand = {
           sequence: ++this.sequence,
           tick: this.state.tick,
@@ -478,33 +451,32 @@ export class StrikeController {
           moveZ: this.touchMoveZ !== 0 ? this.touchMoveZ : keyMoveZ,
           yaw: this.yaw,
           pitch: this.pitch,
-          jump: this.touchJump || this.keys.has(binds.jump || "Space") || this.keys.has("Space"),
-          sprint:
-            this.touchSprint ||
-            this.keys.has(binds.sprint || "ShiftLeft") ||
-            this.keys.has("ShiftLeft") ||
-            this.keys.has("ShiftRight"),
+          jump: this.touchJump || this.down("jump"),
+          sprint: this.touchSprint || this.down("sprint"),
           crouch:
             this.touchCrouch ||
-            this.keys.has(binds.crouch || "ControlLeft") ||
-            this.keys.has("KeyC") ||
-            this.keys.has("ControlLeft") ||
-            this.keys.has("ControlRight"),
-          fire: this.touchFire || this.mouseFire,
-          heavyAttack: this.heavyAttack,
-          ads: this.touchAds || this.ads,
+            this.down("crouch") || this.down("slide"),
+          fire: this.touchFire || this.mouseFire || this.down("fire") || (this.state.player.weapon.selected === "knife" && (this.touchAds || this.ads || this.down("ads"))),
+          ads: this.touchAds || this.ads || this.down("ads"),
           reload: this.pendingReload,
           weapon: this.pendingWeapon,
         };
 
         // Client prediction: simulate locally
-        simulate(this.state, cmd);
+        const beforeEvent=this.state.eventId;
+        if (!this.isMultiplayer || this.state.player.hp > 0) simulate(this.state, cmd, !this.isMultiplayer);
 
         if (this.isMultiplayer && this.socket) {
+          const immediate=this.state.events.filter(e=>e.id>beforeEvent && (e.kind==="shot" || e.kind==="reload"));
+          this.renderer.process(immediate,this.state.player.id,true);
+          for(const e of immediate)this.feedback(e,true);
           this.unacknowledgedInputs.push({ ...cmd });
+          if (this.unacknowledgedInputs.length > 240) this.unacknowledgedInputs.shift();
           this.socket.emit("strike:input", cmd);
         }
 
+        this.keys.delete("WheelUp");
+        this.keys.delete("WheelDown");
         this.pendingReload = false;
         this.pendingWeapon = undefined;
         this.accumulator -= C.dt;
@@ -532,12 +504,15 @@ export class StrikeController {
         this.state,
         this.yaw,
         this.pitch,
-        this.ads,
+        this.touchAds || this.ads || this.down("ads"),
         this.accumulator / C.dt,
         this.previous,
         elapsed
       );
 
+      if(this.receivedInitialState && !this.notifiedReady && this.renderer.scene.isReady()){
+        this.notifiedReady=true;this.callbacks?.onSynchronized?.();
+      }
       if (now - this.lastHUD > 100) {
         this.lastHUD = now;
         this.pushHUD();
@@ -559,7 +534,7 @@ export class StrikeController {
 
     const myId = this.socket?.id;
     const now = performance.now();
-    const renderTime = now - 70; // 70ms buffer
+    const renderTime = now - clamp(70+this.jitter*2,70,150);
 
     // Find two snapshots surrounding renderTime
     let older: BufferedSnapshot | null = null;
@@ -591,27 +566,32 @@ export class StrikeController {
         username: p1.username,
         team: p1.team,
         color: p1.color,
+        skin: p2.skin,
         hp: p2.hp,
         stance: p2.stance,
         selectedWeapon: p2.selectedWeapon,
         yaw: p1.yaw + (p2.yaw - p1.yaw) * alpha,
         pitch: p1.pitch + (p2.pitch - p1.pitch) * alpha,
-        position: {
-          x: p1.position.x + (p2.position.x - p1.position.x) * alpha,
-          y: p1.position.y + (p2.position.y - p1.position.y) * alpha,
-          z: p1.position.z + (p2.position.z - p1.position.z) * alpha,
-        },
+        position: (()=>{
+          const base={x:p1.position.x+(p2.position.x-p1.position.x)*alpha,y:p1.position.y+(p2.position.y-p1.position.y)*alpha,z:p1.position.z+(p2.position.z-p1.position.z)*alpha};
+          const dt=clamp((renderTime-newer!.time)/1000,0,.05);
+          if(!dt || p2.hp<=0)return base;
+          const next={x:base.x+p2.velocity.x*dt,y:base.y+p2.velocity.y*dt,z:base.z+p2.velocity.z*dt};
+          return fits(MAPS[this.state.map],next,p2.stance==="stand"?C.standing:C.crouching)?next:base;
+        })(),
       };
     });
 
-    this.renderer.renderRemotePlayers(interpolatedPlayers, myId);
+    this.renderer.renderRemotePlayers(interpolatedPlayers, myId, this.localTeam);
   }
 
-  private feedback(e: CombatEvent) {
-    this.processed = e.id;
+  private feedback(e: CombatEvent, predicted=false) {
+    if(!predicted)this.processed = Math.max(this.processed,e.id);
+    if (this.isMultiplayer && e.actor !== this.state.player.id && e.kind !== "shot") return;
     if (e.kind === "shot") {
-      if (e.tick === this.lastShotTick) return;
-      this.lastShotTick = e.tick;
+      if (this.shotSounds.get(e.actor) === e.tick) return;
+      this.shotSounds.set(e.actor,e.tick);
+      if(this.shotSounds.size>64)this.shotSounds.delete(this.shotSounds.keys().next().value!);
       if (
         e.weapon === "shotgun" &&
         e.id > 1 &&
@@ -621,7 +601,8 @@ export class StrikeController {
       )
         return;
       this.audio.play(e.weapon!);
-      this.pitch = clamp(this.pitch - WEAPONS[e.weapon!].recoil, -1.48, 1.48);
+      if (!this.isMultiplayer || e.actor === this.state.player.id)
+        this.pitch = clamp(this.pitch - WEAPONS[e.weapon!].recoil, -1.48, 1.48);
     }
     if (e.kind === "hit") {
       const sameShot = this.lastHit?.until === e.tick + 36;
@@ -634,7 +615,9 @@ export class StrikeController {
     }
     if (e.kind === "reload") this.audio.play("reload");
     if (e.kind === "damage") {
+      this.state.lastDamageTick = this.state.tick;
       this.lastHurt = {
+        damage: Math.min(100, (this.lastHurt && this.lastHurt.until > this.state.tick ? this.lastHurt.damage || 0 : 0) + (e.damage || 0)),
         direction: e.direction || 0,
         until: this.state.tick + 60,
       };
@@ -656,6 +639,7 @@ export class StrikeController {
 
     this.onHUD({
       hp: p.hp,
+      ads: this.touchAds || this.ads || this.down("ads"),
       ammo: w.ammo[w.selected],
       capacity: WEAPONS[w.selected].capacity,
       weapon: w.selected,
@@ -678,6 +662,7 @@ export class StrikeController {
       tick: s.tick,
       dropped: this.dropped,
       ping: this.ping,
+      jitter: this.jitter,
       isMultiplayer: this.isMultiplayer,
       team: this.localTeam,
       redScore: this.teamScores.red,
@@ -697,10 +682,18 @@ export class StrikeController {
     this.pendingWeapon = undefined;
     this.scoreboardOpen = false;
     this.pttActive = false;
+    this.callbacks?.onPttChange?.(false);
+    this.callbacks?.onScoreboardToggle?.(false);
+    this.touchMoveX = this.touchMoveZ = 0;
+    this.touchFire = this.touchAds = this.touchJump = this.touchCrouch = this.touchSprint = false;
   }
 
-  start() {
+  start(capturePointer = true) {
     if (this.disposed) return;
+    if (this.isMultiplayer && !this.socket?.connected) {
+      this.onPause("Sunucu bağlantısı yok. Menüden odaya yeniden katıl.");
+      return;
+    }
     this.ignoreInitialMouseMove = true;
     this.canvas.focus();
     this.audio.unlock();
@@ -708,7 +701,7 @@ export class StrikeController {
     this.accumulator = 0;
     this.active = true;
     try {
-      if (!this.isTouchDevice && "requestPointerLock" in this.canvas) {
+      if (capturePointer && !this.isTouchDevice && "requestPointerLock" in this.canvas) {
         const promise = this.canvas.requestPointerLock();
         if (promise) {
           promise.catch(() => {});
@@ -768,5 +761,6 @@ export class StrikeController {
     this.renderer.dispose();
     this.unacknowledgedInputs = [];
     this.remoteSnapshots = [];
+    this.shotSounds.clear();
   }
 }

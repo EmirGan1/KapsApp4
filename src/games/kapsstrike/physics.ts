@@ -6,6 +6,15 @@ import {
   Solid,
 } from "./types";
 import { PHYSICS as C, WEAPONS } from "./config";
+const collisionCache=new WeakMap<MapDefinition,{source:Solid[];length:number;solids:Solid[]}>();
+/** Authored map geometry is immutable; skip thousands of facade fittings in the hot path. */
+export function collisionSolids(map:MapDefinition):Solid[]{
+  let result=collisionCache.get(map);
+  if(!result||result.source!==map.solids||result.length!==map.solids.length){
+    result={source:map.solids,length:map.solids.length,solids:map.solids.filter(s=>!s.detail)};collisionCache.set(map,result);
+  }
+  return result.solids;
+}
 export const clamp = (n: number, a: number, b: number) =>
   Math.max(a, Math.min(b, n));
 export function surface(s: Solid, x: number, z: number) {
@@ -29,7 +38,7 @@ export function overlaps(s: Solid, p: Vec3, r = C.radius) {
   return dx * dx + dz * dz < r * r - 1e-8;
 }
 export function fits(map: MapDefinition, p: Vec3, height: number) {
-  return !map.solids.some((s) => {
+  return !collisionSolids(map).some((s) => {
     if (s.detail) return false;
     if (s.kind === "ramp")
       return (
@@ -47,7 +56,7 @@ export function fits(map: MapDefinition, p: Vec3, height: number) {
 }
 export function support(map: MapDefinition, p: Vec3, maxY: number) {
   let y = 0;
-  for (const s of map.solids) {
+  for (const s of collisionSolids(map)) {
     if (s.detail || !overlaps(s, p, C.radius)) continue;
     const top = surface(s, p.x, p.z);
     if (top <= maxY + 0.001) y = Math.max(y, top);

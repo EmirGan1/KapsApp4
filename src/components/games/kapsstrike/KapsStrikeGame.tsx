@@ -1,3 +1,6 @@
+import StrikeSkins from "./StrikeSkins";
+import StrikeControls from "./StrikeControls";
+import { cleanBindings } from "../../../games/kapsstrike/controls";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import type { Socket } from "socket.io-client";
 import {
@@ -6,8 +9,6 @@ import {
 } from "../../../games/kapsstrike/controller";
 import {
   DEFAULT_SETTINGS,
-  DEFAULT_KEYBINDS,
-  CHARACTER_SKINS,
   cleanSettings,
   WEAPONS,
   WEAPON_ORDER,
@@ -21,8 +22,8 @@ import {
   MatchStats,
   StrikeTeam,
   StrikeGameMode,
+  StrikeSnapshot,
   WeaponId,
-  SkinId,
 } from "../../../games/kapsstrike/types";
 import { MAPS } from "../../../games/kapsstrike/maps";
 import { StrikeVoiceManager } from "../../../games/kapsstrike/voice";
@@ -51,6 +52,11 @@ export default function KapsStrikeGame({
   const game = useRef<StrikeController | null>(null);
   const voice = useRef<StrikeVoiceManager | null>(null);
 
+  const activeRoom = useRef<string | null>(null);
+  const launch = useRef<(room: StrikeRoomState) => void>(() => {});
+  const loadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [loadStage, setLoadStage] = useState("");
+
   // General state
   const [modeTab, setModeTab] = useState<"multiplayer" | "training">("multiplayer");
   const [map, setMap] = useState<MapId>("warehouse");
@@ -63,50 +69,12 @@ export default function KapsStrikeGame({
       return { ...DEFAULT_SETTINGS };
     }
   });
-  const [view, setView] = useState<"menu" | "lobby" | "play" | "pause" | "match_end">("menu");
-  const [panel, setPanel] = useState<"settings" | "controls" | "create_room" | "equipment" | null>(null);
-  const [rebindingAction, setRebindingAction] = useState<string | null>(null);
+  const [view, setView] = useState<"menu" | "lobby" | "loading" | "play" | "pause" | "match_end">("menu");
+  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "create_room" | null>(null);
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
   const [returnFire, setReturnFire] = useState(false);
   const [supported, setSupported] = useState(true);
-
-  const setting = useCallback((update: Partial<StrikeSettings>) => {
-    setSettings((prev) => {
-      const next = cleanSettings({ ...prev, ...update });
-      try {
-        localStorage.setItem("kapsstrike-settings", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  }, []);
-
-  // Listen for key press during keybinding rebind
-  useEffect(() => {
-    if (!rebindingAction) return;
-    const handleRebind = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.code === "Escape") {
-        setRebindingAction(null);
-        return;
-      }
-      const action = rebindingAction;
-      const key = e.code;
-      setRebindingAction(null);
-      setting({
-        binds: {
-          ...DEFAULT_KEYBINDS,
-          ...(settings.binds || {}),
-          [action]: key,
-        },
-      });
-    };
-    window.addEventListener("keydown", handleRebind, { capture: true, once: true });
-    return () => {
-      window.removeEventListener("keydown", handleRebind, { capture: true });
-    };
-  }, [rebindingAction, setting, settings.binds]);
 
   // Mobile / Touch state
   const [isMobile, setIsMobile] = useState(false);
@@ -150,6 +118,13 @@ export default function KapsStrikeGame({
   const [speakingUsers, setSpeakingUsers] = useState<Map<number, boolean>>(new Map());
   const [playerVolumes, setPlayerVolumes] = useState<Record<number, number>>({});
 
+  useEffect(() => {
+    try { localStorage.setItem("kapsstrike-settings", JSON.stringify(settings)); } catch {}
+    game.current?.setBindings(cleanBindings(settings.bindings));
+  }, [settings]);
+
+  useEffect(() => {if(typeof hud?.ads === "boolean")setTouchAdsActive(hud.ads);},[hud?.ads]);
+
   // Mobile detection & Orientation check
   useEffect(() => {
     const checkMobile = () => {
@@ -176,6 +151,8 @@ export default function KapsStrikeGame({
     probe?.getExtension("WEBGL_lose_context")?.loseContext();
 
     return () => {
+      clearTimeout(loadTimer.current);
+      activeRoom.current = null;
       game.current?.dispose();
       game.current = null;
       voice.current?.dispose();
@@ -215,6 +192,16 @@ export default function KapsStrikeGame({
     refreshRooms();
     const interval = setInterval(refreshRooms, 3000);
 
+    let lastScoresAt=0;
+    const onScores=(snapshot:StrikeSnapshot)=>{
+      const room=currentRoomRef.current;
+      if(!room || room.status!=="in_progress" || (snapshot.roomCode && snapshot.roomCode!==room.roomCode) || !Array.isArray(snapshot.players) || performance.now()-lastScoresAt<250)return;
+      lastScoresAt=performance.now();
+      updateCurrentRoom({...room,timeLeft:snapshot.timeLeft,teamScores:snapshot.teamScores || room.teamScores,players:room.players.map(player=>{
+        const current=snapshot.players.find(p=>p.userId===player.userId);
+        return current ? {...player,...current,isAlive:current.hp>0} : player;
+      })});
+    };
     const onRoomsList = (list: StrikeRoomSummary[]) => {
       if (Array.isArray(list)) {
         setRooms(list);
@@ -223,9 +210,9 @@ export default function KapsStrikeGame({
 
     const onRoomState = (state: StrikeRoomState) => {
       updateCurrentRoom(state);
-      if (state.status === "in_progress" && view === "lobby") {
-        startMultiplayerGame(state);
-      } else if (view === "menu") {
+      if (state.status === "in_progress") {
+        launch.current(state);
+      } else if (state.status === "lobby" && !game.current) {
         setView("lobby");
       }
     };
@@ -236,28 +223,33 @@ export default function KapsStrikeGame({
         if (data.roomCode) {
           updateCurrentRoom(data);
         }
-        startMultiplayerGame(data);
+        launch.current(data);
       }
     };
 
     const onMatchReset = (state: StrikeRoomState) => {
       updateCurrentRoom(state);
+      activeRoom.current = null;
+      clearTimeout(loadTimer.current);
       game.current?.dispose();
       game.current = null;
       setView("lobby");
     };
 
     const onKill = (kill: KillFeedEntry) => {
-      setKillFeed((prev) => [kill, ...prev].slice(0, 6));
+      setKillFeed((prev) => [kill, ...prev.filter(k => k.id !== kill.id)].slice(0, 6));
       setTimeout(() => {
         setKillFeed((prev) => prev.filter((k) => k.id !== kill.id));
       }, 5000);
     };
 
     const onMatchEnded = (payload: any) => {
+      activeRoom.current = null;
+      clearTimeout(loadTimer.current);
       let stats: MatchStats;
       if (payload && Array.isArray(payload.players)) {
         const roomState = payload as StrikeRoomState;
+        updateCurrentRoom(roomState);
         const me = roomState.players.find((p) => p.userId === currentUserId);
         const sorted = [...roomState.players].sort((a, b) => b.kills - a.kills || b.damage - a.damage);
         const top = sorted[0];
@@ -299,6 +291,7 @@ export default function KapsStrikeGame({
       setError(data.message || data.error || "Ağ hatası oluştu.");
     };
 
+    socket.on("strike:snapshot",onScores);
     socket.on("strike:rooms_list", onRoomsList);
     socket.on("strike:room_list", onRoomsList);
     socket.on("strike:room_state", onRoomState);
@@ -326,6 +319,7 @@ export default function KapsStrikeGame({
 
     return () => {
       clearInterval(interval);
+      socket.off("strike:snapshot",onScores);
       socket.off("strike:rooms_list", onRoomsList);
       socket.off("strike:room_list", onRoomsList);
       socket.off("strike:room_state", onRoomState);
@@ -337,7 +331,7 @@ export default function KapsStrikeGame({
       socket.off("strike:game_over", onMatchEnded);
       socket.off("strike:error", onError);
     };
-  }, [socket, view, targetRoomId, refreshRooms]);
+  }, [socket, currentUserId, targetRoomId, refreshRooms]);
 
   // Launch Local Offline Training
   const startTraining = () => {
@@ -372,6 +366,20 @@ export default function KapsStrikeGame({
 
   // Launch Online Multiplayer Match
   const startMultiplayerGame = (roomOrMap?: any) => {
+    const code = roomOrMap?.roomCode || currentRoomRef.current?.roomCode;
+    if (!code || activeRoom.current === code) return;
+    activeRoom.current = code;
+    setView("loading");
+    setLoadStage("Harita yükleniyor…");
+    clearTimeout(loadTimer.current);
+    loadTimer.current = setTimeout(() => {
+      if (activeRoom.current !== code) return;
+      activeRoom.current = null;
+      game.current?.dispose();
+      game.current = null;
+      setView("lobby");
+      setError("Oyun durumu 12 saniyede alınamadı. Bağlantını kontrol edip yeniden deneyebilirsin.");
+    }, 12000);
     setPanel(null);
     setError("");
     try {
@@ -402,6 +410,7 @@ export default function KapsStrikeGame({
         settings,
         setHUD,
         (reason) => {
+          setView("pause");
           if (reason) setError(reason);
         },
         undefined,
@@ -412,12 +421,17 @@ export default function KapsStrikeGame({
           username,
           team: myTeam,
           isMultiplayer: true,
+          onLoadingStage: setLoadStage,
+          onSynchronized: () => {
+            clearTimeout(loadTimer.current);
+            setView(game.current?.isTouchDevice ? "play" : "pause");
+          },
           onScoreboardToggle: (open) => setScoreboardOpen(open),
           onPttChange: (active) => voice.current?.setPttActive(active),
         }
       );
-      setView("play");
-      game.current.start();
+      setLoadStage("Oyun durumu senkronize ediliyor…");
+      game.current.start(false);
 
       // Connect voice room with other players
       if (voice.current && targetRoom) {
@@ -429,10 +443,14 @@ export default function KapsStrikeGame({
     } catch (e) {
       game.current?.dispose();
       game.current = null;
+      clearTimeout(loadTimer.current);
+      activeRoom.current = null;
       setView("lobby");
       setError(e instanceof Error ? e.message : "Oyun başlatılamadı.");
     }
   };
+
+  launch.current = startMultiplayerGame;
 
   const resume = () => {
     setError("");
@@ -442,6 +460,8 @@ export default function KapsStrikeGame({
   };
 
   const exit = () => {
+    activeRoom.current = null;
+    clearTimeout(loadTimer.current);
     game.current?.dispose();
     game.current = null;
     voice.current?.leaveVoice();
@@ -613,11 +633,7 @@ export default function KapsStrikeGame({
         setError(res.error);
       }
     });
-    socket.emit("strike:start_match", (res?: { success: boolean; error?: string }) => {
-      if (res && !res.success && res.error) {
-        setError(res.error);
-      }
-    });
+
   };
 
   const returnToLobbyAsHost = () => {
@@ -650,6 +666,9 @@ export default function KapsStrikeGame({
     setTimeout(() => setInviteCopied(false), 2500);
   };
 
+  const setting = (patch: Partial<StrikeSettings>) =>
+    setSettings((old) => cleanSettings({ ...old, ...patch }));
+
   const isHost = currentRoom?.hostId === currentUserId;
   const filteredRooms = rooms.filter((r) => {
     const matchQuery = r.name.toLowerCase().includes(roomFilter.toLowerCase());
@@ -665,6 +684,15 @@ export default function KapsStrikeGame({
         aria-label="KapsStrike 3D oyun alanı"
         tabIndex={-1}
       />
+
+      {view === "loading" && (
+        <div className="ks-overlay" role="status">
+          <div className="ks-menu"><h2>Maç hazırlanıyor</h2><p>{loadStage}</p>
+            <button onClick={exit}>Lobiye / menüye dön</button>
+          </div>
+        </div>
+      )}
+      {error && view !== "menu" && <p className="ks-network-error" role="alert">{error}</p>}
 
       {/* MOBILE PORTRAIT ORIENTATION BANNER */}
       {view === "play" && isMobile && isPortrait && (
@@ -777,6 +805,7 @@ export default function KapsStrikeGame({
                 e.preventDefault();
                 game.current?.setTouchFire(false);
               }}
+              onTouchCancel={() => game.current?.setTouchFire(false)}
             >
               ATEŞ
             </button>
@@ -790,12 +819,14 @@ export default function KapsStrikeGame({
                 }}
                 onTouchStart={(e) => {
                   e.preventDefault();
-                  const next = !touchAdsActive;
+                  const next = hud?.weapon === "knife" ? true : !touchAdsActive;
                   setTouchAdsActive(next);
                   game.current?.setTouchAds(next);
                 }}
+                onTouchEnd={() => {if(hud?.weapon === "knife"){setTouchAdsActive(false);game.current?.setTouchAds(false);}}}
+                onTouchCancel={() => {setTouchAdsActive(false);game.current?.setTouchAds(false);}}
               >
-                ADS
+                {hud?.weapon === "knife" ? "GÜÇLÜ" : "ADS"}
               </button>
               <button
                 type="button"
@@ -808,6 +839,7 @@ export default function KapsStrikeGame({
                   e.preventDefault();
                   game.current?.setTouchJump(false);
                 }}
+              onTouchCancel={() => game.current?.setTouchJump(false)}
               >
                 ZIPLA
               </button>
@@ -822,6 +854,7 @@ export default function KapsStrikeGame({
                   e.preventDefault();
                   game.current?.setTouchCrouch(false);
                 }}
+              onTouchCancel={() => game.current?.setTouchCrouch(false)}
               >
                 KAY
               </button>
@@ -1078,14 +1111,14 @@ export default function KapsStrikeGame({
             <div className="ks-ammo">
               <small>{WEAPONS[hud.weapon]?.name}</small>
               <strong>
-                {hud.ammo} <span>/ {hud.capacity}</span>
+                {hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
               </strong>
               <span>
                 {hud.reload > 0
                   ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
                   : isMobile
                   ? "Dokunmatik Kontroller Aktif"
-                  : "R · Yenile | 1–5 · Silah"}
+                  : "R · Yenile | 1–6 / Tekerlek · Silah"}
               </span>
             </div>
           </div>
@@ -1101,6 +1134,8 @@ export default function KapsStrikeGame({
             {" · ESC Menü"}
           </div>
 
+          {hud.hurt && hud.hurt.until > hud.tick && <div className="ks-hurt-vignette" style={{opacity: Math.min(.85, .2 + (hud.hurt.damage || 10) / 110)}} />}
+          {hud.hp > 0 && hud.hp <= 25 && <span className="ks-low-health" role="status">KRİTİK CAN</span>}
           {hud.hurt && hud.hurt.until > hud.tick && (
             <div
               className="ks-hurt"
@@ -1125,14 +1160,14 @@ export default function KapsStrikeGame({
         <div className="ks-match-end-overlay">
           <div className="ks-match-end-card">
             <div className="ks-winner-title">
-              {matchStats.winnerTeam === "red"
+              {matchStats.winnerTeam === "none" ? "BERABERE!" : matchStats.winnerTeam === "red"
                 ? "KIRMIZI TAKIM KAZANDI!"
                 : matchStats.winnerTeam === "blue"
                 ? "MAVİ TAKIM KAZANDI!"
                 : `${matchStats.winnerName || "ŞAMPİYON"} KAZANDI!`}
             </div>
             <p className="text-slate-300 mb-6">
-              Maç tamamlandı. İstatistikler KapsApp liderlik tablosuna işlendi.
+              Maç tamamlandı. Aşağıda bu maçın istatistikleri gösteriliyor.
             </p>
 
             {matchStats.mvp && (
@@ -1163,6 +1198,9 @@ export default function KapsStrikeGame({
         </div>
       )}
 
+      {view === "lobby" && error && currentRoom?.status === "in_progress" && (
+        <button className="ks-retry" onClick={() => startMultiplayerGame(currentRoom)}>Maça yeniden bağlan</button>
+      )}
       {/* ROOM LOBBY VIEW */}
       {view === "lobby" && currentRoom && (
         <div className="ks-overlay">
@@ -1189,6 +1227,11 @@ export default function KapsStrikeGame({
                   </button>
                   <button onClick={exit}>Ayrıl</button>
                 </div>
+              </div>
+
+              <div className="ks-feature-shortcuts ks-lobby-shortcuts" aria-label="Oyun ayarları">
+                <button type="button" onClick={() => setPanel("skins")}>Karakter / Skin</button>
+                <button type="button" onClick={() => setPanel("controls")}>Kontroller</button>
               </div>
 
               {/* TDM TEAMS OR FFA LIST */}
@@ -1344,6 +1387,11 @@ export default function KapsStrikeGame({
                   🏹 Tek Oyunculu Antrenman (Offline)
                 </button>
               </div>
+              <div className="ks-feature-shortcuts" aria-label="Oyun özelleştirmeleri">
+                <button type="button" onClick={() => setPanel("skins")}>Karakterini seç</button>
+                <button type="button" onClick={() => setPanel("controls")}>Kontrolleri düzenle</button>
+              </div>
+              <p className="ks-visibility-note">Maçta diğer oyuncular takım rengiyle çevrelenir; duvarlar oyuncuları örtmeye devam eder.</p>
             </header>
 
             {error && (
@@ -1374,14 +1422,14 @@ export default function KapsStrikeGame({
                   <form onSubmit={handleJoinByCode} className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="6 Haneli Kod"
-                      maxLength={6}
+                      placeholder="Oda kodu"
+                      maxLength={32}
                       value={joinCodeInput}
                       onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
                       className="ks-filter-input"
                       style={{ width: "120px", minWidth: "100px", textTransform: "uppercase" }}
                     />
-                    <button type="submit" disabled={joinCodeInput.trim().length !== 6}>
+                    <button type="submit" disabled={joinCodeInput.trim().length < 4}>
                       Koda Katıl
                     </button>
                   </form>
@@ -1761,143 +1809,19 @@ export default function KapsStrikeGame({
               </div>
             )}
 
-            {/* CONTROLS / KEYBINDINGS CUSTOMIZATION PANEL */}
+            {panel === "skins" && <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} />}
+
+            {/* CONTROLS PANEL */}
             {panel === "controls" && (
               <div className="ks-controls">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-amber-400">Tuş Atamaları & Kontroller</h2>
-                  <button
-                    type="button"
-                    onClick={() => setting({ binds: DEFAULT_KEYBINDS })}
-                    style={{ padding: "4px 10px", fontSize: "12px", minHeight: "auto" }}
-                  >
-                    🔄 Varsayılanlara Sıfırla
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs max-h-80 overflow-y-auto pr-2">
-                  {[
-                    ["forward", "İleri Hareket"],
-                    ["backward", "Geri Hareket"],
-                    ["left", "Sola Hareket"],
-                    ["right", "Sağa Hareket"],
-                    ["jump", "Zıplama / Bunny Hop"],
-                    ["crouch", "Çömelme / Kayma"],
-                    ["sprint", "Koşma / Depar"],
-                    ["reload", "Şarjör Yenileme"],
-                    ["primary", "Birincil Silah (Tüfek/SMG)"],
-                    ["secondary", "İkincil Silah (Tabanca)"],
-                    ["knife", "Yakın Dövüş (Bıçak)"],
-                    ["scoreboard", "Skor Tablosu (TAB)"],
-                  ].map(([action, label]) => {
-                    const currentBind =
-                      (settings.binds as any)?.[action] || (DEFAULT_KEYBINDS as any)[action] || "";
-                    const isRebinding = rebindingAction === action;
-
-                    return (
-                      <div
-                        key={action}
-                        className="flex justify-between items-center bg-slate-900/80 p-2.5 rounded-lg border border-slate-700/80"
-                      >
-                        <span className="text-slate-300 font-medium">{label}</span>
-                        <button
-                          type="button"
-                          onClick={() => setRebindingAction(action)}
-                          className={`font-mono text-xs px-3 py-1 rounded transition-colors ${
-                            isRebinding
-                              ? "bg-amber-500 text-slate-950 font-bold animate-pulse"
-                              : "bg-slate-800 text-amber-400 border border-slate-600 hover:border-amber-400"
-                          }`}
-                        >
-                          {isRebinding ? "Tuşa Basın..." : currentBind}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-slate-400 mt-3 italic">
-                  💡 Fare tekerleğini yukarı/aşağı kaydırarak silahlar arasında hızlıca geçiş yapabilirsiniz.
-                </p>
-                <button onClick={() => { setRebindingAction(null); setPanel(null); }} className="mt-4">
-                  Geri Dön
-                </button>
-              </div>
-            )}
-
-            {/* EQUIPMENT / CHARACTER SKINS SELECTION PANEL */}
-            {panel === "equipment" && (
-              <div className="ks-controls">
-                <div className="flex justify-between items-center mb-4">
-                  <div>
-                    <h2 className="text-xl font-bold text-amber-400">Karakter & Kostüm Seçimi</h2>
-                    <p className="text-xs text-slate-400">Arenada görünecek taktik karakter kaplamanı seç.</p>
-                  </div>
-                  <span className="text-xs bg-amber-500/20 text-amber-400 px-3 py-1 rounded-full font-bold">
-                    8 / 8 AÇIK
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 max-h-80 overflow-y-auto pr-1">
-                  {Object.values(CHARACTER_SKINS).map((skin) => {
-                    const isSelected = (settings.selectedSkin || "classic_soldier") === skin.id;
-                    return (
-                      <button
-                        key={skin.id}
-                        type="button"
-                        onClick={() => setting({ selectedSkin: skin.id })}
-                        className={`flex flex-col justify-between p-3 rounded-xl border text-left transition-all ${
-                          isSelected
-                            ? "bg-amber-500/10 border-amber-400 shadow-lg shadow-amber-500/10 scale-[1.02]"
-                            : "bg-slate-900/60 border-slate-800 hover:border-slate-600"
-                        }`}
-                      >
-                        <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="font-bold text-sm text-slate-200">{skin.name}</span>
-                            {isSelected && <span className="text-amber-400 font-bold text-xs">✓ SEÇİLİ</span>}
-                          </div>
-                          <p className="text-[11px] text-slate-400 leading-tight mb-3">{skin.description}</p>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800/80">
-                          <span
-                            className="w-3.5 h-3.5 rounded-full border border-white/20"
-                            style={{ backgroundColor: skin.primaryColor }}
-                            title="Birincil Zırh"
-                          />
-                          <span
-                            className="w-3.5 h-3.5 rounded-full border border-white/20"
-                            style={{ backgroundColor: skin.secondaryColor }}
-                            title="İkincil Giysi"
-                          />
-                          <span
-                            className="w-3.5 h-3.5 rounded-full border border-white/20"
-                            style={{ backgroundColor: skin.accentColor }}
-                            title="Işıklı Vurgu"
-                          />
-                          <span className="text-[10px] text-slate-500 ml-auto uppercase font-mono">
-                            {skin.outfitType}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <button onClick={() => setPanel(null)} className="mt-4">
-                  Geri Dön
-                </button>
+                <h2>Kontroller</h2>
+                <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />
+                <button onClick={() => setPanel(null)}>Geri</button>
               </div>
             )}
 
             <footer>
-              <button
-                onClick={() =>
-                  setPanel(panel === "equipment" ? null : "equipment")
-                }
-                className={panel === "equipment" ? "text-amber-400" : ""}
-              >
-                🎭 Ekipman / Kostüm
-              </button>
+              <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
               <button
                 onClick={() =>
                   setPanel(panel === "settings" ? null : "settings")
@@ -1910,7 +1834,7 @@ export default function KapsStrikeGame({
                   setPanel(panel === "controls" ? null : "controls")
                 }
               >
-                Tuş Atamaları
+                Kontroller
               </button>
               <button
                 onClick={() => {
@@ -1944,14 +1868,32 @@ export default function KapsStrikeGame({
           <div className="ks-menu">
             <div className="ks-paused">
               <h2>Duraklatıldı</h2>
-              <p>Simülasyon ve kontroller durduruldu.</p>
+              <p>{game.current?.isMultiplayer ? "Maç devam ediyor. Kontrolü almak için Oyuna dön düğmesine bas." : "Simülasyon ve kontroller durduruldu."}</p>
               <div className="flex gap-3">
                 <button className="ks-primary" onClick={resume}>
                   Oyuna dön
                 </button>
                 <button onClick={exit}>Menüye dön</button>
+                <button onClick={() => setPanel(panel === "controls" ? null : "controls")}>Kontroller</button>
+                <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
               </div>
+              {panel === "controls" && <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />}
+              {panel === "skins" && <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} />}
             </div>
+          </div>
+        </div>
+      )}
+
+      {view === "lobby" && (panel === "controls" || panel === "skins") && (
+        <div className="ks-overlay ks-feature-overlay">
+          <div className="ks-menu ks-feature-card">
+            {panel === "skins" ? <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} /> : (
+              <div className="ks-controls">
+                <h2>Kontroller</h2>
+                <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />
+              </div>
+            )}
+            <button type="button" onClick={() => setPanel(null)}>Lobiye dön</button>
           </div>
         </div>
       )}

@@ -1,3 +1,6 @@
+import { createCharacter } from "./character";
+import { cleanSkin } from "./skins";
+import { surfaceTexture } from "./surfaceTextures";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
@@ -21,17 +24,10 @@ import {
   CombatEvent,
   WeaponId,
   Vec3,
-  SkinId,
+  Solid,
 } from "./types";
-import {
-  WEAPONS,
-  WEAPON_ORDER,
-  PHYSICS as C,
-  TARGET_HITBOXES,
-  detectAutoQuality,
-  CHARACTER_SKINS,
-} from "./config";
-import { raySolid, clamp } from "./physics";
+import { WEAPONS, WEAPON_ORDER, PHYSICS as C, TARGET_HITBOXES, detectAutoQuality } from "./config";
+import { raySolid, clamp, collisionSolids } from "./physics";
 import { aimDirection } from "./combat";
 /** All input belongs to StrikeController; avoid a second device/gamepad listener graph. */
 class StrikeScene extends Scene {
@@ -49,6 +45,9 @@ export class StrikeRenderer {
   private remotePlayerMeshes = new Map<
     string,
     {
+      model: ReturnType<typeof createCharacter>;
+      skin: string;
+      team: string;
       root: TransformNode;
       body: Mesh;
       head: Mesh;
@@ -58,6 +57,7 @@ export class StrikeRenderer {
       tagMat?: StandardMaterial;
     }
   >();
+  private flashes = new Map<string, number>();
   private gunRoot: TransformNode;
   private weapons = new Map<WeaponId, TransformNode>();
   private tracerPool: { mesh: Mesh; until: number }[] = [];
@@ -72,6 +72,10 @@ export class StrikeRenderer {
   private frameDrawCalls = 0;
   private previousDrawCalls = 0;
   private settings: StrikeSettings;
+  private dynamicScale=1;
+  private scaleTimer=performance.now();
+  private slowSamples=0;
+  private fastSamples=0;
   constructor(
     readonly canvas: HTMLCanvasElement,
     readonly map: MapDefinition,
@@ -97,8 +101,8 @@ export class StrikeRenderer {
       this.scene = new StrikeScene(this.engine);
       this.scene.clearColor = Color4.FromHexString(map.sky + "ff");
       this.scene.fogMode = Scene.FOGMODE_LINEAR;
-      this.scene.fogStart = 55;
-      this.scene.fogEnd = 110;
+      this.scene.fogStart = 68;
+      this.scene.fogEnd = 175;
       this.scene.fogColor = Color3.FromHexString(map.sky);
       this.scene.skipPointerMovePicking = true;
       this.scene.autoClear = true;
@@ -107,14 +111,14 @@ export class StrikeRenderer {
         new Vector3(0.2, 1, 0.3),
         this.scene,
       );
-      hemi.intensity = 0.6;
+      hemi.intensity = map.id === "neon" ? 0.5 : 0.6;
       const sun = new DirectionalLight(
         "sun",
         new Vector3(-0.4, -1, 0.3),
         this.scene,
       );
       sun.position.set(15, 35, -20);
-      sun.intensity = 0.65;
+      sun.intensity = map.id === "neon" ? 0.45 : 0.65;
       if (effectiveQuality === "high") {
         this.shadow = new ShadowGenerator(1024, sun);
         this.shadow.usePoissonSampling = true;
@@ -125,19 +129,22 @@ export class StrikeRenderer {
         this.scene,
       );
       this.camera.minZ = 0.035;
-      this.camera.maxZ = 120;
+      this.camera.maxZ = 220;
       this.camera.inputs.clear();
       this.camera.fov = (settings.fov * Math.PI) / 180;
       this.scene.activeCamera = this.camera;
       const ground = MeshBuilder.CreateGround(
         "ground",
-        { width: map.bounds * 2, height: map.bounds * 2 },
+        { width: 320, height: 320 },
         this.scene,
       );
-      ground.material = this.material(map.floor);
+      ground.material = this.material(map.floor,false,map.id==='dust'?'plaster':'concrete');
+      this.worldUV(ground);
       ground.receiveShadows = true;
-      const boxes = new Map<string, Mesh>();
+      const batches = new Map<StandardMaterial, Mesh[]>();
       for (const s of map.solids) {
+        if(s.hidden)continue;
+        if(effectiveQuality==='low'&&s.detail&&(Math.abs(s.x)>40||Math.abs(s.z)>40)&&Math.max(s.w,s.h,s.d)<8)continue;
         let mesh: Mesh | ReturnType<Mesh["createInstance"]>;
         if (s.kind === "ramp") {
           const x = s.w / 2,
@@ -177,30 +184,32 @@ export class StrikeRenderer {
           VertexData.ComputeNormals(positions, indices, normals);
           const data = new VertexData();
           data.positions = positions;
+          data.uvs = new Array(positions.length / 3 * 2).fill(0);
           data.indices = indices;
           data.normals = normals;
           mesh = new Mesh(s.id, this.scene);
           data.applyToMesh(mesh);
           mesh.convertToFlatShadedMesh();
-          mesh.material = this.material(s.color);
+          mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
         } else {
-          const key = [s.w, s.h, s.d, s.color].join(":");
-          const original = boxes.get(key);
-          if (original) mesh = original.createInstance(s.id);
-          else {
-            mesh = MeshBuilder.CreateBox(
-              s.id,
-              { width: s.w, height: s.h, depth: s.d },
-              this.scene,
-            );
-            mesh.material = this.material(s.color);
-            boxes.set(key, mesh);
-          }
+          mesh = s.shape ? MeshBuilder.CreateCylinder(s.id,{height:s.h,diameter:s.w,diameterTop:s.shape==='cone'?0:s.w,tessellation:s.shape==='cone'?8:12},this.scene) : MeshBuilder.CreateBox(s.id,{width:s.w,height:s.h,depth:s.d},this.scene);
+          if(s.shape)mesh.scaling.z=s.d/s.w;
+          mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
         }
+        if(s.surface&&!s.label&&!s.shape)this.worldUV(mesh as Mesh);
         mesh.position.set(s.x, s.y + (s.kind === "box" ? s.h / 2 : 0), s.z);
         mesh.isPickable = false;
         mesh.receiveShadows = true;
-        this.shadow?.addShadowCaster(mesh as Mesh);
+        const material=mesh.material as StandardMaterial;
+        const group=batches.get(material) || [];group.push(mesh as Mesh);batches.set(material,group);
+      }
+      // Small authored districts are geometry-light: one static batch per material
+      // trades fine-grained culling for substantially fewer draw calls.
+      for(const [material,meshes] of batches){
+        const batch=Mesh.MergeMeshes(meshes,true,true)!;
+        batch.name="district-"+material.name;batch.material=material;
+        batch.receiveShadows=true;batch.isPickable=false;batch.freezeWorldMatrix();
+        this.shadow?.addShadowCaster(batch);
       }
       const hazard = MeshBuilder.CreateCylinder(
         "hazard",
@@ -275,14 +284,13 @@ export class StrikeRenderer {
           return m;
         };
         if (id === "knife") {
-          part("handle", 0, -0.05, -0.08, 0.045, 0.12, 0.18, "#1e293b");
-          part("hilt", 0, 0.02, 0.02, 0.07, 0.03, 0.05, "#475569");
-          part("blade", 0, 0.04, 0.18, 0.015, 0.08, 0.28, "#e2e8f0");
-          part("edge", 0, 0.01, 0.19, 0.01, 0.03, 0.26, "#ef4444");
-          this.weapons.set(id, root);
+          part("handle",0,-0.04,-0.1,0.09,0.12,0.23,"#26313c");
+          part("guard",0,0,0.015,0.22,0.035,0.045,"#637b8c");
+          const blade = part("blade",0,0.015,0.21,0.075,0.025,0.35,"#d8e3e9");
+          blade.rotation.z = 0.15;
+          this.weapons.set(id,root);
           continue;
         }
-
         part("receiver", 0, 0, 0, 0.14, 0.17, w.length * 0.43, w.color);
         part(
           "barrel",
@@ -394,15 +402,30 @@ export class StrikeRenderer {
       throw error;
     }
   }
-  private material(color: string, emissive = false) {
-    const key = color + emissive;
+  private worldUV(mesh:Mesh){
+    const positions=mesh.getVerticesData(VertexBuffer.PositionKind),normals=mesh.getVerticesData(VertexBuffer.NormalKind);
+    if(!positions||!normals)return;
+    const uv:number[]=[];
+    for(let i=0;i<positions.length;i+=3){
+      const nx=Math.abs(normals[i]),ny=Math.abs(normals[i+1]);
+      uv.push((nx>.5?positions[i+2]:positions[i])/2,(ny>.5?positions[i+2]:positions[i+1])/2);
+    }
+    mesh.setVerticesData(VertexBuffer.UVKind,uv);
+  }
+  private material(color: string, emissive = false, surface?:Solid['surface'],label?:string) {
+    const key = color + emissive + (surface||'') + (label||'');
     let m = this.materials.get(key);
     if (!m) {
       m = new StandardMaterial(key, this.scene);
       m.diffuseColor = Color3.FromHexString(color);
-      m.specularColor = new Color3(0.035, 0.035, 0.035);
+      const texture=surfaceTexture(this.scene,key,color,surface,label);
+      if(texture){m.diffuseTexture=texture;m.diffuseColor=Color3.White();}
+      m.specularColor = color === "#253140" ? new Color3(.22,.25,.3) : new Color3(0.035, 0.035, 0.035);
+      if(surface==='water'||surface==='glass') {m.specularColor=new Color3(.45,.52,.57);m.specularPower=64;}
+      if(color === "#253140")m.specularPower=64;
       if (emissive) {
         m.emissiveColor = m.diffuseColor;
+        if(texture)m.emissiveTexture=texture;
         m.disableLighting = true;
       }
       m.freeze();
@@ -413,17 +436,18 @@ export class StrikeRenderer {
   private resize() {
     const dpr = Math.min(
       devicePixelRatio || 1,
-      this.settings.quality === "high" ? 2 : 1.5,
+      this.settings.quality === "high" ? 2 : (this.settings.quality === "low" || this.settings.quality === "auto" && detectAutoQuality() === "low") ? 1 : 1.5,
     );
-    this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.scale));
+    this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.scale * this.dynamicScale));
     this.engine.resize();
   }
-  process(events: CombatEvent[]) {
+  process(events: CombatEvent[], localActor?: string, predicted=false) {
     for (const e of events) {
-      if (e.id <= this.lastEvent) continue;
-      this.lastEvent = e.id;
+      if (!predicted && e.id <= this.lastEvent) continue;
+      if (!predicted) this.lastEvent = e.id;
+      if (e.kind === "hit" && e.target && this.remotePlayerMeshes.has(e.target)) this.flashes.set(e.target, performance.now() + 120);
       if (e.kind === "shot" && e.from && e.to) {
-        this.gunKick = 0.06;
+        if (!localActor || e.actor === localActor) this.gunKick = 0.06;
         const item = this.tracerPool[this.poolIndex % 48],
           impact = this.impactPool[this.poolIndex++ % 48];
         const positions = new Float32Array([
@@ -444,9 +468,9 @@ export class StrikeRenderer {
         impact.mesh.position.set(e.to.x, e.to.y, e.to.z);
         impact.mesh.setEnabled(true);
         impact.until = e.tick + 12;
-        this.muzzle.setEnabled(true);
+        if (!localActor || e.actor === localActor) this.muzzle.setEnabled(true);
       }
-      if (e.kind === "reload") this.reloadAt = e.tick;
+      if (e.kind === "reload" && (!localActor || e.actor === localActor)) this.reloadAt = e.tick;
     }
   }
   render(
@@ -465,7 +489,8 @@ export class StrikeRenderer {
       m.position.y + (m.stance === "stand" ? C.eye : C.crouchEye),
       previous.z + (m.position.z - previous.z) * alpha,
     );
-    this.camera.rotation.set(pitch, yaw, 0);
+    const hurtAge = (state.tick - state.lastDamageTick) * C.dt;
+    this.camera.rotation.set(pitch, yaw, hurtAge >= 0 && hurtAge < .12 ? Math.sin(hurtAge * 60) * .008 : 0);
     this.camera.fov +=
       (((this.settings.fov * Math.PI) / 180) *
         (ads ? WEAPONS[p.weapon.selected].zoom : 1) -
@@ -484,7 +509,7 @@ export class StrikeRenderer {
       : 0;
     const dir = aimDirection(yaw, pitch);
     let wall = 1;
-    for (const s of this.map.solids)
+    for (const s of collisionSolids(this.map))
       if (!s.detail)
         wall = Math.min(wall, raySolid(this.camera.position, dir, s, 1));
     const near = clamp(1 - wall, 0, 1);
@@ -503,6 +528,9 @@ export class StrikeRenderer {
     this.gunRoot.scaling.setAll(ads ? 0.85 : 1);
     for (const [id, mesh] of this.weapons)
       mesh.setEnabled(id === p.weapon.selected);
+    for (const [id, target] of this.targetMeshes) {
+      if (!state.targets.some(t => t.id === id)) target.root.setEnabled(false);
+    }
     if (state.targets) {
       for (const t of state.targets) {
         const mesh = this.targetMeshes.get(t.id);
@@ -513,12 +541,22 @@ export class StrikeRenderer {
       }
     }
     this.muzzle.position.z = WEAPONS[p.weapon.selected].length * 0.65 + 0.04;
-    this.muzzle.setEnabled(this.gunKick > 0.045);
+    this.muzzle.setEnabled(p.weapon.selected !== "knife" && this.gunKick > 0.045);
+    if (p.weapon.selected === "knife") this.gunRoot.rotation.z += Math.sin(this.gunKick / 0.06 * Math.PI) * 0.9;
     for (const a of this.tracerPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
     for (const a of this.impactPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
     this.scene.render();
+    if(this.observer && this.settings.dynamicResolution && performance.now()-this.scaleTimer>1500){
+      this.scaleTimer=performance.now();const fps=this.engine.getFps();
+      this.slowSamples=fps<45 ? this.slowSamples+1:0;
+      this.fastSamples=fps>58 ? this.fastSamples+1:0;
+      const before=this.dynamicScale;
+      if(this.slowSamples>=2){this.dynamicScale=Math.max(.65,this.dynamicScale-.1);this.slowSamples=0;}
+      else if(this.fastSamples>=4){this.dynamicScale=Math.min(1,this.dynamicScale+.05);this.fastSamples=0;}
+      if(before!==this.dynamicScale)this.resize();
+    }
     const draws = this.engine._drawCalls.current;
     this.frameDrawCalls = Math.max(0, draws - this.previousDrawCalls);
     this.previousDrawCalls = draws;
@@ -535,9 +573,10 @@ export class StrikeRenderer {
       hp: number;
       stance?: string;
       selectedWeapon?: WeaponId;
-      skin?: SkinId;
+      skin?: string;
     }>,
-    localPlayerId?: string
+    localPlayerId?: string,
+    localTeam?: string
   ) {
     const activeIds = new Set<string>();
 
@@ -546,47 +585,25 @@ export class StrikeRenderer {
       activeIds.add(p.id);
 
       let item = this.remotePlayerMeshes.get(p.id);
+      if (item && (item.skin !== cleanSkin(p.skin) || item.team !== (p.team || "none"))) {
+        item.tagTex?.dispose();item.tagMat?.dispose();item.model.dispose();this.remotePlayerMeshes.delete(p.id);item=undefined;
+      }
       if (!item) {
-        const root = new TransformNode("remote-" + p.id, this.scene);
-        const skinDef = CHARACTER_SKINS[p.skin || "classic_soldier"] || CHARACTER_SKINS.classic_soldier;
         const teamColor =
           p.team === "red"
             ? "#ef4444"
             : p.team === "blue"
               ? "#3b82f6"
-              : skinDef.accentColor || p.color || "#10b981";
+              : p.color || "#10b981";
 
-        const body = MeshBuilder.CreateBox(
-          "remote-body-" + p.id,
-          {
-            width: TARGET_HITBOXES.body.radius * 2,
-            height: TARGET_HITBOXES.body.max - TARGET_HITBOXES.body.min,
-            depth: TARGET_HITBOXES.body.radius * 2,
-          },
-          this.scene
-        );
-        body.position.y = (TARGET_HITBOXES.body.min + TARGET_HITBOXES.body.max) / 2;
-        body.parent = root;
-        body.material = this.material(skinDef.primaryColor);
-
-        const head = MeshBuilder.CreateBox(
-          "remote-head-" + p.id,
-          { size: TARGET_HITBOXES.head.radius * 2 },
-          this.scene
-        );
-        head.position.y = (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2;
-        head.parent = root;
-        head.material = this.material(skinDef.secondaryColor);
-
-        // Depth-tested team/enemy outline indicator ring on base
-        const outlineRing = MeshBuilder.CreateTorus(
-          "remote-outline-" + p.id,
-          { diameter: 1.1, thickness: 0.05, tessellation: 16 },
-          this.scene
-        );
-        outlineRing.position.y = 0.04;
-        outlineRing.parent = root;
-        outlineRing.material = this.material(teamColor, true);
+        const teammate = !!localTeam && localTeam !== "none" && p.team === localTeam;
+        const rim = teammate ? "#48c7ff" : "#ff315d";
+        // The silhouette stays readable on Low settings too. It remains depth-tested,
+        // so walls still correctly occlude players.
+        const model = createCharacter(this.scene,p.id,p.skin,p.team || "none",true,rim);
+        const {root,body,head} = model;
+        body.name = "remote-body-" + p.id;
+        head.name = "remote-head-" + p.id;
 
         const tagPlane = MeshBuilder.CreatePlane(
           "remote-tag-" + p.id,
@@ -622,21 +639,30 @@ export class StrikeRenderer {
         gun.parent = root;
         gun.material = this.material("#1e293b");
 
-        item = { root, body, head, tagPlane, gun, tagTex, tagMat };
+        item = { model, skin:cleanSkin(p.skin), team:p.team || "none", root, body, head, tagPlane, gun, tagTex, tagMat };
         this.remotePlayerMeshes.set(p.id, item);
       }
 
+      item.model.flash((this.flashes.get(p.id) || 0) > performance.now());
       const isAlive = p.hp > 0;
       item.root.setEnabled(isAlive);
       if (isAlive) {
         item.root.position.set(p.position.x, p.position.y, p.position.z);
         item.root.rotation.y = p.yaw;
         item.head.rotation.x = p.pitch;
+        if (item.gun) {
+          item.gun.scaling.set(p.selectedWeapon === "knife" ? 0.5 : 1, p.selectedWeapon === "knife" ? 0.22 : 1, 1);
+          item.gun.material = this.material(p.selectedWeapon === "knife" ? "#d8e3e9" : "#1e293b");
+        }
 
         const isCrouch = p.stance === "crouch" || p.stance === "slide";
-        item.body.scaling.y = isCrouch ? 0.75 : 1;
-        item.body.position.y = isCrouch ? 0.65 : (TARGET_HITBOXES.body.min + TARGET_HITBOXES.body.max) / 2;
-        item.head.position.y = isCrouch ? 1.2 : (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2;
+        const offset = isCrouch ? C.standing - C.crouching : 0;
+        item.model.gearRoot.scaling.y = isCrouch ? C.crouching / C.standing : 1;
+        const low = Math.max(0.08, TARGET_HITBOXES.body.min - offset);
+        const high = TARGET_HITBOXES.body.max - offset;
+        item.body.scaling.y = (high - low) / (TARGET_HITBOXES.body.max - TARGET_HITBOXES.body.min);
+        item.body.position.y = (low + high) / 2;
+        item.head.position.y = (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2 - offset;
       }
     }
 
@@ -644,7 +670,8 @@ export class StrikeRenderer {
       if (!activeIds.has(id)) {
         item.tagTex?.dispose();
         item.tagMat?.dispose();
-        item.root.dispose();
+        item.model.dispose();
+        this.flashes.delete(id);
         this.remotePlayerMeshes.delete(id);
       }
     }
@@ -668,8 +695,9 @@ export class StrikeRenderer {
     for (const p of this.remotePlayerMeshes.values()) {
       p.tagTex?.dispose();
       p.tagMat?.dispose();
-      p.root.dispose();
+      p.model.dispose();
     }
     this.remotePlayerMeshes.clear();
+    this.flashes.clear();
   }
 }

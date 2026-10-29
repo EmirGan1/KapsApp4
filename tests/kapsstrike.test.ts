@@ -205,7 +205,7 @@ test("ramp ray tests the sloped wedge, not an imaginary full box", () => {
     3,
   );
 });
-for (const id of WEAPON_ORDER)
+for (const id of WEAPON_ORDER.filter(id => id !== "knife"))
   test(`${id}: ammo, RPM, reload lock, capacity, switching`, () => {
     const s = createTraining("warehouse");
     s.player.weapon.selected = id;
@@ -227,6 +227,7 @@ for (const id of WEAPON_ORDER)
 test("head/body hits are distinct, cover blocks damage, shotgun emits eight pellet rays", () => {
   for (const head of [false, true]) {
     const s = createTraining("warehouse");
+    s.player.movement.position = {x:0,y:0,z:-28};
     s.targets = [
       { id: "t", position: { x: 0, y: 0, z: -25 }, hp: 100, respawnAt: 0 },
     ];
@@ -338,9 +339,9 @@ test("step-up climbs a staircase with matching visual treads", () => {
 });
 test("solid cover blocks hits; frame grouping preserves identical fixed-step results", () => {
   const s = createTraining("warehouse");
-  s.player.movement.position = { x: 17, y: 0, z: -24 };
+  s.player.movement.position = { x: 21, y: 0, z: -24 };
   s.targets = [
-    { id: "covered", position: { x: 17, y: 0, z: -12 }, hp: 100, respawnAt: 0 },
+    { id: "covered", position: { x: 21, y: 0, z: -12 }, hp: 100, respawnAt: 0 },
   ];
   shoot(s, true);
   assert.equal(s.damage, 0);

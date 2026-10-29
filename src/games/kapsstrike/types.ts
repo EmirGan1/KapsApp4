@@ -5,45 +5,6 @@ export interface Vec3 {
 }
 export type MapId = "warehouse" | "dust" | "neon";
 export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol" | "knife";
-export type SkinId =
-  | "classic_soldier"
-  | "urban_runner"
-  | "neon_striker"
-  | "shadow_operative"
-  | "desert_scout"
-  | "arctic_fighter"
-  | "cyber_agent"
-  | "street_warrior";
-
-export type ActionKey =
-  | "forward"
-  | "backward"
-  | "left"
-  | "right"
-  | "jump"
-  | "crouch"
-  | "sprint"
-  | "reload"
-  | "primary"
-  | "secondary"
-  | "knife"
-  | "scoreboard"
-  | "chat";
-
-export type KeyBinds = Record<ActionKey, string>;
-
-export interface CharacterSkinDefinition {
-  id: SkinId;
-  name: string;
-  description: string;
-  primaryColor: string;
-  secondaryColor: string;
-  accentColor: string;
-  outfitType: "tactical" | "cyber" | "stealth" | "scout";
-  helmetStyle: "helmet" | "visor" | "beret" | "hood";
-  visorColor: string;
-}
-
 export interface Solid {
   id: string;
   kind: "box" | "ramp";
@@ -56,6 +17,11 @@ export interface Solid {
   color: string;
   axis?: "x" | "z";
   detail?: boolean;
+  hidden?: boolean;
+  shape?: "cylinder" | "cone";
+  surface?: "plaster" | "stone" | "brick" | "metal" | "asphalt" | "concrete" | "wood" | "glass" | "water" | "fabric";
+  glow?: boolean;
+  label?: string;
 }
 export interface TargetDefinition {
   id: string;
@@ -73,6 +39,8 @@ export interface MapDefinition {
   spawns: Vec3[];
   targets: TargetDefinition[];
   hazard: { x: number; z: number; r: number };
+  routes?: { name: string; points: Vec3[] }[];
+  landmarks?: string[];
 }
 export interface InputCommand {
   sequence: number;
@@ -85,7 +53,6 @@ export interface InputCommand {
   sprint: boolean;
   crouch: boolean;
   fire: boolean;
-  heavyAttack?: boolean;
   ads: boolean;
   reload: boolean;
   weapon?: WeaponId;
@@ -129,7 +96,7 @@ export interface CombatEvent {
   id: number;
   tick: number;
   actor: string;
-  kind: "shot" | "hit" | "reload" | "death" | "respawn" | "damage" | "melee";
+  kind: "shot" | "hit" | "reload" | "death" | "respawn" | "damage";
   weapon?: WeaponId;
   from?: Vec3;
   to?: Vec3;
@@ -153,6 +120,8 @@ export interface TrainingState {
   lastSequence: number;
 }
 export interface StrikeSettings {
+  bindings?: import("./controls").Bindings;
+  selectedSkin?: import("./skins").SkinId;
   quality: "low" | "medium" | "high" | "auto";
   scale: number;
   sensitivity: number;
@@ -163,8 +132,6 @@ export interface StrikeSettings {
   voiceVolume?: number;
   dynamicResolution?: boolean;
   invertY: boolean;
-  binds?: Partial<KeyBinds>;
-  selectedSkin?: SkinId;
 }
 
 export type StrikeGameMode = "ffa" | "tdm";
@@ -172,6 +139,7 @@ export type StrikeTeam = "red" | "blue" | "none";
 export type StrikeRoomStatus = "lobby" | "in_progress" | "game_over";
 
 export interface NetworkPlayer {
+  skin?: import("./skins").SkinId;
   id: string; // Actor / Socket ID
   userId: number; // KapsApp user ID
   username: string;
@@ -198,10 +166,13 @@ export interface NetworkPlayer {
   ping: number;
   isSpeaking?: boolean;
   isMuted?: boolean;
-  skin?: SkinId;
 }
 
 export interface PlayerSnapshot {
+  assists?: number;
+  damage?: number;
+  headshots?: number;
+  skin?: import("./skins").SkinId;
   id: string;
   userId: number;
   username: string;
@@ -220,10 +191,11 @@ export interface PlayerSnapshot {
   deaths: number;
   score: number;
   ping: number;
-  skin?: SkinId;
 }
 
 export interface StrikeSnapshot {
+  roomCode?: string;
+  localState?: PlayerState;
   tick: number;
   serverTime: number;
   ackSequence: number; // Acknowledged input sequence for the recipient client
@@ -302,4 +274,3 @@ export interface MatchStats {
     damage: number;
   };
 }
-
