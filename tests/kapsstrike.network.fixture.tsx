@@ -5,6 +5,8 @@ import { io } from "socket.io-client";
 import KapsStrikeGame from "../src/components/games/kapsstrike/KapsStrikeGame";
 import { StrikeController } from "../src/games/kapsstrike/controller";
 (window as any).engineStore = EngineStore;
+(window as any).microphoneRequests=0;
+if(navigator.mediaDevices) {const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=(constraints)=>{(window as any).microphoneRequests++;return original(constraints);};}
 const userId = Number(new URLSearchParams(location.search).get("user") || 1);
 const socket = io({ auth: { testUser: userId }, transports: ["websocket"] });
 (window as any).socket = socket;

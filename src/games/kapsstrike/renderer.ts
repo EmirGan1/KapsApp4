@@ -70,6 +70,10 @@ export class StrikeRenderer {
   private frameDrawCalls = 0;
   private previousDrawCalls = 0;
   private settings: StrikeSettings;
+  private dynamicScale=1;
+  private scaleTimer=performance.now();
+  private slowSamples=0;
+  private fastSamples=0;
   constructor(
     readonly canvas: HTMLCanvasElement,
     readonly map: MapDefinition,
@@ -105,14 +109,14 @@ export class StrikeRenderer {
         new Vector3(0.2, 1, 0.3),
         this.scene,
       );
-      hemi.intensity = 0.6;
+      hemi.intensity = map.id === "neon" ? 0.5 : 0.6;
       const sun = new DirectionalLight(
         "sun",
         new Vector3(-0.4, -1, 0.3),
         this.scene,
       );
       sun.position.set(15, 35, -20);
-      sun.intensity = 0.65;
+      sun.intensity = map.id === "neon" ? 0.45 : 0.65;
       if (effectiveQuality === "high") {
         this.shadow = new ShadowGenerator(1024, sun);
         this.shadow.usePoissonSampling = true;
@@ -134,7 +138,7 @@ export class StrikeRenderer {
       );
       ground.material = this.material(map.floor);
       ground.receiveShadows = true;
-      const boxes = new Map<string, Mesh>();
+      const batches = new Map<StandardMaterial, Mesh[]>();
       for (const s of map.solids) {
         let mesh: Mesh | ReturnType<Mesh["createInstance"]>;
         if (s.kind === "ramp") {
@@ -175,30 +179,30 @@ export class StrikeRenderer {
           VertexData.ComputeNormals(positions, indices, normals);
           const data = new VertexData();
           data.positions = positions;
+          data.uvs = new Array(positions.length / 3 * 2).fill(0);
           data.indices = indices;
           data.normals = normals;
           mesh = new Mesh(s.id, this.scene);
           data.applyToMesh(mesh);
           mesh.convertToFlatShadedMesh();
-          mesh.material = this.material(s.color);
+          mesh.material = this.material(s.color, !!s.detail && map.id === "neon" && ["#9e78c7","#61d7d0","#71d6df","#6ebfc9"].includes(s.color));
         } else {
-          const key = [s.w, s.h, s.d, s.color].join(":");
-          const original = boxes.get(key);
-          if (original) mesh = original.createInstance(s.id);
-          else {
-            mesh = MeshBuilder.CreateBox(
-              s.id,
-              { width: s.w, height: s.h, depth: s.d },
-              this.scene,
-            );
-            mesh.material = this.material(s.color);
-            boxes.set(key, mesh);
-          }
+          mesh = MeshBuilder.CreateBox(s.id,{width:s.w,height:s.h,depth:s.d},this.scene);
+          mesh.material = this.material(s.color, !!s.detail && map.id === "neon" && ["#9e78c7","#61d7d0","#71d6df","#6ebfc9"].includes(s.color));
         }
         mesh.position.set(s.x, s.y + (s.kind === "box" ? s.h / 2 : 0), s.z);
         mesh.isPickable = false;
         mesh.receiveShadows = true;
-        this.shadow?.addShadowCaster(mesh as Mesh);
+        const material=mesh.material as StandardMaterial;
+        const group=batches.get(material) || [];group.push(mesh as Mesh);batches.set(material,group);
+      }
+      // Small authored districts are geometry-light: one static batch per material
+      // trades fine-grained culling for substantially fewer draw calls.
+      for(const [material,meshes] of batches){
+        const batch=Mesh.MergeMeshes(meshes,true,true)!;
+        batch.name="district-"+material.name;batch.material=material;
+        batch.receiveShadows=true;batch.isPickable=false;batch.freezeWorldMatrix();
+        this.shadow?.addShadowCaster(batch);
       }
       const hazard = MeshBuilder.CreateCylinder(
         "hazard",
@@ -397,7 +401,8 @@ export class StrikeRenderer {
     if (!m) {
       m = new StandardMaterial(key, this.scene);
       m.diffuseColor = Color3.FromHexString(color);
-      m.specularColor = new Color3(0.035, 0.035, 0.035);
+      m.specularColor = color === "#253140" ? new Color3(.22,.25,.3) : new Color3(0.035, 0.035, 0.035);
+      if(color === "#253140")m.specularPower=64;
       if (emissive) {
         m.emissiveColor = m.diffuseColor;
         m.disableLighting = true;
@@ -410,15 +415,15 @@ export class StrikeRenderer {
   private resize() {
     const dpr = Math.min(
       devicePixelRatio || 1,
-      this.settings.quality === "high" ? 2 : 1.5,
+      this.settings.quality === "high" ? 2 : (this.settings.quality === "low" || this.settings.quality === "auto" && detectAutoQuality() === "low") ? 1 : 1.5,
     );
-    this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.scale));
+    this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.scale * this.dynamicScale));
     this.engine.resize();
   }
-  process(events: CombatEvent[], localActor?: string) {
+  process(events: CombatEvent[], localActor?: string, predicted=false) {
     for (const e of events) {
-      if (e.id <= this.lastEvent) continue;
-      this.lastEvent = e.id;
+      if (!predicted && e.id <= this.lastEvent) continue;
+      if (!predicted) this.lastEvent = e.id;
       if (e.kind === "hit" && e.target && this.remotePlayerMeshes.has(e.target)) this.flashes.set(e.target, performance.now() + 120);
       if (e.kind === "shot" && e.from && e.to) {
         if (!localActor || e.actor === localActor) this.gunKick = 0.06;
@@ -522,6 +527,15 @@ export class StrikeRenderer {
     for (const a of this.impactPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
     this.scene.render();
+    if(this.observer && this.settings.dynamicResolution && performance.now()-this.scaleTimer>1500){
+      this.scaleTimer=performance.now();const fps=this.engine.getFps();
+      this.slowSamples=fps<45 ? this.slowSamples+1:0;
+      this.fastSamples=fps>58 ? this.fastSamples+1:0;
+      const before=this.dynamicScale;
+      if(this.slowSamples>=2){this.dynamicScale=Math.max(.65,this.dynamicScale-.1);this.slowSamples=0;}
+      else if(this.fastSamples>=4){this.dynamicScale=Math.min(1,this.dynamicScale+.05);this.fastSamples=0;}
+      if(before!==this.dynamicScale)this.resize();
+    }
     const draws = this.engine._drawCalls.current;
     this.frameDrawCalls = Math.max(0, draws - this.previousDrawCalls);
     this.previousDrawCalls = draws;

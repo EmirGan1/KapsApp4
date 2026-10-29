@@ -2,6 +2,7 @@ import { createServer } from "vite";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 const server = await createServer({
+  cacheDir: "node_modules/.vite-kapsstrike-menu",
   logLevel: "error",
   plugins: [
     {
@@ -55,7 +56,7 @@ try {
         .isDisabled(),
     );
     await page
-      .getByRole("button", { name: "Neon Arena", exact: false })
+      .getByRole("button", { name: "Neon City", exact: false })
       .click();
     await page.getByRole("button", { name: "Ayarlar", exact: true }).click();
     await page.getByLabel(/Grafik Kalitesi/).selectOption("high");

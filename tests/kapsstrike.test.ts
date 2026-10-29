@@ -338,9 +338,9 @@ test("step-up climbs a staircase with matching visual treads", () => {
 });
 test("solid cover blocks hits; frame grouping preserves identical fixed-step results", () => {
   const s = createTraining("warehouse");
-  s.player.movement.position = { x: 17, y: 0, z: -24 };
+  s.player.movement.position = { x: 21, y: 0, z: -24 };
   s.targets = [
-    { id: "covered", position: { x: 17, y: 0, z: -12 }, hp: 100, respawnAt: 0 },
+    { id: "covered", position: { x: 21, y: 0, z: -12 }, hp: 100, respawnAt: 0 },
   ];
   shoot(s, true);
   assert.equal(s.damage, 0);

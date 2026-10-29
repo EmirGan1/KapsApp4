@@ -2,6 +2,7 @@ import { createServer } from "vite";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 const server = await createServer({
+  cacheDir: "node_modules/.vite-kapsstrike-training",
   logLevel: "error",
   plugins: [
     {
@@ -107,7 +108,7 @@ try {
         window.dispatchEvent(event);
       }
     });
-    await page.waitForTimeout(650);
+    await page.waitForFunction(() => (window as any).strike.state.score >= 1, {}, {timeout:5000});
     await page.mouse.up();
     await page.mouse.up({ button: "right" });
 
@@ -149,7 +150,8 @@ try {
     await page.evaluate(() => {
       const s = (window as any).strike.state;
       s.player.protectedUntil = 0;
-      s.player.movement.position = { x: -21, y: 0, z: 27 };
+      const hazard=(window as any).strike.renderer.map.hazard;
+      s.player.movement.position = { x: hazard.x, y: 0, z: hazard.z };
       s.player.hp = 12;
     });
     await page.waitForFunction(
@@ -162,6 +164,14 @@ try {
     const stats = await page.evaluate(() =>
       (window as any).strike.renderer.stats(),
     );
+    if(!useNull){
+      await page.evaluate(()=>{
+        const c=(window as any).strike,r=c.renderer;c.pause();r.gunRoot.setEnabled(false);
+        r.scene.fogMode=0;r.camera.position.set(0,85,-.01);r.camera.fov=1.1;
+        const target=r.camera.position.clone();target.set(0,0,0);r.camera.setTarget(target);r.scene.render();
+      });
+      await page.screenshot({path:`/tmp/kapsstrike-${map}-overview.png`});
+    }
     await page.keyboard.press("Escape");
     await page.waitForTimeout(150);
     const tick = await page.evaluate(() => (window as any).strike.state.tick);

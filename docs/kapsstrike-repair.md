@@ -1,6 +1,28 @@
-# KapsStrike repair — first verified milestone
+# KapsStrike repair — implementation and verification
 
 Base: c38af335811d73f4df376bdad8dfdd12a75e7fc6.
+
+## Current implementation
+
+The repaired game retains the existing Babylon/React module and authenticated Socket.IO server. It adds one-controller match startup, GPU-ready/snapshot loading gates, account-backed eight-skin selection, live control rebinding, authoritative melee, three redesigned districts, and the networking/combat corrections described below. Existing KapsApp authentication and media code were not replaced.
+
+### Verification and limits
+
+- `npm run lint` and `npm run build`: passed on the final source.
+- `npm run test:strike`: **159 passed, zero failures**. Includes 216,000 movement fuzz steps, map spawn/route/ramp checks, real libSQL profile persistence, private-friend invite authorization, duplicate sessions, bounded inputs, weapons, melee range/cover/cooldowns, assists and same-step trades/draws.
+- `npm run test:strike:browser`: all three training maps, actual WebGL, movement/fire/reload/ADS/death/respawn/cleanup, High shadows, React menu/HUD/exit passed.
+- `npm run test:strike:menu`: 390×844, 768×1024 and 1440×900 layouts and unsupported-WebGL handling passed.
+- `npm run test:strike:network`: two isolated Chromium contexts, including touch emulation, repeated on all three districts. Real Socket.IO; same ready 3D map; movement, fire, confirmed damage/death/score/respawn; eight skins and 3D rotation/profile persistence/remote appearance; binding conflicts and live ESC-menu remapping; wheel debounce; normal/heavy melee; live scoreboard; no automatic microphone request; room and engine cleanup.
+- 8 and 10 real Socket.IO client load scenarios passed with delayed inputs corresponding to 0/100/200/300 ms symmetric RTT and deterministic jitter. Also checked room-full rejection, password denial/acceptance, full-room session replacement, reconnect, old-disconnect isolation, host migration and match results. The delay fixture delays application input delivery; it is not a physical WAN or TCP packet-loss test. These synthetic clients do not render ten simultaneous browser canvases.
+- Latest software-rendered 960×600 Low training snapshots: Urban 56.37 FPS / 55 draws, Dust 60.46 / 48, Neon 60.35 / 51. These are short Chromium/SwiftShader observations, **not physical GPU or mobile performance guarantees**.
+- Other-game regression suites passed in the earlier verification: Battle Royale 5026, Kapstorial 478, Dungeon 1169. No files in their game engines were changed.
+- Physical Android/iOS/Edge/Opera, long production matches, live KapsApp accounts/database statistics and simultaneous real camera/screen-share calls were not exercised. No claim of universal bug-free operation is made.
+
+### Running and deployment
+
+Use `npm ci`, `npm run build`, and the existing `npm start`/PM2 deployment. There is no additional game daemon, public secret or port. Deploy client assets and the Node server together because maps and combat rules are shared. The existing database client lazily creates `kapsstrike_profiles`; existing user/statistics tables are retained. Match simulation still lives in server memory; process-restart match recovery is not added. Separate expiring invite tokens are not added; friend authorization, cryptographic room codes and room passwords apply.
+
+## Implementation history
 
 ## Reproduced cause
 
@@ -30,7 +52,7 @@ The host sent both `strike:start_game` and `strike:start_match`. Each reset a li
 - `npm run test:strike:network`: two independent Chromium browser contexts (one desktop, one touch/mobile emulation), real Socket.IO server and production manager/controller/renderer/UI, repeated for Warehouse, Dust and Neon. Actual WebGL via SwiftShader. Create/join/ready/start; remote character meshes; server-observed movement; actual fire inputs/raycast/ammo/damage/death/kill count/respawn; victim does not receive shooter hitmarker; ESC/resume UI and disposal.
 - Browser fixture identities are synthetic and supplied by the test-only server. Production authentication was not bypassed or altered. A clear firing lane and expired protection are set server-side in the combat fixture; gameplay outcomes are produced by real gameplay code.
 
-## Remaining request
+## Historical scope remaining after the first milestone
 
 This milestone does **not** complete the uploaded specification. Eight skins/3D preview/account persistence, full rebinding UI, knife, redesigned city maps and extensive hardware/network/long-match performance validation remain. No physical Android/iOS/Edge/Opera or production-account/live-call validation was performed. Software-rendered Chromium results do not establish physical GPU FPS guarantees. Existing broader server tests are largely mock-transport tests; the new browser test adds real transport coverage for two clients only.
 
@@ -53,3 +75,25 @@ This milestone does **not** complete the uploaded specification. Eight skins/3D 
 - Fixed code-entry UI so actual `KS-xxxx` codes and their prefix-free form are accepted, rather than enforcing an incompatible six-character input.
 - 149 unit/scene/server/profile tests passed. Two-browser test additionally cycles the eight actual meshes, saves a skin, observes it remotely, rotates/closes the preview and tests binding-conflict cancellation and full-code joining.
 - Physical-browser/production-account/live-call claims remain outside these automated fixture checks.
+
+
+## Fourth milestone — districts, synchronization and combat
+
+- Replaced the shared arena perimeter/box layouts with distinct district plans and skylines: **Urban Strike / Liman Mahallesi** (cross streets, shops/interiors, vehicles, sidewalks and balcony access), **Dust Town / Sarnıç Pazarı** (offset courtyards, archway, market stalls and roof route), **Neon City / Üst Hat** (night lighting, signs, reflective-road specular response, bridges and multiple ramp levels). Stable map IDs preserve room links.
+- All ten spawns are collision-safe and connected through standing-height ground routes. Every authored ramp has a movement traversal test. A bridge/ramp collision found by the traversal test was corrected.
+- Static geometry batches share materials, retaining numeric collision/ray geometry independently. Low DPR is capped; optional dynamic resolution adjusts gradually with hysteresis. Effects remain pooled and character outlines remain depth-tested ordinary geometry.
+- Reconciliation restores authoritative ammo/timers and replays inputs correctly. Jitter adjusts the interpolation window; extrapolation is capped at 50 ms with collision-fit checks. Local shot/reload effects are immediate, while actual hits/scores remain server-confirmed.
+- Canonical room codes now work with or without the prefix. New codes use 64-bit cryptographic randomness. Duplicate/full-room joins replace only the old gameplay session; an old disconnect cannot erase the new membership. Leaving for a different room no longer leaves an old player behind.
+- Shared spread/damage/fire-delay functions keep client/server weapon rules aligned. Same-step hits resolve after all valid shots, allowing trades; tied score limits produce a draw. Recent damage contributions award assists. The live scoreboard consumes authoritative snapshots rather than retaining lobby statistics.
+- Private invites validate the authenticated player's room and accepted-friend relationship and go directly to recipient sockets. Room codes are no longer broadcast globally through the invite event.
+- Loading completes only after initial state and actual scene readiness; failures time out and offer retry/exit. Desktop pointer lock requires a user gesture; touch startup remains independent of pointer lock. Controls can be rebound from the ESC menu and apply immediately.
+
+### Rendered district overview captures
+
+These are instrumented Babylon test-camera views of the authored geometry, not mockups or live-production screenshots.
+
+![Urban Strike](kapsstrike-urban-overview.png)
+
+![Dust Town](kapsstrike-dust-overview.png)
+
+![Neon City](kapsstrike-neon-overview.png)

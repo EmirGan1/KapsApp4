@@ -5,7 +5,8 @@ import { createClient } from "@libsql/client";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import { KapsStrikeServerManager } from "../src/server/kapsstrikeServer";
-const vite = await createServer({ logLevel: "error", plugins: [{ name: "strike-network-fixture", configureServer(s) {
+const vite = await createServer({
+  cacheDir: "node_modules/.vite-kapsstrike-network", logLevel: "error", plugins: [{ name: "strike-network-fixture", configureServer(s) {
   s.middlewares.use("/__strike_network", async (_req, res) => {
     res.setHeader("Content-Type", "text/html");
     res.end(await s.transformIndexHtml("/__strike_network", '<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><div id="root"></div><script type="module" src="/tests/kapsstrike.network.fixture.tsx"></script></body></html>'));
@@ -17,7 +18,7 @@ await db.execute('CREATE TABLE users (id INTEGER PRIMARY KEY,strike_kills INTEGE
 await db.execute('INSERT INTO users (id) VALUES (1),(2)');
 const manager = new KapsStrikeServerManager(io,db);
 // Fixture identities only. Production continues using KapsApp's authenticated socket middleware.
-io.on("connection", socket => manager.register(socket, { id: Number(socket.handshake.auth.testUser), username: `Tester ${socket.handshake.auth.testUser}` }));
+io.on("connection", socket => {const id=Number(socket.handshake.auth.testUser);manager.register(socket, { id, username: `Tester ${id}` });socket.on("disconnect",()=>manager.handleDisconnect(socket,id));});
 await vite.listen();
 const browser = await chromium.launch({headless:true,args:["--use-gl=angle","--use-angle=swiftshader","--enable-unsafe-swiftshader"]});
 const errors: string[] = [];
@@ -27,7 +28,6 @@ try {
   const b = await mobile.newPage();
   for (const p of [a,b]) { p.on("pageerror", e => errors.push(e.message)); p.on('console', m=> {if(m.type()==='error') { errors.push(m.text()); console.log(m.text()); }}); }
   await Promise.all([a.goto("http://127.0.0.1:4195/__strike_network?user=1"),b.goto("http://127.0.0.1:4195/__strike_network?user=2")]);
-  if (!process.env.STRIKE_SKIP_SKINS) {
   await a.getByRole("button",{name:"Karakter / Skin",exact:true}).click();
   for (const name of ['Classic Soldier','Urban Runner','Neon Striker','Shadow Operative','Desert Scout','Arctic Fighter','Cyber Agent','Street Warrior']) {
     await a.getByRole('button',{name,exact:true}).click();
@@ -47,13 +47,14 @@ try {
   await a.mouse.move(box.x+box.width/2,box.y+box.height/2);await a.mouse.down();await a.mouse.move(box.x+box.width/2+80,box.y+box.height/2);await a.mouse.up();
   assert.ok(await a.evaluate(angle=>(window as any).engineStore.Instances[0].scenes[0].getTransformNodeByName('character-preview').rotation.y>angle,angle));
   await a.screenshot({path:"/tmp/strike-skins-preview.png"});
-  } else { await manager.profiles.set(1,"cyber"); }
   await a.getByRole("button",{name:"Kontroller",exact:true}).click();
   assert.equal(await a.evaluate(()=>(window as any).engineStore.Instances.length),0,"Preview engine disposed when panel closes");
   await a.getByRole("button",{name:"İleri tuşunu değiştir",exact:true}).click();
   await a.keyboard.press("KeyI");
   await a.getByRole("button",{name:"Ateş tuşunu değiştir",exact:true}).click();
   await a.keyboard.press("KeyF");
+  await a.getByRole("button",{name:"ADS / ağır bıçak tuşunu değiştir",exact:true}).click();
+  await a.keyboard.press("KeyG");
   await a.getByRole("button",{name:"Zıpla tuşunu değiştir",exact:true}).click();
   await a.keyboard.press("KeyI");
   await a.getByRole('alert').filter({hasText:'çakışıyor'}).waitFor();
@@ -80,6 +81,8 @@ try {
   assert.equal(await b.evaluate(() => (window as any).strike.renderer.scene.getMeshesById('preview-body').length),0);
 
   for (const p of [a,b]) {
+    assert.equal(await p.evaluate(()=>(window as any).strike.renderer.scene.isReady()),true);
+    assert.equal(await p.evaluate(()=>(window as any).strike.state.map),process.env.STRIKE_TEST_MAP || "warehouse");
     assert.equal(await p.evaluate(() => (window as any).controllers.length),1,"Only one controller per match");
     assert.ok(await p.evaluate(() => (window as any).strike.renderer.scene.getMeshByName('remote-body-'+(window as any).strike.remotePlayerList.find((x:any)=>x.id !== (window as any).socket.id).id)));
   }
@@ -102,7 +105,7 @@ try {
     players[i].inputQueue = [];
   }
   await a.waitForTimeout(300);
-  await a.evaluate(() => { const c=(window as any).strike; c.yaw=0; c.pitch=0; });
+  await a.evaluate(() => { const c=(window as any).strike; c.yaw=0; c.pitch=.01; });
   await a.keyboard.down("KeyF");
   await b.waitForFunction(() => (window as any).strike.state.player.hp <= 0);
   await a.keyboard.up("KeyF");
@@ -131,11 +134,29 @@ try {
   await b.waitForFunction(()=>(window as any).strike.state.player.hp < 100);
   await a.keyboard.up('KeyF');
   assert.equal(players[1].state.hp,60);
+  await a.waitForTimeout(600);
+  await a.keyboard.down('KeyG');
+  await b.waitForFunction(()=>(window as any).strike.state.player.hp===0);
+  await a.keyboard.up('KeyG');
+  assert.equal(players[0].kills,2);
+  await a.keyboard.down('Tab');
+  await a.locator('.ks-score-table tr').filter({hasText:'Tester 1'}).getByText('2 / 0',{exact:true}).waitFor();
+  await a.keyboard.up('Tab');
+  for(const p of [a,b]) assert.equal(await p.evaluate(()=>(window as any).microphoneRequests),0,"No automatic microphone access");
   assert.deepEqual(errors,[]);
   await a.keyboard.press("Escape");
   await a.getByRole("button",{name:"Oyuna dön",exact:true}).waitFor();
+  await a.getByRole("button",{name:"Kontroller",exact:true}).click();
+  await a.getByRole("button",{name:"Zıpla tuşunu değiştir",exact:true}).click();await a.keyboard.press('KeyJ');
+  await a.waitForFunction(()=>(window as any).strike.bindings.jump==='KeyJ');
+  await a.getByRole('button',{name:'Oyuna dön',exact:true}).click();
+  await a.keyboard.down('KeyJ');await a.waitForFunction(()=>(window as any).strike.state.player.movement.position.y>.1);
+  await a.keyboard.up('KeyJ');await a.waitForTimeout(100);assert.ok(players[0].state.movement.position.y>.1);
+  await a.keyboard.press('Escape');
   await a.getByRole("button",{name:"Menüye dön",exact:true}).click();
   assert.equal(await a.evaluate(()=>(window as any).strike.disposed),true);
+  await a.waitForTimeout(100);assert.equal(before.players.size,1);
+  await b.close();await a.waitForTimeout(100);assert.equal(manager.rooms.size,0);
   console.log("PASS: desktop + touch browser, real Socket.IO room create/join/start, one engine, remote meshes, authoritative movement/combat/death/score/respawn, ESC and cleanup");
 } finally {
   for (const room of manager.rooms.values()) manager.stopRoomSimulationLoop(room);

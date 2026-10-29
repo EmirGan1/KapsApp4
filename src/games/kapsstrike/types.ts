@@ -161,6 +161,9 @@ export interface NetworkPlayer {
 }
 
 export interface PlayerSnapshot {
+  assists?: number;
+  damage?: number;
+  headshots?: number;
   skin?: import("./skins").SkinId;
   id: string;
   userId: number;
@@ -183,6 +186,7 @@ export interface PlayerSnapshot {
 }
 
 export interface StrikeSnapshot {
+  roomCode?: string;
   localState?: PlayerState;
   tick: number;
   serverTime: number;

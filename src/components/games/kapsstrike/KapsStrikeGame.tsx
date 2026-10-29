@@ -22,6 +22,7 @@ import {
   MatchStats,
   StrikeTeam,
   StrikeGameMode,
+  StrikeSnapshot,
   WeaponId,
 } from "../../../games/kapsstrike/types";
 import { MAPS } from "../../../games/kapsstrike/maps";
@@ -122,6 +123,8 @@ export default function KapsStrikeGame({
     game.current?.setBindings(cleanBindings(settings.bindings));
   }, [settings]);
 
+  useEffect(() => {if(typeof hud?.ads === "boolean")setTouchAdsActive(hud.ads);},[hud?.ads]);
+
   // Mobile detection & Orientation check
   useEffect(() => {
     const checkMobile = () => {
@@ -189,6 +192,16 @@ export default function KapsStrikeGame({
     refreshRooms();
     const interval = setInterval(refreshRooms, 3000);
 
+    let lastScoresAt=0;
+    const onScores=(snapshot:StrikeSnapshot)=>{
+      const room=currentRoomRef.current;
+      if(!room || room.status!=="in_progress" || (snapshot.roomCode && snapshot.roomCode!==room.roomCode) || !Array.isArray(snapshot.players) || performance.now()-lastScoresAt<250)return;
+      lastScoresAt=performance.now();
+      updateCurrentRoom({...room,timeLeft:snapshot.timeLeft,teamScores:snapshot.teamScores || room.teamScores,players:room.players.map(player=>{
+        const current=snapshot.players.find(p=>p.userId===player.userId);
+        return current ? {...player,...current,isAlive:current.hp>0} : player;
+      })});
+    };
     const onRoomsList = (list: StrikeRoomSummary[]) => {
       if (Array.isArray(list)) {
         setRooms(list);
@@ -236,6 +249,7 @@ export default function KapsStrikeGame({
       let stats: MatchStats;
       if (payload && Array.isArray(payload.players)) {
         const roomState = payload as StrikeRoomState;
+        updateCurrentRoom(roomState);
         const me = roomState.players.find((p) => p.userId === currentUserId);
         const sorted = [...roomState.players].sort((a, b) => b.kills - a.kills || b.damage - a.damage);
         const top = sorted[0];
@@ -277,6 +291,7 @@ export default function KapsStrikeGame({
       setError(data.message || data.error || "Ağ hatası oluştu.");
     };
 
+    socket.on("strike:snapshot",onScores);
     socket.on("strike:rooms_list", onRoomsList);
     socket.on("strike:room_list", onRoomsList);
     socket.on("strike:room_state", onRoomState);
@@ -304,6 +319,7 @@ export default function KapsStrikeGame({
 
     return () => {
       clearInterval(interval);
+      socket.off("strike:snapshot",onScores);
       socket.off("strike:rooms_list", onRoomsList);
       socket.off("strike:room_list", onRoomsList);
       socket.off("strike:room_state", onRoomState);
@@ -405,6 +421,7 @@ export default function KapsStrikeGame({
           username,
           team: myTeam,
           isMultiplayer: true,
+          onLoadingStage: setLoadStage,
           onSynchronized: () => {
             clearTimeout(loadTimer.current);
             setView(game.current?.isTouchDevice ? "play" : "pause");
@@ -788,6 +805,7 @@ export default function KapsStrikeGame({
                 e.preventDefault();
                 game.current?.setTouchFire(false);
               }}
+              onTouchCancel={() => game.current?.setTouchFire(false)}
             >
               ATEŞ
             </button>
@@ -801,12 +819,14 @@ export default function KapsStrikeGame({
                 }}
                 onTouchStart={(e) => {
                   e.preventDefault();
-                  const next = !touchAdsActive;
+                  const next = hud?.weapon === "knife" ? true : !touchAdsActive;
                   setTouchAdsActive(next);
                   game.current?.setTouchAds(next);
                 }}
+                onTouchEnd={() => {if(hud?.weapon === "knife"){setTouchAdsActive(false);game.current?.setTouchAds(false);}}}
+                onTouchCancel={() => {setTouchAdsActive(false);game.current?.setTouchAds(false);}}
               >
-                ADS
+                {hud?.weapon === "knife" ? "GÜÇLÜ" : "ADS"}
               </button>
               <button
                 type="button"
@@ -819,6 +839,7 @@ export default function KapsStrikeGame({
                   e.preventDefault();
                   game.current?.setTouchJump(false);
                 }}
+              onTouchCancel={() => game.current?.setTouchJump(false)}
               >
                 ZIPLA
               </button>
@@ -833,6 +854,7 @@ export default function KapsStrikeGame({
                   e.preventDefault();
                   game.current?.setTouchCrouch(false);
                 }}
+              onTouchCancel={() => game.current?.setTouchCrouch(false)}
               >
                 KAY
               </button>
@@ -1138,14 +1160,14 @@ export default function KapsStrikeGame({
         <div className="ks-match-end-overlay">
           <div className="ks-match-end-card">
             <div className="ks-winner-title">
-              {matchStats.winnerTeam === "red"
+              {matchStats.winnerTeam === "none" ? "BERABERE!" : matchStats.winnerTeam === "red"
                 ? "KIRMIZI TAKIM KAZANDI!"
                 : matchStats.winnerTeam === "blue"
                 ? "MAVİ TAKIM KAZANDI!"
                 : `${matchStats.winnerName || "ŞAMPİYON"} KAZANDI!`}
             </div>
             <p className="text-slate-300 mb-6">
-              Maç tamamlandı. İstatistikler KapsApp liderlik tablosuna işlendi.
+              Maç tamamlandı. Aşağıda bu maçın istatistikleri gösteriliyor.
             </p>
 
             {matchStats.mvp && (
@@ -1842,7 +1864,9 @@ export default function KapsStrikeGame({
                   Oyuna dön
                 </button>
                 <button onClick={exit}>Menüye dön</button>
+                <button onClick={() => setPanel(panel === "controls" ? null : "controls")}>Kontroller</button>
               </div>
+              {panel === "controls" && <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />}
             </div>
           </div>
         </div>

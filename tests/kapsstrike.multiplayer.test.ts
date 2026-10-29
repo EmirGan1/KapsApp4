@@ -642,3 +642,31 @@ for (const blocked of [false,true]) test(`knife refuses ${blocked ? "solid-cover
   assert.equal(t.state.hp,100);
  } finally { if(blocked) solids.pop();manager.leaveRoom("h",1);manager.leaveRoom("t",2); }
 });
+
+for(const mode of ['ffa','tdm'] as const) test(`${mode}: simultaneous valid shots can trade; equal TDM limit is a draw`,()=>{
+ const manager=new KapsStrikeServerManager(createMockIo() as any);
+ const room=manager.createRoom({id:1,username:'A',avatar:null},'a',{mode,scoreLimit:50});manager.joinRoom(room.roomCode,{id:2,username:'B',avatar:null},'b');manager.startGame('a');manager.stopRoomSimulationLoop(room);
+ const a=room.players.get('a')!,b=room.players.get('b')!;
+ a.state.movement.position={x:0,y:0,z:-28};b.state.movement.position={x:0,y:0,z:-18};
+ for(const p of [a,b]){p.state.hp=20;p.state.protectedUntil=0;}
+ if(mode==='tdm')room.teamScores={red:49,blue:49};
+ const cmd:InputCommand={sequence:1,tick:0,moveX:0,moveZ:0,yaw:0,pitch:0,jump:false,sprint:false,crouch:false,fire:true,ads:false,reload:false};
+ manager.processPlayerInput('a',cmd);manager.processPlayerInput('b',{...cmd,yaw:Math.PI});manager.tickSimulation(room);
+ assert.equal(a.state.hp,0);assert.equal(b.state.hp,0);assert.equal(a.kills,1);assert.equal(b.kills,1);
+ if(mode==='tdm'){assert.equal(room.status,'game_over');assert.equal(room.winner?.team,'none');}
+ manager.leaveRoom('a',1);manager.leaveRoom('b',2);
+});
+
+test('damage contribution grants one recent assist and expires old contributions',()=>{
+ const manager=new KapsStrikeServerManager(createMockIo() as any);
+ const room=manager.createRoom({id:1,username:'Killer',avatar:null},'k',{mode:'ffa'});
+ manager.joinRoom(room.roomCode,{id:2,username:'Helper',avatar:null},'h');manager.joinRoom(room.roomCode,{id:3,username:'Victim',avatar:null},'v');
+ manager.startGame('k');manager.stopRoomSimulationLoop(room);
+ const victim=room.players.get('v')!,helper=room.players.get('h')!,killer=room.players.get('k')!;
+ victim.damageCredits.set('h',{amount:25,tick:room.tick});
+ (manager as any).handlePlayerKill(room,killer,victim,'rifle',false);
+ assert.equal(helper.assists,1);assert.equal(helper.score,25);assert.equal(victim.damageCredits.size,0);
+ victim.damageCredits.set('h',{amount:25,tick:room.tick-1000});
+ (manager as any).handlePlayerKill(room,killer,victim,'rifle',false);assert.equal(helper.assists,1);
+ for(const [id,p] of [...room.players])manager.leaveRoom(id,p.userId);
+});

@@ -109,6 +109,19 @@ function random(index: number) {
   return ((x ^ (x >>> 15)) >>> 0) / 4294967296;
 }
 
+export function fireDelay(id:WeaponId, ads:boolean) {
+  return (id === "knife" ? (ads ? MELEE.heavyCooldown : MELEE.cooldown) : 60 / WEAPONS[id].rpm) / C.dt;
+}
+export function spreadFor(player:PlayerState,ads:boolean) {
+  const d=WEAPONS[player.weapon.selected];
+  return d.spread*(ads?d.ads:1)*(player.movement.grounded?1:2)*(Math.hypot(player.movement.velocity.x,player.movement.velocity.z)>5?1.5:1);
+}
+export function weaponDamage(id:WeaponId,distance:number,head:boolean,ads:boolean) {
+  if(id === "knife")return ads?MELEE.heavyDamage:MELEE.damage;
+  const d=WEAPONS[id],falloff=id==="shotgun"?clamp(1-distance/45,.2,1):clamp(1-distance/(d.range*3),.7,1);
+  return d.damage/d.pellets*(head?2:1)*falloff;
+}
+
 export function shoot(s: TrainingState, ads: boolean) {
   const p = s.player,
     w = p.weapon,
@@ -122,14 +135,10 @@ export function shoot(s: TrainingState, ads: boolean) {
   )
     return false;
   if (w.selected !== "knife") w.ammo[w.selected]--;
-  w.nextFire = Math.max(w.nextFire, s.tick - 1) + (w.selected === "knife" ? (ads ? MELEE.heavyCooldown : MELEE.cooldown) / C.dt : 7200 / def.rpm);
+  w.nextFire = Math.max(w.nextFire, s.tick - 1) + fireDelay(w.selected,ads);
   const origin = eye(p);
   w.shotIndex++;
-  const spread =
-    def.spread *
-    (ads ? def.ads : 1) *
-    (p.movement.grounded ? 1 : 2) *
-    (Math.hypot(p.movement.velocity.x, p.movement.velocity.z) > 5 ? 1.5 : 1);
+  const spread = spreadFor(p,ads);
   for (let pellet = 0; pellet < def.pellets; pellet++) {
     const n = w.shotIndex * 31 + pellet * 7;
     const yaw = p.yaw + (random(n) - 0.5) * spread * 2,
@@ -171,14 +180,7 @@ export function shoot(s: TrainingState, ads: boolean) {
     };
     event(s, { kind: "shot", weapon: w.selected, from: origin, to });
     if (hit) {
-      const falloff =
-        w.selected === "knife" ? 1 : w.selected === "shotgun"
-          ? clamp(1 - nearest / 45, 0.2, 1)
-          : clamp(1 - nearest / (def.range * 3), 0.7, 1);
-      const dmg = Math.min(
-        hit.hp,
-        (w.selected === "knife" ? (ads ? MELEE.heavyDamage : MELEE.damage) : (def.damage / def.pellets) * (head ? 2 : 1)) * falloff,
-      );
+      const dmg = Math.min(hit.hp,weaponDamage(w.selected,nearest,head,ads));
       hit.hp -= dmg;
       s.damage += dmg;
       if (s.firstHit < 0) s.firstHit = s.tick;
