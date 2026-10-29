@@ -6,17 +6,17 @@ import {Scene} from '@babylonjs/core/scene';
 import {createCharacter} from '../../../games/kapsstrike/character';
 import {SKINS,SkinId,cleanSkin} from '../../../games/kapsstrike/skins';
 class PreviewScene extends Scene { override attachControl():void{} }
-export default function StrikeSkins({socket}:{socket?:Socket|null}) {
+export default function StrikeSkins({socket,initialSkin,onSaved}:{socket?:Socket|null;initialSkin?:SkinId;onSaved?:(skin:SkinId)=>void}) {
  const canvas=useRef<HTMLCanvasElement>(null);
  const sceneRef=useRef<Scene|null>(null);
  const modelRef=useRef<ReturnType<typeof createCharacter>|null>(null);
- const [skin,setSkin]=useState<SkinId>('classic');
+ const [skin,setSkin]=useState<SkinId>(initialSkin||'classic');
  const [message,setMessage]=useState('');
  const [busy,setBusy]=useState(false);
  useEffect(()=>{
   if(!socket?.connected){setMessage('Hesaba kaydetmek için sunucu bağlantısı gerekiyor.');return;}
   let current=true;
-  socket.timeout(5000).emit('strike:profile_get',(err:any,res:any)=>{if(!current)return;if(err||!res?.success)setMessage(res?.error||'Profil yüklenemedi.');else setSkin(cleanSkin(res.skin));});
+  socket.timeout(5000).emit('strike:profile_get',(err:any,res:any)=>{if(!current)return;if(err||!res?.success)setMessage(res?.error||'Profil yüklenemedi.');else {setSkin(res.saved===false&&initialSkin?initialSkin:cleanSkin(res.skin));if(res.saved===false&&initialSkin)setMessage('Önceki karakter tercihin aktarıldı. Hesabına kaydetmek için Karakteri Kaydet düğmesine bas.');}});
   return()=>{current=false;};
  },[socket]);
  useLayoutEffect(()=>{
@@ -50,7 +50,7 @@ export default function StrikeSkins({socket}:{socket?:Socket|null}) {
  const save=()=>{
   if(!socket?.connected||busy)return;
   setBusy(true);setMessage('Kaydediliyor…');
-  socket.timeout(5000).emit('strike:profile_set',{skin},(err:any,res:any)=>{setBusy(false);setMessage(err?'Sunucu yanıt vermedi.':res?.success?'Karakter hesabına kaydedildi.':res?.error||'Kayıt başarısız.');});
+  socket.timeout(5000).emit('strike:profile_set',{skin},(err:any,res:any)=>{setBusy(false);if(!err&&res?.success)onSaved?.(skin);setMessage(err?'Sunucu yanıt vermedi.':res?.success?'Karakter hesabına kaydedildi.':res?.error||'Kayıt başarısız.');});
  };
  return <div className="ks-skins"><h2>Karakter / Skin</h2><p>Görünümler aynı hitbox, can ve hareket kurallarını kullanır. Önizlemeyi sürükleyerek döndür.</p>
   <canvas ref={canvas} className="ks-skin-preview" aria-label={`${SKINS[skin].name} 3D karakter önizleme`} />

@@ -1809,7 +1809,7 @@ export default function KapsStrikeGame({
               </div>
             )}
 
-            {panel === "skins" && <StrikeSkins socket={socket} />}
+            {panel === "skins" && <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} />}
 
             {/* CONTROLS PANEL */}
             {panel === "controls" && (
@@ -1878,7 +1878,7 @@ export default function KapsStrikeGame({
                 <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
               </div>
               {panel === "controls" && <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />}
-              {panel === "skins" && <StrikeSkins socket={socket} />}
+              {panel === "skins" && <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} />}
             </div>
           </div>
         </div>
@@ -1887,7 +1887,7 @@ export default function KapsStrikeGame({
       {view === "lobby" && (panel === "controls" || panel === "skins") && (
         <div className="ks-overlay ks-feature-overlay">
           <div className="ks-menu ks-feature-card">
-            {panel === "skins" ? <StrikeSkins socket={socket} /> : (
+            {panel === "skins" ? <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} /> : (
               <div className="ks-controls">
                 <h2>Kontroller</h2>
                 <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />

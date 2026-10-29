@@ -11,4 +11,5 @@ export const SKINS = {
 } as const;
 export type SkinId=keyof typeof SKINS;
 export function isSkin(value:unknown):value is SkinId{return typeof value === "string" && Object.hasOwn(SKINS,value);}
-export function cleanSkin(value:unknown):SkinId{return isSkin(value)?value:"classic";}
+const legacySkins:Record<string,SkinId>={classic_soldier:'classic',urban_runner:'urban',neon_striker:'neon',shadow_operative:'shadow',desert_scout:'desert',arctic_fighter:'arctic',cyber_agent:'cyber',street_warrior:'street'};
+export function cleanSkin(value:unknown):SkinId{return isSkin(value)?value:typeof value==='string'&&Object.hasOwn(legacySkins,value)?legacySkins[value]:"classic";}

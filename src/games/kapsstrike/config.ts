@@ -1,4 +1,5 @@
 import { cleanBindings } from "./controls";
+import {cleanSkin} from './skins';
 import { WeaponId, StrikeSettings } from "./types";
 export const PHYSICS = {
   dt: 1 / 120,
@@ -159,13 +160,14 @@ export const DEFAULT_SETTINGS: StrikeSettings = {
   dynamicResolution: true,
   invertY: false,
 };
-export function cleanSettings(s: Partial<StrikeSettings>): StrikeSettings {
+export function cleanSettings(s: Partial<StrikeSettings> & {binds?:unknown}): StrikeSettings {
   const n = (v: unknown, min: number, max: number, fallback: number) =>
     typeof v === "number" && Number.isFinite(v)
       ? Math.max(min, Math.min(max, v))
       : fallback;
   return {
-    bindings: cleanBindings(s.bindings),
+    bindings: cleanBindings(s.bindings,s.binds),
+    selectedSkin:s.selectedSkin?cleanSkin(s.selectedSkin):undefined,
     quality: ["low", "medium", "high", "auto"].includes(s.quality || "")
       ? (s.quality as StrikeSettings["quality"])
       : DEFAULT_SETTINGS.quality,

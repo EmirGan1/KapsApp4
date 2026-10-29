@@ -24,11 +24,14 @@ const browser = await chromium.launch({headless:true,args:["--use-gl=angle","--u
 const errors: string[] = [];
 try {
   const a = await browser.newPage({viewport:{width:960,height:600}});
+  await a.addInitScript(()=>{if(!localStorage.getItem('kapsstrike-settings'))localStorage.setItem('kapsstrike-settings',JSON.stringify({binds:{forward:'KeyI'},selectedSkin:'cyber_agent'}));});
   const mobile = await browser.newContext({viewport:{width:844,height:390},hasTouch:true,isMobile:true});
   const b = await mobile.newPage();
   for (const p of [a,b]) { p.on("pageerror", e => errors.push(e.message)); p.on('console', m=> {if(m.type()==='error') { errors.push(m.text()); console.log(m.text()); }}); }
   await Promise.all([a.goto("http://127.0.0.1:4195/__strike_network?user=1"),b.goto("http://127.0.0.1:4195/__strike_network?user=2")]);
   await a.getByRole("button",{name:"Karakter / Skin",exact:true}).click();
+  await a.getByLabel('Cyber Agent 3D karakter önizleme',{exact:true}).waitFor();
+  assert.equal(await a.evaluate(()=>JSON.parse(localStorage.getItem('kapsstrike-settings')!).bindings.forward),'KeyI');
   for (const name of ['Classic Soldier','Urban Runner','Neon Striker','Shadow Operative','Desert Scout','Arctic Fighter','Cyber Agent','Street Warrior']) {
     await a.getByRole('button',{name,exact:true}).click();
     await a.getByLabel(`${name} 3D karakter önizleme`,{exact:true}).waitFor();

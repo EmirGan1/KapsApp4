@@ -15,3 +15,10 @@ test('modifier bindings require modifiers and collision reports overlapping phys
  assert.deepEqual(conflicts(DEFAULT_BINDINGS,'jump','Shift+KeyW'),['forward']);
  assert.deepEqual(conflicts(DEFAULT_BINDINGS,'jump','KeyI'),[]);
 });
+test('legacy main-branch custom keys migrate without replacing the five default firearm slots',()=>{
+ const old={forward:'KeyI',primary:'Digit1',secondary:'Digit2',knife:'Digit3',jump:'KeyF'};
+ const migrated=cleanBindings(undefined,old);
+ assert.equal(migrated.forward,'KeyI');assert.equal(migrated.jump,'KeyF');
+ assert.equal(migrated.sniper,'Digit3');assert.equal(migrated.knife,'Digit6');assert.equal(migrated.pistol,'Digit5');
+ assert.equal(cleanBindings({forward:'KeyL'},old).forward,'KeyL');
+});

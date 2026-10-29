@@ -121,6 +121,7 @@ export interface TrainingState {
 }
 export interface StrikeSettings {
   bindings?: import("./controls").Bindings;
+  selectedSkin?: import("./skins").SkinId;
   quality: "low" | "medium" | "high" | "auto";
   scale: number;
   sensitivity: number;

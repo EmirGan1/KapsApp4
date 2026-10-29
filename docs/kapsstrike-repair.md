@@ -12,7 +12,7 @@ The old shared perimeter/arena generator was removed. Each stable map ID now sel
 
 Buildings have doors, side/front windows, cornices, roof fittings and actual interior clearance. Original deterministic 128 px material tiles cover plaster, masonry, brick, corrugated metal, wood, concrete, asphalt, glass and water; sign textures are 256×64. Static meshes merge by material; distant small fittings are reduced on Low. Physics caches the collidable subset so facade detail does not increase capsule collision work. The client and authoritative server use the same numeric map solids. Visible backdrop buildings remain solid where they meet the playable area.
 
-The test suite now has **168 passing tests**, including all 30 spawns, three continuously clear ground routes per map, every authored ramp, all three staircases and through-door standing clearance. Two independent browser contexts (desktop and touch emulation) passed real Socket.IO movement/combat/death/score/respawn on **each** of the three rebuilt maps. `npm run lint` and `npm run build` passed. `npm run test:strike:maps` loads the actual textured WebGL scenes and captures these level street and overhead views:
+The test suite now has **170 passing tests**, including all 30 spawns, three continuously clear ground routes per map, every authored ramp, all three staircases and through-door standing clearance. Two independent browser contexts (desktop and touch emulation) passed real Socket.IO movement/combat/death/score/respawn on **each** of the three rebuilt maps. `npm run lint` and `npm run build` passed. `npm run test:strike:maps` loads the actual textured WebGL scenes and captures these level street and overhead views:
 
 | District | Street view | Layout |
 | --- | --- | --- |
@@ -22,6 +22,10 @@ The test suite now has **168 passing tests**, including all 30 spawns, three con
 
 These are actual game renders, not concept art. Short Low/960×600 SwiftShader observations were approximately 56/49/48 FPS for port/dust/neon; they do not establish physical desktop or phone frame rates. Physical Android/iOS hardware and production deployment were not tested in this environment. Deploy client **and** server together so map versions agree.
 
+### Concurrent main integration
+
+Main advanced to `bfeeead` while the district PR was being prepared. Its overlapping knife, keybinding and skin changes were reviewed and consolidated into the already tested shared implementations. The uploaded public asset from main is retained. Explicit custom keys in main's older `binds` format migrate to the live binding system; old default shortcuts do not replace the five firearm slots. All eight legacy skin IDs map to their matching 3D models. A local legacy choice remains selectable when no account profile exists; an already saved account profile takes precedence. Typecheck, build and **170 tests** passed after resolving the overlap. The two-browser fixture also seeds legacy preferences to exercise this migration.
+
 ## Current implementation
 
 The repaired game retains the existing Babylon/React module and authenticated Socket.IO server. It adds one-controller match startup, GPU-ready/snapshot loading gates, account-backed eight-skin selection, live control rebinding, authoritative melee, three redesigned districts, and the networking/combat corrections described below. Existing KapsApp authentication and media code were not replaced.
@@ -29,7 +33,7 @@ The repaired game retains the existing Babylon/React module and authenticated So
 ### Verification and limits
 
 - `npm run lint` and `npm run build`: passed on the final source.
-- `npm run test:strike`: **168 passed, zero failures**. Includes 216,000 movement fuzz steps, map spawn/route/ramp checks, real libSQL profile persistence, private-friend invite authorization, duplicate sessions, bounded inputs, weapons, melee range/cover/cooldowns, assists and same-step trades/draws.
+- `npm run test:strike`: **170 passed, zero failures**. Includes 216,000 movement fuzz steps, map spawn/route/ramp checks, real libSQL profile persistence, private-friend invite authorization, duplicate sessions, bounded inputs, weapons, melee range/cover/cooldowns, assists and same-step trades/draws.
 - `npm run test:strike:browser`: all three training maps, actual WebGL, movement/fire/reload/ADS/death/respawn/cleanup, High shadows, React menu/HUD/exit passed.
 - `npm run test:strike:menu`: 390×844, 768×1024 and 1440×900 layouts and unsupported-WebGL handling passed.
 - `npm run test:strike:network`: two isolated Chromium contexts, including touch emulation, repeated on all three districts. Real Socket.IO; same ready 3D map; movement, fire, confirmed damage/death/score/respawn; eight skins and 3D rotation/profile persistence/remote appearance; binding conflicts and live ESC-menu remapping; wheel debounce; normal/heavy melee; live scoreboard; no automatic microphone request; room and engine cleanup.

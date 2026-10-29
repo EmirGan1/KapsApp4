@@ -25,9 +25,15 @@ test('profile migration is idempotent and persists a skin per authenticated user
  try {
   const a=new StrikeProfiles(db),b=new StrikeProfiles(db);
   assert.equal(await a.get(1),'classic');
+  assert.equal(a.persisted.has(1),false);
   for(const skin of Object.keys(SKINS)) assert.equal(await a.set(1,skin),skin);
+  assert.equal(a.persisted.has(1),true);
   assert.equal(await b.get(1),'street');assert.equal(await b.get(2),'classic');
   await assert.rejects(()=>a.set(1,'not-a-skin'));
   await a.set(2,'cyber');assert.equal(await a.get(1),'street');assert.equal(await b.get(2),'cyber');
  } finally {db.close();}
+});
+test('legacy skin identifiers preserve all eight cosmetic choices',async()=>{
+ const {cleanSkin}=await import('../src/games/kapsstrike/skins');
+ for(const [old,id] of Object.entries({classic_soldier:'classic',urban_runner:'urban',neon_striker:'neon',shadow_operative:'shadow',desert_scout:'desert',arctic_fighter:'arctic',cyber_agent:'cyber',street_warrior:'street'}))assert.equal(cleanSkin(old),id);
 });

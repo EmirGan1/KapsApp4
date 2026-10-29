@@ -1270,8 +1270,8 @@ export class KapsStrikeServerManager {
     void this.profiles.get(userIdNum).then(applyProfile).catch(() => {});
     let lastProfileGet = 0, lastProfileSet = 0;
     socket.on("strike:profile_get", async (cb) => {
-      if(Date.now()-lastProfileGet<1000 && this.profiles.cache.has(userIdNum)){if(typeof cb === "function")cb({success:true,skin:this.profiles.cache.get(userIdNum)});return;}lastProfileGet=Date.now();
-      try { const skin = await this.profiles.get(userIdNum); if(typeof cb === "function") cb({success:true,skin}); }
+      if(Date.now()-lastProfileGet<1000 && this.profiles.cache.has(userIdNum)){if(typeof cb === "function")cb({success:true,skin:this.profiles.cache.get(userIdNum),saved:this.profiles.persisted.has(userIdNum)});return;}lastProfileGet=Date.now();
+      try { const skin = await this.profiles.get(userIdNum); if(typeof cb === "function") cb({success:true,skin,saved:this.profiles.persisted.has(userIdNum)}); }
       catch { if(typeof cb === "function") cb({success:false,error:"Karakter profili yüklenemedi."}); }
     });
     socket.on("strike:profile_set", async (data, cb) => {

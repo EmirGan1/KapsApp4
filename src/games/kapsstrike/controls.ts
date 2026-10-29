@@ -15,8 +15,18 @@ export function validBinding(value: unknown): value is string {
   const key=parts.pop()!;
   return code.test(key) && parts.every((p,i)=>["Ctrl","Alt","Shift","Meta"].includes(p)&&parts.indexOf(p)===i);
 }
-export function cleanBindings(value: unknown): Bindings {
+export function cleanBindings(value: unknown,legacy?:unknown): Bindings {
   const result={...DEFAULT_BINDINGS};
+  if(!value&&legacy&&typeof legacy==='object'){
+    const previous={forward:'KeyW',backward:'KeyS',left:'KeyA',right:'KeyD',jump:'Space',crouch:'ControlLeft',sprint:'ShiftLeft',reload:'KeyR',primary:'Digit1',secondary:'Digit2',knife:'Digit3',scoreboard:'Tab'};
+    for(const [old,defaultKey] of Object.entries(previous)){
+      const action=(old==='primary'?'rifle':old==='secondary'?'pistol':old) as Action;
+      const key=(legacy as Record<string,unknown>)[old];
+      if(!validBinding(key)||key===defaultKey)continue;
+      for(const other of Object.keys(result) as Action[])if(other!==action&&result[other]===key)result[other]='Unbound';
+      result[action]=key;
+    }
+  }
   if (value && typeof value === "object") for (const action of Object.keys(result) as Action[]) {
     const candidate=(value as any)[action];
     if(validBinding(candidate)) result[action]=candidate;
