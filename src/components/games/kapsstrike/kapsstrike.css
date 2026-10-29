@@ -976,3 +976,11 @@
 .ks-binding-editor { max-height:55vh; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; }
 .ks-binding-row { display:grid; grid-template-columns:minmax(100px,1fr) minmax(90px,1fr) auto; gap:8px; align-items:center; padding:5px 0; }
 .ks-binding-row button { min-height:40px; padding:6px 9px; }
+
+.ks-hurt-vignette { position:absolute; inset:0; pointer-events:none; box-shadow:inset 0 0 65px 15px #c82329; border:2px solid #ed6b62; }
+.ks-low-health { position:absolute; left:25px;bottom:100px;color:#ff857c;font-size:12px;font-weight:800; }
+.ks-health { transition:color .12s, background-color .12s; }
+
+.ks-skin-preview { display:block;width:100%;height:260px;touch-action:none;border-radius:12px; }
+.ks-skin-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:12px 0; }
+.ks-skin-grid button[aria-pressed=true] { background:#315763;box-shadow:inset 0 0 0 1px #a3e4df; }

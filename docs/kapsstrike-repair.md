@@ -42,3 +42,14 @@ This milestone does **not** complete the uploaded specification. Eight skins/3D 
 - 147 unit/scene/server/binding tests passed. Added held-trigger/cooldown/heavy, out-of-range and wall-blocked knife assertions. Original five firearm tests retained.
 - Two-context WebGL network test additionally uses remapped I/F movement/fire, actual editor persistence, synchronous wheel burst debounce/wrap, sixth-slot selection and server-confirmed 40 melee damage. Three-map training and High/React browser regression passed after adding the sixth weapon.
 - Full skins and redesigned maps remain outstanding. The local binding store is device-specific; account sync is not claimed.
+
+## Third milestone — characters and damage feedback
+
+- Eight original cosmetic model variants with distinct helmets/hoods/hat/antenna/fins/packs. Shared authored geometry drives multiplayer and draggable 3D preview.
+- Preview projects the actual model meshes with a small CPU rasterizer and Babylon NullEngine; no second WebGL context is allocated. This replaced a reproducible native SIGSEGV when disposing a preview WebGL scene in the installed Chromium/SwiftShader environment. Final preview close/network test passed with no retained preview engine.
+- Separate `kapsstrike_profiles` table is created idempotently on demand; validated skin IDs persist through authenticated socket handlers. Account identity comes exclusively from the existing server socket user. Profile writes are throttled. Database-backed persistence and isolation are tested with real in-memory libSQL.
+- Remote models receive server skin IDs, team bands, normal depth-tested geometry outlines (disabled on Low), and brief confirmed-hit flashes. All skins keep identical gameplay hitboxes.
+- Confirmed local damage produces a bounded vignette, directional warning, small camera roll and critical-health label. Foreign player events cannot trigger local hitmarkers/recoil/respawn.
+- Fixed code-entry UI so actual `KS-xxxx` codes and their prefix-free form are accepted, rather than enforcing an incompatible six-character input.
+- 149 unit/scene/server/profile tests passed. Two-browser test additionally cycles the eight actual meshes, saves a skin, observes it remotely, rotates/closes the preview and tests binding-conflict cancellation and full-code joining.
+- Physical-browser/production-account/live-call claims remain outside these automated fixture checks.

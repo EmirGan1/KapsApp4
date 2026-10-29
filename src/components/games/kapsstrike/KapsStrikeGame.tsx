@@ -1,3 +1,4 @@
+import StrikeSkins from "./StrikeSkins";
 import StrikeControls from "./StrikeControls";
 import { cleanBindings } from "../../../games/kapsstrike/controls";
 import React, { useEffect, useRef, useState, useCallback } from "react";
@@ -68,7 +69,7 @@ export default function KapsStrikeGame({
     }
   });
   const [view, setView] = useState<"menu" | "lobby" | "loading" | "play" | "pause" | "match_end">("menu");
-  const [panel, setPanel] = useState<"settings" | "controls" | "create_room" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "create_room" | null>(null);
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
   const [returnFire, setReturnFire] = useState(false);
@@ -1111,6 +1112,8 @@ export default function KapsStrikeGame({
             {" · ESC Menü"}
           </div>
 
+          {hud.hurt && hud.hurt.until > hud.tick && <div className="ks-hurt-vignette" style={{opacity: Math.min(.85, .2 + (hud.hurt.damage || 10) / 110)}} />}
+          {hud.hp > 0 && hud.hp <= 25 && <span className="ks-low-health" role="status">KRİTİK CAN</span>}
           {hud.hurt && hud.hurt.until > hud.tick && (
             <div
               className="ks-hurt"
@@ -1387,14 +1390,14 @@ export default function KapsStrikeGame({
                   <form onSubmit={handleJoinByCode} className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="6 Haneli Kod"
-                      maxLength={6}
+                      placeholder="Oda kodu"
+                      maxLength={32}
                       value={joinCodeInput}
                       onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
                       className="ks-filter-input"
                       style={{ width: "120px", minWidth: "100px", textTransform: "uppercase" }}
                     />
-                    <button type="submit" disabled={joinCodeInput.trim().length !== 6}>
+                    <button type="submit" disabled={joinCodeInput.trim().length < 4}>
                       Koda Katıl
                     </button>
                   </form>
@@ -1774,6 +1777,8 @@ export default function KapsStrikeGame({
               </div>
             )}
 
+            {panel === "skins" && <StrikeSkins socket={socket} />}
+
             {/* CONTROLS PANEL */}
             {panel === "controls" && (
               <div className="ks-controls">
@@ -1784,6 +1789,7 @@ export default function KapsStrikeGame({
             )}
 
             <footer>
+              <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
               <button
                 onClick={() =>
                   setPanel(panel === "settings" ? null : "settings")

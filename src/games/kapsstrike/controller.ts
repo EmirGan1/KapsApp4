@@ -34,7 +34,7 @@ export interface StrikeHUD {
   drawCalls: number;
   meshes: number;
   hit?: { damage: number; head: boolean; until: number };
-  hurt?: { direction: number; until: number };
+  hurt?: { direction: number; until: number; damage?: number };
   dead: boolean;
   respawn: number;
   protection: number;
@@ -542,6 +542,7 @@ export class StrikeController {
         username: p1.username,
         team: p1.team,
         color: p1.color,
+        skin: p2.skin,
         hp: p2.hp,
         stance: p2.stance,
         selectedWeapon: p2.selectedWeapon,
@@ -587,7 +588,9 @@ export class StrikeController {
     }
     if (e.kind === "reload") this.audio.play("reload");
     if (e.kind === "damage") {
+      this.state.lastDamageTick = this.state.tick;
       this.lastHurt = {
+        damage: Math.min(100, (this.lastHurt && this.lastHurt.until > this.state.tick ? this.lastHurt.damage || 0 : 0) + (e.damage || 0)),
         direction: e.direction || 0,
         until: this.state.tick + 60,
       };

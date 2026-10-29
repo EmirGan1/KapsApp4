@@ -131,6 +131,7 @@ export type StrikeTeam = "red" | "blue" | "none";
 export type StrikeRoomStatus = "lobby" | "in_progress" | "game_over";
 
 export interface NetworkPlayer {
+  skin?: import("./skins").SkinId;
   id: string; // Actor / Socket ID
   userId: number; // KapsApp user ID
   username: string;
@@ -160,6 +161,7 @@ export interface NetworkPlayer {
 }
 
 export interface PlayerSnapshot {
+  skin?: import("./skins").SkinId;
   id: string;
   userId: number;
   username: string;

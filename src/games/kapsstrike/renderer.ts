@@ -1,3 +1,5 @@
+import { createCharacter } from "./character";
+import { cleanSkin } from "./skins";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
@@ -41,6 +43,9 @@ export class StrikeRenderer {
   private remotePlayerMeshes = new Map<
     string,
     {
+      model: ReturnType<typeof createCharacter>;
+      skin: string;
+      team: string;
       root: TransformNode;
       body: Mesh;
       head: Mesh;
@@ -50,6 +55,7 @@ export class StrikeRenderer {
       tagMat?: StandardMaterial;
     }
   >();
+  private flashes = new Map<string, number>();
   private gunRoot: TransformNode;
   private weapons = new Map<WeaponId, TransformNode>();
   private tracerPool: { mesh: Mesh; until: number }[] = [];
@@ -413,6 +419,7 @@ export class StrikeRenderer {
     for (const e of events) {
       if (e.id <= this.lastEvent) continue;
       this.lastEvent = e.id;
+      if (e.kind === "hit" && e.target && this.remotePlayerMeshes.has(e.target)) this.flashes.set(e.target, performance.now() + 120);
       if (e.kind === "shot" && e.from && e.to) {
         if (!localActor || e.actor === localActor) this.gunKick = 0.06;
         const item = this.tracerPool[this.poolIndex % 48],
@@ -456,7 +463,8 @@ export class StrikeRenderer {
       m.position.y + (m.stance === "stand" ? C.eye : C.crouchEye),
       previous.z + (m.position.z - previous.z) * alpha,
     );
-    this.camera.rotation.set(pitch, yaw, 0);
+    const hurtAge = (state.tick - state.lastDamageTick) * C.dt;
+    this.camera.rotation.set(pitch, yaw, hurtAge >= 0 && hurtAge < .12 ? Math.sin(hurtAge * 60) * .008 : 0);
     this.camera.fov +=
       (((this.settings.fov * Math.PI) / 180) *
         (ads ? WEAPONS[p.weapon.selected].zoom : 1) -
@@ -530,6 +538,7 @@ export class StrikeRenderer {
       hp: number;
       stance?: string;
       selectedWeapon?: WeaponId;
+      skin?: string;
     }>,
     localPlayerId?: string
   ) {
@@ -540,8 +549,10 @@ export class StrikeRenderer {
       activeIds.add(p.id);
 
       let item = this.remotePlayerMeshes.get(p.id);
+      if (item && (item.skin !== cleanSkin(p.skin) || item.team !== (p.team || "none"))) {
+        item.tagTex?.dispose();item.tagMat?.dispose();item.model.dispose();this.remotePlayerMeshes.delete(p.id);item=undefined;
+      }
       if (!item) {
-        const root = new TransformNode("remote-" + p.id, this.scene);
         const teamColor =
           p.team === "red"
             ? "#ef4444"
@@ -549,27 +560,10 @@ export class StrikeRenderer {
               ? "#3b82f6"
               : p.color || "#10b981";
 
-        const body = MeshBuilder.CreateBox(
-          "remote-body-" + p.id,
-          {
-            width: TARGET_HITBOXES.body.radius * 2,
-            height: TARGET_HITBOXES.body.max - TARGET_HITBOXES.body.min,
-            depth: TARGET_HITBOXES.body.radius * 2,
-          },
-          this.scene
-        );
-        body.position.y = (TARGET_HITBOXES.body.min + TARGET_HITBOXES.body.max) / 2;
-        body.parent = root;
-        body.material = this.material(teamColor);
-
-        const head = MeshBuilder.CreateBox(
-          "remote-head-" + p.id,
-          { size: TARGET_HITBOXES.head.radius * 2 },
-          this.scene
-        );
-        head.position.y = (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2;
-        head.parent = root;
-        head.material = this.material("#fde047");
+        const model = createCharacter(this.scene,p.id,p.skin,p.team || "none",this.settings.quality !== "low" && (this.settings.quality !== "auto" || detectAutoQuality() !== "low"));
+        const {root,body,head} = model;
+        body.name = "remote-body-" + p.id;
+        head.name = "remote-head-" + p.id;
 
         const tagPlane = MeshBuilder.CreatePlane(
           "remote-tag-" + p.id,
@@ -605,10 +599,11 @@ export class StrikeRenderer {
         gun.parent = root;
         gun.material = this.material("#1e293b");
 
-        item = { root, body, head, tagPlane, gun, tagTex, tagMat };
+        item = { model, skin:cleanSkin(p.skin), team:p.team || "none", root, body, head, tagPlane, gun, tagTex, tagMat };
         this.remotePlayerMeshes.set(p.id, item);
       }
 
+      item.model.flash((this.flashes.get(p.id) || 0) > performance.now());
       const isAlive = p.hp > 0;
       item.root.setEnabled(isAlive);
       if (isAlive) {
@@ -622,6 +617,7 @@ export class StrikeRenderer {
 
         const isCrouch = p.stance === "crouch" || p.stance === "slide";
         const offset = isCrouch ? C.standing - C.crouching : 0;
+        item.model.gearRoot.scaling.y = isCrouch ? C.crouching / C.standing : 1;
         const low = Math.max(0.08, TARGET_HITBOXES.body.min - offset);
         const high = TARGET_HITBOXES.body.max - offset;
         item.body.scaling.y = (high - low) / (TARGET_HITBOXES.body.max - TARGET_HITBOXES.body.min);
@@ -634,7 +630,8 @@ export class StrikeRenderer {
       if (!activeIds.has(id)) {
         item.tagTex?.dispose();
         item.tagMat?.dispose();
-        item.root.dispose();
+        item.model.dispose();
+        this.flashes.delete(id);
         this.remotePlayerMeshes.delete(id);
       }
     }
@@ -658,8 +655,9 @@ export class StrikeRenderer {
     for (const p of this.remotePlayerMeshes.values()) {
       p.tagTex?.dispose();
       p.tagMat?.dispose();
-      p.root.dispose();
+      p.model.dispose();
     }
     this.remotePlayerMeshes.clear();
+    this.flashes.clear();
   }
 }

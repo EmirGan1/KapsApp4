@@ -1,8 +1,10 @@
+import { EngineStore } from "@babylonjs/core/Engines/engineStore";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { io } from "socket.io-client";
 import KapsStrikeGame from "../src/components/games/kapsstrike/KapsStrikeGame";
 import { StrikeController } from "../src/games/kapsstrike/controller";
+(window as any).engineStore = EngineStore;
 const userId = Number(new URLSearchParams(location.search).get("user") || 1);
 const socket = io({ auth: { testUser: userId }, transports: ["websocket"] });
 (window as any).socket = socket;

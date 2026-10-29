@@ -1,3 +1,5 @@
+import { StrikeProfiles } from "./strikeProfiles";
+import { SkinId } from "../games/kapsstrike/skins";
 import { MELEE } from "../games/kapsstrike/config";
 import { Server, Socket } from "socket.io";
 import { Client as LibsqlClient } from "@libsql/client";
@@ -48,6 +50,7 @@ interface HistoricalPosition {
 }
 
 export class StrikeServerPlayer {
+  skin: SkinId = "classic";
   id: string; // Socket ID
   userId: number;
   username: string;
@@ -221,6 +224,7 @@ export class StrikeRoom {
       id: p.id,
       userId: p.userId,
       username: p.username,
+      skin: p.skin,
       avatar: p.avatar,
       color: p.color,
       team: p.team,
@@ -273,6 +277,7 @@ export class StrikeRoom {
       id: p.id,
       userId: p.userId,
       username: p.username,
+      skin: p.skin,
       team: p.team,
       color: p.color,
       hp: p.state.hp,
@@ -318,10 +323,11 @@ export class KapsStrikeServerManager {
   private userToRoom: Map<number, string> = new Map();
   private socketToRoom: Map<string, string> = new Map();
 
+  readonly profiles: StrikeProfiles;
   constructor(
     private io: Server,
     private dbClient?: LibsqlClient
-  ) {}
+  ) { this.profiles = new StrikeProfiles(dbClient); }
 
   public getRoomsList(): StrikeRoomSummary[] {
     const list: StrikeRoomSummary[] = [];
@@ -460,6 +466,7 @@ export class KapsStrikeServerManager {
       true
     );
 
+    hostPlayer.skin = this.profiles.cache.get(user.id) || "classic";
     room.players.set(socketId, hostPlayer);
     this.rooms.set(roomCode, room);
     this.userToRoom.set(user.id, roomCode);
@@ -524,6 +531,7 @@ export class KapsStrikeServerManager {
       false
     );
 
+    player.skin = this.profiles.cache.get(user.id) || "classic";
     room.players.set(socketId, player);
     this.userToRoom.set(user.id, roomCode);
     this.socketToRoom.set(socketId, roomCode);
@@ -1237,6 +1245,28 @@ export class KapsStrikeServerManager {
    */
   public register(socket: Socket, user: any): void {
     const userIdNum = Number(user.id);
+    const applyProfile = (skin: SkinId) => {
+      const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
+      const player = room?.players.get(socket.id);
+      if (player && room) {player.skin=skin;this.broadcastRoomState(room);}
+    };
+    void this.profiles.get(userIdNum).then(applyProfile).catch(() => {});
+    let lastProfileGet = 0, lastProfileSet = 0;
+    socket.on("strike:profile_get", async (cb) => {
+      if(Date.now()-lastProfileGet<1000 && this.profiles.cache.has(userIdNum)){if(typeof cb === "function")cb({success:true,skin:this.profiles.cache.get(userIdNum)});return;}lastProfileGet=Date.now();
+      try { const skin = await this.profiles.get(userIdNum); if(typeof cb === "function") cb({success:true,skin}); }
+      catch { if(typeof cb === "function") cb({success:false,error:"Karakter profili yüklenemedi."}); }
+    });
+    socket.on("strike:profile_set", async (data, cb) => {
+      if(Date.now()-lastProfileSet<1000){if(typeof cb === "function")cb({success:false,error:"Bir saniye bekle."});return;}lastProfileSet=Date.now();
+      try {
+        const skin = await this.profiles.set(userIdNum,data?.skin);
+        const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
+        const player = room?.players.get(socket.id);
+        if(player && room) { player.skin=skin; this.broadcastRoomState(room); }
+        if(typeof cb === "function") cb({success:true,skin});
+      } catch(e) { if(typeof cb === "function") cb({success:false,error:e instanceof Error?e.message:"Karakter kaydedilemedi."}); }
+    });
     const u = {
       id: userIdNum,
       username: user.username || "Oyuncu",
