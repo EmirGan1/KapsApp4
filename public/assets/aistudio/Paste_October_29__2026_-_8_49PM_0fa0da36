@@ -1,0 +1,815 @@
+# KAPSAPP — KAPSSTRIKE 3D FPS — KRİTİK HATA ONARIMI, OYNANIŞ GELİŞTİRMELERİ, HARİTA YENİDEN TASARIMI VE KAPSAMLI OPTİMİZASYON
+
+## GÖREVİN
+
+KapsApp web uygulamamın içindeki KapsStrike adlı 3D multiplayer FPS oyununun mevcut sürümünü kapsamlı biçimde geliştirmelisin.
+
+Bu görev yeni bir oyun oluşturma görevi DEĞİLDİR. Mevcut oyunu, multiplayer altyapısını, KapsApp entegrasyonlarını ve çalışan mekanikleri koruyarak hataları gidermeni, yeni özellikler eklemeni, haritaları yeniden tasarlamanı ve oyunu daha kaliteli hâle getirmeni istiyorum.
+
+Oyunun temel hedefi Krunker.io benzeri hızlı, akıcı, rekabetçi, düşük sistem gereksinimli ve eğlenceli bir tarayıcı FPS deneyimidir. Ancak oyun, bütün tasarım ve içerikleriyle özgün olmalıdır.
+
+**BU GÖREV YALNIZCA PLANLAMA VEYA RAPORLAMA DEĞİLDİR. GERÇEK KOD DEĞİŞİKLİKLERİNİ YAP, ÇALIŞTIR, TEST ET, HATALARI DÜZELT VE SONUÇLARI DOĞRULA.**
+
+---
+
+# 1. KRİTİK SORUN: İKİ OYUNCU DA MAÇ BAŞLATILINCA AYNI EKRANDA TAKILI KALIYOR
+
+En yüksek öncelik bu sorunun tamamen giderilmesidir.
+
+## Sorunun açıklaması
+
+KapsStrike'ın mobil sürümünü yaklaşık bir saat önce test ettim. Ardından herhangi bir yeni değişiklik yapmadım.
+
+İki farklı kullanıcıyla multiplayer maçı başlatmayı denediğimizde, oyunu başlattıktan sonra iki oyuncunun ekranı da aynı aşamada takılı kaldı ve oynanabilir 3D maça geçilemedi.
+
+Bu belirtinin gerçek kök nedenini bulmanı istiyorum. Ekranın ne gösterdiğini varsayma; varsa ekran görüntüsünü, mevcut UI state'lerini, sunucu loglarını ve istemci hatalarını incele.
+
+## Araştırılacak olası sorunlar
+
+- Multiplayer lobby state'inden running/game state'ine geçiş yapılmaması.
+- Sunucunun match start event'ini doğru göndermemesi.
+- İki oyuncudan birinin ready/loading durumunun yanlış hesaplanması.
+- Harita yükleme işleminin tamamlanmaması.
+- Harita asset'lerinin yüklenememesi.
+- Babylon.js sahnesinin oluşturulması sırasında hata oluşması.
+- Game loop'un başlamaması.
+- Client ile server'ın aynı maç durumunu kullanmaması.
+- WebSocket bağlantısının oyun başlatılınca kopması.
+- Authentication veya room ID hatası.
+- Oyuncu spawn verilerinin gelmemesi.
+- İlk snapshot'ın gelmemesi.
+- Scene initialization sırasında çözülmeyen Promise.
+- React component lifecycle kaynaklı hata.
+- Async race condition.
+- Canvas initialization veya pointer lock hatası.
+- Mobil ve masaüstü istemcilerde farklı initialization yolları.
+- Bir oyuncu hazır olduğu hâlde sunucunun bekleme durumunda kalması.
+- Lobby component'inin kapanmasına rağmen gameplay component'inin oluşturulmaması.
+- Hatalı cleanup işlemi nedeniyle önemli event listener'ların silinmesi.
+- Oyun başlamış olmasına rağmen loading overlay'in kapanmaması.
+
+Bu maddelerin her birini yalnızca ihtimal olarak değerlendir. Gerçek sorunu kodu ve çalıştırılabilir testleri inceleyerek belirle.
+
+## Zorunlu çözüm
+
+1. Maç başlatma akışını başlangıçtan sonuna kadar analiz et.
+2. Client ve server arasındaki bütün ilgili event'leri incele.
+3. Her oyuncunun hangi state'te kaldığını belirle.
+4. Sorunu meydana getiren kodu düzelt.
+5. Oyun başlatıldığında iki oyuncu da aynı haritaya geçebilmeli.
+6. Her oyuncu kendi karakterini kontrol edebilmeli.
+7. Oyuncular birbirlerini görebilmeli.
+8. Hareketler gerçek zamanlı senkronize olmalı.
+9. Silahlar, hasar, ölüm, respawn ve skor sistemi çalışmalı.
+10. Oyunculardan biri geç yüklenirse diğerinin ekranı sonsuza kadar takılmamalı.
+
+## Loading ve hata yönetimi
+
+Maç yüklenirken anlaşılır bir ekran oluştur:
+
+- Sunucuya bağlanılıyor.
+- Oyuncular hazırlanıyor.
+- Harita yükleniyor.
+- Oyun durumu senkronize ediliyor.
+- Maç başlatılıyor.
+
+Gerçek bağlantı ve yükleme durumlarını göster; sahte yüzdelik ilerleme kullanma.
+
+Oyun yüklenemezse:
+
+- Sonsuz bekleme olmasın.
+- Uygun timeout uygulansın.
+- Gerçek hata mesajı gösterilsin.
+- Yeniden dene seçeneği bulunsun.
+- Güvenli biçimde lobiye dönülebilsin.
+- Sunucuda hayalet oyuncu veya bozuk oda state'i kalmasın.
+
+Aynı haritanın iki kullanıcıda açıldığını ve oyun döngüsünün gerçekten başladığını doğrulamadan bu sorunu tamamlandı olarak işaretleme.
+
+---
+
+# 2. OYUNCU SKİN VE KARAKTER SEÇİM SİSTEMİ
+
+Oyuna modern, kullanışlı ve gerçek anlamda çalışan bir karakter özelleştirme sistemi ekle.
+
+## Karakter seçim ekranı
+
+Ana menüde veya ekipman bölümünde "Karakter / Skin" alanı bulunsun.
+
+Oyuncu buradan karakterinin görünüşünü seçebilsin.
+
+Başlangıç için en az 8 farklı, özgün karakter görünümü oluştur:
+
+1. Classic Soldier — sade, askeri tarz.
+2. Urban Runner — şehir içi hızlı hareket tarzı.
+3. Neon Striker — futuristik neon detaylar.
+4. Shadow Operative — koyu renkli taktik görünüm.
+5. Desert Scout — çöl temalı görünüm.
+6. Arctic Fighter — açık renkli kış teması.
+7. Cyber Agent — teknolojik görünüm.
+8. Street Warrior — modern şehir teması.
+
+Bu görünümlerin yalnızca isimleri veya renkli butonları bulunmasın. Gerçek 3D karakter modellerinde veya özgün model varyasyonlarında gözle görülür farklılıklar olsun.
+
+Karakterlerin siluetleri, kıyafet ayrıntıları, renk kombinasyonları ve uygun aksesuarları farklılaşsın.
+
+Low-poly tasarım dili korunsun.
+
+## 3D önizleme
+
+- Skin seçme ekranında döndürülebilir 3D karakter önizlemesi.
+- Fare sürükleme veya dokunmatik hareketle karakter döndürülebilsin.
+- Seçilen skin anında önizlemede değişsin.
+- Seçimi kaydet butonu bulunsun.
+- Seçim kullanıcı hesabına kaydedilsin.
+- Oyundan çıkıp tekrar girildiğinde skin korunsun.
+- Multiplayer'da diğer oyuncular seçilen skin'i görsün.
+- Skin bilgisi güvenilir biçimde sunucudan senkronize edilsin.
+- Skin seçimi hitbox, hız, can veya hasar avantajı sağlamasın.
+
+Team Deathmatch modunda hangi skin seçilirse seçilsin kırmızı ve mavi takım üyeleri açıkça ayırt edilebilsin.
+
+Skin modelleri oyun performansını olumsuz etkilememeli.
+
+---
+
+# 3. TAMAMEN ÖZELLEŞTİRİLEBİLİR KONTROL VE TUŞ ATAMA SİSTEMİ
+
+Oyun ayarlarına gerçek bir "Kontroller" bölümü ekle.
+
+Oyuncu hemen hemen bütün oyun eylemlerinin tuşlarını değiştirebilsin.
+
+## Değiştirilebilir kontroller
+
+- İleri hareket.
+- Geri hareket.
+- Sola hareket.
+- Sağa hareket.
+- Zıplama.
+- Koşma.
+- Çömelme.
+- Kayma.
+- Ateş etme.
+- ADS / nişan alma.
+- Şarjör doldurma.
+- Birincil silah.
+- İkincil silah.
+- Bıçak.
+- Sonraki silah.
+- Önceki silah.
+- Son kullanılan silaha dönme.
+- Skor tablosu.
+- Oyun menüsü.
+- Push-to-talk.
+- Gerekiyorsa etkileşim tuşu.
+
+## Tuş atama sistemi
+
+Bir kontrolün üstüne tıklandığında:
+
+"Yeni tuşa basın..." mesajı gösterilsin.
+
+Oyuncunun bastığı tuş veya desteklenen mouse butonu kaydedilsin.
+
+Şunlar da desteklensin:
+
+- Klavye tuşları.
+- Mouse butonları.
+- Mouse Wheel Up.
+- Mouse Wheel Down.
+- Uygun modifier kombinasyonları.
+- Varsayılan ayarlara sıfırlama.
+- Tek bir kontrolü sıfırlama.
+- Tuş çakışması tespiti.
+- İstenirse çakışan atamayı değiştirme.
+- Kullanıcı hesabına veya uygun yerel ayarlara kalıcı kayıt.
+
+Aynı tuş birden fazla uyumsuz eyleme atanırsa kullanıcıya açık bir uyarı gösterilsin.
+
+Önemli sistem kontrolleri, özellikle menüden çıkış, tamamen kullanılamaz hâle gelmemeli.
+
+Oyun içindeki input listener'ları yeni atamalara anında uyum sağlamalı.
+
+Kullanıcının klavye düzeni değiştiğinde kontrol sistemi mümkün olduğunca tutarlı davranmalı. Tuş gösterimi ile fiziksel klavye kodu ayrımını doğru yönet.
+
+Ayarlar ekranı PC ve mobilde düzgün çalışmalı.
+
+---
+
+# 4. MOUSE WHEEL İLE SİLAH DEĞİŞTİRME
+
+Şu anda silahları sayı tuşlarıyla değiştirebiliyorum. Bunun yanında mouse wheel ile de silah değiştirilebilmesini istiyorum.
+
+## Gerekli davranış
+
+- Mouse wheel aşağı: sonraki uygun silah.
+- Mouse wheel yukarı: önceki uygun silah.
+- Sayı tuşları çalışmaya devam etmeli.
+- Silah değişimi akıcı olmalı.
+- Silah değiştirme animasyonu oynatılmalı.
+- Scroll işlemi silahı kontrolsüz hızlı biçimde değiştirmemeli.
+- Bir teker hareketinin yanlışlıkla birkaç silah atlamasını önleyen uygun input yönetimi kullan.
+- İleri ve geri silah döngüsü tutarlı olsun.
+- Kullanılabilir silahların sonundan başına döngü yapılabilsin.
+- Reload sırasında silah değişiminin etkisi doğru yönetilsin.
+- Oyun içindeyken wheel sayfayı kaydırmasın.
+- Oyun dışında normal sayfa kaydırması çalışmaya devam etsin.
+- Ayarlar menüsünde mouse wheel kontrol atamaları değiştirilebilsin.
+
+Silah HUD'ı seçilen silahı anında göstermeli.
+
+---
+
+# 5. BIÇAK / MELEE WEAPON SİSTEMİ
+
+Oyuna gerçekten çalışan bir yakın dövüş silahı ekle.
+
+## Bıçak mekaniği
+
+- Bıçak ayrı bir ekipman slotunda bulunmalı.
+- Varsayılan olarak 3 tuşu veya uygun mevcut slot yapısı kullanılabilsin.
+- Mouse wheel ile de seçilebilsin.
+- Sol tık: normal bıçak saldırısı.
+- Gerekirse sağ tık: daha yavaş ama güçlü alternatif saldırı.
+- Bıçak saldırısında uygun animasyon ve ses bulunsun.
+- Yakın mesafede gerçek hasar verebilsin.
+- Bıçak saldırısı sınırlı menzilli olsun.
+- Duvar arkasındaki oyuncuya hasar veremesin.
+- Sınırsız ve kontrolsüz saldırı spam'ini engelle.
+- Sunucu saldırı menzilini, cooldown'u ve hasarı doğrulasın.
+- Karakter bıçak tutarken uygun birinci şahıs viewmodel görünsün.
+- Üçüncü şahıs karakterinde de bıçak görünümü doğru olsun.
+
+Örnek başlangıç dengesi:
+
+- Normal saldırı: 40 hasar.
+- Ağır saldırı: 65 hasar.
+- Normal saldırı daha hızlı.
+- Ağır saldırı daha yavaş.
+- Bıçak silahlara göre yakın mesafe avantajı sağlamalı ama aşırı güçlü olmamalı.
+
+Bu değerler yapılandırılabilir olsun.
+
+Bıçak ayrı bir çalışan sistem olmalı; yalnızca karakterin elinde duran dekoratif model oluşturma.
+
+---
+
+# 6. HASAR ALMA GERİ BİLDİRİMİNİ BELİRGİNLEŞTİR
+
+Şu anda oyuncunun hasar aldığı yeterince belirgin hissedilmiyor.
+
+Hasar alındığında oyuncu bunu anında fark edebilmeli.
+
+## Ekran efektleri
+
+- Ekranın kenarlarında kısa süreli kırmızı hasar efekti.
+- Hasarın geldiği yönü gösteren yönsel indikator.
+- Hafif ve kontrollü kamera darbesi.
+- Can barında belirgin azalma animasyonu.
+- Mevcut can değerinin anlık güncellenmesi.
+- Düşük can durumunda daha belirgin uyarı.
+- Kritik can durumunda isteğe bağlı hafif görsel vurgu.
+- Hasar alma sesi.
+- Birden fazla isabet geldiğinde efektlerin doğru birleştirilmesi.
+
+Hasarın şiddetine göre efekt yoğunluğu değişebilsin.
+
+Örneğin:
+- 10 hasar: hafif kırmızı kenar efekti.
+- 30 hasar: daha belirgin uyarı.
+- 60 hasar: daha güçlü ama kısa süreli görsel geri bildirim.
+
+Ekranın tamamını uzun süre kırmızıya boyama.
+
+Efektler rakibi görmeyi engellememeli.
+
+Hızlı FPS oynanışında görüntüyü aşırı sallama veya bulanıklaştırma.
+
+## Rakibe isabet geri bildirimi
+
+Bir düşmana vurduğumda:
+
+- Crosshair üzerinde hitmarker.
+- Kafa vuruşunda farklı hitmarker.
+- Uygun hasar sayısı.
+- İsteğe bağlı kısa hit sound.
+- Rakip karakterde kısa ve okunabilir isabet efekti.
+- Ölüm gerçekleştiğinde net kill confirmation.
+
+Gerçek hasar onayı sunucudan gelmeli. İstemcinin tahmin ettiği isabet ile kesinleşmiş sunucu hasarı ayrılmalı.
+
+---
+
+# 7. RAKİP KARAKTERLERİN DAHA BELİRGİN GÖRÜNMESİ
+
+Şu anda oyuncu karakterlerinin harita ve çevreyle karışmasını istemiyorum.
+
+Oyuncular özellikle hızlı hareket ederken rakipleri kolayca ayırt edebilmeli.
+
+## Görsel geliştirmeler
+
+- Düşman karakterlerine hafif emissive vurgu.
+- Çok ince ve performans dostu outline.
+- Takım modunda takım renklerini belirginleştirme.
+- Düşman ve dost karakterlerin farklı görsel tanımları.
+- Uygun uzaklıklarda okunabilir karakter silueti.
+- Haritanın renkleriyle aşırı karışan skin'lerin görünürlüğünü artırma.
+- Hasar alınca rakip üzerinde kısa hit flash.
+- Ölüm sırasında belirgin ama sade efekt.
+
+Önerilen tasarım:
+
+Free For All modunda düşmanlar hafif kırmızı/turuncu vurgu taşıyabilir.
+
+Team Deathmatch modunda:
+- Kırmızı takım: kırmızı vurgu.
+- Mavi takım: mavi vurgu.
+
+Bu efektler çok güçlü neon ışıklar gibi görünmesin. Modern ve kaliteli, Krunker benzeri temiz bir görsel stil oluştur.
+
+ÖNEMLİ:
+Duvar arkasındaki rakipler görünmemeli.
+
+Outline ve glow efektleri duvarlardan görünmemeli, wallhack benzeri avantaj sağlamamalı.
+
+Derinlik testi ve görünürlük kuralları doğru uygulanmalı.
+
+Efektler Low grafik kalitesinde sadeleştirilebilmeli.
+
+---
+
+# 8. ÜÇ HARİTAYI GÖRSEL OLARAK DEĞİL, YAPISAL OLARAK YENİDEN TASARLA
+
+Bu benim en önemli geliştirme isteklerimden biri.
+
+Şu anda haritaların dokuları ve renkleri farklı olsa bile geometrileri, genel yerleşimleri ve oynanış hissi birbirine fazla benziyor.
+
+Oyuncu sanki yalnızca farklı texture uygulanmış aynı kutunun içinde oynuyormuş gibi hissediyor.
+
+**BUNU KÖKTEN DEĞİŞTİR.**
+
+Haritaların yalnızca renklerini, zemin dokularını veya kutularını değiştirme.
+
+Gerçekten farklı çevresel mimari, sokak düzeni, bina yerleşimi, yükseklik, rota, görüş hattı ve oynanış yapısı oluştur.
+
+Krunker benzeri low-poly, renkli ama inandırıcı oyun ortamları istiyorum.
+
+Her harita ayrı bir yer hissi vermeli.
+
+---
+
+## HARİTA 1 — URBAN STRIKE / ŞEHİR SOKAKLARI
+
+Bu harita gerçekten küçük bir şehrin içinde oynuyormuş hissi vermeli.
+
+İstenen yapılar:
+
+- Birbirine bağlanan sokaklar.
+- Gerçek bina cepheleri.
+- Farklı yükseklikte binalar.
+- Yol, kaldırım, sokak lambaları.
+- Kavşaklar.
+- Dar ara sokaklar.
+- Küçük meydan.
+- Açık ve kapalı alan dengesi.
+- Park edilmiş araçlar.
+- Çatılar veya balkonlar.
+- Dükkan cepheleri.
+- İnandırıcı duvar ve kapı geometrileri.
+- Bazı girilebilir iç mekânlar.
+- Birden fazla çatışma rotası.
+- Farklı görüş mesafeleri.
+- Kısa yollar ve alternatif geçişler.
+
+Şehir yalnızca dört yüksek duvar ve içeride rastgele kutular biçiminde olmamalı.
+
+Oyuncu gerçekten sokaklarda koştuğunu, köşelerden döndüğünü ve binaların arasında çatıştığını hissetmeli.
+
+Binaların dış cepheleri dekoratif birer kutu değil, pencere, giriş, çatı, tabelalar ve uygun mimari detaylara sahip olmalı.
+
+Bütün binaların içine girilmesi gerekmiyor; ancak oyuncunun girebildiği ve giremediği yapılar doğal görünmeli.
+
+Harita sınırlarını görünür devasa bir kutu duvarı yerine, doğal şehir blokları, bina cepheleri ve uygun fiziksel engellerle oluştur.
+
+---
+
+## HARİTA 2 — NEON CITY / GECE ŞEHRİ
+
+Tamamen farklı şehir atmosferi ve oynanış yapısı oluştur.
+
+İstenenler:
+
+- Gece vakti futuristik şehir.
+- Neon tabelalar.
+- Yüksek teknoloji binaları.
+- Yağmur sonrası hafif yansıtıcı yol hissi.
+- Dar şehir geçitleri.
+- Çok katlı bina bağlantıları.
+- Merdivenler.
+- Üst geçitler.
+- Çatı rotaları.
+- Açık meydan.
+- Kapalı geçiş koridorları.
+- Aydınlatılmış vitrinler.
+- Holografik veya stilize reklam panoları.
+- Farklı bina siluetleri.
+- Dikey oynanış.
+- Kısa ve orta mesafe çatışma noktaları.
+
+Bu harita Urban Strike'ın neon renklerle boyanmış kopyası OLMAMALI.
+
+Urban Strike daha yatay ve sokak odaklıyken Neon City daha dikey, çok katlı ve yoğun mimariye sahip olsun.
+
+Ağır gerçekçi ışın izleme veya pahalı görsel efektler kullanma.
+
+Işıklandırma low-poly stilini korurken kaliteli görünmeli.
+
+Performans dostu emissive materyaller, gerektiğinde baked lighting ve sınırlı dinamik ışıklar kullan.
+
+---
+
+## HARİTA 3 — DUST TOWN / ÇÖL KASABASI
+
+Diğer iki haritadan hem mimari hem de oynanış açısından tamamen farklı olsun.
+
+İstenenler:
+
+- Çöl kasabası.
+- Alçak binalar.
+- Kumlu sokaklar.
+- Dar geçitler.
+- Avlular.
+- İç mekân geçişleri.
+- Açık pazar alanı.
+- Kemerli girişler.
+- Merdivenler.
+- Düz çatılar.
+- Birkaç yükselti.
+- Uzun görüş hatları.
+- Farklı siper noktaları.
+- Gerçek bir kasaba planı hissi.
+- Birbirine bağlı mahalleler.
+
+Bu haritada şehir sokaklarıyla avlular arasında farklı çatışma ritmi oluşmalı.
+
+Neon City'nin geometrisini veya Urban Strike'ın sokak düzenini kopyalama.
+
+---
+
+# 9. HARİTA TASARIMINDA ZORUNLU KURALLAR
+
+Bütün haritalarda:
+
+1. Farklı topoloji ve rota ağı oluştur.
+2. Aynı kare veya dikdörtgen arena düzenini tekrar etme.
+3. Bütün haritalarda aynı merkezi kutu ve dört köşe düzeni bulunmasın.
+4. Sokak genişlikleri değişsin.
+5. Bina yükseklikleri değişsin.
+6. Katlar ve bağlantı noktaları haritaya özel olsun.
+7. Alternatif saldırı ve kaçış yolları bulunsun.
+8. Spawn noktaları dengeli olsun.
+9. Görüş hatları sniper ve yakın mesafe silahlarını dengelesin.
+10. Karakterlerin binalara, merdivenlere ve zemine takılması önlensin.
+11. Çatışma için yeterli kapalı ve açık alan dengesi bulunsun.
+12. Oyuncular sürekli aynı yerde yeniden doğmasın.
+13. Haritalar 2–10 oyuncuya uygun olsun.
+14. Sınırların dışına çıkılamasın.
+15. Büyük boş alanlar nedeniyle oyuncular birbirlerini aramak için gereksiz zaman harcamasın.
+16. Dekorlar çarpışma kurallarıyla uyumlu olsun.
+17. Low-poly modelleme ve optimizasyon kullan.
+18. Gerçek 3D bina ve şehir detayları oluştur; yalnızca zemine texture yapıştırma.
+19. Haritanın tamamını tek kapalı kutunun içine yerleştirilmiş bir eğitim sahası gibi gösterme.
+20. Harita sınırlarını doğal mimari ve oynanabilir alan mantığıyla gizle.
+
+Mümkünse önceki haritaların ortak geometrik yapılarını inceleyip neden birbirlerine benzediklerini belirle.
+
+Ardından gerçekten farklı geometri ve oynanış rotaları oluştur.
+
+Her haritayı üstten görünümlü plan ve oynanış testleriyle değerlendirebilirsin.
+
+---
+
+# 10. HARİTALARIN GRAFİK KALİTESİ
+
+Grafikler gerçekçi AAA düzeyinde olmak zorunda değil.
+
+Önceliğim:
+
+- Temiz low-poly estetiği.
+- Güzel renk paletleri.
+- Özgün çevre tasarımı.
+- Düzgün aydınlatma.
+- Kaliteli materyaller.
+- Belirgin karakterler.
+- Akıcı performans.
+- Okunabilir çatışma ortamı.
+- Güzel ama ağır olmayan görsel efektler.
+
+Binalar yalnızca tek renkli küplerden oluşmasın.
+
+Ancak yüksek poligon sayılı ve ağır modeller kullanarak FPS'i düşürme.
+
+Texture atlas, instancing, mesh batching ve LOD gibi uygun optimizasyon yöntemlerini değerlendir.
+
+Haritalar arasındaki kalite seviyesi tutarlı olsun.
+
+---
+
+# 11. MULTIPLAYER SİSTEMİNİ YENİ ÖZELLİKLERLE UYUMLU HÂLE GETİR
+
+Yeni özellikler eklenirken multiplayer bozulmamalı.
+
+Şunları kontrol et:
+
+- Skin seçimi bütün oyunculara senkronize ediliyor mu?
+- Skin değiştirme hitbox'ları etkiliyor mu?
+- Bıçak saldırısı sunucu tarafından doğrulanıyor mu?
+- Silah değiştirme diğer oyunculara yansıyor mu?
+- Oyuncunun aldığı hasar bütün istemcilerde doğru mu?
+- Oyuncu ölürken doğru efektler gösteriliyor mu?
+- TDM takım renkleri doğru mu?
+- Yeni haritalar bütün oyuncularda aynı şekilde yükleniyor mu?
+- Spawn noktaları sunucuda belirleniyor mu?
+- Oyuncu duvarların içinde veya harita dışında doğabiliyor mu?
+- Oda başlatma ve maç bitirme düzgün çalışıyor mu?
+- Maç sırasında başka oyuncu ayrılırsa oyun bozuluyor mu?
+
+Skin, kontrol sistemi, bıçak ve harita değişiklikleri mevcut sunucu otoritesini zayıflatmamalı.
+
+---
+
+# 12. KAPSAPP'İN DİĞER ÖZELLİKLERİNİ KORU
+
+KapsStrike geliştirilirken KapsApp'in mevcut sistemlerine zarar verme.
+
+Özellikle:
+
+- Kullanıcı hesapları.
+- Arkadaş listesi.
+- Mesajlaşma.
+- Sesli sohbet.
+- Görüntülü görüşme.
+- Ekran paylaşımı.
+- Diğer oyunlar.
+- Profil sistemi.
+- Ayarlar.
+- Mobil uyumluluk.
+- Masaüstü uyumluluk.
+
+KapsStrike'dan çıkınca bütün oyun event listener'ları, canvas kaynakları, pointer lock, ses kaynakları ve uygun network bağlantıları temizlenmeli.
+
+Ancak aktif KapsApp görüşmeleri yanlışlıkla kapatılmamalı.
+
+---
+
+# 13. PERFORMANS VE OPTİMİZASYON
+
+Yeni haritalar ve görsel efektler eklendiği için performansı özellikle kontrol et.
+
+Hedefler:
+
+- Uygun masaüstü sistemlerde 60+ FPS.
+- Düşük sistemlerde oynanabilir performans.
+- Uygun yüksek performanslı sistemlerde 120+ FPS imkânı.
+- Mobil cihazlar için otomatik düşük grafik profili.
+- Stabil sunucu tick rate.
+- Düşük ağ gecikmesi.
+- Gereksiz draw call ve bellek kullanımının azaltılması.
+- Harita yüklenirken sonsuz loading oluşmaması.
+- Uzun maçlarda performansın bozulmaması.
+
+Optimize edilecek alanlar:
+
+- Rendering.
+- Physics.
+- Animation.
+- Particle effects.
+- Weapon viewmodels.
+- Character models.
+- Glow / outline.
+- Map geometry.
+- Materials.
+- Audio.
+- State synchronization.
+- WebSocket event handling.
+- Component rerender.
+- Memory cleanup.
+- Asset loading.
+- Scene initialization.
+
+Gereksiz sürekli yeni nesne oluşturma yerine mümkün olduğunda object pooling kullan.
+
+Ağ güncellemelerinde gereksiz tam state aktarımını azalt.
+
+Oyun sırasında frame time, ping ve gerektiğinde sunucu tick performansını takip etmek için isteğe bağlı debug paneli sağla.
+
+---
+
+# 14. ZORUNLU TESTLER
+
+Bu değişikliklerin tamamını yaptıktan sonra gerçekten çalıştırılabilir testler gerçekleştir.
+
+## A. Kritik maç açılış testi
+
+1. Kullanıcı A odayı oluşturur.
+2. Kullanıcı B odaya katılır.
+3. A maçı başlatır.
+4. Her iki oyuncu loading ekranını geçer.
+5. İkisi de aynı haritaya girer.
+6. A, B'yi görür.
+7. B, A'yı görür.
+8. Her iki oyuncu hareket eder.
+9. Birbirlerine ateş ederler.
+10. Hasar, ölüm ve respawn doğru çalışır.
+
+Bu test başarısızsa görevin en önemli sorunu çözülmemiş demektir.
+
+## B. Skin sistemi testi
+
+- Sekiz skin arasında geçiş yapılabilsin.
+- Önizleme doğru değişsin.
+- Seçimler kalıcı kaydedilsin.
+- Başka oyuncu doğru skin'i görsün.
+- Farklı skin'ler oynanış avantajı sağlamasın.
+- FFA ve TDM renk ayrımları doğru olsun.
+
+## C. Kontrol değiştirme testi
+
+- W tuşu farklı tuşa atanabilsin.
+- Zıplama tuşu değiştirilebilsin.
+- Ateş butonu yeniden atanabilsin.
+- Tuş çakışması uyarısı çalışsın.
+- Kontroller sıfırlanabilsin.
+- Ayarlar yeniden açıldığında kayıtlı olsun.
+- Oyunun dışındayken input sistemi normal çalışsın.
+
+## D. Mouse wheel testi
+
+- Mouse wheel yukarı silah değiştirsin.
+- Mouse wheel aşağı silah değiştirsin.
+- Sayı tuşları da çalışmaya devam etsin.
+- Silahlar kontrolsüz hızlı değişmesin.
+- Bıçak da döngüye dahil olsun.
+- Oyun oynanırken sayfa kaymasın.
+
+## E. Bıçak testi
+
+- Bıçak seçilebilsin.
+- Normal saldırı çalışsın.
+- Ağır saldırı varsa çalışsın.
+- Menzil doğru olsun.
+- Duvar arkasındaki oyunculara hasar verilemesin.
+- Bıçak hasarı sunucuda doğrulansın.
+- Bıçak animasyonu iki istemcide tutarlı olsun.
+
+## F. Hasar geri bildirimi testi
+
+- Hasar alınca ekran efekti çıksın.
+- Can barı anında değişsin.
+- Hasarın yönü doğru gösterilsin.
+- Headshot hitmarker farklı olsun.
+- Rakip kısa süre uygun biçimde parlasın.
+- Outline duvar arkasından görünmesin.
+- Efektler FPS'i belirgin düşürmesin.
+
+## G. Harita testleri
+
+Her üç harita için:
+
+- Harita gerçekten farklı bir yerleşime sahip mi?
+- Binalar ve sokaklar düzgün görünüyor mu?
+- Spawn noktaları çalışıyor mu?
+- Oyuncular duvarlardan geçebiliyor mu?
+- Oyuncular harita dışına çıkabiliyor mu?
+- Merdiven ve rampalar çalışıyor mu?
+- Görüş açıları dengeli mi?
+- 2, 4 ve 8 oyuncu için kullanılabilir mi?
+- Uzun mesafeli ve yakın mesafeli çatışma alanları var mı?
+- Oyuncular haritada gereksiz yere kayboluyor mu?
+- Harita yükleme işlemi güvenilir mi?
+- Masaüstü ve mobilde sahne düzgün açılıyor mu?
+
+## H. Regresyon testleri
+
+- Önceki beş silah çalışıyor mu?
+- Koşma, slide ve zıplama bozuldu mu?
+- Oda oluşturma çalışıyor mu?
+- Kodla katılma çalışıyor mu?
+- Oda listesi doğru mu?
+- Sesli sohbet çalışıyor mu?
+- Kullanıcı hesapları korunuyor mu?
+- KapsApp'in diğer sayfaları çalışıyor mu?
+- Oyun kapatılınca kaynaklar temizleniyor mu?
+
+## I. Tarayıcı ve cihaz testleri
+
+Uygun test ortamı varsa:
+
+- Chrome.
+- Edge.
+- Opera.
+- Android Chrome.
+- iOS Safari.
+
+İki farklı gerçek istemciyle multiplayer doğrulaması gerçekleştir.
+
+Gerçek cihaz veya production erişimi yoksa sahte başarı raporu üretme. Hangi kontrollerin yapılamadığını belirt.
+
+---
+
+# 15. GELİŞTİRME ÖNCELİĞİ
+
+Lütfen bu sıraya kesinlikle uy:
+
+**ÖNCELİK 1 — KRİTİK MULTIPLAYER MAÇ AÇILIŞ HATASI**
+
+İki oyuncunun da oyun başlatırken takılması sorununu bul ve düzelt. Gerçek maç akışını test et.
+
+**ÖNCELİK 2 — KONTROLLER VE SİLAHLAR**
+
+Tuş atama, mouse wheel, bıçak ve gerekli input sistemlerini tamamla.
+
+**ÖNCELİK 3 — HASAR VE RAKİP GÖRÜNÜRLÜĞÜ**
+
+Hasar geri bildirimi, hitmarker, karakter outline ve takım renklerini geliştir.
+
+**ÖNCELİK 4 — SKİN SİSTEMİ**
+
+Skin seçimi, 3D önizleme, kalıcı kayıt ve multiplayer senkronizasyonu.
+
+**ÖNCELİK 5 — HARİTALARIN YENİDEN TASARIMI**
+
+Üç haritayı birbirinden gerçekten farklı, sokakları ve binaları olan doğal FPS ortamlarına dönüştür.
+
+**ÖNCELİK 6 — PERFORMANS VE KAPSAMLI TEST**
+
+FPS optimizasyonu, çoklu istemci, mobil uyumluluk ve bütün sistemlerde regresyon testleri.
+
+Her öncelik grubunun ardından ilgili build ve testleri çalıştır. Bir bölümde başarısızlık varsa sebebini araştırıp düzeltmeden başka sistemleri bozacak değişikliklere geçme.
+
+---
+
+# 16. GIT VE KOD GÜVENLİĞİ
+
+- Önce repository'deki güncel durumu incele.
+- En son çalışan sürümü tespit et.
+- Mevcut main dalını koru.
+- Gerekirse yeni geliştirme branch'i oluştur.
+- Önemli değişiklikleri mantıklı commit'lere ayır.
+- Çalışan kodları gereksiz yere yeniden yazma.
+- Eski KapsApp sistemlerini silme.
+- Yeni özellikleri mevcut mimariyle uyumlu geliştir.
+- Eksik veya test edilmemiş değişiklikleri main dalına doğrudan aktarma.
+- Build, lint, typecheck ve uygun testleri çalıştır.
+- Varsa backend, frontend ve deployment yapılandırmasını birlikte doğrula.
+
+---
+
+# 17. SON KABUL KRİTERLERİ
+
+Bu görev ancak aşağıdaki koşullar sağlandığında tamamen başarılı sayılabilir:
+
+1. İki gerçek oyuncu maçı başlatıp aynı 3D haritaya girebilir.
+2. Oyuncular birbirlerini görebilir ve gerçek zamanlı savaşabilir.
+3. Maç başlatma ekranında sonsuz takılma yoktur.
+4. Sekiz farklı skin gerçekten seçilebilir ve multiplayer'da görünür.
+5. Kontroller değiştirilebilir ve kayıtlı kalır.
+6. Mouse wheel ile silah değiştirme çalışır.
+7. Bıçak gerçek hasar verebilir.
+8. Oyuncu hasar aldığını net biçimde anlar.
+9. Rakipler haritada belirgin ama duvar arkasından görünmez.
+10. Üç harita yalnızca texture bakımından değil, mimari ve oynanış bakımından farklıdır.
+11. Haritalar kutu gibi değil, gerçek şehir/kasaba alanları gibi hissettirir.
+12. Oyun PC'de akıcı çalışır.
+13. Mobil kontroller ve açılış bozulmaz.
+14. KapsApp'in diğer özellikleri düzgün çalışmaya devam eder.
+15. Yapılan değişiklikler mümkün olan gerçek testlerle doğrulanır.
+
+---
+
+# 18. SON TALİMAT
+
+Sadece bir analiz, yapılacaklar listesi veya geliştirme önerisi verme.
+
+**MEVCUT KAPSSTRIKE KODUNU GERÇEKTEN GELİŞTİR.**
+
+Önce kritik multiplayer başlatma sorununu çöz. Daha sonra kontroller, bıçak, hasar geri bildirimi, skin sistemi ve harita yeniden tasarımını uygula.
+
+Oyun oynanabilirliğini, haritaların gerçekten farklı görünmesini, sunucu doğrulamasını ve performansı önceliklendir.
+
+Her aşamada mevcut çalışan sistemleri koru ve mümkün olan testleri yap.
+
+Bir çalışma oturumunda bütün işi bitiremezsen çalışan, doğrulanmış ilerlemeyi ayrı commit'lerde koru ve hangi gereksinimlerin kaldığını açıkça bildir. Tamamlanmamış özellikleri başarılı sayma.
+
+En sonunda:
+- Düzeltilen kritik hataları.
+- Uygulanan yeni özellikleri.
+- Yeniden tasarlanan haritaları.
+- Değiştirilen önemli dosyaları.
+- Gerçekten çalıştırılan testleri.
+- Test sonuçlarını.
+- Varsa henüz giderilemeyen sorunları.
+
+Açık ve somut biçimde raporla.
+
+**NİHAİ HEDEF: KapsApp içinde gerçekten çalışan, arkadaşlarla oynanabilen, özgün şehir haritaları olan, akıcı, kaliteli ve güvenilir bir 3D multiplayer FPS deneyimi.**
