@@ -58,6 +58,7 @@ export interface MultiplayerOptions {
   username?: string;
   team?: StrikeTeam;
   isMultiplayer?: boolean;
+  onSynchronized?: () => void;
   onScoreboardToggle?: (open: boolean) => void;
   onPttChange?: (active: boolean) => void;
 }
@@ -79,6 +80,7 @@ export class StrikeController {
   private ignoreInitialMouseMove = false;
   private pendingReload = false;
   private pendingWeapon?: WeaponId;
+  private lastWheel = -Infinity;
   private yaw = 0;
   private pitch = 0;
   private sequence = 0;
@@ -320,12 +322,14 @@ export class StrikeController {
       canvas,
       "wheel",
       ((e: WheelEvent) => {
-        if (!this.active) return;
+        if (!this.active || (!this.isTouchDevice && document.pointerLockElement !== canvas)) return;
         e.preventDefault();
+        if (e.deltaY === 0 || performance.now() - this.lastWheel < 140) return;
+        this.lastWheel = performance.now();
         const id = this.pendingWeapon || this.state.player.weapon.selected;
         this.pendingWeapon =
           WEAPON_ORDER[
-            (WEAPON_ORDER.indexOf(id) + (e.deltaY > 0 ? 1 : -1) + 5) % 5
+            (WEAPON_ORDER.indexOf(id) + (e.deltaY > 0 ? 1 : -1) + WEAPON_ORDER.length) % WEAPON_ORDER.length
           ];
       }) as EventListener,
       { passive: false }
@@ -333,16 +337,22 @@ export class StrikeController {
 
     // Setup Multiplayer Socket Handlers
     if (this.isMultiplayer && this.socket) {
-      this.setupMultiplayerSocket(this.socket);
+      this.setupMultiplayerSocket(this.socket, mpOptions?.onSynchronized);
     }
 
     this.pushHUD();
   }
 
-  private setupMultiplayerSocket(socket: Socket) {
+  private setupMultiplayerSocket(socket: Socket, onSynchronized?: () => void) {
+    const disconnected = () => this.pause("Bağlantı kesildi. Menüye dönüp odaya yeniden katılabilirsin.");
+    socket.on("disconnect", disconnected);
+    this.removers.push(() => socket.off("disconnect", disconnected));
+    let synchronized = false;
+    let lastSnapshotTick = -1;
     // 1. Authoritative Server Snapshot Handler
     const handleSnapshot = (snapshot: StrikeSnapshot) => {
-      if (!snapshot || !Array.isArray(snapshot.players)) return;
+      if (!snapshot || !Array.isArray(snapshot.players) || snapshot.tick <= lastSnapshotTick) return;
+      lastSnapshotTick = snapshot.tick;
 
       if (snapshot.teamScores) {
         this.teamScores = snapshot.teamScores;
@@ -372,6 +382,10 @@ export class StrikeController {
       );
 
       if (myServerState) {
+        if (!synchronized) {
+          synchronized = true;
+          onSynchronized?.();
+        }
         this.state.player.hp = myServerState.hp;
         this.state.score = myServerState.score;
         this.state.player.deadUntil = myServerState.deadUntil;
@@ -384,29 +398,27 @@ export class StrikeController {
           (cmd) => cmd.sequence > ackSeq
         );
 
-        // Server reconciliation: if predicted position differs significantly, reconcile
-        const currentPos = this.state.player.movement.position;
-        const srvPos = myServerState.position;
-        const distSq =
-          (currentPos.x - srvPos.x) ** 2 +
-          (currentPos.y - srvPos.y) ** 2 +
-          (currentPos.z - srvPos.z) ** 2;
-
-        if (distSq > 0.04) {
-          // Snap to authoritative server position & replay remaining unacknowledged inputs
-          this.state.player.movement.position = { ...srvPos };
-          this.state.player.movement.velocity = { ...myServerState.velocity };
-          const mapDef = MAPS[this.state.map];
+        // Restore all authoritative timers/stance/weapon state, then replay only
+        // unacknowledged commands. Replaying with the old lastSequence rejects every input.
+        if (snapshot.localState) {
+          this.state.player = structuredClone(snapshot.localState);
+          this.state.tick = snapshot.tick;
+          this.state.lastSequence = ackSeq;
           for (const cmd of this.unacknowledgedInputs) {
-            simulate(this.state, cmd);
+            if (this.state.player.hp > 0) simulate(this.state, cmd, !this.isMultiplayer);
           }
+          this.previous = { ...this.state.player.movement.position };
+        } else {
+          this.state.player.movement.position = { ...myServerState.position };
+          this.state.player.movement.velocity = { ...myServerState.velocity };
         }
+
       }
 
       // Process Combat Events from Server (Remote shots, hits, etc.)
       if (Array.isArray(snapshot.events)) {
         const unseenEvents = snapshot.events.filter((e) => e.id > this.processed);
-        this.renderer.process(unseenEvents);
+        this.renderer.process(unseenEvents, this.state.player.id);
         for (const e of unseenEvents) {
           this.feedback(e);
         }
@@ -467,10 +479,11 @@ export class StrikeController {
         };
 
         // Client prediction: simulate locally
-        simulate(this.state, cmd);
+        if (!this.isMultiplayer || this.state.player.hp > 0) simulate(this.state, cmd, !this.isMultiplayer);
 
         if (this.isMultiplayer && this.socket) {
           this.unacknowledgedInputs.push({ ...cmd });
+          if (this.unacknowledgedInputs.length > 240) this.unacknowledgedInputs.shift();
           this.socket.emit("strike:input", cmd);
         }
 
@@ -578,6 +591,7 @@ export class StrikeController {
 
   private feedback(e: CombatEvent) {
     this.processed = e.id;
+    if (this.isMultiplayer && e.actor !== this.state.player.id && e.kind !== "shot") return;
     if (e.kind === "shot") {
       if (e.tick === this.lastShotTick) return;
       this.lastShotTick = e.tick;
@@ -590,7 +604,8 @@ export class StrikeController {
       )
         return;
       this.audio.play(e.weapon!);
-      this.pitch = clamp(this.pitch - WEAPONS[e.weapon!].recoil, -1.48, 1.48);
+      if (!this.isMultiplayer || e.actor === this.state.player.id)
+        this.pitch = clamp(this.pitch - WEAPONS[e.weapon!].recoil, -1.48, 1.48);
     }
     if (e.kind === "hit") {
       const sameShot = this.lastHit?.until === e.tick + 36;
@@ -666,10 +681,16 @@ export class StrikeController {
     this.pendingWeapon = undefined;
     this.scoreboardOpen = false;
     this.pttActive = false;
+    this.touchMoveX = this.touchMoveZ = 0;
+    this.touchFire = this.touchAds = this.touchJump = this.touchCrouch = this.touchSprint = false;
   }
 
-  start() {
+  start(capturePointer = true) {
     if (this.disposed) return;
+    if (this.isMultiplayer && !this.socket?.connected) {
+      this.onPause("Sunucu bağlantısı yok. Menüden odaya yeniden katıl.");
+      return;
+    }
     this.ignoreInitialMouseMove = true;
     this.canvas.focus();
     this.audio.unlock();
@@ -677,7 +698,7 @@ export class StrikeController {
     this.accumulator = 0;
     this.active = true;
     try {
-      if (!this.isTouchDevice && "requestPointerLock" in this.canvas) {
+      if (capturePointer && !this.isTouchDevice && "requestPointerLock" in this.canvas) {
         const promise = this.canvas.requestPointerLock();
         if (promise) {
           promise.catch(() => {});

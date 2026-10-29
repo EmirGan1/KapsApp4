@@ -180,6 +180,7 @@ export interface PlayerSnapshot {
 }
 
 export interface StrikeSnapshot {
+  localState?: PlayerState;
   tick: number;
   serverTime: number;
   ackSequence: number; // Acknowledged input sequence for the recipient client

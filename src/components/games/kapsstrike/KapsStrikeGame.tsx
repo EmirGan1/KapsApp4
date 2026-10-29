@@ -48,6 +48,11 @@ export default function KapsStrikeGame({
   const game = useRef<StrikeController | null>(null);
   const voice = useRef<StrikeVoiceManager | null>(null);
 
+  const activeRoom = useRef<string | null>(null);
+  const launch = useRef<(room: StrikeRoomState) => void>(() => {});
+  const loadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [loadStage, setLoadStage] = useState("");
+
   // General state
   const [modeTab, setModeTab] = useState<"multiplayer" | "training">("multiplayer");
   const [map, setMap] = useState<MapId>("warehouse");
@@ -60,7 +65,7 @@ export default function KapsStrikeGame({
       return { ...DEFAULT_SETTINGS };
     }
   });
-  const [view, setView] = useState<"menu" | "lobby" | "play" | "pause" | "match_end">("menu");
+  const [view, setView] = useState<"menu" | "lobby" | "loading" | "play" | "pause" | "match_end">("menu");
   const [panel, setPanel] = useState<"settings" | "controls" | "create_room" | null>(null);
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
@@ -135,6 +140,8 @@ export default function KapsStrikeGame({
     probe?.getExtension("WEBGL_lose_context")?.loseContext();
 
     return () => {
+      clearTimeout(loadTimer.current);
+      activeRoom.current = null;
       game.current?.dispose();
       game.current = null;
       voice.current?.dispose();
@@ -182,9 +189,9 @@ export default function KapsStrikeGame({
 
     const onRoomState = (state: StrikeRoomState) => {
       updateCurrentRoom(state);
-      if (state.status === "in_progress" && view === "lobby") {
-        startMultiplayerGame(state);
-      } else if (view === "menu") {
+      if (state.status === "in_progress") {
+        launch.current(state);
+      } else if (state.status === "lobby" && !game.current) {
         setView("lobby");
       }
     };
@@ -195,25 +202,29 @@ export default function KapsStrikeGame({
         if (data.roomCode) {
           updateCurrentRoom(data);
         }
-        startMultiplayerGame(data);
+        launch.current(data);
       }
     };
 
     const onMatchReset = (state: StrikeRoomState) => {
       updateCurrentRoom(state);
+      activeRoom.current = null;
+      clearTimeout(loadTimer.current);
       game.current?.dispose();
       game.current = null;
       setView("lobby");
     };
 
     const onKill = (kill: KillFeedEntry) => {
-      setKillFeed((prev) => [kill, ...prev].slice(0, 6));
+      setKillFeed((prev) => [kill, ...prev.filter(k => k.id !== kill.id)].slice(0, 6));
       setTimeout(() => {
         setKillFeed((prev) => prev.filter((k) => k.id !== kill.id));
       }, 5000);
     };
 
     const onMatchEnded = (payload: any) => {
+      activeRoom.current = null;
+      clearTimeout(loadTimer.current);
       let stats: MatchStats;
       if (payload && Array.isArray(payload.players)) {
         const roomState = payload as StrikeRoomState;
@@ -296,7 +307,7 @@ export default function KapsStrikeGame({
       socket.off("strike:game_over", onMatchEnded);
       socket.off("strike:error", onError);
     };
-  }, [socket, view, targetRoomId, refreshRooms]);
+  }, [socket, currentUserId, targetRoomId, refreshRooms]);
 
   // Launch Local Offline Training
   const startTraining = () => {
@@ -331,6 +342,20 @@ export default function KapsStrikeGame({
 
   // Launch Online Multiplayer Match
   const startMultiplayerGame = (roomOrMap?: any) => {
+    const code = roomOrMap?.roomCode || currentRoomRef.current?.roomCode;
+    if (!code || activeRoom.current === code) return;
+    activeRoom.current = code;
+    setView("loading");
+    setLoadStage("Harita yükleniyor…");
+    clearTimeout(loadTimer.current);
+    loadTimer.current = setTimeout(() => {
+      if (activeRoom.current !== code) return;
+      activeRoom.current = null;
+      game.current?.dispose();
+      game.current = null;
+      setView("lobby");
+      setError("Oyun durumu 12 saniyede alınamadı. Bağlantını kontrol edip yeniden deneyebilirsin.");
+    }, 12000);
     setPanel(null);
     setError("");
     try {
@@ -361,6 +386,7 @@ export default function KapsStrikeGame({
         settings,
         setHUD,
         (reason) => {
+          setView("pause");
           if (reason) setError(reason);
         },
         undefined,
@@ -371,12 +397,16 @@ export default function KapsStrikeGame({
           username,
           team: myTeam,
           isMultiplayer: true,
+          onSynchronized: () => {
+            clearTimeout(loadTimer.current);
+            setView(game.current?.isTouchDevice ? "play" : "pause");
+          },
           onScoreboardToggle: (open) => setScoreboardOpen(open),
           onPttChange: (active) => voice.current?.setPttActive(active),
         }
       );
-      setView("play");
-      game.current.start();
+      setLoadStage("Oyun durumu senkronize ediliyor…");
+      game.current.start(false);
 
       // Connect voice room with other players
       if (voice.current && targetRoom) {
@@ -388,10 +418,14 @@ export default function KapsStrikeGame({
     } catch (e) {
       game.current?.dispose();
       game.current = null;
+      clearTimeout(loadTimer.current);
+      activeRoom.current = null;
       setView("lobby");
       setError(e instanceof Error ? e.message : "Oyun başlatılamadı.");
     }
   };
+
+  launch.current = startMultiplayerGame;
 
   const resume = () => {
     setError("");
@@ -401,6 +435,8 @@ export default function KapsStrikeGame({
   };
 
   const exit = () => {
+    activeRoom.current = null;
+    clearTimeout(loadTimer.current);
     game.current?.dispose();
     game.current = null;
     voice.current?.leaveVoice();
@@ -572,11 +608,7 @@ export default function KapsStrikeGame({
         setError(res.error);
       }
     });
-    socket.emit("strike:start_match", (res?: { success: boolean; error?: string }) => {
-      if (res && !res.success && res.error) {
-        setError(res.error);
-      }
-    });
+
   };
 
   const returnToLobbyAsHost = () => {
@@ -627,6 +659,15 @@ export default function KapsStrikeGame({
         aria-label="KapsStrike 3D oyun alanı"
         tabIndex={-1}
       />
+
+      {view === "loading" && (
+        <div className="ks-overlay" role="status">
+          <div className="ks-menu"><h2>Maç hazırlanıyor</h2><p>{loadStage}</p>
+            <button onClick={exit}>Lobiye / menüye dön</button>
+          </div>
+        </div>
+      )}
+      {error && view !== "menu" && <p className="ks-network-error" role="alert">{error}</p>}
 
       {/* MOBILE PORTRAIT ORIENTATION BANNER */}
       {view === "play" && isMobile && isPortrait && (
@@ -1125,6 +1166,9 @@ export default function KapsStrikeGame({
         </div>
       )}
 
+      {view === "lobby" && error && currentRoom?.status === "in_progress" && (
+        <button className="ks-retry" onClick={() => startMultiplayerGame(currentRoom)}>Maça yeniden bağlan</button>
+      )}
       {/* ROOM LOBBY VIEW */}
       {view === "lobby" && currentRoom && (
         <div className="ks-overlay">
@@ -1799,7 +1843,7 @@ export default function KapsStrikeGame({
           <div className="ks-menu">
             <div className="ks-paused">
               <h2>Duraklatıldı</h2>
-              <p>Simülasyon ve kontroller durduruldu.</p>
+              <p>{game.current?.isMultiplayer ? "Maç devam ediyor. Kontrolü almak için Oyuna dön düğmesine bas." : "Simülasyon ve kontroller durduruldu."}</p>
               <div className="flex gap-3">
                 <button className="ks-primary" onClick={resume}>
                   Oyuna dön

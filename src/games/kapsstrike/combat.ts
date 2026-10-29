@@ -197,7 +197,7 @@ export function shoot(s: TrainingState, ads: boolean) {
   }
   return true;
 }
-export function simulate(s: TrainingState, input: InputCommand) {
+export function simulate(s: TrainingState, input: InputCommand, training = true) {
   if (
     !input ||
     !Number.isSafeInteger(input.sequence) ||
@@ -223,7 +223,7 @@ export function simulate(s: TrainingState, input: InputCommand) {
   const p = s.player,
     w = p.weapon;
   if (p.hp <= 0) {
-    if (s.tick >= p.deadUntil) {
+    if (training && s.tick >= p.deadUntil) {
       const score = s.score,
         damage = s.damage,
         serial = s.eventId,
@@ -283,11 +283,11 @@ export function simulate(s: TrainingState, input: InputCommand) {
   const hazard = MAPS[s.map].hazard,
     pos = p.movement.position;
   if (
-    Math.hypot(pos.x - hazard.x, pos.z - hazard.z) < hazard.r &&
+    training && Math.hypot(pos.x - hazard.x, pos.z - hazard.z) < hazard.r &&
     s.tick % 30 === 0
   )
     takeDamage(s, 12, { x: hazard.x, y: 0, z: hazard.z });
-  if (s.returnFire && s.tick % 120 === 0) {
+  if (training && s.returnFire && s.tick % 120 === 0) {
     const t = s.targets.find(
       (t) =>
         t.hp > 0 && Math.hypot(t.position.x - pos.x, t.position.z - pos.z) < 35,

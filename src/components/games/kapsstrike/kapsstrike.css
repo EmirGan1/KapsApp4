@@ -968,3 +968,7 @@
   pointer-events: auto;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
+
+.ks-network-error { position:absolute;top:12px;left:5%;right:5%;z-index:60;background:#451a1a;color:#fecaca;padding:12px;border-radius:8px; }
+
+.ks-retry { position:absolute; top:75px; left:5%; z-index:61; }

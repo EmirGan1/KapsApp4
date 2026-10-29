@@ -235,16 +235,18 @@ try {
     });
     await page.goto("http://127.0.0.1:4191/__strike");
     await page.getByRole("button", { name: "Ayarlar", exact: true }).click();
-    await page.getByLabel("Grafik kalitesi").selectOption("medium");
-    await page.getByRole("button", { name: "Geri", exact: true }).click();
+    await page.getByLabel(/Grafik Kalitesi/).selectOption("medium");
+    await page.getByRole("button", { name: "Kaydet ve Dön", exact: true }).click();
+    await page.getByRole("button", { name: /Tek Oyunculu Antrenman/ }).click();
     await page
-      .getByRole("button", { name: "Antrenmanı başlat", exact: true })
+      .getByRole("button", { name: "Antrenmanı Başlat", exact: true })
       .click();
     await page.waitForFunction(() => document.pointerLockElement !== null);
     await page.waitForSelector(".ks-hud");
     await page.waitForTimeout(300);
     await page.screenshot({ path: "/tmp/kapsstrike-ui.png" });
     await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Menüye dön", exact: true }).click();
     await page
       .getByRole("button", { name: "Oyundan çık", exact: true })
       .click();

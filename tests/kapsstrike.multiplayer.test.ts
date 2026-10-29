@@ -567,3 +567,39 @@ test("KapsStrikeServerManager - Dual event compatibility and payload flexibility
   manager.leaveRoom("mock-sock-user-21", 21);
 });
 
+
+test("duplicate start aliases preserve the active round and scores", () => {
+  const manager = new KapsStrikeServerManager(createMockIo() as any);
+  const room = manager.createRoom({id:1,username:"Host",avatar:null},"host",{mode:"ffa"});
+  manager.startGame("host");
+  manager.stopRoomSimulationLoop(room);
+  room.tick = 42;
+  room.players.get("host")!.score = 123;
+  assert.equal(manager.startGame("host").success,true);
+  assert.equal(room.tick,42);
+  assert.equal(room.players.get("host")!.score,123);
+  manager.stopRoomSimulationLoop(room);
+  manager.leaveRoom("host",1);
+});
+
+test("queued duplicates, invalid weapons and flood cannot buy extra simulation steps", () => {
+  const manager = new KapsStrikeServerManager(createMockIo() as any);
+  const room = manager.createRoom({id:1,username:"Host",avatar:null},"host",{mode:"ffa"});
+  manager.startGame("host"); manager.stopRoomSimulationLoop(room);
+  const p = room.players.get("host")!;
+  const command: InputCommand={sequence:1,tick:0,moveX:1,moveZ:0,yaw:0,pitch:0,jump:false,sprint:true,crouch:false,fire:false,ads:false,reload:false};
+  manager.processPlayerInput("host",command);
+  manager.processPlayerInput("host",command);
+  assert.equal(p.inputQueue.length,1);
+  manager.processPlayerInput("host",{...command,sequence:2,weapon:"__proto__" as any});
+  manager.processPlayerInput("host",{...command,sequence:2,moveX:100});
+  assert.equal(p.inputQueue.length,1);
+  for(let i=2;i<2000;i++) manager.processPlayerInput("host",{...command,sequence:i});
+  assert.equal(p.inputQueue.length,24);
+  const start={...p.state.movement.position};
+  manager.tickSimulation(room);
+  assert.equal(p.lastSequence,1);
+  assert.equal(p.inputQueue.length,23);
+  assert.ok(Math.hypot(p.state.movement.position.x-start.x,p.state.movement.position.z-start.z)<=13/120);
+  manager.leaveRoom("host",1);
+});

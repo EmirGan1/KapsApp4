@@ -34,7 +34,7 @@ export interface StrikeServerConfig {
 export const SERVER_CONFIG: StrikeServerConfig = {
   tickRate: 60,
   snapshotRate: 30,
-  maxLagCompTicks: 30,
+  maxLagCompTicks: 60,
 };
 
 interface HistoricalPosition {
@@ -65,6 +65,7 @@ export class StrikeServerPlayer {
   ping = 0;
   lastPingTime = 0;
   lastSequence = -1;
+  lastQueuedSequence = -1;
   lastInputTick = 0;
   inputQueue: InputCommand[] = [];
   history: HistoricalPosition[] = [];
@@ -290,6 +291,7 @@ export class StrikeRoom {
 
     return {
       tick: this.tick,
+      localState: targetPlayer ? structuredClone(targetPlayer.state) : undefined,
       serverTime: Date.now(),
       ackSequence,
       players: playerSnapshots,
@@ -629,6 +631,8 @@ export class KapsStrikeServerManager {
       return { success: false, error: "Odada en az 1 oyuncu olmalıdır." };
     }
 
+    // Both supported event aliases must never reset an already running round.
+    if (room.status === "in_progress") return { success: true };
     room.status = "in_progress";
     room.timeLeft = room.timeLimit;
     room.teamScores = { red: 0, blue: 0 };
@@ -646,6 +650,7 @@ export class KapsStrikeServerManager {
       p.damage = 0;
       p.headshots = 0;
       p.lastSequence = -1;
+      p.lastQueuedSequence = -1;
       p.inputQueue = [];
       p.history = [];
 
@@ -706,7 +711,11 @@ export class KapsStrikeServerManager {
     if (
       !command ||
       !Number.isSafeInteger(command.sequence) ||
-      command.sequence <= player.lastSequence ||
+      command.sequence < 0 ||
+      command.sequence <= Math.max(player.lastSequence, player.lastQueuedSequence) ||
+      !Number.isSafeInteger(command.tick) || command.tick < 0 ||
+      Math.abs(command.moveX) > 1 || Math.abs(command.moveZ) > 1 ||
+      (command.weapon !== undefined && !WEAPON_ORDER.includes(command.weapon)) ||
       ![command.yaw, command.pitch, command.moveX, command.moveZ].every(Number.isFinite) ||
       [command.jump, command.sprint, command.crouch, command.fire, command.ads, command.reload].some(
         (v) => typeof v !== "boolean"
@@ -716,11 +725,13 @@ export class KapsStrikeServerManager {
     }
 
     // Cap input queue to prevent packet flooding/replay abuse
-    if (player.inputQueue.length > 20) {
-      player.inputQueue.shift();
-    }
-
-    player.inputQueue.push(command);
+    if (player.inputQueue.length >= 24) return;
+    player.lastQueuedSequence = command.sequence;
+    // Whitelist fields; never retain arbitrary objects supplied by clients.
+    player.inputQueue.push({ sequence:command.sequence, tick:command.tick,
+      yaw:command.yaw, pitch:command.pitch, moveX:command.moveX, moveZ:command.moveZ,
+      jump:command.jump, sprint:command.sprint, crouch:command.crouch,
+      fire:command.fire, ads:command.ads, reload:command.reload, weapon:command.weapon });
   }
 
   /**
@@ -761,9 +772,14 @@ export class KapsStrikeServerManager {
       }
 
       // Process queued inputs
-      while (player.inputQueue.length > 0) {
-        const input = player.inputQueue.shift()!;
-        player.lastSequence = input.sequence;
+      {
+        // One command per fixed physics step: packet volume cannot buy movement time.
+        const queued = player.inputQueue.shift();
+        const input: InputCommand = queued || { sequence:player.lastSequence, tick:room.tick,
+          yaw:player.state.yaw, pitch:player.state.pitch, moveX:0, moveZ:0,
+          jump:player.state.movement.jumpHeld,sprint:false,crouch:player.state.movement.stance !== "stand",
+          fire:false,ads:false,reload:false };
+        if (queued) player.lastSequence = input.sequence;
         player.lastInputTick = room.tick;
 
         player.state.yaw = input.yaw;
@@ -771,9 +787,10 @@ export class KapsStrikeServerManager {
 
         // Handle weapon switch request
         if (input.weapon && input.weapon !== player.state.weapon.selected) {
-          if (room.tick >= player.state.weapon.switchUntil && !player.state.weapon.reloadUntil) {
+          if (room.tick >= player.state.weapon.switchUntil) {
+            player.state.weapon.reloadUntil = 0;
             player.state.weapon.selected = input.weapon;
-            player.state.weapon.switchUntil = room.tick + 15;
+            player.state.weapon.switchUntil = room.tick + 24;
           }
         }
 
@@ -798,17 +815,18 @@ export class KapsStrikeServerManager {
         }
 
         // Apply movement physics using authored map geometry
-        move(player.state.movement, input, mapDef, room.tick);
+        move(player.state.movement, { ...input, weapon:curWeapon }, mapDef, room.tick);
 
         // Authoritative Shoot verification & Lag Compensation
-        if (input.fire) {
+        if (input.fire && (wDef.automatic || !player.state.weapon.triggerHeld)) {
           this.verifyAndExecuteShot(room, player, input.ads, input.tick);
         }
+        if (queued) player.state.weapon.triggerHeld = input.fire;
       }
     });
 
     // 2. Broadcast snapshots at snapshotRate (30 Hz)
-    if (room.tick % 2 === 0) {
+    if (room.tick % Math.round(1 / C.dt / SERVER_CONFIG.snapshotRate) === 0) {
       room.players.forEach((p) => {
         const snapshot = room.getSnapshotForPlayer(p.id);
         this.io.to(p.id).emit("strike:snapshot", snapshot);
@@ -819,7 +837,7 @@ export class KapsStrikeServerManager {
     }
 
     // 3. Match Timer Countdown & Win Condition Checks (Every second = 60 ticks)
-    if (room.tick % SERVER_CONFIG.tickRate === 0) {
+    if (room.tick % Math.round(1 / C.dt) === 0) {
       room.timeLeft = Math.max(0, room.timeLeft - 1);
       this.checkMatchEndConditions(room);
     }
@@ -832,7 +850,8 @@ export class KapsStrikeServerManager {
 
     room.loopInterval = setInterval(() => {
       try {
-        this.tickSimulation(room);
+        // 60 network callbacks/s, two shared 120 Hz physics steps per callback.
+        for (let i = 0; i < Math.round(1 / C.dt / SERVER_CONFIG.tickRate); i++) this.tickSimulation(room);
       } catch (err) {
         console.error(`[Strike Simulation Error in room ${room.roomCode}]:`, err);
       }
@@ -873,7 +892,7 @@ export class KapsStrikeServerManager {
 
     // Deduct ammo & enforce RPM fire cooldown
     wState.ammo[weaponId]--;
-    const rpmCooldownTicks = Math.max(1, Math.round((60 / def.rpm) * SERVER_CONFIG.tickRate));
+    const rpmCooldownTicks = Math.max(1, Math.ceil(60 / def.rpm / C.dt));
     wState.nextFire = room.tick + rpmCooldownTicks;
     wState.shotIndex++;
 
@@ -928,7 +947,9 @@ export class KapsStrikeServerManager {
         const pos = hist.position;
 
         for (const region of ["body", "head"] as const) {
-          const { radius: r, min: low, max: high } = TARGET_HITBOXES[region];
+          const { radius: r, min: rawLow, max: rawHigh } = TARGET_HITBOXES[region];
+          const offset = C.standing - hist.height;
+          const low = Math.max(0.08, rawLow - offset), high = rawHigh - offset;
           const dist = rayBox(
             origin,
             dir,

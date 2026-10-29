@@ -401,12 +401,12 @@ export class StrikeRenderer {
     this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.scale));
     this.engine.resize();
   }
-  process(events: CombatEvent[]) {
+  process(events: CombatEvent[], localActor?: string) {
     for (const e of events) {
       if (e.id <= this.lastEvent) continue;
       this.lastEvent = e.id;
       if (e.kind === "shot" && e.from && e.to) {
-        this.gunKick = 0.06;
+        if (!localActor || e.actor === localActor) this.gunKick = 0.06;
         const item = this.tracerPool[this.poolIndex % 48],
           impact = this.impactPool[this.poolIndex++ % 48];
         const positions = new Float32Array([
@@ -427,9 +427,9 @@ export class StrikeRenderer {
         impact.mesh.position.set(e.to.x, e.to.y, e.to.z);
         impact.mesh.setEnabled(true);
         impact.until = e.tick + 12;
-        this.muzzle.setEnabled(true);
+        if (!localActor || e.actor === localActor) this.muzzle.setEnabled(true);
       }
-      if (e.kind === "reload") this.reloadAt = e.tick;
+      if (e.kind === "reload" && (!localActor || e.actor === localActor)) this.reloadAt = e.tick;
     }
   }
   render(
@@ -486,6 +486,9 @@ export class StrikeRenderer {
     this.gunRoot.scaling.setAll(ads ? 0.85 : 1);
     for (const [id, mesh] of this.weapons)
       mesh.setEnabled(id === p.weapon.selected);
+    for (const [id, target] of this.targetMeshes) {
+      if (!state.targets.some(t => t.id === id)) target.root.setEnabled(false);
+    }
     if (state.targets) {
       for (const t of state.targets) {
         const mesh = this.targetMeshes.get(t.id);
@@ -605,9 +608,12 @@ export class StrikeRenderer {
         item.head.rotation.x = p.pitch;
 
         const isCrouch = p.stance === "crouch" || p.stance === "slide";
-        item.body.scaling.y = isCrouch ? 0.75 : 1;
-        item.body.position.y = isCrouch ? 0.65 : (TARGET_HITBOXES.body.min + TARGET_HITBOXES.body.max) / 2;
-        item.head.position.y = isCrouch ? 1.2 : (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2;
+        const offset = isCrouch ? C.standing - C.crouching : 0;
+        const low = Math.max(0.08, TARGET_HITBOXES.body.min - offset);
+        const high = TARGET_HITBOXES.body.max - offset;
+        item.body.scaling.y = (high - low) / (TARGET_HITBOXES.body.max - TARGET_HITBOXES.body.min);
+        item.body.position.y = (low + high) / 2;
+        item.head.position.y = (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2 - offset;
       }
     }
 

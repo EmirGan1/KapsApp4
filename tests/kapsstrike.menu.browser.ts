@@ -46,18 +46,19 @@ try {
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("http://127.0.0.1:4192/__strike-menu");
     await page
-      .getByText("Bu oyun WebGL ve fare kilidi", { exact: false })
+      .getByText("Bu oyun WebGL destekli", { exact: false })
       .waitFor();
+    await page.getByRole("button", { name: /Tek Oyunculu Antrenman/ }).click();
     assert.ok(
       await page
-        .getByRole("button", { name: "Antrenmanı başlat", exact: true })
+        .getByRole("button", { name: "Antrenmanı Başlat", exact: true })
         .isDisabled(),
     );
     await page
       .getByRole("button", { name: "Neon Arena", exact: false })
       .click();
     await page.getByRole("button", { name: "Ayarlar", exact: true }).click();
-    await page.getByLabel("Grafik kalitesi").selectOption("high");
+    await page.getByLabel(/Grafik Kalitesi/).selectOption("high");
     await page.getByLabel("FOV", { exact: false }).fill("105");
     assert.equal(
       await page.getByLabel("FOV", { exact: false }).inputValue(),

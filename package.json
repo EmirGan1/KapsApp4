@@ -22,7 +22,8 @@
     "test:strike": "node --import tsx --test tests/kapsstrike.test.ts tests/kapsstrike.scene.test.ts tests/kapsstrike.multiplayer.test.ts",
     "test:strike:browser": "node --import tsx tests/kapsstrike.browser.ts",
     "test:strike:menu": "node --import tsx tests/kapsstrike.menu.browser.ts",
-    "test:strike:controller": "node --import tsx tests/kapsstrike.browser.ts --null"
+    "test:strike:controller": "node --import tsx tests/kapsstrike.browser.ts --null",
+    "test:strike:network": "node --import tsx tests/kapsstrike.network.browser.ts"
   },
   "dependencies": {
     "@babylonjs/core": "8.50.2",
