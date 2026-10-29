@@ -1,3 +1,6 @@
+import {currentInputDevice} from '../utils/gameInput';
+import {useGameGyroscope} from '../hooks/useGameGyroscope';
+import {GYRO_STATUS} from '../utils/gameGyroscope';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -215,57 +218,16 @@ export default function MiniBattleRoyale({
   const [createMode, setCreateMode] = useState<'royale' | 'deathmatch'>('deathmatch');
   const [createDuration, setCreateDuration] = useState<number>(180); // 180s = 3 minutes
 
-  // Helper: Detect tablet devices (iPad, iPad Pro, Android tablets, Kindle, etc.)
-  const isTabletDevice = useCallback((): boolean => {
-    if (typeof window === 'undefined') return false;
-    const ua = navigator.userAgent || '';
-    const isIPad = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || /iPad/i.test(ua);
-    const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
-    const isTabletUA = isIPad || isAndroidTablet || /Tablet|PlayBook|Silk|Kindle/i.test(ua);
-    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    const isCoarse = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    return hasTouch && (isTabletUA || isCoarse || (window.innerWidth >= 600 && window.innerWidth <= 1440));
-  }, []);
-
-  // Helper: Detect mobile or tablet device to default to touch controls
-  const isMobileOrTabletDevice = useCallback((): boolean => {
-    if (typeof window === 'undefined') return false;
-    const ua = navigator.userAgent || '';
-    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    const isIPad = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || /iPad/i.test(ua);
-    const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
-    const isMobileOrTabletUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Tablet|Silk|Kindle/i.test(ua) || isIPad || isAndroidTablet;
-    const isCoarse = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    return hasTouch && (isMobileOrTabletUA || isCoarse || window.innerWidth <= 1440);
-  }, []);
-
-  // Control Mode: 'touch' (Virtual Joystick) vs 'desktop' (WASD + Arrows/Mouse)
-  // Tablets & Mobile devices default to 'touch' automatically, with explicit switch to 'desktop'
-  const [controlMode, setControlMode] = useState<'touch' | 'desktop'>(() => {
-    try {
-      const saved = localStorage.getItem('kaps_br_control_mode');
-      if (saved === 'touch' || saved === 'desktop') return saved;
-    } catch {}
-    if (typeof window !== 'undefined') {
-      const ua = navigator.userAgent || '';
-      const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-      const isIPad = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || /iPad/i.test(ua);
-      const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
-      const isMobileOrTabletUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Tablet|Silk|Kindle/i.test(ua) || isIPad || isAndroidTablet;
-      const isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-      if (hasTouch && (isMobileOrTabletUA || isCoarse || window.innerWidth <= 1440)) {
-        return 'touch';
-      }
-    }
-    return 'desktop';
+  const isTabletDevice = useCallback(()=>currentInputDevice().tablet,[]);
+  const [controlMode,setControlMode]=useState<'touch'|'desktop'>(()=>{
+    try{const saved=localStorage.getItem('kaps_br_control_mode_v2');if(saved==='touch'||saved==='desktop')return saved;}catch{}
+    return currentInputDevice().touch?'touch':'desktop';
   });
-
-  const handleToggleControlMode = (mode?: 'touch' | 'desktop') => {
-    setControlMode(prev => {
-      const next = mode ?? (prev === 'touch' ? 'desktop' : 'touch');
-      try { localStorage.setItem('kaps_br_control_mode', next); } catch {}
-      return next;
-    });
+  const handleToggleControlMode=(mode?:'touch'|'desktop')=>{
+    const next=mode??(controlMode==='touch'?'desktop':'touch');
+    setControlMode(next);
+    try{localStorage.setItem('kaps_br_control_mode_v2',next);}catch{}
+    moveTouchIdRef.current=null;aimTouchIdRef.current=null;touchMoveOrigin.current=null;touchMoveCurrent.current=null;touchAimOrigin.current=null;touchAimCurrent.current=null;isTouchFiring.current=false;touchAimAngleRef.current=null;
   };
 
   // Gyroscope Aiming Mode (Tablets & Mobile / iOS & Android)
@@ -278,7 +240,7 @@ export default function MiniBattleRoyale({
   const [gyroSensitivity, setGyroSensitivity] = useState<number>(() => {
     try {
       const s = localStorage.getItem('kaps_br_gyro_sens');
-      if (s) return parseFloat(s);
+      if (s && Number.isFinite(Number(s))) return Math.max(.005,Math.min(.1,Number(s)));
     } catch {}
     return 0.024; // Smooth, responsive default for tablets & phones
   });
@@ -288,54 +250,21 @@ export default function MiniBattleRoyale({
     } catch {}
     return false;
   });
-  const [gyroPermissionStatus, setGyroPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
   const [gyroLiveReadout, setGyroLiveReadout] = useState<{ alpha: number; beta: number; gamma: number; active: boolean }>({
     alpha: 0,
     beta: 0,
     gamma: 0,
     active: false
   });
-  const lastGyroData = useRef<{ alpha: number | null; beta: number | null; gamma: number | null }>({ alpha: null, beta: null, gamma: null });
   const [showCalibrationModal, setShowCalibrationModal] = useState<boolean>(false);
 
-  // Enable / Disable Gyroscope with iOS 13+ DeviceOrientation permission handling
-  const enableGyroscope = async () => {
-    if (isGyroEnabled) {
-      setIsGyroEnabled(false);
-      try { localStorage.setItem('kaps_br_gyro_enabled', 'false'); } catch {}
-      return;
-    }
-
-    const DeviceOrientationEventAny = typeof window !== 'undefined' ? (window as any).DeviceOrientationEvent : undefined;
-    if (typeof DeviceOrientationEventAny !== 'undefined' && typeof DeviceOrientationEventAny.requestPermission === 'function') {
-      try {
-        const permission = await DeviceOrientationEventAny.requestPermission();
-        if (permission === 'granted') {
-          setGyroPermissionStatus('granted');
-          setIsGyroEnabled(true);
-          try { localStorage.setItem('kaps_br_gyro_enabled', 'true'); } catch {}
-          const DeviceMotionEventAny = (window as any).DeviceMotionEvent;
-          if (typeof DeviceMotionEventAny !== 'undefined' && typeof DeviceMotionEventAny.requestPermission === 'function') {
-            try { await DeviceMotionEventAny.requestPermission(); } catch {}
-          }
-        } else {
-          setGyroPermissionStatus('denied');
-          setIsGyroEnabled(false);
-          alert('iOS Jiroskop erişim izni verilmedi. Safari Ayarları > Hareket ve Yön Sensörleri seçeneğini açıp tekrar deneyebilirsiniz.');
-        }
-      } catch (err) {
-        console.error('[Gyro Permission Error]:', err);
-        setGyroPermissionStatus('denied');
-        alert('Jiroskop izni alınamadı.');
-      }
-    } else if (typeof window !== 'undefined' && ('DeviceOrientationEvent' in window || 'ondeviceorientation' in window)) {
-      setGyroPermissionStatus('granted');
-      setIsGyroEnabled(true);
-      try { localStorage.setItem('kaps_br_gyro_enabled', 'true'); } catch {}
-    } else {
-      alert('Cihazınızda jiroskop (DeviceOrientation) sensörü bulunamadı veya tarayıcınız desteklemiyor.');
-      setGyroPermissionStatus('unsupported');
-    }
+  const activateGyroscope=async()=>{
+    if(await gyro.request()){setIsGyroEnabled(true);try{localStorage.setItem('kaps_br_gyro_enabled','true');}catch{}}
+    else setShowCalibrationModal(true);
+  };
+  const enableGyroscope=async()=>{
+    if(isGyroEnabled&&gyro.permissionGranted){setIsGyroEnabled(false);try{localStorage.setItem('kaps_br_gyro_enabled','false');}catch{}return;}
+    await activateGyroscope();
   };
 
   // Game UI & Fullscreen
@@ -364,6 +293,17 @@ export default function MiniBattleRoyale({
   const [arrowAutoFire, setArrowAutoFire] = useState<boolean>(true);
   const virtualAimAngle = useRef<number>(0);
   const virtualCrosshairOffset = useRef<{ x: number; y: number }>({ x: 150, y: 0 });
+  const touchAimAngleRef=useRef<number|null>(null);
+  const gyro=useGameGyroscope(isGyroEnabled,delta=>{
+    if((view!=='game'||controlMode!=='touch')&&!showCalibrationModal)return;
+    const sensitivity=Number.isFinite(gyroSensitivity)?Math.max(.005,Math.min(.1,gyroSensitivity)):.024;
+    virtualAimAngle.current+=delta.yaw*sensitivity*70*(invertGyro?-1:1);
+    virtualAimAngle.current=Math.atan2(Math.sin(virtualAimAngle.current),Math.cos(virtualAimAngle.current));
+    virtualCrosshairOffset.current={x:Math.cos(virtualAimAngle.current)*160,y:Math.sin(virtualAimAngle.current)*160};
+  },sample=>{if(showCalibrationModal)setGyroLiveReadout({alpha:Math.round(sample.alpha??0),beta:Math.round(sample.beta??0),gamma:Math.round(sample.gamma??0),active:true});});
+  const gyroActiveRef=useRef(false);gyroActiveRef.current=gyro.status==='active'&&controlMode==='touch';
+  useEffect(()=>{setGyroLiveReadout(prev=>({...prev,active:gyro.status==='active'}));},[gyro.status]);
+  useEffect(()=>{gyro.recenter();},[view,controlMode]);
   const [showControlsModal, setShowControlsModal] = useState<boolean>(false);
 
   // Virtual Touch Joysticks with Multi-touch Identifier Tracking
@@ -707,7 +647,7 @@ export default function MiniBattleRoyale({
 
       let vx = 0;
       let vy = 0;
-      let angle = virtualAimAngle.current || myPlayer.angle;
+      let angle = Number.isFinite(virtualAimAngle.current) ? virtualAimAngle.current : myPlayer.angle;
       let shooting = false;
 
       // 1. WASD Movement (Sol El)
@@ -756,7 +696,7 @@ export default function MiniBattleRoyale({
       } else {
         // If not using arrow keys, check Mouse Aim (Desktop mode only, and do not fight Gyroscope unless mouse click is active)
         const isMouseActive = isMouseDown.current || isSpaceDown.current;
-        if (canvasRef.current && (!isGyroEnabled || isMouseActive) && controlMode === 'desktop') {
+        if (canvasRef.current && (!gyroActiveRef.current || isMouseActive) && controlMode === 'desktop') {
           const rect = canvasRef.current.getBoundingClientRect();
           const centerX = rect.width / 2;
           const centerY = rect.height / 2;
@@ -798,8 +738,13 @@ export default function MiniBattleRoyale({
 
         // If dragged >15% radius, aim 360° with laser sight
         if (ratio >= 0.15) {
-          angle = Math.atan2(ady, adx);
-          virtualAimAngle.current = angle;
+          const target=Math.atan2(ady,adx);
+          if(gyroActiveRef.current&&touchAimAngleRef.current!==null){
+            const diff=Math.atan2(Math.sin(target-touchAimAngleRef.current),Math.cos(target-touchAimAngleRef.current));
+            virtualAimAngle.current+=diff;
+          }else virtualAimAngle.current=target;
+          touchAimAngleRef.current=target;
+          angle=virtualAimAngle.current;
           virtualCrosshairOffset.current = {
             x: Math.cos(angle) * 160,
             y: Math.sin(angle) * 160
@@ -820,7 +765,7 @@ export default function MiniBattleRoyale({
       // 4. SOFT AIM ASSIST (Mobile & Tablet Exclusive - Magnetic Soft Lock on nearest unobstructed target within ±20°)
       // Platform Restriction: STRICTLY disabled for PC Mouse players! Only active on Touch or Arrow-key modes
       const isMobileTouchOrArrow = controlMode === 'touch' || isArrowAiming;
-      if (isMobileTouchOrArrow && state.players) {
+      if (isMobileTouchOrArrow && !gyroActiveRef.current && state.players) {
         let bestTarget: PlayerState | null = null;
         let minAngleDiff = 0.35; // ±20 degrees (0.35 rad)
 
@@ -999,7 +944,7 @@ export default function MiniBattleRoyale({
 
     const releaseInputs = () => {
       isMouseDown.current = false; isSpaceDown.current = false; keysPressed.current = {};
-      moveTouchIdRef.current = null; aimTouchIdRef.current = null;
+      moveTouchIdRef.current = null; aimTouchIdRef.current = null;touchAimAngleRef.current=null;
       touchMoveOrigin.current = null; touchMoveCurrent.current = null;
       touchAimOrigin.current = null; touchAimCurrent.current = null;
       socket?.emit('royale:input', { vx: 0, vy: 0, shooting: false });
@@ -1088,7 +1033,7 @@ export default function MiniBattleRoyale({
       if (aimTouchIdRef.current !== null) {
         const aimEnded = touches.find(t => t.identifier === aimTouchIdRef.current);
         if (aimEnded) {
-          aimTouchIdRef.current = null;
+          aimTouchIdRef.current = null;touchAimAngleRef.current=null;
           touchAimOrigin.current = null;
           touchAimCurrent.current = null;
           isTouchFiring.current = false;
@@ -1106,119 +1051,6 @@ export default function MiniBattleRoyale({
       window.removeEventListener('touchcancel', onWindowTouchEnd);
     };
   }, [view]);
-
-  // Gyroscope Device Orientation Aiming Listener (Tablets & Phones: iOS & Android)
-  useEffect(() => {
-    if (!isGyroEnabled) return;
-
-    let receivedAnyData = false;
-
-    const handleOrientation = (e: DeviceOrientationEvent) => {
-      const { alpha, beta, gamma } = e;
-      if (alpha === null && beta === null && gamma === null) return;
-
-      if (!receivedAnyData) {
-        receivedAnyData = true;
-        setGyroLiveReadout(prev => ({ ...prev, active: true }));
-      }
-
-      const prevAlpha = lastGyroData.current.alpha;
-      const prevBeta = lastGyroData.current.beta;
-      const prevGamma = lastGyroData.current.gamma;
-
-      lastGyroData.current = { alpha: alpha ?? 0, beta: beta ?? 0, gamma: gamma ?? 0 };
-
-      // Update calibration modal live readout
-      if (showCalibrationModal) {
-        setGyroLiveReadout({
-          alpha: Math.round(alpha ?? 0),
-          beta: Math.round(beta ?? 0),
-          gamma: Math.round(gamma ?? 0),
-          active: true
-        });
-      }
-
-      if (prevAlpha === null || prevBeta === null || prevGamma === null) return;
-
-      // Calculate deltas with 360-degree wrap-around handling
-      let dAlpha = (alpha !== null) ? alpha - prevAlpha : 0;
-      while (dAlpha < -180) dAlpha += 360;
-      while (dAlpha > 180) dAlpha -= 360;
-      if (Math.abs(dAlpha) > 35) dAlpha = 0; // Filter flip/jitter
-
-      let dBeta = (beta !== null) ? beta - prevBeta : 0;
-      while (dBeta < -180) dBeta += 360;
-      while (dBeta > 180) dBeta -= 360;
-      if (Math.abs(dBeta) > 35) dBeta = 0;
-
-      let dGamma = (gamma !== null) ? gamma - prevGamma : 0;
-      while (dGamma < -180) dGamma += 360;
-      while (dGamma > 180) dGamma -= 360;
-      if (Math.abs(dGamma) > 35) dGamma = 0;
-
-      // Screen Orientation & Landscape check
-      const screenAngle = typeof window !== 'undefined'
-        ? (screen.orientation?.angle ?? (typeof window.orientation !== 'undefined' ? Number(window.orientation) : 0))
-        : 0;
-      const isLandscape = typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : true;
-
-      let yawDeltaDeg = 0;
-
-      if (isLandscape) {
-        // Landscape holding posture (standard for tablets and phones)
-        // 1. Compass / horizontal body yaw: turning left/right rotates around earth's vertical axis
-        const yawPan = -dAlpha;
-
-        // 2. Steering wheel tilt: tilting left edge down / right edge up
-        let steeringTilt = 0;
-        if (screenAngle === 270 || screenAngle === -90) {
-          steeringTilt = dBeta;
-        } else {
-          steeringTilt = -dBeta;
-        }
-
-        // Blend: horizontal yaw rotation + steering tilt
-        yawDeltaDeg = (yawPan * 0.75) + (steeringTilt * 0.75);
-      } else {
-        // Portrait posture
-        const yawPan = -dAlpha;
-        let steeringTilt = 0;
-        if (screenAngle === 180) {
-          steeringTilt = -dGamma;
-        } else {
-          steeringTilt = dGamma;
-        }
-        yawDeltaDeg = (yawPan * 0.75) + (steeringTilt * 0.75);
-      }
-
-      if (invertGyro) {
-        yawDeltaDeg = -yawDeltaDeg;
-      }
-
-      // Convert degrees delta to radians with user sensitivity
-      const yawDeltaRad = (yawDeltaDeg * Math.PI / 180) * (gyroSensitivity * 70);
-
-      if (Math.abs(yawDeltaRad) > 0.0005) {
-        virtualAimAngle.current += yawDeltaRad;
-        while (virtualAimAngle.current < -Math.PI) virtualAimAngle.current += Math.PI * 2;
-        while (virtualAimAngle.current > Math.PI) virtualAimAngle.current -= Math.PI * 2;
-
-        virtualCrosshairOffset.current = {
-          x: Math.cos(virtualAimAngle.current) * 160,
-          y: Math.sin(virtualAimAngle.current) * 160
-        };
-      }
-    };
-
-    window.addEventListener('deviceorientation', handleOrientation, true);
-    window.addEventListener('deviceorientationabsolute' as any, handleOrientation as any, true);
-
-    return () => {
-      window.removeEventListener('deviceorientation', handleOrientation, true);
-      window.removeEventListener('deviceorientationabsolute' as any, handleOrientation as any, true);
-      lastGyroData.current = { alpha: null, beta: null, gamma: null };
-    };
-  }, [isGyroEnabled, gyroSensitivity, invertGyro, showCalibrationModal]);
 
   // 60 FPS HTML5 Canvas Render Loop
   useEffect(() => {
@@ -2884,7 +2716,7 @@ export default function MiniBattleRoyale({
               )}
 
               <button
-                onClick={() => setControlMode(prev => prev === 'touch' ? 'desktop' : 'touch')}
+                onClick={() => handleToggleControlMode()}
                 className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 {controlMode === 'touch' ? (
@@ -3216,7 +3048,7 @@ export default function MiniBattleRoyale({
                   title="Jiroskop Nişan Alma Modu (Tablet & Telefon)"
                 >
                   <Compass size={13} className={isGyroEnabled ? 'text-purple-400 animate-spin' : 'text-slate-500'} />
-                  <span>Jiroskop: <strong className={isGyroEnabled ? 'text-purple-300' : 'text-slate-500'}>{isGyroEnabled ? 'AÇIK' : 'KAPALI'}</strong></span>
+                  <span>Jiroskop: <strong className={isGyroEnabled ? 'text-purple-300' : 'text-slate-500'}>{isGyroEnabled&&gyro.permissionGranted ? 'AÇIK' : isGyroEnabled ? 'İZİN GEREKLİ' : 'KAPALI'}</strong></span>
                 </button>
 
                 {/* Calibration / Settings Modal Button */}
@@ -3630,6 +3462,7 @@ export default function MiniBattleRoyale({
               </div>
               <button
                 onClick={() => setShowCalibrationModal(false)}
+                aria-label="Jiroskop ayarlarını kapat"
                 className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center font-bold text-sm cursor-pointer"
               >
                 ✕
@@ -3685,7 +3518,7 @@ export default function MiniBattleRoyale({
                 onClick={() => {
                   virtualAimAngle.current = 0;
                   virtualCrosshairOffset.current = { x: 160, y: 0 };
-                  lastGyroData.current = { alpha: null, beta: null, gamma: null };
+                  gyro.recenter();
                 }}
                 className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-purple-300 hover:text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 border border-purple-800/40"
               >
@@ -3708,14 +3541,15 @@ export default function MiniBattleRoyale({
                     : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                {isGyroEnabled ? 'AÇIK' : 'KAPALI'}
+                {isGyroEnabled&&gyro.permissionGranted ? 'AÇIK' : isGyroEnabled ? 'İZİN GEREKLİ' : 'KAPALI'}
               </button>
             </div>
 
+            <p role="status" data-gyro-status={gyro.status} className="text-xs text-purple-200">{GYRO_STATUS[gyro.status]}</p>
             {/* iOS Safari Permission helper button */}
             {typeof window !== 'undefined' && typeof (window as any).DeviceOrientationEvent?.requestPermission === 'function' && (
               <button
-                onClick={enableGyroscope}
+                onClick={activateGyroscope}
                 className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md"
               >
                 <Smartphone size={16} />

@@ -1,3 +1,6 @@
+import StrikeInputSettings from './StrikeInputSettings';
+import {touchControls} from '../../../utils/gameInput';
+import {useGameGyroscope} from '../../../hooks/useGameGyroscope';
 import StrikeSkins from "./StrikeSkins";
 import StrikeControls from "./StrikeControls";
 import { cleanBindings } from "../../../games/kapsstrike/controls";
@@ -70,14 +73,14 @@ export default function KapsStrikeGame({
     }
   });
   const [view, setView] = useState<"menu" | "lobby" | "loading" | "play" | "pause" | "match_end">("menu");
-  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "create_room" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "input" | "create_room" | null>(null);
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
   const [returnFire, setReturnFire] = useState(false);
   const [supported, setSupported] = useState(true);
 
   // Mobile / Touch state
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(()=>touchControls(settings.controlMode));
   const [isPortrait, setIsPortrait] = useState(false);
   const [joystickThumb, setJoystickThumb] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const joystickTouchId = useRef<number | null>(null);
@@ -86,93 +89,10 @@ export default function KapsStrikeGame({
   const lookLastPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [touchAdsActive, setTouchAdsActive] = useState(false);
   const [weaponMenuOpen, setWeaponMenuOpen] = useState(false);
-  const [hasGyro, setHasGyro] = useState(false);
-  const lastGyroPos = useRef<{ beta: number; gamma: number } | null>(null);
-
-  // Check hardware Gyroscope support
-  useEffect(() => {
-    if (typeof window !== "undefined" && "DeviceOrientationEvent" in window) {
-      setHasGyro(true);
-    }
-  }, []);
-
-  // Gyroscope orientation listener during active gameplay
-  useEffect(() => {
-    if (view !== "play" || !settings.gyroMode || settings.gyroMode === "off") {
-      lastGyroPos.current = null;
-      return;
-    }
-
-    const handleOrientation = (e: DeviceOrientationEvent) => {
-      if (e.beta === null || e.gamma === null) return;
-
-      const shouldApply =
-        settings.gyroMode === "always" ||
-        (settings.gyroMode === "ads" && (hud?.ads || touchAdsActive));
-
-      if (!shouldApply) {
-        lastGyroPos.current = { beta: e.beta, gamma: e.gamma };
-        return;
-      }
-
-      if (lastGyroPos.current) {
-        const dBeta = e.beta - lastGyroPos.current.beta;
-        const dGamma = e.gamma - lastGyroPos.current.gamma;
-
-        if (Math.abs(dBeta) < 30 && Math.abs(dGamma) < 30) {
-          const isLandscape = window.innerWidth > window.innerHeight;
-          const sens = (settings.gyroSensitivity || 1.0) * 0.015;
-
-          let deltaYaw = 0;
-          let deltaPitch = 0;
-
-          if (isLandscape) {
-            const isAngle90 =
-              window.orientation === 90 ||
-              (screen.orientation && screen.orientation.type.includes("primary"));
-            if (isAngle90) {
-              deltaYaw = -dBeta * sens;
-              deltaPitch = dGamma * sens;
-            } else {
-              deltaYaw = dBeta * sens;
-              deltaPitch = -dGamma * sens;
-            }
-          } else {
-            deltaYaw = dGamma * sens;
-            deltaPitch = dBeta * sens;
-          }
-
-          game.current?.addGyroDelta(deltaYaw, deltaPitch);
-        }
-      }
-
-      lastGyroPos.current = { beta: e.beta, gamma: e.gamma };
-    };
-
-    window.addEventListener("deviceorientation", handleOrientation);
-    return () => {
-      window.removeEventListener("deviceorientation", handleOrientation);
-      lastGyroPos.current = null;
-    };
-  }, [view, settings.gyroMode, settings.gyroSensitivity, hud?.ads, touchAdsActive]);
-
-  const requestGyroPermission = async () => {
-    if (
-      typeof DeviceOrientationEvent !== "undefined" &&
-      typeof (DeviceOrientationEvent as any).requestPermission === "function"
-    ) {
-      try {
-        const res = await (DeviceOrientationEvent as any).requestPermission();
-        if (res === "granted") {
-          setting({ gyroMode: settings.gyroMode === "off" ? "ads" : settings.gyroMode });
-        } else {
-          setError("Jiroskop izni reddedildi.");
-        }
-      } catch {
-        setError("Jiroskop izni alınamadı.");
-      }
-    }
-  };
+  const gyro = useGameGyroscope(settings.gyroMode !== undefined && settings.gyroMode !== 'off', delta => {
+    if(view === 'play')game.current?.addGyroDelta(delta.yaw,delta.pitch);
+  });
+  useEffect(()=>{gyro.recenter();},[view]);
 
   // Multiplayer Room State
   const [rooms, setRooms] = useState<StrikeRoomSummary[]>([]);
@@ -208,7 +128,7 @@ export default function KapsStrikeGame({
 
   useEffect(() => {
     try { localStorage.setItem("kapsstrike-settings", JSON.stringify(settings)); } catch {}
-    game.current?.setBindings(cleanBindings(settings.bindings));
+    game.current?.updateSettings(settings);
   }, [settings]);
 
   useEffect(() => {if(typeof hud?.ads === "boolean")setTouchAdsActive(hud.ads);},[hud?.ads]);
@@ -216,9 +136,7 @@ export default function KapsStrikeGame({
   // Mobile detection & Orientation check
   useEffect(() => {
     const checkMobile = () => {
-      const mobile =
-        (("ontouchstart" in window) || navigator.maxTouchPoints > 0) &&
-        window.innerWidth < 1024;
+      const mobile = touchControls(settings.controlMode);
       setIsMobile(mobile);
       setIsPortrait(window.innerHeight > window.innerWidth);
     };
@@ -229,7 +147,7 @@ export default function KapsStrikeGame({
       window.removeEventListener("resize", checkMobile);
       window.removeEventListener("orientationchange", checkMobile);
     };
-  }, []);
+  }, [settings.controlMode]);
 
   // WebGL & PointerLock Check
   useEffect(() => {
@@ -1379,6 +1297,7 @@ export default function KapsStrikeGame({
               </div>
 
               <div className="ks-feature-shortcuts ks-lobby-shortcuts" aria-label="Oyun ayarları">
+                <button type="button" onClick={() => setPanel("input")}>Mobil Kontroller / Jiroskop</button>
                 <button type="button" onClick={() => setPanel("skins")}>Karakter / Skin</button>
                 <button type="button" onClick={() => setPanel("controls")}>Kontroller</button>
               </div>
@@ -1539,6 +1458,7 @@ export default function KapsStrikeGame({
               <div className="ks-feature-shortcuts" aria-label="Oyun özelleştirmeleri">
                 <button type="button" onClick={() => setPanel("skins")}>Karakterini seç</button>
                 <button type="button" onClick={() => setPanel("controls")}>Kontrolleri düzenle</button>
+                <button type="button" onClick={() => setPanel("input")}>Mobil Kontroller / Jiroskop</button>
               </div>
               <p className="ks-visibility-note">Maçta diğer oyuncular takım rengiyle çevrelenir; duvarlar oyuncuları örtmeye devam eder.</p>
             </header>
@@ -1833,6 +1753,7 @@ export default function KapsStrikeGame({
             {panel === "settings" && (
               <div className="ks-settings">
                 <h2>Ayarlar</h2>
+                <StrikeInputSettings settings={settings} onChange={setting} gyro={gyro} />
                 <label>
                   Grafik Kalitesi
                   <select
@@ -2044,48 +1965,7 @@ export default function KapsStrikeGame({
                   />
                 </label>
 
-                {/* Gyroscope Controls */}
-                {(isMobile || hasGyro) && (
-                  <div className="p-3 bg-slate-900/80 rounded-lg border border-slate-700/80 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-xs text-amber-300">🎯 Jiroskopla Nişan Alma</span>
-                      {typeof DeviceOrientationEvent !== "undefined" &&
-                        typeof (DeviceOrientationEvent as any).requestPermission === "function" && (
-                          <button
-                            type="button"
-                            onClick={requestGyroPermission}
-                            className="text-[11px] px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded border border-amber-500/40"
-                          >
-                            İzin Ver (iOS)
-                          </button>
-                        )}
-                    </div>
-                    <label className="text-xs">
-                      <span>Jiroskop Modu</span>
-                      <select
-                        value={settings.gyroMode || "off"}
-                        onChange={(e) => setting({ gyroMode: e.target.value as any })}
-                      >
-                        <option value="off">Kapalı</option>
-                        <option value="ads">Sadece Dürbünde (ADS)</option>
-                        <option value="always">Her Zaman Açık</option>
-                      </select>
-                    </label>
-                    {settings.gyroMode !== "off" && (
-                      <label className="text-xs">
-                        <span>Jiroskop Hassasiyeti · {(settings.gyroSensitivity || 1.0).toFixed(1)}×</span>
-                        <input
-                          type="range"
-                          min="0.2"
-                          max="3.0"
-                          step="0.1"
-                          value={settings.gyroSensitivity || 1.0}
-                          onChange={(e) => setting({ gyroSensitivity: Number(e.target.value) })}
-                        />
-                      </label>
-                    )}
-                  </div>
-                )}
+                <StrikeInputSettings settings={settings} onChange={setting} gyro={gyro} />
 
                 {/* Sound & Voice Volume */}
                 <div className="grid grid-cols-2 gap-3">
@@ -2190,6 +2070,12 @@ export default function KapsStrikeGame({
             <button type="button" onClick={() => setPanel(null)}>Lobiye dön</button>
           </div>
         </div>
+      )}
+      {panel === 'input' && (view === 'menu' || view === 'lobby' || view === 'pause') && (
+        <div className="ks-overlay ks-feature-overlay"><div className="ks-menu ks-feature-card">
+          <StrikeInputSettings settings={settings} onChange={setting} gyro={gyro} />
+          <button type="button" onClick={()=>setPanel(null)}>Geri dön</button>
+        </div></div>
       )}
     </section>
   );

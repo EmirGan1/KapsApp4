@@ -24,7 +24,9 @@
     "test:strike:menu": "node --import tsx tests/kapsstrike.menu.browser.ts",
     "test:strike:maps": "node --import tsx tests/kapsstrike.maps.browser.ts",
     "test:strike:controller": "node --import tsx tests/kapsstrike.browser.ts --null",
-    "test:strike:network": "node --import tsx tests/kapsstrike.network.browser.ts"
+    "test:strike:network": "node --import tsx tests/kapsstrike.network.browser.ts",
+    "test:game-input": "node --import tsx --test tests/gameInput.test.ts",
+    "test:game-input:browser": "node --import tsx tests/gameInput.browser.ts"
   },
   "dependencies": {
     "@babylonjs/core": "8.50.2",

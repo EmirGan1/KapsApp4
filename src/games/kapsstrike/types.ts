@@ -134,6 +134,7 @@ export interface StrikeSettings {
   invertY: boolean;
   gyroMode?: "off" | "ads" | "always";
   gyroSensitivity?: number;
+  controlMode?: import('../../utils/gameInput').GameControlMode;
   showDebugStats?: boolean;
 }
 

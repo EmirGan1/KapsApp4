@@ -1150,3 +1150,11 @@
 .ks-skin-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:12px 0; }
 .ks-skin-grid button[aria-pressed=true] { background:#315763;box-shadow:inset 0 0 0 1px #a3e4df; }
 
+
+.ks-input-settings { display:grid;gap:12px;grid-column:1/-1;padding:16px;border:1px solid #52636d;border-radius:12px;background:#101b23; }
+.ks-input-settings h3 { margin:0;color:#efc682;font-size:17px; }
+.ks-input-settings label { display:grid;gap:7px; }
+.ks-input-settings select { width:100%;min-height:44px;background:#26333f;color:#edf3f6;border:1px solid #647582;border-radius:6px;padding:8px; }
+.ks-input-settings p { margin:0;font-size:12px; }
+.ks-input-settings input[type=range] { width:100%; }
+.ks-input-settings .ks-feature-shortcuts { margin:0; }
