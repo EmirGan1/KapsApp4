@@ -401,7 +401,29 @@ export default function Games({
     );
   }
 
-  if (selectedGame === 'kapsstrike') return <StrikeBoundary onBack={() => setSelectedGame('hub')}><Suspense fallback={<div className="p-8 text-white" role="status">KapsStrike 3D motoru yükleniyor…</div>}><KapsStrikeGame onBack={() => setSelectedGame('hub')} /></Suspense></StrikeBoundary>;
+  if (selectedGame === 'kapsstrike') {
+    return (
+      <StrikeBoundary onBack={() => {
+        setSelectedGame('hub');
+        setSelectedGameTableId(null);
+      }}>
+        <Suspense fallback={<div className="p-8 text-white" role="status">KapsStrike 3D motoru yükleniyor…</div>}>
+          <KapsStrikeGame 
+            onBack={() => {
+              setSelectedGame('hub');
+              setSelectedGameTableId(null);
+            }}
+            socket={socket}
+            currentUserId={currentUserId}
+            username={username}
+            avatar={avatar}
+            color={color}
+            targetRoomId={selectedGameTableId}
+          />
+        </Suspense>
+      </StrikeBoundary>
+    );
+  }
 
   if (selectedGame === 'dungeon') return <DungeonGame socket={socket} currentUserId={currentUserId} onBack={() => setSelectedGame('hub')} />;
 
@@ -742,6 +764,37 @@ export default function Games({
       onClick: () => {
         setSelectedGameTableId(null);
         setSelectedGame('kapstorial');
+      }
+    },
+    {
+      id: 'kapsstrike',
+      title: 'KapsStrike 3D FPS',
+      subtitle: '2-10 Kişilik Çok Oyunculu • Düşük Gecikme, 60 FPS & Takım Savaşı',
+      category: ['arcade'],
+      badge: '🔥 3D MULTIPLAYER',
+      badgeColor: 'bg-gradient-to-r from-amber-500 to-yellow-600 text-slate-950 font-black animate-pulse',
+      gradient: 'from-amber-600 via-stone-800 to-slate-900',
+      icon: '🎯',
+      capacity: '2-10 Oyuncu & Sesli Sohbet',
+      activeRooms: activeTables.filter(t => (t.gameType as any) === 'strike' || (t.gameType as any) === 'kapsstrike').length,
+      features: [
+        'Sunucu Otoriteli 60Hz Simülasyon & Lag Telafisi (Geri Sarma)',
+        'Takım Savaşı (TDM Red vs Blue) ve Herkes Tek (FFA) Modları',
+        '5 Silah (AK-47, M4A1, AWP, Pompalı, Deagle) & Kafa Vuruşu Çarpanı',
+        'Entegre WebRTC Sesli Sohbet (Bas-Konuş V & Oyuncu Ses Ayarları)'
+      ],
+      preview: (
+        <div className="flex items-center justify-center gap-1.5 py-1">
+          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">🔫 Silahlar</span>
+          <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-300 text-[10px] font-mono font-bold border border-red-500/30">🔴 Red</span>
+          <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-mono font-bold border border-blue-500/30">🔵 Blue</span>
+          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/30">🎙️ Ses</span>
+        </div>
+      ),
+      actionPrimary: 'KapsStrike 3D Oyna',
+      onClick: () => {
+        setSelectedGameTableId(null);
+        setSelectedGame('kapsstrike');
       }
     }
   ];

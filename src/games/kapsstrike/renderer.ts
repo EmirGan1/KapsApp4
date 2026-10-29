@@ -21,7 +21,7 @@ import {
   WeaponId,
   Vec3,
 } from "./types";
-import { WEAPONS, WEAPON_ORDER, PHYSICS as C, TARGET_HITBOXES } from "./config";
+import { WEAPONS, WEAPON_ORDER, PHYSICS as C, TARGET_HITBOXES, detectAutoQuality } from "./config";
 import { raySolid, clamp } from "./physics";
 import { aimDirection } from "./combat";
 /** All input belongs to StrikeController; avoid a second device/gamepad listener graph. */
@@ -36,6 +36,15 @@ export class StrikeRenderer {
   private targetMeshes = new Map<
     string,
     { root: TransformNode; body: Mesh; head: Mesh }
+  >();
+  private remotePlayerMeshes = new Map<
+    string,
+    {
+      root: TransformNode;
+      body: Mesh;
+      head: Mesh;
+      tagPlane?: Mesh;
+    }
   >();
   private gunRoot: TransformNode;
   private weapons = new Map<WeaponId, TransformNode>();
@@ -58,11 +67,12 @@ export class StrikeRenderer {
     injectedEngine?: Engine,
   ) {
     this.settings = settings;
+    const effectiveQuality = settings.quality === "auto" ? detectAutoQuality() : settings.quality;
     this.engine =
       injectedEngine ||
       new Engine(
         canvas,
-        settings.quality !== "low",
+        effectiveQuality !== "low",
         {
           preserveDrawingBuffer: false,
           stencil: true,
@@ -93,7 +103,7 @@ export class StrikeRenderer {
       );
       sun.position.set(15, 35, -20);
       sun.intensity = 0.65;
-      if (settings.quality === "high") {
+      if (effectiveQuality === "high") {
         this.shadow = new ShadowGenerator(1024, sun);
         this.shadow.usePoissonSampling = true;
       }
@@ -472,10 +482,14 @@ export class StrikeRenderer {
     this.gunRoot.scaling.setAll(ads ? 0.85 : 1);
     for (const [id, mesh] of this.weapons)
       mesh.setEnabled(id === p.weapon.selected);
-    for (const t of state.targets) {
-      const mesh = this.targetMeshes.get(t.id)!;
-      mesh.root.position.set(t.position.x, t.position.y, t.position.z);
-      mesh.root.setEnabled(t.hp > 0);
+    if (state.targets) {
+      for (const t of state.targets) {
+        const mesh = this.targetMeshes.get(t.id);
+        if (mesh) {
+          mesh.root.position.set(t.position.x, t.position.y, t.position.z);
+          mesh.root.setEnabled(t.hp > 0);
+        }
+      }
     }
     this.muzzle.position.z = WEAPONS[p.weapon.selected].length * 0.65 + 0.04;
     this.muzzle.setEnabled(this.gunKick > 0.045);
@@ -487,6 +501,94 @@ export class StrikeRenderer {
     const draws = this.engine._drawCalls.current;
     this.frameDrawCalls = Math.max(0, draws - this.previousDrawCalls);
     this.previousDrawCalls = draws;
+  }
+  renderRemotePlayers(
+    players: Array<{
+      id: string;
+      username: string;
+      team?: string;
+      color?: string;
+      position: Vec3;
+      yaw: number;
+      pitch: number;
+      hp: number;
+      stance?: string;
+      selectedWeapon?: WeaponId;
+    }>,
+    localPlayerId?: string
+  ) {
+    const activeIds = new Set<string>();
+
+    for (const p of players) {
+      if (p.id === localPlayerId) continue;
+      activeIds.add(p.id);
+
+      let item = this.remotePlayerMeshes.get(p.id);
+      if (!item) {
+        const root = new TransformNode("remote-" + p.id, this.scene);
+        const teamColor =
+          p.team === "red"
+            ? "#ef4444"
+            : p.team === "blue"
+              ? "#3b82f6"
+              : p.color || "#10b981";
+
+        const body = MeshBuilder.CreateBox(
+          "remote-body-" + p.id,
+          {
+            width: TARGET_HITBOXES.body.radius * 2,
+            height: TARGET_HITBOXES.body.max - TARGET_HITBOXES.body.min,
+            depth: TARGET_HITBOXES.body.radius * 2,
+          },
+          this.scene
+        );
+        body.position.y = (TARGET_HITBOXES.body.min + TARGET_HITBOXES.body.max) / 2;
+        body.parent = root;
+        body.material = this.material(teamColor);
+
+        const head = MeshBuilder.CreateBox(
+          "remote-head-" + p.id,
+          { size: TARGET_HITBOXES.head.radius * 2 },
+          this.scene
+        );
+        head.position.y = (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2;
+        head.parent = root;
+        head.material = this.material("#fde047");
+
+        const tagPlane = MeshBuilder.CreatePlane(
+          "remote-tag-" + p.id,
+          { width: 1.1, height: 0.22 },
+          this.scene
+        );
+        tagPlane.position.y = TARGET_HITBOXES.head.max + 0.3;
+        tagPlane.parent = root;
+        tagPlane.billboardMode = Mesh.BILLBOARDMODE_ALL;
+        tagPlane.material = this.material(teamColor, true);
+
+        item = { root, body, head, tagPlane };
+        this.remotePlayerMeshes.set(p.id, item);
+      }
+
+      const isAlive = p.hp > 0;
+      item.root.setEnabled(isAlive);
+      if (isAlive) {
+        item.root.position.set(p.position.x, p.position.y, p.position.z);
+        item.root.rotation.y = p.yaw;
+        item.head.rotation.x = p.pitch;
+
+        const isCrouch = p.stance === "crouch" || p.stance === "slide";
+        item.body.scaling.y = isCrouch ? 0.75 : 1;
+        item.body.position.y = isCrouch ? 0.65 : (TARGET_HITBOXES.body.min + TARGET_HITBOXES.body.max) / 2;
+        item.head.position.y = isCrouch ? 1.2 : (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2;
+      }
+    }
+
+    for (const [id, item] of this.remotePlayerMeshes.entries()) {
+      if (!activeIds.has(id)) {
+        item.root.dispose();
+        this.remotePlayerMeshes.delete(id);
+      }
+    }
   }
   stats() {
     return {
@@ -504,5 +606,9 @@ export class StrikeRenderer {
     this.materials.clear();
     this.tracerPool = [];
     this.impactPool = [];
+    for (const p of this.remotePlayerMeshes.values()) {
+      p.root.dispose();
+    }
+    this.remotePlayerMeshes.clear();
   }
 }

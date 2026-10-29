@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import type { Socket } from "socket.io-client";
 import {
   StrikeController,
   StrikeHUD,
@@ -9,46 +10,224 @@ import {
   WEAPONS,
   WEAPON_ORDER,
 } from "../../../games/kapsstrike/config";
-import { MapId, StrikeSettings } from "../../../games/kapsstrike/types";
+import {
+  MapId,
+  StrikeSettings,
+  StrikeRoomSummary,
+  StrikeRoomState,
+  KillFeedEntry,
+  MatchStats,
+  StrikeTeam,
+  StrikeGameMode,
+  WeaponId,
+} from "../../../games/kapsstrike/types";
 import { MAPS } from "../../../games/kapsstrike/maps";
+import { StrikeVoiceManager } from "../../../games/kapsstrike/voice";
 import "./kapsstrike.css";
-export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
-  const canvas = useRef<HTMLCanvasElement>(null),
-    game = useRef<StrikeController | null>(null);
-  const [map, setMap] = useState<MapId>("warehouse"),
-    [settings, setSettings] = useState<StrikeSettings>(() => {
-      try {
-        return cleanSettings(
-          JSON.parse(localStorage.getItem("kapsstrike-settings") || "{}"),
-        );
-      } catch {
-        return { ...DEFAULT_SETTINGS };
-      }
-    }),
-    [view, setView] = useState<"menu" | "play" | "pause">("menu"),
-    [panel, setPanel] = useState<"settings" | "controls" | null>(null),
-    [hud, setHUD] = useState<StrikeHUD | null>(null),
-    [error, setError] = useState(""),
-    [returnFire, setReturnFire] = useState(false),
-    [supported, setSupported] = useState(true);
+
+interface KapsStrikeGameProps {
+  onBack: () => void;
+  socket?: Socket | null;
+  currentUserId?: number;
+  username?: string;
+  avatar?: string | null;
+  color?: string | null;
+  targetRoomId?: string | null;
+}
+
+export default function KapsStrikeGame({
+  onBack,
+  socket,
+  currentUserId = 1,
+  username = "KapsOyuncu",
+  avatar = null,
+  color = "#3b82f6",
+  targetRoomId = null,
+}: KapsStrikeGameProps) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const game = useRef<StrikeController | null>(null);
+  const voice = useRef<StrikeVoiceManager | null>(null);
+
+  // General state
+  const [modeTab, setModeTab] = useState<"multiplayer" | "training">("multiplayer");
+  const [map, setMap] = useState<MapId>("warehouse");
+  const [settings, setSettings] = useState<StrikeSettings>(() => {
+    try {
+      return cleanSettings(
+        JSON.parse(localStorage.getItem("kapsstrike-settings") || "{}")
+      );
+    } catch {
+      return { ...DEFAULT_SETTINGS };
+    }
+  });
+  const [view, setView] = useState<"menu" | "lobby" | "play" | "pause" | "match_end">("menu");
+  const [panel, setPanel] = useState<"settings" | "controls" | "create_room" | null>(null);
+  const [hud, setHUD] = useState<StrikeHUD | null>(null);
+  const [error, setError] = useState("");
+  const [returnFire, setReturnFire] = useState(false);
+  const [supported, setSupported] = useState(true);
+
+  // Mobile / Touch state
+  const [isMobile, setIsMobile] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false);
+  const [joystickThumb, setJoystickThumb] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const joystickTouchId = useRef<number | null>(null);
+  const joystickCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lookTouchId = useRef<number | null>(null);
+  const lookLastPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [touchAdsActive, setTouchAdsActive] = useState(false);
+
+  // Multiplayer Room State
+  const [rooms, setRooms] = useState<StrikeRoomSummary[]>([]);
+  const [currentRoom, setCurrentRoom] = useState<StrikeRoomState | null>(null);
+  const [roomFilter, setRoomFilter] = useState("");
+  const [roomModeFilter, setRoomModeFilter] = useState<"all" | "ffa" | "tdm">("all");
+  const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordModalRoomId, setPasswordModalRoomId] = useState<string | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
+
+  // Create Room Form
+  const [createName, setCreateName] = useState(`${username}'in Odası`);
+  const [createMap, setCreateMap] = useState<MapId>("warehouse");
+  const [createMode, setCreateMode] = useState<StrikeGameMode>("tdm");
+  const [createMaxPlayers, setCreateMaxPlayers] = useState(8);
+  const [createDuration, setCreateDuration] = useState(300);
+  const [createScoreLimit, setCreateScoreLimit] = useState(30);
+  const [createPassword, setCreatePassword] = useState("");
+
+  // In-Game Live Multiplayer State
+  const [killFeed, setKillFeed] = useState<KillFeedEntry[]>([]);
+  const [scoreboardOpen, setScoreboardOpen] = useState(false);
+  const [matchStats, setMatchStats] = useState<MatchStats | null>(null);
+  const [isVoiceMuted, setIsVoiceMuted] = useState(true);
+  const [speakingUsers, setSpeakingUsers] = useState<Map<number, boolean>>(new Map());
+  const [playerVolumes, setPlayerVolumes] = useState<Record<number, number>>({});
+
+  // Mobile detection & Orientation check
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile =
+        (("ontouchstart" in window) || navigator.maxTouchPoints > 0) &&
+        window.innerWidth < 1024;
+      setIsMobile(mobile);
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    window.addEventListener("orientationchange", checkMobile);
+    return () => {
+      window.removeEventListener("resize", checkMobile);
+      window.removeEventListener("orientationchange", checkMobile);
+    };
+  }, []);
+
+  // WebGL & PointerLock Check
   useEffect(() => {
     const c = document.createElement("canvas");
     const probe = c.getContext("webgl2") || c.getContext("webgl");
-    setSupported(
-      !!probe && "requestPointerLock" in HTMLCanvasElement.prototype,
-    );
+    setSupported(!!probe);
     probe?.getExtension("WEBGL_lose_context")?.loseContext();
+
     return () => {
       game.current?.dispose();
       game.current = null;
+      voice.current?.dispose();
+      voice.current = null;
     };
   }, []);
-  const start = () => {
+
+  // Voice manager initialization
+  useEffect(() => {
+    if (!voice.current && socket) {
+      voice.current = new StrikeVoiceManager(socket, currentUserId, username);
+      voice.current.onSpeakingChange((map) => {
+        setSpeakingUsers(new Map(map));
+      });
+    }
+    return () => {
+      voice.current?.dispose();
+      voice.current = null;
+    };
+  }, [socket, currentUserId, username]);
+
+  // Request room list
+  const refreshRooms = useCallback(() => {
+    if (!socket || !socket.connected) return;
+    socket.emit("strike:list_rooms", (res: StrikeRoomSummary[]) => {
+      if (Array.isArray(res)) setRooms(res);
+    });
+  }, [socket]);
+
+  // Handle socket rooms and events
+  useEffect(() => {
+    if (!socket) return;
+
+    refreshRooms();
+    const interval = setInterval(refreshRooms, 4000);
+
+    const onRoomState = (state: StrikeRoomState) => {
+      setCurrentRoom(state);
+      if (view === "menu") setView("lobby");
+    };
+
+    const onMatchStarted = (data: { map: MapId; mode: StrikeGameMode; duration: number }) => {
+      setMap(data.map);
+      startMultiplayerGame(data.map);
+    };
+
+    const onKill = (kill: KillFeedEntry) => {
+      setKillFeed((prev) => [kill, ...prev].slice(0, 6));
+      setTimeout(() => {
+        setKillFeed((prev) => prev.filter((k) => k.id !== kill.id));
+      }, 5000);
+    };
+
+    const onMatchEnded = (stats: MatchStats) => {
+      setMatchStats(stats);
+      setView("match_end");
+      game.current?.dispose();
+      game.current = null;
+    };
+
+    const onError = (data: { message: string }) => {
+      setError(data.message);
+    };
+
+    socket.on("strike:room_state", onRoomState);
+    socket.on("strike:match_started", onMatchStarted);
+    socket.on("strike:kill", onKill);
+    socket.on("strike:match_ended", onMatchEnded);
+    socket.on("strike:error", onError);
+
+    // Direct room join via targetRoomId prop
+    if (targetRoomId) {
+      socket.emit("strike:join_room", { roomId: targetRoomId }, (res: any) => {
+        if (res?.success) {
+          setCurrentRoom(res.room);
+          setView("lobby");
+        }
+      });
+    }
+
+    return () => {
+      clearInterval(interval);
+      socket.off("strike:room_state", onRoomState);
+      socket.off("strike:match_started", onMatchStarted);
+      socket.off("strike:kill", onKill);
+      socket.off("strike:match_ended", onMatchEnded);
+      socket.off("strike:error", onError);
+    };
+  }, [socket, view, targetRoomId, refreshRooms]);
+
+  // Launch Local Offline Training
+  const startTraining = () => {
     setPanel(null);
     setError("");
     try {
       localStorage.setItem("kapsstrike-settings", JSON.stringify(settings));
     } catch {}
+
     try {
       game.current?.dispose();
       game.current = new StrikeController(
@@ -59,7 +238,7 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
         (reason) => {
           setView("pause");
           if (reason) setError(reason);
-        },
+        }
       );
       game.current.setReturnFire(returnFire);
       setView("play");
@@ -71,47 +250,623 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
       setError(e instanceof Error ? e.message : "WebGL başlatılamadı.");
     }
   };
+
+  // Launch Online Multiplayer Match
+  const startMultiplayerGame = (gameMap: MapId) => {
+    setPanel(null);
+    setError("");
+    try {
+      localStorage.setItem("kapsstrike-settings", JSON.stringify(settings));
+    } catch {}
+
+    try {
+      game.current?.dispose();
+      game.current = new StrikeController(
+        canvas.current!,
+        gameMap,
+        settings,
+        setHUD,
+        (reason) => {
+          if (reason) setError(reason);
+        },
+        undefined,
+        {
+          socket,
+          roomCode: currentRoom?.roomCode,
+          userId: currentUserId,
+          username,
+          team: currentRoom?.players.find((p) => p.userId === currentUserId)?.team || "none",
+          isMultiplayer: true,
+          onScoreboardToggle: (open) => setScoreboardOpen(open),
+          onPttChange: (active) => voice.current?.setPttActive(active),
+        }
+      );
+      setView("play");
+      game.current.start();
+
+      // Connect voice room with other players
+      if (voice.current && currentRoom) {
+        voice.current.joinRoomVoice(
+          currentRoom.roomCode,
+          currentRoom.players.map((p) => p.userId)
+        );
+      }
+    } catch (e) {
+      game.current?.dispose();
+      game.current = null;
+      setView("lobby");
+      setError(e instanceof Error ? e.message : "Oyun başlatılamadı.");
+    }
+  };
+
   const resume = () => {
     setError("");
     setPanel(null);
     setView("play");
     game.current?.start();
   };
+
   const exit = () => {
     game.current?.dispose();
     game.current = null;
+    voice.current?.leaveVoice();
     setHUD(null);
+    if (currentRoom && socket) {
+      socket.emit("strike:leave_room");
+      setCurrentRoom(null);
+    }
     setView("menu");
     setPanel(null);
+    refreshRooms();
   };
+
+  const handleCreateRoom = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!socket) return;
+    setError("");
+
+    socket.emit(
+      "strike:create_room",
+      {
+        name: createName,
+        map: createMap,
+        mode: createMode,
+        maxPlayers: createMaxPlayers,
+        timeLimit: createDuration,
+        scoreLimit: createScoreLimit,
+        password: createPassword,
+      },
+      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
+        if (res.success && res.room) {
+          setCurrentRoom(res.room);
+          setPanel(null);
+          setView("lobby");
+        } else {
+          setError(res.error || "Oda kurulamadı.");
+        }
+      }
+    );
+  };
+
+  const handleQuickMatch = () => {
+    if (!socket) return;
+    setError("");
+    socket.emit(
+      "strike:quick_match",
+      {},
+      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
+        if (res.success && res.room) {
+          setCurrentRoom(res.room);
+          setView("lobby");
+        } else {
+          setError(res.error || "Hızlı maç bulunamadı.");
+        }
+      }
+    );
+  };
+
+  const handleJoinRoom = (roomId: string, hasPass = false) => {
+    if (!socket) return;
+    if (hasPass) {
+      setPasswordModalRoomId(roomId);
+      return;
+    }
+    setError("");
+    socket.emit(
+      "strike:join_room",
+      { roomId },
+      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
+        if (res.success && res.room) {
+          setCurrentRoom(res.room);
+          setView("lobby");
+        } else {
+          setError(res.error || "Odaya katılınamadı.");
+        }
+      }
+    );
+  };
+
+  const handleJoinWithPassword = () => {
+    if (!socket || !passwordModalRoomId) return;
+    setError("");
+    socket.emit(
+      "strike:join_room",
+      { roomId: passwordModalRoomId, password: passwordInput },
+      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
+        if (res.success && res.room) {
+          setCurrentRoom(res.room);
+          setPasswordModalRoomId(null);
+          setPasswordInput("");
+          setView("lobby");
+        } else {
+          setError(res.error || "Hatalı oda şifresi.");
+        }
+      }
+    );
+  };
+
+  const handleJoinByCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!socket || !joinCodeInput) return;
+    const clean = joinCodeInput.trim().toUpperCase();
+    const matched = rooms.find((r) => r.roomCode === clean);
+    if (matched) {
+      handleJoinRoom(matched.roomCode, matched.hasPassword);
+    } else {
+      socket.emit(
+        "strike:join_room",
+        { code: clean },
+        (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
+          if (res.success && res.room) {
+            setCurrentRoom(res.room);
+            setView("lobby");
+          } else {
+            setError(res.error || "Oda kodu bulunamadı.");
+          }
+        }
+      );
+    }
+  };
+
+  const toggleReady = () => {
+    if (!socket || !currentRoom) return;
+    const me = currentRoom.players.find((p) => p.userId === currentUserId);
+    socket.emit("strike:set_ready", { ready: !me?.ready });
+  };
+
+  const switchTeam = (team: StrikeTeam) => {
+    if (!socket || !currentRoom) return;
+    socket.emit("strike:switch_team", { team });
+  };
+
+  const startMatchAsHost = () => {
+    if (!socket || !currentRoom) return;
+    socket.emit("strike:start_match");
+  };
+
+  const toggleVoice = async () => {
+    if (!voice.current) return;
+    if (isVoiceMuted) {
+      const res = await voice.current.initMicrophone();
+      if (!res.success && res.error) {
+        setError(res.error);
+        return;
+      }
+      voice.current.setMute(false);
+      setIsVoiceMuted(false);
+    } else {
+      voice.current.setMute(true);
+      setIsVoiceMuted(true);
+    }
+  };
+
+  const handleCopyInvite = () => {
+    if (!currentRoom) return;
+    const link = `${window.location.origin}/?oyun=kapsstrike&room=${currentRoom.roomCode}`;
+    const text = `🎯 KapsStrike 3D FPS Maç Daveti!\nOda: ${currentRoom.name}\nKod: ${currentRoom.roomCode}\nKatıl: ${link}`;
+    navigator.clipboard?.writeText(text);
+    setInviteCopied(true);
+    setTimeout(() => setInviteCopied(false), 2500);
+  };
+
   const setting = (patch: Partial<StrikeSettings>) =>
     setSettings((old) => cleanSettings({ ...old, ...patch }));
+
+  const isHost = currentRoom?.hostId === currentUserId;
+  const filteredRooms = rooms.filter((r) => {
+    const matchQuery = r.name.toLowerCase().includes(roomFilter.toLowerCase());
+    const matchMode = roomModeFilter === "all" || r.mode === roomModeFilter;
+    return matchQuery && matchMode;
+  });
+
   return (
-    <section className="ks-root" aria-label="KapsStrike antrenman">
+    <section className="ks-root" aria-label="KapsStrike 3D FPS">
       <canvas
         ref={canvas}
         className="ks-canvas"
         aria-label="KapsStrike 3D oyun alanı"
         tabIndex={-1}
       />
+
+      {/* MOBILE PORTRAIT ORIENTATION BANNER */}
+      {view === "play" && isMobile && isPortrait && (
+        <div className="ks-landscape-banner">
+          📱 En iyi 3D FPS kontrolü ve geniş görüş için telefonunuzu yatay çeviriniz!
+        </div>
+      )}
+
+      {/* MOBILE TOUCH CONTROLS OVERLAY */}
+      {view === "play" && isMobile && (
+        <div className="ks-touch-overlay">
+          {/* Virtual Joystick Zone (Bottom-Left) */}
+          <div
+            className="ks-touch-joystick-zone"
+            onTouchStart={(e) => {
+              const touch = e.changedTouches[0];
+              joystickTouchId.current = touch.identifier;
+              const rect = e.currentTarget.getBoundingClientRect();
+              joystickCenter.current = {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+              };
+            }}
+            onTouchMove={(e) => {
+              for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                if (touch.identifier === joystickTouchId.current) {
+                  const dx = touch.clientX - joystickCenter.current.x;
+                  const dy = touch.clientY - joystickCenter.current.y;
+                  const maxRadius = 45;
+                  const dist = Math.hypot(dx, dy);
+                  const clampedDist = Math.min(dist, maxRadius);
+                  const angle = Math.atan2(dy, dx);
+                  const thumbX = Math.cos(angle) * clampedDist;
+                  const thumbY = Math.sin(angle) * clampedDist;
+
+                  setJoystickThumb({ x: thumbX, y: thumbY });
+                  game.current?.setTouchMovement(thumbX / maxRadius, -thumbY / maxRadius);
+                  break;
+                }
+              }
+            }}
+            onTouchEnd={(e) => {
+              for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joystickTouchId.current) {
+                  joystickTouchId.current = null;
+                  setJoystickThumb({ x: 0, y: 0 });
+                  game.current?.setTouchMovement(0, 0);
+                  break;
+                }
+              }
+            }}
+            onTouchCancel={() => {
+              joystickTouchId.current = null;
+              setJoystickThumb({ x: 0, y: 0 });
+              game.current?.setTouchMovement(0, 0);
+            }}
+          >
+            <div
+              className="ks-touch-joystick-thumb"
+              style={{
+                transform: `translate(${joystickThumb.x}px, ${joystickThumb.y}px)`,
+              }}
+            />
+          </div>
+
+          {/* Touch Look Area (Right Screen Half) */}
+          <div
+            className="ks-touch-look-zone"
+            onTouchStart={(e) => {
+              const touch = e.changedTouches[0];
+              lookTouchId.current = touch.identifier;
+              lookLastPos.current = { x: touch.clientX, y: touch.clientY };
+            }}
+            onTouchMove={(e) => {
+              for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                if (touch.identifier === lookTouchId.current) {
+                  const deltaX = touch.clientX - lookLastPos.current.x;
+                  const deltaY = touch.clientY - lookLastPos.current.y;
+                  lookLastPos.current = { x: touch.clientX, y: touch.clientY };
+                  game.current?.addTouchLook(deltaX, deltaY);
+                  break;
+                }
+              }
+            }}
+            onTouchEnd={(e) => {
+              for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === lookTouchId.current) {
+                  lookTouchId.current = null;
+                  break;
+                }
+              }
+            }}
+            onTouchCancel={() => {
+              lookTouchId.current = null;
+            }}
+          />
+
+          {/* Action Touch Buttons */}
+          <div className="ks-touch-actions">
+            <button
+              type="button"
+              className="ks-touch-btn ks-touch-btn-fire"
+              onTouchStart={(e) => {
+                e.preventDefault();
+                game.current?.setTouchFire(true);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                game.current?.setTouchFire(false);
+              }}
+            >
+              ATEŞ
+            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="ks-touch-btn"
+                style={{
+                  background: touchAdsActive ? "rgba(236, 193, 123, 0.4)" : undefined,
+                  borderColor: touchAdsActive ? "#ecc17b" : undefined,
+                }}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  const next = !touchAdsActive;
+                  setTouchAdsActive(next);
+                  game.current?.setTouchAds(next);
+                }}
+              >
+                ADS
+              </button>
+              <button
+                type="button"
+                className="ks-touch-btn"
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  game.current?.setTouchJump(true);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  game.current?.setTouchJump(false);
+                }}
+              >
+                ZIPLA
+              </button>
+              <button
+                type="button"
+                className="ks-touch-btn"
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  game.current?.setTouchCrouch(true);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  game.current?.setTouchCrouch(false);
+                }}
+              >
+                KAY
+              </button>
+              <button
+                type="button"
+                className="ks-touch-btn"
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  game.current?.triggerReload();
+                }}
+              >
+                ŞARJÖR
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Weapons Bar */}
+          <div className="ks-touch-weapons">
+            {WEAPON_ORDER.map((wId) => (
+              <button
+                key={wId}
+                type="button"
+                className={`ks-touch-weapon-btn ${hud?.weapon === wId ? "active" : ""}`}
+                onClick={() => game.current?.selectWeapon(wId)}
+              >
+                {WEAPONS[wId].name.split(" ")[0]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* KILL FEED */}
+      {view === "play" && killFeed.length > 0 && (
+        <div className="ks-killfeed" aria-live="polite">
+          {killFeed.map((k) => (
+            <div key={k.id} className="ks-kill-item">
+              <span className={`ks-kill-killer ${k.killerTeam || ""}`}>
+                {k.killerName}
+              </span>
+              <span className="ks-kill-weapon">
+                ⚡ {WEAPONS[k.weapon as WeaponId]?.name || k.weapon}
+              </span>
+              {k.headshot && <span className="ks-kill-head">KAFA</span>}
+              <span className={`ks-kill-victim ${k.victimTeam || ""}`}>
+                {k.victimName}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* VOICE STATUS HUD */}
+      {view === "play" && (
+        <div className="ks-voice-hud">
+          <button
+            onClick={toggleVoice}
+            className="ks-voice-btn"
+            style={{
+              padding: "4px 8px",
+              minHeight: "auto",
+              fontSize: "11px",
+              background: isVoiceMuted ? "#ef444433" : "#22c55e33",
+              borderColor: isVoiceMuted ? "#ef4444" : "#22c55e",
+            }}
+          >
+            {isVoiceMuted ? "🎤 Mikrofon Kapalı" : "🎙️ Mikrofon Açık (V: PTT)"}
+          </button>
+          <span
+            className={`ks-voice-indicator ${
+              speakingUsers.get(currentUserId) ? "speaking" : ""
+            }`}
+            title="Konuşma Durumu"
+          />
+        </div>
+      )}
+
+      {/* SCOREBOARD (TAB KEY) */}
+      {view === "play" && (scoreboardOpen || hud?.scoreboardOpen) && currentRoom && (
+        <div className="ks-scoreboard-overlay">
+          <div className="ks-scoreboard-card">
+            <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+              <div>
+                <h3 className="text-xl font-black text-amber-400">
+                  {currentRoom.name}
+                </h3>
+                <span className="text-xs text-slate-400">
+                  {MAPS[currentRoom.map]?.name} ·{" "}
+                  {currentRoom.mode === "tdm" ? "Takım Savaşı (TDM)" : "Herkes Tek (FFA)"}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-mono font-bold text-slate-300">
+                  {hud?.ping ? `${Math.round(hud.ping)} ms` : "0 ms"}
+                </span>
+                <span className="text-xs block text-slate-500">TAB ile kapat</span>
+              </div>
+            </div>
+
+            <table className="ks-score-table">
+              <thead>
+                <tr>
+                  <th>Oyuncu</th>
+                  <th>Takım</th>
+                  <th>K / D</th>
+                  <th>Hasar</th>
+                  <th>Ses Seviyesi</th>
+                  <th>Ping</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentRoom.players.map((p) => (
+                  <tr
+                    key={p.id}
+                    className={
+                      p.team === "red"
+                        ? "red-row"
+                        : p.team === "blue"
+                        ? "blue-row"
+                        : ""
+                    }
+                  >
+                    <td className="flex items-center gap-2">
+                      <span
+                        className={`ks-voice-indicator ${
+                          speakingUsers.get(p.userId) ? "speaking" : ""
+                        }`}
+                      />
+                      <span className="font-bold">
+                        {p.username} {p.userId === currentUserId ? "(Sen)" : ""}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={`ks-badge ${
+                          p.team === "red"
+                            ? "bg-red-500/20 text-red-400"
+                            : p.team === "blue"
+                            ? "bg-blue-500/20 text-blue-400"
+                            : "bg-slate-700 text-slate-300"
+                        }`}
+                      >
+                        {p.team === "red"
+                          ? "Kırmızı"
+                          : p.team === "blue"
+                          ? "Mavi"
+                          : "FFA"}
+                      </span>
+                    </td>
+                    <td className="font-mono">
+                      {p.kills} / {p.deaths}
+                    </td>
+                    <td className="font-mono">{Math.round(p.damage)}</td>
+                    <td>
+                      {p.userId !== currentUserId && (
+                        <input
+                          type="range"
+                          min="0"
+                          max="1.5"
+                          step="0.05"
+                          value={playerVolumes[p.userId] ?? 1.0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setPlayerVolumes((prev) => ({ ...prev, [p.userId]: val }));
+                            voice.current?.setPlayerVolume(p.userId, val);
+                          }}
+                          className="w-20"
+                        />
+                      )}
+                    </td>
+                    <td className="font-mono text-xs text-slate-400">
+                      {p.ping || 0} ms
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* IN-GAME HUD */}
       {view === "play" && hud && (
         <div className="ks-hud" aria-live="off">
           <div className="ks-top">
             <div>
-              <strong>KAPSSTRIKE</strong>
-              <span>{MAPS[map].name} · ANTRENMAN</span>
+              <strong>KAPSSTRIKE 3D</strong>
+              <span>
+                {MAPS[map]?.name || map} ·{" "}
+                {hud.isMultiplayer
+                  ? currentRoom?.mode === "tdm"
+                    ? "TAKIM SAVAŞI (TDM)"
+                    : "HERKES TEK (FFA)"
+                  : "ANTRENMAN"}
+              </span>
             </div>
             <div>
-              <b>
-                {Math.floor(hud.seconds / 60)}:
-                {String(Math.floor(hud.seconds) % 60).padStart(2, "0")}
-              </b>
+              {hud.isMultiplayer && currentRoom?.mode === "tdm" ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-red-400 font-black text-lg">
+                    {hud.redScore ?? 0}
+                  </span>
+                  <b className="text-amber-400">
+                    {Math.floor((hud.timeLeft ?? 0) / 60)}:
+                    {String(Math.floor(hud.timeLeft ?? 0) % 60).padStart(2, "0")}
+                  </b>
+                  <span className="text-blue-400 font-black text-lg">
+                    {hud.blueScore ?? 0}
+                  </span>
+                </div>
+              ) : (
+                <b>
+                  {Math.floor(hud.seconds / 60)}:
+                  {String(Math.floor(hud.seconds) % 60).padStart(2, "0")}
+                </b>
+              )}
               <span>
-                {hud.score} hedef · {Math.round(hud.dps)} DPS ·{" "}
+                {hud.score} skor · {Math.round(hud.dps)} DPS ·{" "}
                 {Math.round(hud.damage)} hasar
               </span>
             </div>
           </div>
+
           <div className="ks-crosshair">
             <i />
             <i />
@@ -125,6 +880,7 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
               </span>
             )}
           </div>
+
           <div className="ks-bottom">
             <div className="ks-health">
               <small>CAN {hud.protection > 0 ? "· KORUMA" : ""}</small>
@@ -137,27 +893,36 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                 {hud.stance === "slide"
                   ? "KAYMA"
                   : hud.stance === "crouch"
-                    ? "ÇÖMELME"
-                    : "AYAKTA"}
+                  ? "ÇÖMELME"
+                  : "AYAKTA"}
               </span>
             </div>
             <div className="ks-ammo">
-              <small>{WEAPONS[hud.weapon].name}</small>
+              <small>{WEAPONS[hud.weapon]?.name}</small>
               <strong>
                 {hud.ammo} <span>/ {hud.capacity}</span>
               </strong>
               <span>
                 {hud.reload > 0
                   ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
+                  : isMobile
+                  ? "Dokunmatik Kontroller Aktif"
                   : "R · Yenile | 1–5 · Silah"}
               </span>
             </div>
           </div>
+
           <div className="ks-perf">
             {Math.round(hud.fps)} FPS · {hud.drawCalls} çizim ·{" "}
-            {hud.activeMeshes}/{hud.meshes} mesh · Yerel antrenman, bağlantı yok
-            · ESC Menü
+            {hud.activeMeshes}/{hud.meshes} mesh ·{" "}
+            {hud.isMultiplayer
+              ? `Multiplayer (${hud.remotePlayerCount || 0} oyuncu) · Ping: ${Math.round(
+                  hud.ping || 0
+                )} ms · TAB Skor`
+              : "Yerel antrenman"}
+            {" · ESC Menü"}
           </div>
+
           {hud.hurt && hud.hurt.until > hud.tick && (
             <div
               className="ks-hurt"
@@ -166,53 +931,490 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
               ▲
             </div>
           )}
+
           {hud.dead && (
             <div className="ks-death">
               <h2>Yeniden hazırlan.</h2>
               <p>{hud.respawn.toFixed(1)} saniye sonra doğacaksın.</p>
-              <span>ESC ile duraklatabilirsin.</span>
+              <span>{hud.isMultiplayer ? "Güvenli doğma koruması devrede." : "ESC ile duraklatabilirsin."}</span>
             </div>
           )}
         </div>
       )}
-      {view !== "play" && (
+
+      {/* MATCH END MODAL */}
+      {view === "match_end" && matchStats && (
+        <div className="ks-match-end-overlay">
+          <div className="ks-match-end-card">
+            <div className="ks-winner-title">
+              {matchStats.winnerTeam === "red"
+                ? "KIRMIZI TAKIM KAZANDI!"
+                : matchStats.winnerTeam === "blue"
+                ? "MAVİ TAKIM KAZANDI!"
+                : `${matchStats.winnerName || "ŞAMPİYON"} KAZANDI!`}
+            </div>
+            <p className="text-slate-300 mb-6">
+              Maç tamamlandı. İstatistikler KapsApp liderlik tablosuna işlendi.
+            </p>
+
+            {matchStats.mvp && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-6 inline-block">
+                <span className="text-xs uppercase font-bold text-amber-400 block">
+                  Maçın En Değerli Oyuncusu (MVP)
+                </span>
+                <span className="text-lg font-black text-amber-200">
+                  👑 {matchStats.mvp.username} ({matchStats.mvp.kills} Öldürme ·{" "}
+                  {Math.round(matchStats.mvp.damage)} Hasar)
+                </span>
+              </div>
+            )}
+
+            <div className="flex gap-4 justify-center">
+              <button
+                className="ks-primary"
+                onClick={() => {
+                  setView("lobby");
+                  setMatchStats(null);
+                }}
+              >
+                Lobiye Dön
+              </button>
+              <button onClick={exit}>Ana Menü</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ROOM LOBBY VIEW */}
+      {view === "lobby" && currentRoom && (
+        <div className="ks-overlay">
+          <div className="ks-menu">
+            <div className="ks-lobby-container">
+              <div className="ks-lobby-header">
+                <div>
+                  <div className="ks-eyebrow">KAPSSTRIKE · ODA LOBİSİ</div>
+                  <h1 style={{ fontSize: "36px", margin: "4px 0" }}>
+                    {currentRoom.name}
+                  </h1>
+                  <span className="text-xs text-slate-400">
+                    Harita: <b>{MAPS[currentRoom.map]?.name}</b> · Mod:{" "}
+                    <b>{currentRoom.mode === "tdm" ? "Takım Savaşı" : "Herkes Tek"}</b> · Süre:{" "}
+                    <b>{Math.round(currentRoom.timeLimit / 60)} dk</b>
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="ks-lobby-code" title="Oda Kodu">
+                    {currentRoom.roomCode}
+                  </div>
+                  <button onClick={handleCopyInvite}>
+                    {inviteCopied ? "✓ Kopyalandı!" : "👥 Davet Et"}
+                  </button>
+                  <button onClick={exit}>Ayrıl</button>
+                </div>
+              </div>
+
+              {/* TDM TEAMS OR FFA LIST */}
+              {currentRoom.mode === "tdm" ? (
+                <div className="ks-teams-grid">
+                  <div className="ks-team-col red">
+                    <div className="ks-team-header red">
+                      <span>KIRMIZI TAKIM ({currentRoom.players.filter((p) => p.team === "red").length})</span>
+                      <button
+                        onClick={() => switchTeam("red")}
+                        style={{ padding: "4px 10px", minHeight: "auto", fontSize: "11px" }}
+                      >
+                        Kırmızıya Geç
+                      </button>
+                    </div>
+                    {currentRoom.players
+                      .filter((p) => p.team === "red")
+                      .map((p) => (
+                        <div key={p.id} className="ks-player-item">
+                          <div className="ks-player-info">
+                            <span className="font-bold text-red-400">
+                              {p.username} {p.userId === currentUserId ? "(Sen)" : ""}
+                            </span>
+                            {p.userId === currentRoom.hostId && (
+                              <span className="text-amber-400 text-xs font-bold">👑 Host</span>
+                            )}
+                          </div>
+                          <span className={p.ready ? "text-emerald-400 text-xs font-bold" : "text-slate-500 text-xs"}>
+                            {p.ready ? "✓ HAZIR" : "BEKLİYOR"}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="ks-team-col blue">
+                    <div className="ks-team-header blue">
+                      <span>MAVİ TAKIM ({currentRoom.players.filter((p) => p.team === "blue").length})</span>
+                      <button
+                        onClick={() => switchTeam("blue")}
+                        style={{ padding: "4px 10px", minHeight: "auto", fontSize: "11px" }}
+                      >
+                        Maviye Geç
+                      </button>
+                    </div>
+                    {currentRoom.players
+                      .filter((p) => p.team === "blue")
+                      .map((p) => (
+                        <div key={p.id} className="ks-player-item">
+                          <div className="ks-player-info">
+                            <span className="font-bold text-blue-400">
+                              {p.username} {p.userId === currentUserId ? "(Sen)" : ""}
+                            </span>
+                            {p.userId === currentRoom.hostId && (
+                              <span className="text-amber-400 text-xs font-bold">👑 Host</span>
+                            )}
+                          </div>
+                          <span className={p.ready ? "text-emerald-400 text-xs font-bold" : "text-slate-500 text-xs"}>
+                            {p.ready ? "✓ HAZIR" : "BEKLİYOR"}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-700">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="font-bold text-amber-400 text-sm">
+                      OYUNCULAR ({currentRoom.players.length}/{currentRoom.maxPlayers})
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {currentRoom.players.map((p) => (
+                      <div key={p.id} className="ks-player-item">
+                        <div className="ks-player-info">
+                          <span className="font-bold">
+                            {p.username} {p.userId === currentUserId ? "(Sen)" : ""}
+                          </span>
+                          {p.userId === currentRoom.hostId && (
+                            <span className="text-amber-400 text-xs font-bold">👑 Host</span>
+                          )}
+                        </div>
+                        <span className={p.ready ? "text-emerald-400 text-xs font-bold" : "text-slate-500 text-xs"}>
+                          {p.ready ? "✓ HAZIR" : "BEKLİYOR"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* LOBBY CONTROLS */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-800 flex-wrap gap-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={toggleReady}
+                    className={
+                      currentRoom.players.find((p) => p.userId === currentUserId)?.ready
+                        ? "ks-primary"
+                        : ""
+                    }
+                  >
+                    {currentRoom.players.find((p) => p.userId === currentUserId)?.ready
+                      ? "✓ HAZIR (İptal)"
+                      : "HAZIR OL"}
+                  </button>
+                  <button onClick={toggleVoice}>
+                    {isVoiceMuted ? "🎤 Mikrofonu Aç" : "🎙️ Mikrofon Açık"}
+                  </button>
+                </div>
+
+                {isHost && (
+                  <button
+                    className="ks-btn-quick"
+                    onClick={startMatchAsHost}
+                    disabled={currentRoom.players.length < 1}
+                  >
+                    ⚡ MAÇI BAŞLAT
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MAIN MENU & BROWSER */}
+      {view === "menu" && (
         <div className="ks-overlay">
           <div className="ks-menu">
             <header>
-              <div className="ks-eyebrow">KAPSAPP · ÖZGÜN 3D FPS</div>
+              <div className="ks-eyebrow">KAPSAPP · RESMİ 3D MULTIPLAYER FPS</div>
               <h1>
                 KAPS<span>STRIKE</span>
               </h1>
-              <p>Hızını bul. Nişanını geliştir.</p>
-              <div className="ks-status">
-                AŞAMA 1 · YEREL ANTRENMAN · SUNUCU GEREKTİRMEZ
+              <p>
+                Düşük gecikmeli, sunucu otoriteli 3D FPS arenası. Arkadaşlarınla takım kur ya da tek başına kapış!
+              </p>
+
+              {/* TABS: Multiplayer vs Training */}
+              <div className="ks-mp-tabs">
+                <button
+                  type="button"
+                  className={`ks-mp-tab ${modeTab === "multiplayer" ? "active" : ""}`}
+                  onClick={() => setModeTab("multiplayer")}
+                >
+                  🎯 Çok Oyunculu (Multiplayer)
+                </button>
+                <button
+                  type="button"
+                  className={`ks-mp-tab ${modeTab === "training" ? "active" : ""}`}
+                  onClick={() => setModeTab("training")}
+                >
+                  🏹 Tek Oyunculu Antrenman (Offline)
+                </button>
               </div>
             </header>
+
             {error && (
               <p className="ks-error" role="alert">
                 {error}
               </p>
             )}
+
             {!supported && (
               <p className="ks-error">
-                Bu oyun WebGL ve fare kilidi destekli bir masaüstü tarayıcı
-                gerektiriyor. Dokunmatik kontrol bu aşamada yok.
+                Bu oyun WebGL destekli modern bir tarayıcı gerektiriyor.
               </p>
             )}
-            {view === "pause" && !panel ? (
-              <div className="ks-paused">
-                <h2>Duraklatıldı</h2>
-                <p>
-                  Simülasyon ve render döngüsü durdu. Ayar değişiklikleri
-                  yeniden başlatmada uygulanır.
-                </p>
-                <button className="ks-primary" onClick={resume}>
-                  Oyuna dön
-                </button>
-                <button onClick={start}>Haritayı yeniden başlat</button>
+
+            {/* MULTIPLAYER SECTION */}
+            {modeTab === "multiplayer" && !panel && (
+              <>
+                <div className="ks-mp-actions">
+                  <button className="ks-btn-quick" onClick={handleQuickMatch}>
+                    ⚡ Hızlı Maç Bul
+                  </button>
+                  <button
+                    onClick={() => setPanel("create_room")}
+                    className="ks-primary"
+                  >
+                    + Oda Oluştur
+                  </button>
+                  <form onSubmit={handleJoinByCode} className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="6 Haneli Kod"
+                      maxLength={6}
+                      value={joinCodeInput}
+                      onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                      className="ks-filter-input"
+                      style={{ width: "120px", minWidth: "100px", textTransform: "uppercase" }}
+                    />
+                    <button type="submit" disabled={joinCodeInput.trim().length !== 6}>
+                      Koda Katıl
+                    </button>
+                  </form>
+                </div>
+
+                <div className="ks-rooms-header">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-slate-300">
+                      Aktif Odalar ({filteredRooms.length})
+                    </span>
+                    <button
+                      onClick={refreshRooms}
+                      style={{ padding: "4px 8px", minHeight: "auto", fontSize: "12px" }}
+                    >
+                      🔄 Yenile
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Oda ara..."
+                      value={roomFilter}
+                      onChange={(e) => setRoomFilter(e.target.value)}
+                      className="ks-filter-input"
+                    />
+                    <select
+                      value={roomModeFilter}
+                      onChange={(e) => setRoomModeFilter(e.target.value as any)}
+                      className="ks-filter-select"
+                    >
+                      <option value="all">Tüm Modlar</option>
+                      <option value="tdm">Takım Savaşı (TDM)</option>
+                      <option value="ffa">Herkes Tek (FFA)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="ks-rooms-grid">
+                  {filteredRooms.length === 0 ? (
+                    <div className="col-span-full text-center py-12 text-slate-500 bg-slate-900/40 rounded-xl border border-slate-800">
+                      Şu an açık oda yok. Hemen "Oda Oluştur" veya "Hızlı Maç" ile oyunu başlat!
+                    </div>
+                  ) : (
+                    filteredRooms.map((r) => (
+                      <div key={r.id} className="ks-room-card">
+                        <div>
+                          <div className="ks-room-top">
+                            <span className="ks-room-title">{r.name}</span>
+                            <span
+                              className={`ks-badge ${
+                                r.status === "in_progress"
+                                  ? "ks-badge-playing"
+                                  : "ks-badge-waiting"
+                              }`}
+                            >
+                              {r.status === "in_progress" ? "Savaşta" : "Lobi"}
+                            </span>
+                          </div>
+                          <div className="ks-room-meta mt-2">
+                            <span>🗺️ {MAPS[r.map]?.name}</span>
+                            <span
+                              className={`ks-badge ${
+                                r.mode === "tdm" ? "ks-badge-tdm" : "ks-badge-ffa"
+                              }`}
+                            >
+                              {r.mode === "tdm" ? "TDM" : "FFA"}
+                            </span>
+                            <span>
+                              👥 {r.playerCount}/{r.maxPlayers}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                          <span className="text-xs text-slate-500">
+                            Host: {r.hostName} {r.hasPassword ? "🔒" : ""}
+                          </span>
+                          <button
+                            onClick={() => handleJoinRoom(r.roomCode, r.hasPassword)}
+                            disabled={r.playerCount >= r.maxPlayers}
+                            style={{ padding: "6px 14px", minHeight: "auto", fontSize: "12px" }}
+                          >
+                            {r.hasPassword ? "Şifreyle Gir" : "Katıl"}
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* PASSWORD MODAL */}
+            {passwordModalRoomId && (
+              <div className="ks-settings">
+                <h2>Oda Şifresi Gerekiyor</h2>
+                <input
+                  type="password"
+                  placeholder="Şifreyi giriniz"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  className="ks-filter-input"
+                  autoFocus
+                />
+                <div className="flex gap-2 mt-4">
+                  <button className="ks-primary" onClick={handleJoinWithPassword}>
+                    Onayla ve Gir
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPasswordModalRoomId(null);
+                      setPasswordInput("");
+                    }}
+                  >
+                    İptal
+                  </button>
+                </div>
               </div>
-            ) : null}
-            {view === "menu" && !panel && (
+            )}
+
+            {/* CREATE ROOM PANEL */}
+            {panel === "create_room" && (
+              <form onSubmit={handleCreateRoom} className="ks-settings">
+                <h2>Yeni Çok Oyunculu Oda Kur</h2>
+                <label>
+                  Oda Adı
+                  <input
+                    type="text"
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Harita
+                  <select
+                    value={createMap}
+                    onChange={(e) => setCreateMap(e.target.value as MapId)}
+                  >
+                    {Object.values(MAPS).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.subtitle})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Oyun Modu
+                  <select
+                    value={createMode}
+                    onChange={(e) => setCreateMode(e.target.value as StrikeGameMode)}
+                  >
+                    <option value="tdm">Takım Savaşı (TDM - Red vs Blue)</option>
+                    <option value="ffa">Herkes Tek (FFA - Deathmatch)</option>
+                  </select>
+                </label>
+                <label>
+                  Maksimum Oyuncu ({createMaxPlayers})
+                  <input
+                    type="range"
+                    min="2"
+                    max="10"
+                    step="1"
+                    value={createMaxPlayers}
+                    onChange={(e) => setCreateMaxPlayers(Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  Maç Süresi
+                  <select
+                    value={createDuration}
+                    onChange={(e) => setCreateDuration(Number(e.target.value))}
+                  >
+                    <option value={180}>3 Dakika</option>
+                    <option value={300}>5 Dakika</option>
+                    <option value={600}>10 Dakika</option>
+                  </select>
+                </label>
+                <label>
+                  Skor Limiti ({createScoreLimit} Kill)
+                  <input
+                    type="range"
+                    min="10"
+                    max="60"
+                    step="5"
+                    value={createScoreLimit}
+                    onChange={(e) => setCreateScoreLimit(Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  Oda Şifresi (İsteğe Bağlı)
+                  <input
+                    type="text"
+                    placeholder="Şifresiz için boş bırakın"
+                    value={createPassword}
+                    onChange={(e) => setCreatePassword(e.target.value)}
+                  />
+                </label>
+                <div className="flex gap-3 mt-4">
+                  <button type="submit" className="ks-primary">
+                    Odayı Oluştur
+                  </button>
+                  <button type="button" onClick={() => setPanel(null)}>
+                    İptal
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TRAINING SECTION */}
+            {modeTab === "training" && !panel && (
               <>
                 <div className="ks-maps">
                   {Object.values(MAPS).map((m) => (
@@ -237,27 +1439,27 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                     checked={returnFire}
                     onChange={(e) => setReturnFire(e.target.checked)}
                   />{" "}
-                  Kuklalar karşı ateş açsın · canlandırma ve yönsel hasar
-                  antrenmanı
+                  Kuklalar karşı ateş açsın · canlandırma ve yönsel hasar antrenmanı
                 </label>
                 <p className="ks-hint">
-                  Turuncu kuklaları vur. Kırmızı zemin tehlike bölgesidir.
-                  Kuklalar 3 saniye sonra geri gelir.
+                  Turuncu kuklaları vur. Kırmızı zemin tehlike bölgesidir. Kuklalar 3 saniye sonra geri gelir.
                 </p>
                 <button
                   className="ks-primary"
                   disabled={!supported}
-                  onClick={start}
+                  onClick={startTraining}
                 >
-                  Antrenmanı başlat
+                  Antrenmanı Başlat
                 </button>
               </>
             )}
+
+            {/* SETTINGS PANEL */}
             {panel === "settings" && (
               <div className="ks-settings">
                 <h2>Ayarlar</h2>
                 <label>
-                  Grafik kalitesi
+                  Grafik Kalitesi
                   <select
                     value={settings.quality}
                     onChange={(e) =>
@@ -266,13 +1468,22 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                       })
                     }
                   >
-                    <option value="low">Low · düşük yük</option>
-                    <option value="medium">Medium · dengeli</option>
-                    <option value="high">High · gölgeler</option>
+                    <option value="auto">Auto · Otomatik Algıla (Önerilen)</option>
+                    <option value="low">Low · Düşük Yük / Mobil</option>
+                    <option value="medium">Medium · Dengeli</option>
+                    <option value="high">High · Gölgeli / Yüksek</option>
                   </select>
                 </label>
+                <label className="ks-check">
+                  <input
+                    type="checkbox"
+                    checked={settings.dynamicResolution !== false}
+                    onChange={(e) => setting({ dynamicResolution: e.target.checked })}
+                  />{" "}
+                  Dinamik Çözünürlük (Kare hızı düşerse otomatik optimize eder)
+                </label>
                 <label>
-                  Çözünürlük ölçeği · {settings.scale.toFixed(2)}×
+                  Çözünürlük Ölçeği · {settings.scale.toFixed(2)}×
                   <input
                     type="range"
                     min=".5"
@@ -283,7 +1494,7 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                   />
                 </label>
                 <label>
-                  Mouse sensitivity · {settings.sensitivity.toFixed(2)}
+                  Fare Hassasiyeti (Mouse Sensitivity) · {settings.sensitivity.toFixed(2)}
                   <input
                     type="range"
                     min=".15"
@@ -295,8 +1506,23 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                     }
                   />
                 </label>
+                {isMobile && (
+                  <label>
+                    Mobil Dokunmatik Hassasiyet · {(settings.mobileSensitivity || 1.2).toFixed(2)}
+                    <input
+                      type="range"
+                      min=".2"
+                      max="4"
+                      step=".1"
+                      value={settings.mobileSensitivity || 1.2}
+                      onChange={(e) =>
+                        setting({ mobileSensitivity: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                )}
                 <label>
-                  FOV · {settings.fov}°
+                  Görüş Açısı (FOV) · {settings.fov}°
                   <input
                     type="range"
                     min="65"
@@ -307,7 +1533,7 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                   />
                 </label>
                 <label>
-                  Oyun sesi · {Math.round(settings.volume * 100)}%
+                  Genel Ses (Master Volume) · {Math.round(settings.volume * 100)}%
                   <input
                     type="range"
                     min="0"
@@ -319,35 +1545,61 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                     }
                   />
                 </label>
+                <label>
+                  Silah ve Çevre Sesleri · {Math.round((settings.effectsVolume ?? 0.8) * 100)}%
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step=".05"
+                    value={settings.effectsVolume ?? 0.8}
+                    onChange={(e) =>
+                      setting({ effectsVolume: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label>
+                  Sesli Sohbet Düzeyi · {Math.round((settings.voiceVolume ?? 1.0) * 100)}%
+                  <input
+                    type="range"
+                    min="0"
+                    max="1.5"
+                    step=".05"
+                    value={settings.voiceVolume ?? 1.0}
+                    onChange={(e) =>
+                      setting({ voiceVolume: Number(e.target.value) })
+                    }
+                  />
+                </label>
                 <label className="ks-check">
                   <input
                     type="checkbox"
                     checked={settings.invertY}
                     onChange={(e) => setting({ invertY: e.target.checked })}
                   />{" "}
-                  Dikey fareyi ters çevir
+                  Dikey fareyi ters çevir (Invert Y)
                 </label>
-                <p>
-                  Sesli sohbetin ses düzeyi değiştirilmez. Ayarlar yeni
-                  antrenmanda uygulanır.
-                </p>
-                <button onClick={() => setPanel(null)}>Geri</button>
+                <button onClick={() => setPanel(null)}>Kaydet ve Dön</button>
               </div>
             )}
+
+            {/* CONTROLS PANEL */}
             {panel === "controls" && (
               <div className="ks-controls">
                 <h2>Kontroller</h2>
                 <dl>
                   {[
-                    ["W A S D", "Hareket"],
-                    ["Fare", "Bakış ve nişan"],
-                    ["Space", "Zıpla · yeniden zıplamak için bırakıp bas"],
+                    ["W A S D", "Hareket (Mobilde Sol Sanal Joystick)"],
+                    ["Fare", "Bakış ve nişan (Mobilde Sağ Ekran Kaydırma)"],
+                    ["Space", "Zıpla · zamanlamalı bunny hop"],
                     ["Shift", "Koş"],
                     ["Ctrl / C", "Çömel · koşarken kay"],
-                    ["Sol tık", "Ateş"],
-                    ["Sağ tık", "ADS"],
+                    ["Sol tık", "Ateş (Mobilde Sağ Ateş Butonu)"],
+                    ["Sağ tık", "ADS (Yakınlaştır / Dürbün)"],
                     ["R", "Şarjör yenile"],
                     ["1–5 / Tekerlek", "Silah seç"],
+                    ["TAB", "Canlı Skor Tablosu"],
+                    ["V", "Push-to-Talk (Bas-Konuş)"],
                     ["ESC", "Duraklat / fareyi bırak"],
                   ].map(([k, v]) => (
                     <React.Fragment key={k}>
@@ -356,20 +1608,10 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                     </React.Fragment>
                   ))}
                 </dl>
-                <p>
-                  Havada kontrollü yönlendirme ve zamanlamalı bunny hop vardır.
-                  Hız sınırı 13 m/s. Şarjörler sınırlıdır; antrenmanda yedek
-                  mühimmat sınırsızdır.
-                </p>
-                <p>
-                  {WEAPON_ORDER.map(
-                    (id) =>
-                      `${WEAPONS[id].name}: ${WEAPONS[id].capacity} mermi`,
-                  ).join(" · ")}
-                </p>
                 <button onClick={() => setPanel(null)}>Geri</button>
               </div>
             )}
+
             <footer>
               <button
                 onClick={() =>
@@ -398,7 +1640,6 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
               >
                 Tam ekran
               </button>
-              {view === "pause" && <button onClick={exit}>Ana menü</button>}
               <button
                 onClick={() => {
                   exit();
@@ -408,6 +1649,24 @@ export default function KapsStrikeGame({ onBack }: { onBack: () => void }) {
                 Oyundan çık
               </button>
             </footer>
+          </div>
+        </div>
+      )}
+
+      {/* PAUSE OVERLAY */}
+      {view === "pause" && (
+        <div className="ks-overlay">
+          <div className="ks-menu">
+            <div className="ks-paused">
+              <h2>Duraklatıldı</h2>
+              <p>Simülasyon ve kontroller durduruldu.</p>
+              <div className="flex gap-3">
+                <button className="ks-primary" onClick={resume}>
+                  Oyuna dön
+                </button>
+                <button onClick={exit}>Menüye dön</button>
+              </div>
+            </div>
           </div>
         </div>
       )}

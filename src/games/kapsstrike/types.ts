@@ -113,10 +113,148 @@ export interface TrainingState {
   lastSequence: number;
 }
 export interface StrikeSettings {
-  quality: "low" | "medium" | "high";
+  quality: "low" | "medium" | "high" | "auto";
   scale: number;
   sensitivity: number;
+  mobileSensitivity?: number;
   fov: number;
   volume: number;
+  effectsVolume?: number;
+  voiceVolume?: number;
+  dynamicResolution?: boolean;
   invertY: boolean;
+}
+
+export type StrikeGameMode = "ffa" | "tdm";
+export type StrikeTeam = "red" | "blue" | "none";
+export type StrikeRoomStatus = "lobby" | "in_progress" | "game_over";
+
+export interface NetworkPlayer {
+  id: string; // Actor / Socket ID
+  userId: number; // KapsApp user ID
+  username: string;
+  avatar: string | null;
+  color: string;
+  team: StrikeTeam;
+  isHost: boolean;
+  ready: boolean;
+  isAlive: boolean;
+  hp: number;
+  position: Vec3;
+  velocity: Vec3;
+  yaw: number;
+  pitch: number;
+  stance: "stand" | "crouch" | "slide";
+  selectedWeapon: WeaponId;
+  ammo: Record<WeaponId, number>;
+  kills: number;
+  deaths: number;
+  assists: number;
+  score: number;
+  damage: number;
+  headshots: number;
+  ping: number;
+  isSpeaking?: boolean;
+  isMuted?: boolean;
+}
+
+export interface PlayerSnapshot {
+  id: string;
+  userId: number;
+  username: string;
+  team: StrikeTeam;
+  color: string;
+  hp: number;
+  position: Vec3;
+  velocity: Vec3;
+  yaw: number;
+  pitch: number;
+  stance: "stand" | "crouch" | "slide";
+  selectedWeapon: WeaponId;
+  deadUntil: number;
+  protectedUntil: number;
+  kills: number;
+  deaths: number;
+  score: number;
+  ping: number;
+}
+
+export interface StrikeSnapshot {
+  tick: number;
+  serverTime: number;
+  ackSequence: number; // Acknowledged input sequence for the recipient client
+  players: PlayerSnapshot[];
+  teamScores?: { red: number; blue: number };
+  timeLeft: number;
+  events: CombatEvent[];
+}
+
+export interface KillFeedEntry {
+  id: string;
+  tick: number;
+  killerId: string;
+  killerName: string;
+  killerTeam: StrikeTeam;
+  victimId: string;
+  victimName: string;
+  victimTeam: StrikeTeam;
+  weapon: WeaponId;
+  headshot: boolean;
+  timestamp: number;
+}
+
+export interface StrikeRoomState {
+  roomCode: string;
+  name: string;
+  map: MapId;
+  mode: StrikeGameMode;
+  status: StrikeRoomStatus;
+  maxPlayers: number;
+  scoreLimit: number;
+  timeLimit: number; // in seconds
+  timeLeft: number; // in seconds
+  hostId: number;
+  hasPassword: boolean;
+  teamScores: { red: number; blue: number };
+  players: NetworkPlayer[];
+  killFeed: KillFeedEntry[];
+  winner?: {
+    team?: StrikeTeam;
+    userId?: number;
+    username?: string;
+    reason: string;
+  };
+}
+
+export interface StrikeRoomSummary {
+  id: string;
+  roomCode: string;
+  name: string;
+  map: MapId;
+  mode: StrikeGameMode;
+  status: StrikeRoomStatus;
+  playerCount: number;
+  maxPlayers: number;
+  hostId: number;
+  hostName: string;
+  hasPassword: boolean;
+  ping?: number;
+}
+
+export interface MatchStats {
+  kills: number;
+  deaths: number;
+  headshots: number;
+  damage: number;
+  score: number;
+  won: boolean;
+  mode: StrikeGameMode;
+  winnerTeam?: StrikeTeam;
+  winnerName?: string;
+  mvp?: {
+    userId: number;
+    username: string;
+    kills: number;
+    damage: number;
+  };
 }

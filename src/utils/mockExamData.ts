@@ -273,6 +273,15 @@ export function isUserEnrolledInExam(
 
   const userRoles = rawUserRoles.map(normalizeRole);
 
+  if (exam.level === "HL") {
+    const userLevel = getUserLevelForSubject(exam.subject, rawUserRoles);
+    if (userLevel === "SL") return false;
+  }
+  if (exam.level === "SL") {
+    const userLevel = getUserLevelForSubject(exam.subject, rawUserRoles);
+    if (userLevel === "HL") return false;
+  }
+
   return exam.targetRoles.some((targetRole) => {
     const targetNorm = normalizeRole(targetRole);
     if (userRoles.includes(targetNorm)) return true;
@@ -528,18 +537,18 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     level: "SL/HL",
     date: "2026-10-26",
     startTime: "09:00",
-    endTime: "11:10",
+    endTime: "11:00",
     slDurationMinutes: 90,
-    hlDurationMinutes: 130,
-    slEndTime: "10:20",
+    hlDurationMinutes: 120,
+    slEndTime: "10:30",
     hlEndTime: "11:00",
     targetRoles: ["math_sl", "math_hl", "math", "matematik"],
     targetCourses: ["Mathematics"],
     room: "Ana Konferans Salonu",
     paper: "Paper 1",
     durationMin: 90,
-    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 1 (Rescheduled)",
-    affectedCourseIds: ["math"]
+    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 1 (SL 90' bitiş: 10:30, HL 120' bitiş: 11:00)",
+    affectedCourseIds: ["physics_biology", "math"]
   },
   // 27.10.2026 Salı (Tuesday) - Rescheduled Math P2 & P3
   {
@@ -552,34 +561,34 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     endTime: "11:00",
     slDurationMinutes: 90,
     hlDurationMinutes: 120,
-    slEndTime: "10:20",
-    hlEndTime: "10:50",
+    slEndTime: "10:30",
+    hlEndTime: "11:00",
     targetRoles: ["math_sl", "math_hl", "math", "matematik"],
     targetCourses: ["Mathematics"],
     room: "Ana Konferans Salonu",
     paper: "Paper 2",
     durationMin: 90,
-    description: "IB DP Pre-Mock 3 • Mathematics AA / AI Paper 2 (Rescheduled)",
-    affectedCourseIds: ["math"]
+    description: "IB DP Pre-Mock 3 • Mathematics Paper 2 (SL 90' bitiş: 10:30, HL 120' bitiş: 11:00)",
+    affectedCourseIds: ["chemistry_digsoc_psychology", "literature"]
   },
   {
     id: "mock_20261027_math_p3",
     title: "Mathematics Paper 3 (Rescheduled)",
     subject: "Mathematics",
-    level: "SL/HL",
+    level: "HL",
     date: "2026-10-27",
     startTime: "14:00",
     endTime: "15:15",
-    slDurationMinutes: 75,
+    slDurationMinutes: 0,
     hlDurationMinutes: 75,
-    slEndTime: "15:15",
+    slEndTime: "14:00",
     hlEndTime: "15:15",
-    targetRoles: ["math_sl", "math_hl", "math", "matematik"],
+    targetRoles: ["math_hl", "math", "matematik"],
     targetCourses: ["Mathematics"],
     room: "Derslik 301",
     paper: "Paper 3",
     durationMin: 75,
-    description: "IB DP Pre-Mock 3 • Mathematics Paper 3 (75 dk bitiş: 15:15)",
+    description: "IB DP Pre-Mock 3 • Mathematics Paper 3 (HL 75' bitiş: 15:15)",
     affectedCourseIds: ["math"]
   },
 

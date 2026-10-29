@@ -132,12 +132,28 @@ export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
   },
 };
 export const WEAPON_ORDER = Object.keys(WEAPONS) as WeaponId[];
+export function detectAutoQuality(): "low" | "medium" | "high" {
+  if (typeof window === "undefined") return "medium";
+  const isMobile =
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    window.innerWidth < 800;
+  if (isMobile) return "low";
+  const cores = navigator.hardwareConcurrency || 4;
+  if (cores >= 8) return "high";
+  if (cores <= 2) return "low";
+  return "medium";
+}
+
 export const DEFAULT_SETTINGS: StrikeSettings = {
-  quality: "medium",
+  quality: "auto",
   scale: 1,
   sensitivity: 1,
+  mobileSensitivity: 1.2,
   fov: 90,
-  volume: 0.35,
+  volume: 0.5,
+  effectsVolume: 0.8,
+  voiceVolume: 1.0,
+  dynamicResolution: true,
   invertY: false,
 };
 export function cleanSettings(s: Partial<StrikeSettings>): StrikeSettings {
@@ -146,13 +162,17 @@ export function cleanSettings(s: Partial<StrikeSettings>): StrikeSettings {
       ? Math.max(min, Math.min(max, v))
       : fallback;
   return {
-    quality: ["low", "medium", "high"].includes(s.quality || "")
-      ? s.quality!
+    quality: ["low", "medium", "high", "auto"].includes(s.quality || "")
+      ? (s.quality as StrikeSettings["quality"])
       : DEFAULT_SETTINGS.quality,
     scale: n(s.scale, 0.5, 1.5, 1),
     sensitivity: n(s.sensitivity, 0.15, 3, 1),
+    mobileSensitivity: n(s.mobileSensitivity, 0.2, 4, 1.2),
     fov: n(s.fov, 65, 115, 90),
-    volume: n(s.volume, 0, 1, 0.35),
+    volume: n(s.volume, 0, 1, 0.5),
+    effectsVolume: n(s.effectsVolume, 0, 1, 0.8),
+    voiceVolume: n(s.voiceVolume, 0, 1.5, 1.0),
+    dynamicResolution: s.dynamicResolution !== false,
     invertY: s.invertY === true,
   };
 }

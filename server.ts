@@ -72,6 +72,7 @@ import { PartyManager, runHeadlessPartyTest } from "./src/server/partyServer.ts"
 import { BilliardsManager } from "./src/server/billiardsServer.ts";
 import { DungeonManager } from "./src/server/dungeonServer.ts";
 import { KapstorialManager } from "./src/server/kapstorialServer.ts";
+import { KapsStrikeServerManager } from "./src/server/kapsstrikeServer.ts";
 
 dotenv.config();
 
@@ -211,6 +212,21 @@ async function initDb() {
   } catch (e) {}
   try {
     await client.execute(`ALTER TABLE users ADD COLUMN kapstorial_wins INTEGER DEFAULT 0`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN strike_kills INTEGER DEFAULT 0`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN strike_deaths INTEGER DEFAULT 0`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN strike_wins INTEGER DEFAULT 0`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN strike_matches INTEGER DEFAULT 0`);
+  } catch (e) {}
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN strike_headshots INTEGER DEFAULT 0`);
   } catch (e) {}
   await client.execute(`CREATE TABLE IF NOT EXISTS friends (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2338,6 +2354,7 @@ async function startServer() {
   const billiardsManager = new BilliardsManager(io, client);
   const kapstorialManager = new KapstorialManager(io, client);
   const dungeonManager = new DungeonManager(io, client);
+  const kapsstrikeManager = new KapsStrikeServerManager(io, client);
   await dungeonManager.initialize().catch(() => console.error("Dungeon progression storage is unavailable; game remains playable."));
   let closeAnyTableAndNotify: (tableId: string) => boolean;
   let refundBlackjackTableBets: (tableId: string, reason: string) => Promise<boolean>;
@@ -2516,6 +2533,15 @@ async function startServer() {
       const tid = String(kTable.id);
       if (!addedIds.has(tid)) {
         list.push(kTable as any);
+        addedIds.add(tid);
+      }
+    }
+
+    // 10. KapsStrike 3D FPS tables
+    for (const sTable of kapsstrikeManager.getUnifiedTables()) {
+      const tid = String(sTable.id);
+      if (!addedIds.has(tid)) {
+        list.push(sTable as any);
         addedIds.add(tid);
       }
     }
@@ -7257,6 +7283,7 @@ async function startServer() {
             (gameType as string) === 'poker' ? 'poker_wins' : 
             (gameType as string) === 'royale' ? 'royale_wins' : 
             (gameType as string) === 'kapstorial' ? 'kapstorial_wins' : 
+            (gameType as string) === 'strike' ? 'strike_kills' : 
             'okey_wins';
 
           result = await client.execute({
@@ -7268,7 +7295,9 @@ async function startServer() {
                          COALESCE(batak_wins, 0) AS batak_wins,
                          COALESCE(poker_wins, 0) AS poker_wins,
                          COALESCE(royale_wins, 0) AS royale_wins,
-                         COALESCE(kapstorial_wins, 0) AS kapstorial_wins 
+                         COALESCE(kapstorial_wins, 0) AS kapstorial_wins,
+                         COALESCE(strike_kills, 0) AS strike_kills,
+                         COALESCE(strike_wins, 0) AS strike_wins 
                   FROM users ORDER BY COALESCE(${orderCol}, 0) DESC, id ASC LIMIT 10`,
             args: []
           });
@@ -8100,6 +8129,7 @@ async function startServer() {
     // ============================================================
     kapstorialManager.handleSocketEvents(socket, user);
     dungeonManager.register(socket, user);
+    kapsstrikeManager.register(socket, user);
 
     socket.on("kapstorial:send_invite", (data: { targetUserId: number; roomCode: string; mapName?: string; bet?: number }) => {
       const targetSockId = onlineUsers.get(Number(data.targetUserId));
@@ -11864,6 +11894,7 @@ async function startServer() {
           kapstorialManager.leaveRoom(kId, userIdNum);
         }
       }
+      kapsstrikeManager.handleDisconnect(socket, userIdNum);
       broadcastActiveTables();
 
       const voiceRoomId = socket.data.currentVoiceRoom;

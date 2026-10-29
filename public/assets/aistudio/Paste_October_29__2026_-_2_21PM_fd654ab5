@@ -1,0 +1,514 @@
+KAPSAPP — KAPSSTRIKE 3D FPS OYUNU — AŞAMA 1/3
+
+GÖREVİN:
+KapsApp adlı mevcut web uygulamama, Krunker.io'nun hızlı, akıcı ve eğlenceli oynanış hissini hedefleyen, ancak tamamen özgün haritalara, silahlara, tasarıma ve kimliğe sahip, gerçek üç boyutlu bir FPS oyunu ekle. Oyunun adı KapsStrike olsun.
+
+Bu bir fikir geliştirme, belge hazırlama veya yalnızca planlama görevi değildir. Mevcut repository'yi incele, gerekli dosyaları oluştur, gerçek çalışan kodu yaz, uygulamayı çalıştır, test et ve hataları gider. Bu promptta temel oyun mekaniğini TAMAMLA. Multiplayer entegrasyonu ikinci aşamada yapılacak, fakat mimari baştan buna uygun olmalı.
+
+TEMEL KURALLAR:
+1. Önce mevcut KapsApp repository'sini ve kullanılan framework, routing, authentication, build, CSS, state management ve deployment yapısını incele.
+2. Mevcut KapsApp özelliklerini, oyunlarını, sohbetlerini, kamera, mikrofon ve ekran paylaşma sistemlerini bozma.
+3. Oyunu mevcut oyunlar bölümüne yerleştir. Ayrı bir oyun modülü olsun; mümkün olduğunda mevcut stil ve gezinme yapısını kullan.
+4. Üç boyutlu oyun için Babylon.js ve TypeScript tercih et. Bunun için mevcut projeyle uyumsuzluk varsa teknik gerekçeyle daha uygun bir mimari kullan ve seçimini açıkla.
+5. Oyunun çalışması için ihtiyaç duyulan bağımlılıkları kur ve yapılandır. Sahte placeholder ekran veya sadece çalışan görünümlü UI üretme.
+6. Başka oyunların telifli modellerini, haritalarını, markalarını veya varlıklarını kopyalama. Özgün low-poly estetiği kullan.
+7. Oyun motoru uygulamanın geri kalanından izole olmalı; oyun kapatılınca render loop, event listener'lar, mouse pointer lock, fizik sistemi ve GPU kaynakları temizlenmeli.
+8. Çalışmayan özellikleri tamamlanmış gibi raporlama. Teknik olarak tamamlayamadıklarını açıkça belirt.
+
+A. OYUNUN ANA YAPISI
+- KapsApp oyunlar menüsüne KapsStrike kartı ekle.
+- Başlat, Ayarlar, Kontroller ve Oyundan Çık menüleri oluştur.
+- Oyunu tam ekran destekli, responsive bir canvas içinde çalıştır.
+- Maç sırasında fare pointer lock kullan; ESC ile güvenli biçimde menüye dön.
+- Oyuna girmeden grafik kalitesi, mouse sensitivity, FOV ve ses ayarları değiştirilebilsin.
+- Kullanıcı arayüzü mevcut KapsApp tasarım diliyle uyumlu, modern ve sade olsun.
+- Oyun içinde başlangıç için tek oyunculu antrenman modu ve hedef kuklaları bulunsun.
+- Bu aşamada sunucuya ihtiyaç duymadan antrenman modu gerçekten çalışmalı.
+
+B. FPS KAMERA VE HAREKET
+- Gerçek birinci şahıs kamera oluştur.
+- WASD: hareket.
+- Mouse: kamera ve nişan.
+- Space: zıplama.
+- Shift: koşma.
+- Ctrl veya C: crouch.
+- Koşarken crouch: momentum bazlı slide.
+- Bunny hopping, dengeli hava kontrolü, hızlanma, sürtünme ve yavaşlama uygula.
+- Hareketin kare hızından bağımsız olmasını sağla.
+- Sabit adımlı fizik simülasyonu veya eşdeğer deterministik güncelleme yaklaşımı kullan.
+- Oyuncunun duvarlardan, zeminden ve kutulardan geçmesini önle.
+- Rampalar, merdivenler, farklı yükseklikler ve köşeler düzgün çalışmalı.
+- Harita dışına düşme, zeminde sıkışma, sınırsız hızlanma ve zıplama istismarlarını önle.
+- Oyuncu kapsülüyle kamera yüksekliğini ve çömelme sırasında çarpışmayı yönet.
+- Hızlı hareket hissi ver ama ani yön değişimleri kontrol edilebilir olsun.
+- Hareket değerleri merkezi yapılandırma dosyasında tutulabilsin.
+
+C. SİLAH SİSTEMİ
+Beş özgün low-poly silah oluştur:
+1. Assault Rifle: 30 mermi, 25 temel hasar, 600 RPM.
+2. SMG: 35 mermi, 18 temel hasar, 850 RPM.
+3. Sniper: 5 mermi, 90 temel hasar, 50 RPM.
+4. Shotgun: 6 fişek, yakın mesafede bütün saçmaların toplamı 80 temel hasar, 75 RPM.
+5. Pistol: 12 mermi, 28 temel hasar, 360 RPM.
+
+Bu sayılar ilk denge değerleridir ve yapılandırılabilir olmalı. Silahlar için temel hasar, ateş hızı, menzil, mermi sayısı, reload, spread, recoil, ADS katsayısı ve hareket etkilerini ayrı ayrı tanımla.
+
+- Sol tık ile ateş etme.
+- Sağ tık ile ADS.
+- R ile reload.
+- 1–5 tuşları veya mouse wheel ile silah seçimi.
+- Otomatik, yarı otomatik ve pompalı/bolt-action ateş mekaniklerini doğru ayır.
+- Mermi sınırı, ateş hızı ve reload sırasında ateş engelleme doğru çalışmalı.
+- Hitscan silahlar için raycast, shotgun için ayrı saçma raycast'leri uygula.
+- Kafa ve gövde bölgesi ayrımı yap.
+- Farklı silahlara özgü recoil, muzzle flash, ateş sesi, reload animasyonu, hitmarker, çarpma efektleri ve mermi izleri oluştur.
+- Silah modeli kamerada gerçek bir FPS viewmodel gibi görünsün; duvar içine girme ve yakın mesafede clipping sorunlarını azalt.
+- Ateş sesini her defasında kesip yeniden başlatmak yerine çoklu ses örneklerini yönet.
+- Eş zamanlı efektler performansı bozmamalı.
+- Mermiler ve görsel efektler için object pooling kullan.
+- Silah mekanikleri ileride sunucu tarafından doğrulanabilecek şekilde, görüntü/animasyon ve oyun kuralları birbirinden ayrılmış olsun.
+
+D. KARAKTER VE SAĞLIK
+- Oyuncunun varsayılan canı 100 olsun.
+- Hasar, ölme, yeniden doğma ve geçici spawn koruması mekanikleri oluştur.
+- Antrenman kuklalarına kafa ve gövde hitbox'ları ekle.
+- Hasar göstergeleri, yönsel hasar bildirimi, can barı ve ölüm ekranı oluştur.
+- Antrenman hedefleri vurulduğunda hasar bilgisi ve toplam DPS ölçülebilsin.
+- Karakter ölünce kontrol mantığı hataya düşmemeli.
+
+E. ÜÇ FARKLI ÖZGÜN 3D HARİTA
+1. Warehouse: konteynerler, kutular, endüstriyel yapı, dar geçitler ve kısa mesafe çatışma.
+2. Dust Town: küçük binalar, sokaklar, rampalar, pencereler, orta ve uzun görüş hatları.
+3. Neon Arena: modern, hafif futuristik, dikey oynanışlı, çok katlı arena.
+
+Haritalar:
+- Basit boş kutular olmamalı; mimari olarak anlamlı, birbirinden farklı ve oynanabilir olsun.
+- Özgün low-poly geometriler, uygun renkler, materyaller, aydınlatma, siperler, yollar ve dekoratif detaylar içersin.
+- Her haritada dengeli spawn noktaları ve alternatif rotalar olsun.
+- Çarpışma geometrisiyle görsel geometri tutarlı olsun.
+- İleride 8–10 oyuncuyu kaldırabilecek boyut ve görüş mesafesine sahip olsun.
+- Oyuncunun harita dışına çıkması engellensin.
+- Harita yükleme ve temizleme sistemi modüler olsun.
+- İlk haritayı tamamen oynanabilir bitirmeden diğer haritaları yalnızca dekoratif biçimde bırakma.
+
+F. HUD VE OYUN DENEYİMİ
+- Ekran merkezinde crosshair.
+- Sağ altta aktif silah ve kalan mermi.
+- Sol altta can göstergesi.
+- Üstte antrenman süresi ve skor.
+- Vuruş bildirimi, kafa vuruşu bildirimi ve hasar sayısı.
+- FPS, ping ve performans göstergeleri; antrenmanda ping yerine bağlantı yok ibaresi.
+- Grafik, mouse, kontrol ve ses ayarları.
+- Ana menü ile oyun arasında temiz geçiş.
+- Kullanıcı oyundayken gereksiz web sayfası kaydırması ve metin seçimi engellensin.
+- Oyun dışındayken bütün klavye/fare davranışları normale dönsün.
+
+G. PERFORMANS
+- Hedef, uygun masaüstü bilgisayarlarda 60+ FPS.
+- Low / Medium / High grafik profilleri.
+- Çözünürlük ölçeklendirme.
+- Frustum culling, instancing, uygun materyal kullanımı ve object pooling.
+- Performans ölçümleri ve gizli kaynak sızıntıları kontrolü.
+- WebGL uyumluluğu ve tarayıcı desteği.
+- Sekme arka plana alındığında kontrollü çalışma.
+- Oyun FPS'i diğer KapsApp özelliklerini olumsuz etkilememeli.
+
+H. MULTIPLAYER İÇİN HAZIRLIK
+Bu aşamada gerçek multiplayer'ı tamamlaman gerekmiyor; ikinci promptta yapılacak. Fakat kod yapısını buna hazırla:
+- Input komutlarının veri yapısı.
+- Player state ve movement state.
+- Weapon state ve combat events.
+- Hitbox ve spawn tanımları.
+- Client-side prediction'a uygun hareket sistemi.
+- Sunucu otoritesine taşınabilecek hasar ve ateş kuralları.
+- Network kodu ile render kodunun ayrılacağı net modül sınırları.
+- Her oyuncunun benzersiz ID ile yönetilebilmesi.
+
+I. TEST VE KABUL
+- Mevcut build, lint, typecheck ve ilgili testleri çalıştır.
+- En azından oyun açma/kapama, harita yükleme, hareket, silah değiştirme, ateş etme, reload, ölme/respawn ve ayarları doğrula.
+- Uygun test altyapısı varsa otomatik testler ekle.
+- Mümkünse tarayıcı üzerinden oyunu gerçekten oynayarak kontrol et.
+- Test edemediğin şeyleri test edilmiş gibi gösterme.
+- Hiçbir mevcut KapsApp özelliğini bilerek kaldırma veya devre dışı bırakma.
+- Bu aşama tamamlandığında çalışan antrenman modu ve ikinci aşamaya hazır mimari bulunmalı.
+
+ÇIKTI:
+Önce kodu uygula. Ardından yalnızca gerçek durumu özetle: değiştirilen dosyalar, tamamlanan özellikler, testler, başarısız veya yapılamayan kontroller, varsa açık sorunlar. Sadece plan yazıp görevi bitirme. Oyunun görsel kalitesini, kontrol hissini, gerçek oynanabilirliğini ve KapsApp uyumluluğunu önceliklendir.
+
+====================================
+
+KAPSAPP — KAPSSTRIKE 3D FPS — AŞAMA 2/3: MULTIPLAYER VE ENTEGRASYON
+
+ÖNEMLİ: Bu, birinci aşamada oluşturduğun KapsStrike oyununun devamıdır. Oyunu baştan yazma, çalışan sistemleri kaldırma ve önceki aşamaya ait özellikleri bozma. Önce repository'deki güncel kodu incele ve mevcut oyun motoru, hareket, silah, harita, KapsApp authentication ve sesli sohbet mimarisini anla.
+
+Bu görev sadece planlama değildir. Gerçek multiplayer kodunu, gerekli sunucuyu, oda yönetimini ve KapsApp entegrasyonlarını oluştur, çalıştır, test et ve hataları gider.
+
+TEMEL HEDEF:
+KapsStrike'ı 2–10 gerçek oyuncunun farklı cihazlardan tarayıcı üzerinden aynı odada oynayabileceği, sunucu otoriteli, düşük gecikme hedefli multiplayer FPS oyununa dönüştür. İlk öncelik 2–8 oyuncuda kararlı çalışma. Sonrasında 10 oyunculuk odaları destekle.
+
+A. SUNUCU MİMARİSİ
+- Colyseus + Node.js + TypeScript tabanlı authoritative game server tercih et.
+- Mevcut altyapıya uyumluluğu kontrol et. Deploy ortamı kalıcı WebSocket sunucusunu desteklemiyorsa uygun ayrı game-server servisi tasarla ve gerekli yapılandırmayı ekle.
+- Oda ve maç state'leri sunucuda yönetilmeli.
+- İstemci yalnızca oyuncu girdilerini ve uygun gameplay taleplerini göndermeli.
+- Pozisyon, hareket, can, vuruş, ölüm, skor, respawn ve maç sonucu sunucuda doğrulanmalı.
+- İstemcinin gönderdiği hasar, öldürme, konum veya skor değerlerine doğrudan güvenme.
+- Sunucu hareket kuralları client ile tutarlı çalışmalı.
+- Fizik simülasyonunun iki tarafta farklı sonuç üretmesi durumunda reconciliation ve güvenli düzeltme uygula.
+- Sunucu simülasyonu için başlangıç hedefi 60 tick/s, state gönderimi için 20–30 güncelleme/s olsun; gerçek yük testlerine göre ayarlanabilsin.
+- Veri aktarımını makul seviyede tut, gereksiz full state gönderme.
+- Message schema doğrulama ve boyut sınırları uygula.
+
+B. NETWORKING VE HAREKET
+- Client-side prediction.
+- Server reconciliation.
+- Diğer oyuncular için snapshot interpolation.
+- Gerektiğinde sınırlı extrapolation.
+- Gecikme telafili sunucu tarafı hit detection.
+- Ping ve jitter ölçümü.
+- Paket sırası / sıra numarası yönetimi.
+- Eski, tekrarlanan veya geçersiz inputların filtrelenmesi.
+- Ani hareket sıçraması, teleport, aşırı hız veya olağandışı inputların denetlenmesi.
+- Bağlantı kalitesi düştüğünde kesintisiz his için kontrollü interpolasyon.
+- Oyuncu ölüyken hareket, ateş ve hasar kuralları doğru yönetilsin.
+- Render FPS ile networking tick birbirinden bağımsız olsun.
+
+C. GERÇEK ÇATIŞMA
+- Birinci aşamadaki beş silahın tamamı multiplayer ortamında çalışmalı.
+- Sunucu silah türünü, ammo miktarını, ateş hızını, reload durumunu ve atış geçerliliğini kontrol etmeli.
+- Server-side raycast veya eşdeğer güvenilir isabet doğrulaması yap.
+- Lag compensation için sınırlı zaman geçmişi tut ve vuruşları makul geçmiş penceresinde doğrula.
+- Kafa vuruşu ve gövde hasarı farklı hesaplanabilsin.
+- Shotgun saçmalarını sunucu otoritesiyle çözümle.
+- Ateş etme, muzzle flash, ses, recoil, hitmarker ve hasar sonuçları bütün oyunculara uygun şekilde yansısın.
+- Ateş efekti yerel oyuncuda hemen oluşabilsin; gerçek isabet ve skor yalnızca sunucu onayıyla kesinleşsin.
+- Respawn, spawn protection ve kill feed tutarlı çalışmalı.
+- Aynı anda ateş eden iki oyuncunun vuruşları tutarlı şekilde değerlendirilsin.
+- Dost ateşi TDM'de kapalı olsun.
+
+D. ODA SİSTEMİ
+- Oda Oluştur.
+- Odaya Katıl.
+- Hızlı Maç.
+- Özel oda kodu.
+- Şifreli özel oda seçeneği.
+- Oda ismi, harita, oyun modu, oyuncu limiti, maç süresi ve skor limiti.
+- Oda sahibi için başlangıç ayarları ve maç başlatma.
+- Hazır ol / ready sistemi.
+- Takım modunda dengeli takım dağılımı.
+- Oda doluysa doğru hata bildirimi.
+- Aynı kullanıcı hesabının mükerrer oturumlarını kontrol et.
+- Oyuncu ayrıldığında veya disconnect olduğunda state güvenle güncellensin.
+- Oda sahibi ayrılınca liderlik güvenli biçimde devredilsin veya belirlenen oda kuralı uygulansın.
+- Oyun sunucusu authoritative olmalı; oda sahibi oyunun fizik/hasar otoritesi olmamalı.
+- Oyuncular maç ortasında kurallara göre katılabilsin.
+- Oda kapanınca bütün network kaynakları temizlensin.
+
+E. OYUN MODLARI
+Free For All:
+- Her oyuncu bağımsız.
+- Varsayılan maç süresi 5 dakika.
+- Öldürme, ölüm, asist ve skor takibi.
+- Süre bitiminde kazanan.
+- Doğru skor tablosu ve maç sonu sonuç ekranı.
+
+Team Deathmatch:
+- Kırmızı ve mavi takım.
+- Takım skorları.
+- Varsayılan 50 öldürme hedefi veya 5 dakika.
+- Takım arkadaşlarına hasar kapalı.
+- Takım bazlı spawn noktaları.
+- Maç sonu kazanan takım ve bireysel sonuçlar.
+- Takımların oyuncu sayısı dengesizleşirse uygun dengeleme mantığı.
+
+F. KAPSAPP KULLANICI ENTEGRASYONU
+- Mevcut KapsApp authentication sistemini incele ve güvenli biçimde entegre et.
+- Kullanıcı oyuna yeniden kayıt olmadan kendi hesabıyla girebilsin.
+- Kullanıcının profil adı ve izin verilen avatar bilgisi oyun ekranında görünsün.
+- KapsApp arkadaş listesinden oyuncuya oyun daveti gönderilebilsin.
+- Arkadaş davete tıklayınca yetkili olduğu doğru odaya katılsın.
+- Davet kodları güvenli, tahmin edilmesi zor ve gerektiğinde süre sınırlı olsun.
+- Davet ve oda katılım yetkisini sunucu doğrulasın.
+- KapsApp ana uygulamasına geri dönüş sorunsuz olsun.
+- Oyun içinde kazanılan skorlar uygun bir veritabanı yapısında tutulabilsin.
+- Mevcut veritabanı şemasını bozmadan gerekli migration'ları oluştur.
+- Eski oyunların ve sohbet odalarının davranışı değişmesin.
+
+G. SESLİ SOHBET
+- Önce KapsApp'in mevcut sesli sohbet mimarisini incele.
+- Mevcut sesli sohbet altyapısını mümkünse yeniden kullan; ikinci bir çakışan WebRTC sistemi oluşturma.
+- FFA için isteğe bağlı oda sesi.
+- TDM için takım sesli sohbeti.
+- Mikrofon aç/kapat ve push-to-talk desteği.
+- Her oyuncunun sesi ayrı ayrı kısılabilsin veya susturulabilsin.
+- Oyun sesleriyle sesli konuşma dengeli karışsın.
+- Oyuncunun kendi sesini geri duyduğu echo/loopback sorununu önle.
+- Oyun başladığında mikrofonun izinsiz otomatik açılmasını engelle.
+- Oda değişimi, yeniden bağlanma ve oyun kapanışında ses akışlarını temizle.
+- Kamera, ekran paylaşımı ve sitedeki mevcut görüşmeler bozulmasın.
+- Kullanıcı aktif bir KapsApp görüşmesindeyken yeni ses kanalına geçiş kurallarını açıkça ve güvenli biçimde uygula.
+- Kullanıcının açık izni olmadan aktif görüşmesini kapatma.
+
+H. GÜVENLİK VE ANTI-CHEAT
+- Güvenilir server authority.
+- Kimlik doğrulama ve yetki kontrolü.
+- Rate limiting.
+- Input validation.
+- İmkânsız hız ve pozisyon tespiti.
+- Fire rate ve ammo kontrolü.
+- Reload istismarlarının engellenmesi.
+- Replay ve paket tekrar denetimleri.
+- Oyuncu kimliğini taklit etme girişimlerinin engellenmesi.
+- Sunucu taraflı görüş hattı doğrulaması.
+- Gerçekçi olmayan hareket veya vuruş taleplerinin reddedilmesi.
+- Asla istemciden gelen kill, damage veya score bilgisini tek başına kabul etme.
+- Anti-cheat sisteminin yanlış pozitiflerini azaltacak tolerans ve loglama uygula.
+
+I. TEST SENARYOLARI
+- İki farklı tarayıcıdan aynı maça bağlan.
+- Farklı hesaplarla hareket, ateş, hasar ve ölüm doğrula.
+- 8 oyunculuk sentetik yük veya gerçek bağlantı testi.
+- Uygun ortamda 10 oyunculuk stres testi.
+- Yapay 100, 200 ve 300 ms gecikmede davranışı test et.
+- Paket gecikmesi ve kısa bağlantı kopmalarını simüle et.
+- Aynı anda iki oyuncunun vurulması.
+- Maç ortasında katılma ve ayrılma.
+- Oda sahibinin ayrılması.
+- Şifreli odaya izinsiz giriş denemesi.
+- Oyun bitiminde doğru skor.
+- Bağlantı kesildikten sonra yeniden katılma.
+- Aynı kullanıcı hesabının iki sekmede bağlantısı.
+- KapsApp sesli sohbetiyle FPS oyununun eşzamanlı çalışması.
+- Oyun kapanınca aktif bağlantı ve ses kaynaklarının temizlenmesi.
+- Güvenlik ve istismar testleri.
+
+J. KALİTE KURALLARI
+- Birinci aşamadaki haritaları, karakter hareketlerini, silahları ve arayüzü koru.
+- Yapabildiğin entegrasyonları doğrudan kodla.
+- Mevcut KapsApp backend yapısı farklıysa uyumlu çözüm oluştur.
+- Test edemediğin özellikler için başarılı test iddiasında bulunma.
+- Gerçek multiplayer yerine yalnızca yerel bot veya sahte oyuncu yerleştirme.
+- Gerekli deployment ayarlarını, environment değişkenlerini ve çalışma komutlarını oluştur.
+- Kullanıcı gizli anahtarlarını frontend'e sızdırma.
+
+ÇIKTI:
+Çalışan multiplayer sistemini uygula. Sonrasında değişen dosyaları, kullanılan mimariyi, doğrulanan maç senaryolarını, test sonuçlarını ve eksik veya engellenmiş kısımları raporla. Bu aşama bittiğinde iki gerçek kullanıcı farklı tarayıcı veya cihazlardan birbirini görebilmeli, ateş edebilmeli, can kaybedebilmeli, skor kazanabilmeli ve maç sonucunu tutarlı şekilde görebilmeli.
+
+====================================
+
+KAPSAPP — KAPSSTRIKE 3D FPS — AŞAMA 3/3: SON OPTİMİZASYON, KALİTE VE TEST
+
+GÖREVİN:
+Önceki iki aşamada oluşturulan gerçek 3D multiplayer KapsStrike oyununu baştan yazmadan kapsamlı biçimde incele, eksik sistemleri tamamla, hataları düzelt, performansı iyileştir ve KapsApp içinde güvenilir yayın adayı hâline getir.
+
+Bu yalnızca inceleme veya rapor yazma görevi değildir. Gerçek dosyalarda kod değişikliklerini yap, çalıştır, test et ve doğrula. Sadece yorum, TODO veya sahte başarı raporu üretme.
+
+ÖNEMLİ KURALLAR:
+- İlk iki aşamayı ve mevcut repository'yi incele.
+- KapsApp'in mesajlaşma, sesli/görüntülü görüşme, ekran paylaşımı, ajanda ve diğer oyunlarını bozma.
+- Çalışan multiplayer mantığını sırf kolaylık için client-side otoriteye dönüştürme.
+- Mevcut özellikleri silerek veya kapatarak testleri geçirmeye çalışma.
+- Oyun içindeki test kodlarını ve debug araçlarını production build'de güvenli yönet.
+- Gerçek test yapamadığın ortamları açıkça belirt.
+
+A. TAM SİSTEM DENETİMİ
+Aşağıdakilerin her birini kod üzerinde denetle:
+- FPS kamera.
+- WASD hareket.
+- Zıplama, sprint, crouch, slide ve bunny hopping.
+- Collision ve fizik.
+- Silah değiştirme.
+- Ateş hızı ve reload.
+- Recoil ve ADS.
+- Headshot ve hitbox.
+- Muzzle flash, ses ve animasyonlar.
+- Oyuncu canı, ölümü ve respawn.
+- Free For All.
+- Team Deathmatch.
+- Harita yükleme ve değiştirme.
+- Oda oluşturma ve katılma.
+- Davet sistemi.
+- Arkadaş listesi entegrasyonu.
+- Skor sistemi.
+- Sesli sohbet.
+- Grafik ayarları.
+- Oyun menüsü.
+- Oyundan çıkış ve kaynak temizleme.
+- Profil ve maç sonuçları.
+- PC ve mobil tarayıcı uyumluluğu.
+
+Eksik veya bozuk olanları tespit et, nedenini belirle ve gerçek kod değişikliğiyle düzelt.
+
+B. FPS VE GRAFİK OPTİMİZASYONU
+- Uygun bilgisayarlarda 60+ FPS hedefle.
+- Yüksek yenileme hızlı ekranlarda daha yüksek FPS'yi mümkün kıl.
+- Render loop ve fixed update mantığını optimize et.
+- Gereksiz mesh, draw call, shader ve materyal yüklerini azalt.
+- Object pooling uygula veya mevcut sistemi doğrula.
+- Frustum culling ve gerektiğinde occlusion stratejileri uygula.
+- Statik geometriyi uygun şekilde birleştir.
+- Instancing kullan.
+- Doku boyutu ve sıkıştırmasını optimize et.
+- Gereksiz gölgeleri ve dinamik ışıkları azalt.
+- Dinamik çözünürlük ölçeklendirme uygula.
+- Low / Medium / High / Auto grafik profilleri oluştur.
+- Auto profilinde cihazın performansına göre başlangıç seviyesi öner.
+- CPU, GPU ve bellek kullanımını incele.
+- Ani FPS düşüşlerinin nedenlerini bul.
+- Sekme değişiminde ve oyundan çıkışta CPU/GPU tüketimini azalt.
+- Tekrarlanan oyuna giriş-çıkışta bellek sızıntısı oluşmadığını test et.
+- Oyun sırasında diğer KapsApp arayüzünün gereksiz yeniden render edilmesini engelle.
+
+C. AĞ VE MULTIPLAYER OPTİMİZASYONU
+- Client-side prediction doğruluğu.
+- Server reconciliation.
+- Snapshot interpolation.
+- Paket boyutu.
+- Gereksiz network event tekrarları.
+- Tick rate tutarlılığı.
+- Gecikme ve jitter toleransı.
+- Server CPU ve bellek kullanımı.
+- 2, 4, 8 ve 10 oyunculu oturumlar.
+- 50–100 ms, 150–200 ms ve 250–300 ms ağ gecikmesi senaryoları.
+- Kısa bağlantı kesintileri.
+- Yeniden katılma.
+- Oyuncuların teleport gibi görünmesi.
+- Desync ve rubber banding.
+- İstemci ile sunucu pozisyon uyuşmazlığı.
+- Lag compensation istismarları.
+- Aynı anda ateş eden oyuncuların doğru sonuç üretmesi.
+- Spawn ve ölüm yarış koşulları.
+- Oda değişiminde eski network eventlerinin temizlenmesi.
+- Bağlantı yeniden kurulunca kopya oyuncu oluşmaması.
+
+Bu testlerden ortaya çıkan sorunları gider. Gecikmeyi gizlemek için doğrulamayı kaldırma.
+
+D. OYUN HİSSİ VE GÖRSEL KALİTE
+Oyun yalnızca teknik olarak çalışmamalı; gerçekten eğlenceli ve kontrolü iyi olmalı.
+
+- Hareketi hızlı ama kontrol edilebilir hâle getir.
+- Recoil ve silah spread dengesini iyileştir.
+- Silahları birbirinden farklı hissettir.
+- Crosshair geri bildirimi ve isabet efektlerini düzelt.
+- Silah modellerinin clipping hatalarını azalt.
+- ADS ve FOV geçişlerini akıcı hâle getir.
+- Kamera hareketinde rahatsız edici aşırı sarsıntı oluşturma.
+- Görsel efektler hedef görünürlüğünü engellemesin.
+- Haritalarda duvar, zemin ve ışık hatalarını düzelt.
+- Oyuncu karakterleri çevreden kolay ayırt edilebilsin.
+- Takımların renkleri ve oyuncu isimleri açık şekilde görünsün.
+- Spawn noktalarının adil ve güvenli olması için kontroller yap.
+- Oyuncunun arka arkaya aynı yerde ölmesini azalt.
+- Haritalarda tek bir silahın aşırı üstünlük kurduğu yerleri değerlendir.
+- Her haritayı gerçek oynanış açısından test et.
+
+E. MOBİL VE FARKLI CİHAZLAR
+- Mobil tarayıcı açılışını destekle.
+- Dokunmatik sol joystick ve sağ kamera kontrol bölgesi.
+- Ateş, ADS, zıplama, crouch, reload ve silah değiştirme kontrolleri.
+- Mobil kontrollerin boyut ve konumlarını uygun ekranlara uyarla.
+- Dokunmatik giriş ile sayfanın kaydırılmasını birbirinden ayır.
+- Gerekirse yatay ekran önerisi göster.
+- Mobilde varsayılan düşük grafik kalitesi kullan.
+- Mobil cihazda aşırı ısınma ve pil tüketimini azaltmaya çalış.
+- Mobil destek yetersizse bunu gizleme; hangi sistemlerin çalışmadığını açık raporla.
+- PC oyuncularıyla aynı odaya girişin teknik doğruluğunu denetle.
+- Mobil oyuncular için ayrı hassasiyet ayarı oluştur.
+- Klavye/mouse kullanan PC oyuncularının kontrol hissini mobil uyarlama nedeniyle bozma.
+
+F. SES VE KAPSAPP GÖRÜŞME SİSTEMLERİ
+- Mevcut mikrofon, kamera, sesli sohbet ve ekran paylaşımı özelliklerinin sorunsuz çalıştığını doğrula.
+- Oyun sesleri ile sesli sohbet seslerini ayrı kategorilerde yönet.
+- Master volume, effects volume ve voice volume kontrolleri.
+- Mikrofonu kapatma, susturma ve push-to-talk.
+- Oyuncunun kendi sesini duyduğu loopback sorununu kontrol et.
+- Ses akışlarının birden fazla kez oluşturulmasını engelle.
+- Bağlantı kopunca aktif mikrofon durumunu güvenle yönet.
+- Oyun kapatıldığında yalnızca oyuna ait kaynakları temizle, başka KapsApp görüşmelerini yanlışlıkla kesme.
+- Ekran paylaşımı sırasında oyunun kaynak kullanımı nedeniyle ciddi donmalar olup olmadığını test et.
+- Oyunu açmak sesli görüşmelerde izinsiz değişiklik oluşturmamalı.
+- Sesli sohbet bağlantılarının oyun sunucusu yükünden gereksiz etkilenmesini engelle.
+
+G. GÜVENLİK DENETİMİ
+- Sunucu otoriteli hasar ve skor korunmalı.
+- Unauthorized room join.
+- Oda kodu tahmin etme / brute-force.
+- Sahte oyuncu veya kimlik taklidi.
+- Speedhack ve teleport inputları.
+- Ateş hızı ve reload istismarları.
+- Geçersiz mermi ve hasar mesajları.
+- Event flooding.
+- Paket tekrar gönderme.
+- Çoklu oturum suistimali.
+- Tehlikeli kullanıcı adı ve sohbet girdileri.
+- Güvenli authentication.
+- Backend secret sızıntıları.
+- Rate limiting ve düzgün hata mesajları.
+- Gerekli server log ve ölçümler.
+- Güvenlik denetimi oyun deneyimini bozmayacak şekilde yapılandırılsın.
+
+H. UÇTAN UCA TEST
+Aşağıdaki senaryolar için uygun otomatik veya gerçek tarayıcı testleri oluştur ve çalıştır:
+1. KapsApp hesabıyla giriş.
+2. Oyunlar bölümünden KapsStrike açılışı.
+3. Antrenman haritasında hareket ve ateş.
+4. Oda oluşturma.
+5. İkinci kullanıcının odaya katılması.
+6. İki gerçek ağ istemcisinin birbirini görmesi.
+7. Bir oyuncunun diğerini vurması.
+8. Can azalması ve ölüm.
+9. Respawn.
+10. Skorun iki istemcide aynı görünmesi.
+11. Beş silahın hepsinin çalışması.
+12. Reload ve silah değiştirme.
+13. TDM takım ayrımı.
+14. FFA kazanan belirleme.
+15. Maç sonu ekranı.
+16. Arkadaşa davet gönderme ve kabul.
+17. Sesli sohbet açma/kapatma.
+18. Oyun sırasında KapsApp ekranı açma/kapama.
+19. Oyun ekranını terk etme.
+20. Oda sahibinin ayrılması.
+21. Kısa internet kesintisi.
+22. Yeniden bağlanma.
+23. Arka plan sekmesi.
+24. Düşük FPS ve yüksek ping simülasyonu.
+25. Oyun menüsünün açılıp kapanması.
+26. Ayarlar ve kontrol değişiklikleri.
+27. Harita değişimi.
+28. 8 oyuncu stres testi.
+29. 10 oyuncu stres testi.
+30. Mevcut KapsApp sohbet ve görüşme özelliklerinde regresyon.
+
+Yalnızca gerçekten çalıştırdığın testleri geçti olarak raporla. Gerçek tarayıcı veya çoklu istemci altyapısı yoksa testlerin yerine eşdeğer otomatik kontroller ekle ama bunları gerçek tarayıcı testi olarak sunma.
+
+I. SON ÜRÜN DENEYİMİ
+- Oyun menüsü profesyonel ve tutarlı olsun.
+- Açılış süresi makul olsun.
+- Yükleme ekranı ve ilerleme göstergesi olsun.
+- Hata mesajları kullanıcı dostu olsun.
+- Başarılı, başarısız ve kesilen oda bağlantıları doğru gösterilsin.
+- Mouse pointer lock düzgün çalışsın.
+- Uygulamada gereksiz scroll oluşmasın.
+- Harita ve silah yüklemeleri kontrollü yapılsın.
+- Oyun tamamlanmış bir ürün gibi hissettirsin.
+- Sahte oyuncu sayısı, sahte FPS, sahte ping veya sahte online durum gösterme.
+- Oyun sunucusu çevrimdışı olduğunda bunu açıklayıcı biçimde göster.
+
+J. SON KABUL VE RAPOR
+- Mevcut KapsApp uygulamasını bozma.
+- Üç aşamada istenen özelliklerin durumunu tek tek kontrol et.
+- Gerekli tüm son düzeltmeleri kaynak kodda uygula.
+- Build, lint, typecheck, unit test ve uygunsa end-to-end testleri çalıştır.
+- Multiplayer sunucusunun geliştirme ve üretim ortamında nasıl başlatıldığını doğrula.
+- Environment değişkenlerini ve deployment gereksinimlerini belgeye ekle.
+- Gerçekte yapılmamış deploy'u yapılmış gibi gösterme.
+- Sadece test edilemeyen veya tamamlanamayan kısımları açık bırakıp gerekçelendir.
+- Gereksiz büyük refactor yapma, çalışan sistemleri bozma.
+
+NİHAİ HEDEF:
+KapsApp içinden başlatılabilen; üç özgün 3D haritası, beş farklı silahı, hareket mekanikleri, gerçek zamanlı multiplayer odaları, Free For All ve Team Deathmatch modları, arkadaş davetleri, mevcut sesli sohbetle entegrasyonu, grafik ayarları ve güvenilir sunucu doğrulaması bulunan, düşük sistemlerde de oynanabilir bir browser FPS oyunu.
+
+GÖREVİNİ BİTİRMEDEN ÖNCE:
+Yaptığın bütün değişiklikleri doğrula. Gerçekten çalışmayan bir özelliği tamamlandı olarak gösterme. Önceliğin çalışan, güvenilir ve akıcı bir oyun üretmek. Sadece ne yapılması gerektiğini anlatma; kodu oluştur, düzelt ve mümkün olan bütün testleri uygula.
