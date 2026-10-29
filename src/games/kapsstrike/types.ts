@@ -4,7 +4,46 @@ export interface Vec3 {
   z: number;
 }
 export type MapId = "warehouse" | "dust" | "neon";
-export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol";
+export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol" | "knife";
+export type SkinId =
+  | "classic_soldier"
+  | "urban_runner"
+  | "neon_striker"
+  | "shadow_operative"
+  | "desert_scout"
+  | "arctic_fighter"
+  | "cyber_agent"
+  | "street_warrior";
+
+export type ActionKey =
+  | "forward"
+  | "backward"
+  | "left"
+  | "right"
+  | "jump"
+  | "crouch"
+  | "sprint"
+  | "reload"
+  | "primary"
+  | "secondary"
+  | "knife"
+  | "scoreboard"
+  | "chat";
+
+export type KeyBinds = Record<ActionKey, string>;
+
+export interface CharacterSkinDefinition {
+  id: SkinId;
+  name: string;
+  description: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  outfitType: "tactical" | "cyber" | "stealth" | "scout";
+  helmetStyle: "helmet" | "visor" | "beret" | "hood";
+  visorColor: string;
+}
+
 export interface Solid {
   id: string;
   kind: "box" | "ramp";
@@ -46,6 +85,7 @@ export interface InputCommand {
   sprint: boolean;
   crouch: boolean;
   fire: boolean;
+  heavyAttack?: boolean;
   ads: boolean;
   reload: boolean;
   weapon?: WeaponId;
@@ -89,7 +129,7 @@ export interface CombatEvent {
   id: number;
   tick: number;
   actor: string;
-  kind: "shot" | "hit" | "reload" | "death" | "respawn" | "damage";
+  kind: "shot" | "hit" | "reload" | "death" | "respawn" | "damage" | "melee";
   weapon?: WeaponId;
   from?: Vec3;
   to?: Vec3;
@@ -123,6 +163,8 @@ export interface StrikeSettings {
   voiceVolume?: number;
   dynamicResolution?: boolean;
   invertY: boolean;
+  binds?: Partial<KeyBinds>;
+  selectedSkin?: SkinId;
 }
 
 export type StrikeGameMode = "ffa" | "tdm";
@@ -156,6 +198,7 @@ export interface NetworkPlayer {
   ping: number;
   isSpeaking?: boolean;
   isMuted?: boolean;
+  skin?: SkinId;
 }
 
 export interface PlayerSnapshot {
@@ -177,6 +220,7 @@ export interface PlayerSnapshot {
   deaths: number;
   score: number;
   ping: number;
+  skin?: SkinId;
 }
 
 export interface StrikeSnapshot {
@@ -258,3 +302,4 @@ export interface MatchStats {
     damage: number;
   };
 }
+

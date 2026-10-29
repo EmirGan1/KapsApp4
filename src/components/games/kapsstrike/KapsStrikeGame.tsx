@@ -6,6 +6,8 @@ import {
 } from "../../../games/kapsstrike/controller";
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_KEYBINDS,
+  CHARACTER_SKINS,
   cleanSettings,
   WEAPONS,
   WEAPON_ORDER,
@@ -20,6 +22,7 @@ import {
   StrikeTeam,
   StrikeGameMode,
   WeaponId,
+  SkinId,
 } from "../../../games/kapsstrike/types";
 import { MAPS } from "../../../games/kapsstrike/maps";
 import { StrikeVoiceManager } from "../../../games/kapsstrike/voice";
@@ -61,11 +64,49 @@ export default function KapsStrikeGame({
     }
   });
   const [view, setView] = useState<"menu" | "lobby" | "play" | "pause" | "match_end">("menu");
-  const [panel, setPanel] = useState<"settings" | "controls" | "create_room" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "controls" | "create_room" | "equipment" | null>(null);
+  const [rebindingAction, setRebindingAction] = useState<string | null>(null);
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
   const [returnFire, setReturnFire] = useState(false);
   const [supported, setSupported] = useState(true);
+
+  const setting = useCallback((update: Partial<StrikeSettings>) => {
+    setSettings((prev) => {
+      const next = cleanSettings({ ...prev, ...update });
+      try {
+        localStorage.setItem("kapsstrike-settings", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  // Listen for key press during keybinding rebind
+  useEffect(() => {
+    if (!rebindingAction) return;
+    const handleRebind = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.code === "Escape") {
+        setRebindingAction(null);
+        return;
+      }
+      const action = rebindingAction;
+      const key = e.code;
+      setRebindingAction(null);
+      setting({
+        binds: {
+          ...DEFAULT_KEYBINDS,
+          ...(settings.binds || {}),
+          [action]: key,
+        },
+      });
+    };
+    window.addEventListener("keydown", handleRebind, { capture: true, once: true });
+    return () => {
+      window.removeEventListener("keydown", handleRebind, { capture: true });
+    };
+  }, [rebindingAction, setting, settings.binds]);
 
   // Mobile / Touch state
   const [isMobile, setIsMobile] = useState(false);
@@ -608,9 +649,6 @@ export default function KapsStrikeGame({
     setInviteCopied(true);
     setTimeout(() => setInviteCopied(false), 2500);
   };
-
-  const setting = (patch: Partial<StrikeSettings>) =>
-    setSettings((old) => cleanSettings({ ...old, ...patch }));
 
   const isHost = currentRoom?.hostId === currentUserId;
   const filteredRooms = rooms.filter((r) => {
@@ -1723,36 +1761,143 @@ export default function KapsStrikeGame({
               </div>
             )}
 
-            {/* CONTROLS PANEL */}
+            {/* CONTROLS / KEYBINDINGS CUSTOMIZATION PANEL */}
             {panel === "controls" && (
               <div className="ks-controls">
-                <h2>Kontroller</h2>
-                <dl>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-amber-400">Tuş Atamaları & Kontroller</h2>
+                  <button
+                    type="button"
+                    onClick={() => setting({ binds: DEFAULT_KEYBINDS })}
+                    style={{ padding: "4px 10px", fontSize: "12px", minHeight: "auto" }}
+                  >
+                    🔄 Varsayılanlara Sıfırla
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs max-h-80 overflow-y-auto pr-2">
                   {[
-                    ["W A S D", "Hareket (Mobilde Sol Sanal Joystick)"],
-                    ["Fare", "Bakış ve nişan (Mobilde Sağ Ekran Kaydırma)"],
-                    ["Space", "Zıpla · zamanlamalı bunny hop"],
-                    ["Shift", "Koş"],
-                    ["Ctrl / C", "Çömel · koşarken kay"],
-                    ["Sol tık", "Ateş (Mobilde Sağ Ateş Butonu)"],
-                    ["Sağ tık", "ADS (Yakınlaştır / Dürbün)"],
-                    ["R", "Şarjör yenile"],
-                    ["1–5 / Tekerlek", "Silah seç"],
-                    ["TAB", "Canlı Skor Tablosu"],
-                    ["V", "Push-to-Talk (Bas-Konuş)"],
-                    ["ESC", "Duraklat / fareyi bırak"],
-                  ].map(([k, v]) => (
-                    <React.Fragment key={k}>
-                      <dt>{k}</dt>
-                      <dd>{v}</dd>
-                    </React.Fragment>
-                  ))}
-                </dl>
-                <button onClick={() => setPanel(null)}>Geri</button>
+                    ["forward", "İleri Hareket"],
+                    ["backward", "Geri Hareket"],
+                    ["left", "Sola Hareket"],
+                    ["right", "Sağa Hareket"],
+                    ["jump", "Zıplama / Bunny Hop"],
+                    ["crouch", "Çömelme / Kayma"],
+                    ["sprint", "Koşma / Depar"],
+                    ["reload", "Şarjör Yenileme"],
+                    ["primary", "Birincil Silah (Tüfek/SMG)"],
+                    ["secondary", "İkincil Silah (Tabanca)"],
+                    ["knife", "Yakın Dövüş (Bıçak)"],
+                    ["scoreboard", "Skor Tablosu (TAB)"],
+                  ].map(([action, label]) => {
+                    const currentBind =
+                      (settings.binds as any)?.[action] || (DEFAULT_KEYBINDS as any)[action] || "";
+                    const isRebinding = rebindingAction === action;
+
+                    return (
+                      <div
+                        key={action}
+                        className="flex justify-between items-center bg-slate-900/80 p-2.5 rounded-lg border border-slate-700/80"
+                      >
+                        <span className="text-slate-300 font-medium">{label}</span>
+                        <button
+                          type="button"
+                          onClick={() => setRebindingAction(action)}
+                          className={`font-mono text-xs px-3 py-1 rounded transition-colors ${
+                            isRebinding
+                              ? "bg-amber-500 text-slate-950 font-bold animate-pulse"
+                              : "bg-slate-800 text-amber-400 border border-slate-600 hover:border-amber-400"
+                          }`}
+                        >
+                          {isRebinding ? "Tuşa Basın..." : currentBind}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-400 mt-3 italic">
+                  💡 Fare tekerleğini yukarı/aşağı kaydırarak silahlar arasında hızlıca geçiş yapabilirsiniz.
+                </p>
+                <button onClick={() => { setRebindingAction(null); setPanel(null); }} className="mt-4">
+                  Geri Dön
+                </button>
+              </div>
+            )}
+
+            {/* EQUIPMENT / CHARACTER SKINS SELECTION PANEL */}
+            {panel === "equipment" && (
+              <div className="ks-controls">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-amber-400">Karakter & Kostüm Seçimi</h2>
+                    <p className="text-xs text-slate-400">Arenada görünecek taktik karakter kaplamanı seç.</p>
+                  </div>
+                  <span className="text-xs bg-amber-500/20 text-amber-400 px-3 py-1 rounded-full font-bold">
+                    8 / 8 AÇIK
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 max-h-80 overflow-y-auto pr-1">
+                  {Object.values(CHARACTER_SKINS).map((skin) => {
+                    const isSelected = (settings.selectedSkin || "classic_soldier") === skin.id;
+                    return (
+                      <button
+                        key={skin.id}
+                        type="button"
+                        onClick={() => setting({ selectedSkin: skin.id })}
+                        className={`flex flex-col justify-between p-3 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? "bg-amber-500/10 border-amber-400 shadow-lg shadow-amber-500/10 scale-[1.02]"
+                            : "bg-slate-900/60 border-slate-800 hover:border-slate-600"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="font-bold text-sm text-slate-200">{skin.name}</span>
+                            {isSelected && <span className="text-amber-400 font-bold text-xs">✓ SEÇİLİ</span>}
+                          </div>
+                          <p className="text-[11px] text-slate-400 leading-tight mb-3">{skin.description}</p>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800/80">
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/20"
+                            style={{ backgroundColor: skin.primaryColor }}
+                            title="Birincil Zırh"
+                          />
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/20"
+                            style={{ backgroundColor: skin.secondaryColor }}
+                            title="İkincil Giysi"
+                          />
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/20"
+                            style={{ backgroundColor: skin.accentColor }}
+                            title="Işıklı Vurgu"
+                          />
+                          <span className="text-[10px] text-slate-500 ml-auto uppercase font-mono">
+                            {skin.outfitType}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button onClick={() => setPanel(null)} className="mt-4">
+                  Geri Dön
+                </button>
               </div>
             )}
 
             <footer>
+              <button
+                onClick={() =>
+                  setPanel(panel === "equipment" ? null : "equipment")
+                }
+                className={panel === "equipment" ? "text-amber-400" : ""}
+              >
+                🎭 Ekipman / Kostüm
+              </button>
               <button
                 onClick={() =>
                   setPanel(panel === "settings" ? null : "settings")
@@ -1765,7 +1910,7 @@ export default function KapsStrikeGame({
                   setPanel(panel === "controls" ? null : "controls")
                 }
               >
-                Kontroller
+                Tuş Atamaları
               </button>
               <button
                 onClick={() => {

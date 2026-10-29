@@ -108,7 +108,7 @@ function random(index: number) {
   return ((x ^ (x >>> 15)) >>> 0) / 4294967296;
 }
 
-export function shoot(s: TrainingState, ads: boolean) {
+export function shoot(s: TrainingState, ads: boolean, heavy = false) {
   const p = s.player,
     w = p.weapon,
     def = WEAPONS[w.selected];
@@ -116,19 +116,29 @@ export function shoot(s: TrainingState, ads: boolean) {
     p.hp <= 0 ||
     s.tick < w.nextFire ||
     s.tick < w.switchUntil ||
-    w.reloadUntil ||
-    w.ammo[w.selected] <= 0
+    w.reloadUntil
   )
     return false;
-  w.ammo[w.selected]--;
-  w.nextFire = Math.max(w.nextFire, s.tick - 1) + 7200 / def.rpm;
+
+  if (w.selected !== "knife" && w.ammo[w.selected] <= 0) return false;
+
+  if (w.selected === "knife") {
+    w.nextFire = Math.max(w.nextFire, s.tick - 1) + (heavy ? 10800 : 7200) / def.rpm;
+  } else {
+    w.ammo[w.selected]--;
+    w.nextFire = Math.max(w.nextFire, s.tick - 1) + 7200 / def.rpm;
+  }
+
   const origin = eye(p);
   w.shotIndex++;
   const spread =
-    def.spread *
-    (ads ? def.ads : 1) *
-    (p.movement.grounded ? 1 : 2) *
-    (Math.hypot(p.movement.velocity.x, p.movement.velocity.z) > 5 ? 1.5 : 1);
+    w.selected === "knife"
+      ? 0
+      : def.spread *
+        (ads ? def.ads : 1) *
+        (p.movement.grounded ? 1 : 2) *
+        (Math.hypot(p.movement.velocity.x, p.movement.velocity.z) > 5 ? 1.5 : 1);
+
   for (let pellet = 0; pellet < def.pellets; pellet++) {
     const n = w.shotIndex * 31 + pellet * 7;
     const yaw = p.yaw + (random(n) - 0.5) * spread * 2,
@@ -174,9 +184,10 @@ export function shoot(s: TrainingState, ads: boolean) {
         w.selected === "shotgun"
           ? clamp(1 - nearest / 45, 0.2, 1)
           : clamp(1 - nearest / (def.range * 3), 0.7, 1);
+      const baseDmg = w.selected === "knife" ? (heavy ? 65 : 40) : def.damage;
       const dmg = Math.min(
         hit.hp,
-        (def.damage / def.pellets) * (head ? 2 : 1) * falloff,
+        (baseDmg / def.pellets) * (head ? 2 : 1) * (w.selected === "knife" ? 1 : falloff),
       );
       hit.hp -= dmg;
       s.damage += dmg;
@@ -271,6 +282,7 @@ export function simulate(s: TrainingState, input: InputCommand) {
   if (
     input.reload &&
     !w.reloadUntil &&
+    w.selected !== "knife" &&
     w.ammo[w.selected] < WEAPONS[w.selected].capacity
   ) {
     w.reloadUntil = s.tick + Math.ceil(WEAPONS[w.selected].reload / C.dt);
@@ -278,7 +290,7 @@ export function simulate(s: TrainingState, input: InputCommand) {
   }
   move(p.movement, { ...input, weapon: w.selected }, MAPS[s.map], s.tick);
   const d = WEAPONS[w.selected];
-  if (input.fire && (d.automatic || !w.triggerHeld)) shoot(s, input.ads);
+  if (input.fire && (d.automatic || !w.triggerHeld)) shoot(s, input.ads, !!input.heavyAttack);
   w.triggerHeld = input.fire;
   const hazard = MAPS[s.map].hazard,
     pos = p.movement.position;

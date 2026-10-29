@@ -1,4 +1,11 @@
-import { WeaponId, StrikeSettings } from "./types";
+import {
+  WeaponId,
+  StrikeSettings,
+  SkinId,
+  CharacterSkinDefinition,
+  KeyBinds,
+} from "./types";
+
 export const PHYSICS = {
   dt: 1 / 120,
   radius: 0.32,
@@ -21,6 +28,7 @@ export const PHYSICS = {
   respawnTicks: 240,
   protectionTicks: 240,
 };
+
 export interface WeaponDefinition {
   id: WeaponId;
   name: string;
@@ -39,6 +47,7 @@ export interface WeaponDefinition {
   length: number;
   zoom: number;
 }
+
 export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
   rifle: {
     id: "rifle",
@@ -130,8 +139,142 @@ export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
     length: 0.53,
     zoom: 0.85,
   },
+  knife: {
+    id: "knife",
+    name: "Taktik Bıçak Kaps-1",
+    capacity: 1,
+    damage: 40,
+    rpm: 140,
+    range: 2.2,
+    reload: 0,
+    spread: 0,
+    recoil: 0.005,
+    ads: 1.0,
+    mobility: 1.25,
+    automatic: false,
+    pellets: 1,
+    color: "#ef4444",
+    length: 0.35,
+    zoom: 1.0,
+  },
 };
-export const WEAPON_ORDER = Object.keys(WEAPONS) as WeaponId[];
+
+export const WEAPON_ORDER: WeaponId[] = [
+  "rifle",
+  "smg",
+  "sniper",
+  "shotgun",
+  "pistol",
+  "knife",
+];
+
+export const DEFAULT_KEYBINDS: KeyBinds = {
+  forward: "KeyW",
+  backward: "KeyS",
+  left: "KeyA",
+  right: "KeyD",
+  jump: "Space",
+  crouch: "ControlLeft",
+  sprint: "ShiftLeft",
+  reload: "KeyR",
+  primary: "Digit1",
+  secondary: "Digit2",
+  knife: "Digit3",
+  scoreboard: "Tab",
+  chat: "Enter",
+};
+
+export const CHARACTER_SKINS: Record<SkinId, CharacterSkinDefinition> = {
+  classic_soldier: {
+    id: "classic_soldier",
+    name: "Klasik Er",
+    description: "Standart askeri taktik zırh ve kask.",
+    primaryColor: "#2d3748",
+    secondaryColor: "#4a5568",
+    accentColor: "#3182ce",
+    outfitType: "tactical",
+    helmetStyle: "helmet",
+    visorColor: "#3182ce",
+  },
+  urban_runner: {
+    id: "urban_runner",
+    name: "Şehir Savaşçısı",
+    description: "Şehir içi hızlı operasyon giysisi ve dinamik vizör.",
+    primaryColor: "#1a202c",
+    secondaryColor: "#718096",
+    accentColor: "#e53e3e",
+    outfitType: "stealth",
+    helmetStyle: "visor",
+    visorColor: "#e53e3e",
+  },
+  neon_striker: {
+    id: "neon_striker",
+    name: "Neon Vurucu",
+    description: "Siberpunk neon ışıklı hafif kompozit zırh.",
+    primaryColor: "#0f172a",
+    secondaryColor: "#1e293b",
+    accentColor: "#06b6d4",
+    outfitType: "cyber",
+    helmetStyle: "visor",
+    visorColor: "#06b6d4",
+  },
+  shadow_operative: {
+    id: "shadow_operative",
+    name: "Gölge Ajanı",
+    description: "Karanlık görevler için tasarlanmış mat hayalet zırhı.",
+    primaryColor: "#09090b",
+    secondaryColor: "#27272a",
+    accentColor: "#a855f7",
+    outfitType: "stealth",
+    helmetStyle: "hood",
+    visorColor: "#a855f7",
+  },
+  desert_scout: {
+    id: "desert_scout",
+    name: "Çöl İzleyicisi",
+    description: "Kum fırtınası kamuflajı ve hafif keşif yeleği.",
+    primaryColor: "#78350f",
+    secondaryColor: "#d97706",
+    accentColor: "#f59e0b",
+    outfitType: "scout",
+    helmetStyle: "beret",
+    visorColor: "#f59e0b",
+  },
+  arctic_fighter: {
+    id: "arctic_fighter",
+    name: "Kutup Komandosu",
+    description: "Kar kamuflajı ve termal korumalı kış üniforması.",
+    primaryColor: "#e2e8f0",
+    secondaryColor: "#94a3b8",
+    accentColor: "#38bdf8",
+    outfitType: "tactical",
+    helmetStyle: "helmet",
+    visorColor: "#38bdf8",
+  },
+  cyber_agent: {
+    id: "cyber_agent",
+    name: "Siber Ajan",
+    description: "Gelişmiş HUD entegrasyonlu nano kompozit takım.",
+    primaryColor: "#111827",
+    secondaryColor: "#374151",
+    accentColor: "#10b981",
+    outfitType: "cyber",
+    helmetStyle: "visor",
+    visorColor: "#10b981",
+  },
+  street_warrior: {
+    id: "street_warrior",
+    name: "Sokak Savaşçısı",
+    description: "Asi sokak stili ve taktik kurşun geçirmez yelek.",
+    primaryColor: "#312e81",
+    secondaryColor: "#4338ca",
+    accentColor: "#f43f5e",
+    outfitType: "tactical",
+    helmetStyle: "beret",
+    visorColor: "#f43f5e",
+  },
+};
+
 export function detectAutoQuality(): "low" | "medium" | "high" {
   if (typeof window === "undefined") return "medium";
   const isMobile =
@@ -155,12 +298,21 @@ export const DEFAULT_SETTINGS: StrikeSettings = {
   voiceVolume: 1.0,
   dynamicResolution: true,
   invertY: false,
+  binds: DEFAULT_KEYBINDS,
+  selectedSkin: "classic_soldier",
 };
+
 export function cleanSettings(s: Partial<StrikeSettings>): StrikeSettings {
   const n = (v: unknown, min: number, max: number, fallback: number) =>
     typeof v === "number" && Number.isFinite(v)
       ? Math.max(min, Math.min(max, v))
       : fallback;
+
+  const validSkins: SkinId[] = Object.keys(CHARACTER_SKINS) as SkinId[];
+  const skin = validSkins.includes(s.selectedSkin as any)
+    ? (s.selectedSkin as SkinId)
+    : DEFAULT_SETTINGS.selectedSkin;
+
   return {
     quality: ["low", "medium", "high", "auto"].includes(s.quality || "")
       ? (s.quality as StrikeSettings["quality"])
@@ -174,6 +326,8 @@ export function cleanSettings(s: Partial<StrikeSettings>): StrikeSettings {
     voiceVolume: n(s.voiceVolume, 0, 1.5, 1.0),
     dynamicResolution: s.dynamicResolution !== false,
     invertY: s.invertY === true,
+    binds: { ...DEFAULT_KEYBINDS, ...(s.binds || {}) },
+    selectedSkin: skin,
   };
 }
 
@@ -181,3 +335,4 @@ export const TARGET_HITBOXES = {
   body: { radius: 0.34, min: 0.15, max: 1.4 },
   head: { radius: 0.22, min: 1.42, max: 1.86 },
 } as const;
+

@@ -14,7 +14,7 @@ import {
 } from "./types";
 import { MAPS } from "./maps";
 import { createTraining, simulate } from "./combat";
-import { PHYSICS as C, WEAPONS, WEAPON_ORDER } from "./config";
+import { PHYSICS as C, WEAPONS, WEAPON_ORDER, DEFAULT_KEYBINDS } from "./config";
 import { clamp } from "./physics";
 
 export interface StrikeHUD {
@@ -169,32 +169,37 @@ export class StrikeController {
     };
 
     listen(document, "pointerlockchange", () => {
-      if (document.pointerLockElement === canvas)
+      if (document.pointerLockElement === canvas) {
         this.ignoreInitialMouseMove = true;
-      else if (this.active && !this.isTouchDevice) this.pause();
+      }
     });
 
     listen(document, "pointerlockerror", () => {
-      if (!this.isTouchDevice) {
-        this.pause("Fare kilitlenemedi. Oyuna dön düğmesine yeniden bas.");
+      // Opportunistic pointer lock failure (e.g. no direct gesture on match start), ignore without pausing loop!
+    });
+
+    listen(canvas, "click", () => {
+      if (this.active && !this.isTouchDevice && document.pointerLockElement !== canvas) {
+        this.canvas.requestPointerLock?.();
       }
     });
 
     listen(window, "blur", () => {
-      if (!this.isTouchDevice) this.pause();
+      if (!this.isTouchDevice && !this.isMultiplayer) this.pause();
     });
     listen(document, "visibilitychange", () => {
-      if (document.hidden) this.pause();
+      if (document.hidden && !this.isMultiplayer) this.pause();
     });
 
     listen(canvas, "strike-context-lost", () =>
       this.pause("WebGL bağlantısı kesildi. Menüden haritayı yeniden başlat.")
     );
 
+    const binds = { ...DEFAULT_KEYBINDS, ...(settings.binds || {}) };
+
     listen(window, "keydown", ((e: KeyboardEvent) => {
       if (
         !this.active ||
-        (!this.isTouchDevice && document.pointerLockElement !== canvas) ||
         (e.target as HTMLElement)?.closest(
           'input,textarea,select,[contenteditable="true"]'
         )
@@ -208,8 +213,8 @@ export class StrikeController {
         return;
       }
 
-      // Tab for Scoreboard in multiplayer
-      if (key === "Tab") {
+      // Tab or mapped key for Scoreboard
+      if (key === (binds.scoreboard || "Tab") || key === "Tab") {
         e.preventDefault();
         if (!this.scoreboardOpen) {
           this.scoreboardOpen = true;
@@ -231,39 +236,34 @@ export class StrikeController {
         return;
       }
 
-      if (
-        [
-          "Space",
-          "ControlLeft",
-          "ControlRight",
-          "ShiftLeft",
-          "ShiftRight",
-          "KeyW",
-          "KeyA",
-          "KeyS",
-          "KeyD",
-          "KeyC",
-          "KeyR",
-          "Digit1",
-          "Digit2",
-          "Digit3",
-          "Digit4",
-          "Digit5",
-        ].includes(key)
-      )
+      // Prevent default for mapped action keys
+      const mappedKeys = Object.values(binds);
+      if (mappedKeys.includes(key) || ["Space", "ControlLeft", "ShiftLeft", "KeyR", "Digit1", "Digit2", "Digit3"].includes(key)) {
         e.preventDefault();
+      }
 
       this.keys.add(key);
-      if (key === "KeyR" && !e.repeat) this.pendingReload = true;
-      if (/^Digit[1-5]$/.test(key) && !e.repeat)
-        this.pendingWeapon = WEAPON_ORDER[Number(key.at(-1)) - 1];
+
+      if (key === (binds.reload || "KeyR") && !e.repeat) this.pendingReload = true;
+      if (key === (binds.primary || "Digit1") && !e.repeat) this.pendingWeapon = "rifle";
+      if (key === (binds.secondary || "Digit2") && !e.repeat) this.pendingWeapon = "pistol";
+      if (key === (binds.knife || "Digit3") && !e.repeat) this.pendingWeapon = "knife";
+
+      if (/^Digit[1-6]$/.test(key) && !e.repeat) {
+        const idx = Number(key.at(-1)) - 1;
+        if (idx >= 0 && idx < WEAPON_ORDER.length) {
+          this.pendingWeapon = WEAPON_ORDER[idx];
+        }
+      }
     }) as EventListener);
 
     listen(window, "keyup", ((e: KeyboardEvent) => {
       const key = e.code;
       this.keys.delete(key);
 
-      if (key === "Tab") {
+      const binds = { ...DEFAULT_KEYBINDS, ...(settings.binds || {}) };
+
+      if (key === (binds.scoreboard || "Tab") || key === "Tab") {
         e.preventDefault();
         this.scoreboardOpen = false;
         mpOptions?.onScoreboardToggle?.(false);
@@ -284,7 +284,8 @@ export class StrikeController {
     }) as EventListener);
 
     listen(window, "mousemove", ((e: MouseEvent) => {
-      if (!this.active || document.pointerLockElement !== canvas) return;
+      if (!this.active) return;
+      if (!this.isTouchDevice && document.pointerLockElement !== canvas) return;
       if (this.ignoreInitialMouseMove) {
         this.ignoreInitialMouseMove = false;
         return;
@@ -303,15 +304,29 @@ export class StrikeController {
     }) as EventListener);
 
     listen(canvas, "mousedown", ((e: MouseEvent) => {
-      if (!this.active || document.pointerLockElement !== canvas) return;
+      if (!this.active) return;
       e.preventDefault();
       if (e.button === 0) this.mouseFire = true;
-      if (e.button === 2) this.ads = true;
+      if (e.button === 2) {
+        if (this.state.player.weapon.selected === "knife") {
+          this.heavyAttack = true;
+          this.mouseFire = true;
+        } else {
+          this.ads = true;
+        }
+      }
     }) as EventListener);
 
     listen(window, "mouseup", ((e: MouseEvent) => {
-      if (e.button === 0) this.mouseFire = false;
-      if (e.button === 2) this.ads = false;
+      if (e.button === 0) {
+        this.mouseFire = false;
+        this.heavyAttack = false;
+      }
+      if (e.button === 2) {
+        this.ads = false;
+        this.heavyAttack = false;
+        this.mouseFire = false;
+      }
     }) as EventListener);
 
     listen(canvas, "contextmenu", (e) => e.preventDefault());
@@ -322,11 +337,12 @@ export class StrikeController {
       ((e: WheelEvent) => {
         if (!this.active) return;
         e.preventDefault();
-        const id = this.pendingWeapon || this.state.player.weapon.selected;
-        this.pendingWeapon =
-          WEAPON_ORDER[
-            (WEAPON_ORDER.indexOf(id) + (e.deltaY > 0 ? 1 : -1) + 5) % 5
-          ];
+        const currentId = this.pendingWeapon || this.state.player.weapon.selected;
+        const currentIdx = WEAPON_ORDER.indexOf(currentId);
+        const nextIdx =
+          (currentIdx + (e.deltaY > 0 ? 1 : -1) + WEAPON_ORDER.length) %
+          WEAPON_ORDER.length;
+        this.pendingWeapon = WEAPON_ORDER[nextIdx];
       }) as EventListener,
       { passive: false }
     );
@@ -429,10 +445,12 @@ export class StrikeController {
     this.removers.push(() => clearInterval(this.pingInterval));
   }
 
+  private heavyAttack = false;
+
   private loop = () => {
     if (!this.active || this.disposed) return;
     if (!this.canvas.getClientRects().length) {
-      this.pause();
+      // Return early without pausing if canvas is temporarily unrendered
       return;
     }
     try {
@@ -442,10 +460,17 @@ export class StrikeController {
       this.accumulator += elapsed;
       let steps = 0;
 
+      const binds = { ...DEFAULT_KEYBINDS, ...(this.settings.binds || {}) };
+
       while (this.accumulator >= C.dt && steps < 8) {
         this.previous = { ...this.state.player.movement.position };
-        const keyMoveX = Number(this.keys.has("KeyD")) - Number(this.keys.has("KeyA"));
-        const keyMoveZ = Number(this.keys.has("KeyW")) - Number(this.keys.has("KeyS"));
+        const keyMoveX =
+          Number(this.keys.has(binds.right || "KeyD")) -
+          Number(this.keys.has(binds.left || "KeyA"));
+        const keyMoveZ =
+          Number(this.keys.has(binds.forward || "KeyW")) -
+          Number(this.keys.has(binds.backward || "KeyS"));
+
         const cmd: InputCommand = {
           sequence: ++this.sequence,
           tick: this.state.tick,
@@ -453,14 +478,20 @@ export class StrikeController {
           moveZ: this.touchMoveZ !== 0 ? this.touchMoveZ : keyMoveZ,
           yaw: this.yaw,
           pitch: this.pitch,
-          jump: this.touchJump || this.keys.has("Space"),
-          sprint: this.touchSprint || this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"),
+          jump: this.touchJump || this.keys.has(binds.jump || "Space") || this.keys.has("Space"),
+          sprint:
+            this.touchSprint ||
+            this.keys.has(binds.sprint || "ShiftLeft") ||
+            this.keys.has("ShiftLeft") ||
+            this.keys.has("ShiftRight"),
           crouch:
             this.touchCrouch ||
+            this.keys.has(binds.crouch || "ControlLeft") ||
             this.keys.has("KeyC") ||
             this.keys.has("ControlLeft") ||
             this.keys.has("ControlRight"),
           fire: this.touchFire || this.mouseFire,
+          heavyAttack: this.heavyAttack,
           ads: this.touchAds || this.ads,
           reload: this.pendingReload,
           weapon: this.pendingWeapon,

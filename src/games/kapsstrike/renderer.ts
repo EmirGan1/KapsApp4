@@ -21,8 +21,16 @@ import {
   CombatEvent,
   WeaponId,
   Vec3,
+  SkinId,
 } from "./types";
-import { WEAPONS, WEAPON_ORDER, PHYSICS as C, TARGET_HITBOXES, detectAutoQuality } from "./config";
+import {
+  WEAPONS,
+  WEAPON_ORDER,
+  PHYSICS as C,
+  TARGET_HITBOXES,
+  detectAutoQuality,
+  CHARACTER_SKINS,
+} from "./config";
 import { raySolid, clamp } from "./physics";
 import { aimDirection } from "./combat";
 /** All input belongs to StrikeController; avoid a second device/gamepad listener graph. */
@@ -266,6 +274,15 @@ export class StrikeRenderer {
           m.isPickable = false;
           return m;
         };
+        if (id === "knife") {
+          part("handle", 0, -0.05, -0.08, 0.045, 0.12, 0.18, "#1e293b");
+          part("hilt", 0, 0.02, 0.02, 0.07, 0.03, 0.05, "#475569");
+          part("blade", 0, 0.04, 0.18, 0.015, 0.08, 0.28, "#e2e8f0");
+          part("edge", 0, 0.01, 0.19, 0.01, 0.03, 0.26, "#ef4444");
+          this.weapons.set(id, root);
+          continue;
+        }
+
         part("receiver", 0, 0, 0, 0.14, 0.17, w.length * 0.43, w.color);
         part(
           "barrel",
@@ -518,6 +535,7 @@ export class StrikeRenderer {
       hp: number;
       stance?: string;
       selectedWeapon?: WeaponId;
+      skin?: SkinId;
     }>,
     localPlayerId?: string
   ) {
@@ -530,12 +548,13 @@ export class StrikeRenderer {
       let item = this.remotePlayerMeshes.get(p.id);
       if (!item) {
         const root = new TransformNode("remote-" + p.id, this.scene);
+        const skinDef = CHARACTER_SKINS[p.skin || "classic_soldier"] || CHARACTER_SKINS.classic_soldier;
         const teamColor =
           p.team === "red"
             ? "#ef4444"
             : p.team === "blue"
               ? "#3b82f6"
-              : p.color || "#10b981";
+              : skinDef.accentColor || p.color || "#10b981";
 
         const body = MeshBuilder.CreateBox(
           "remote-body-" + p.id,
@@ -548,7 +567,7 @@ export class StrikeRenderer {
         );
         body.position.y = (TARGET_HITBOXES.body.min + TARGET_HITBOXES.body.max) / 2;
         body.parent = root;
-        body.material = this.material(teamColor);
+        body.material = this.material(skinDef.primaryColor);
 
         const head = MeshBuilder.CreateBox(
           "remote-head-" + p.id,
@@ -557,7 +576,17 @@ export class StrikeRenderer {
         );
         head.position.y = (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2;
         head.parent = root;
-        head.material = this.material("#fde047");
+        head.material = this.material(skinDef.secondaryColor);
+
+        // Depth-tested team/enemy outline indicator ring on base
+        const outlineRing = MeshBuilder.CreateTorus(
+          "remote-outline-" + p.id,
+          { diameter: 1.1, thickness: 0.05, tessellation: 16 },
+          this.scene
+        );
+        outlineRing.position.y = 0.04;
+        outlineRing.parent = root;
+        outlineRing.material = this.material(teamColor, true);
 
         const tagPlane = MeshBuilder.CreatePlane(
           "remote-tag-" + p.id,

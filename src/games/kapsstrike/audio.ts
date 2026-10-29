@@ -27,6 +27,7 @@ export class StrikeAudio {
       sniper: 65,
       shotgun: 75,
       pistol: 200,
+      knife: 320,
       hit: 900,
       reload: 360,
       damage: 90,

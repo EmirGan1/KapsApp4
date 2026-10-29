@@ -19,6 +19,7 @@ import {
   StrikeRoomState,
   StrikeRoomSummary,
   MatchStats,
+  SkinId,
 } from "../games/kapsstrike/types";
 import { MAPS } from "../games/kapsstrike/maps";
 import { PHYSICS as C, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "../games/kapsstrike/config";
@@ -70,6 +71,7 @@ export class StrikeServerPlayer {
   history: HistoricalPosition[] = [];
   isSpeaking = false;
   isMuted = false;
+  skin: SkinId = "classic_soldier";
 
   constructor(
     socketId: string,
@@ -79,7 +81,8 @@ export class StrikeServerPlayer {
     color: string,
     team: StrikeTeam,
     spawnPos: Vec3,
-    isHost = false
+    isHost = false,
+    skin: SkinId = "classic_soldier"
   ) {
     this.id = socketId;
     this.userId = userId;
@@ -89,6 +92,7 @@ export class StrikeServerPlayer {
     this.team = team;
     this.isHost = isHost;
     this.ready = isHost; // Host starts ready
+    this.skin = skin;
 
     const ammo = Object.fromEntries(
       WEAPON_ORDER.map((k) => [k, WEAPONS[k].capacity])
@@ -286,6 +290,7 @@ export class StrikeRoom {
       deaths: p.deaths,
       score: p.score,
       ping: p.ping,
+      skin: p.skin,
     }));
 
     return {
@@ -802,7 +807,7 @@ export class KapsStrikeServerManager {
 
         // Authoritative Shoot verification & Lag Compensation
         if (input.fire) {
-          this.verifyAndExecuteShot(room, player, input.ads, input.tick);
+          this.verifyAndExecuteShot(room, player, input.ads, input.tick, !!input.heavyAttack);
         }
       }
     });
@@ -853,7 +858,8 @@ export class KapsStrikeServerManager {
     room: StrikeRoom,
     shooter: StrikeServerPlayer,
     ads: boolean,
-    clientShotTick: number
+    clientShotTick: number,
+    heavyAttack = false
   ): void {
     const pState = shooter.state;
     const wState = pState.weapon;
@@ -866,14 +872,17 @@ export class KapsStrikeServerManager {
       room.tick < wState.nextFire ||
       room.tick < wState.switchUntil ||
       wState.reloadUntil > 0 ||
-      wState.ammo[weaponId] <= 0
+      (weaponId !== "knife" && wState.ammo[weaponId] <= 0)
     ) {
       return;
     }
 
     // Deduct ammo & enforce RPM fire cooldown
-    wState.ammo[weaponId]--;
-    const rpmCooldownTicks = Math.max(1, Math.round((60 / def.rpm) * SERVER_CONFIG.tickRate));
+    if (weaponId !== "knife") {
+      wState.ammo[weaponId]--;
+    }
+    const cdMult = weaponId === "knife" && heavyAttack ? 1.5 : 1;
+    const rpmCooldownTicks = Math.max(1, Math.round((60 / def.rpm) * cdMult * SERVER_CONFIG.tickRate));
     wState.nextFire = room.tick + rpmCooldownTicks;
     wState.shotIndex++;
 
@@ -967,7 +976,8 @@ export class KapsStrikeServerManager {
             ? clamp(1 - nearest / 40, 0.25, 1)
             : clamp(1 - nearest / (def.range * 2.5), 0.7, 1);
 
-        const damagePerPellet = (def.damage / def.pellets) * (isHeadshot ? 2 : 1) * falloff;
+        const baseDmg = weaponId === "knife" ? (heavyAttack ? 65 : 40) : def.damage;
+        const damagePerPellet = (baseDmg / def.pellets) * (isHeadshot ? 2 : 1) * (weaponId === "knife" ? 1 : falloff);
         const finalDamage = Math.min(hitPlayer.state.hp, damagePerPellet);
 
         hitPlayer.state.hp = Math.max(0, hitPlayer.state.hp - finalDamage);
