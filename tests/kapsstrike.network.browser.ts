@@ -25,7 +25,7 @@ const errors: string[] = [];
 try {
   const a = await browser.newPage({viewport:{width:960,height:600}});
   await a.addInitScript(()=>{if(!localStorage.getItem('kapsstrike-settings'))localStorage.setItem('kapsstrike-settings',JSON.stringify({binds:{forward:'KeyI'},selectedSkin:'cyber_agent'}));});
-  const mobile = await browser.newContext({viewport:{width:844,height:390},hasTouch:true,isMobile:true});
+  const mobile = await browser.newContext({viewport:{width:1366,height:1024},hasTouch:true,isMobile:true});
   const b = await mobile.newPage();
   for (const p of [a,b]) { p.on("pageerror", e => errors.push(e.message)); p.on('console', m=> {if(m.type()==='error') { errors.push(m.text()); console.log(m.text()); }}); }
   await Promise.all([a.goto("http://127.0.0.1:4195/__strike_network?user=1"),b.goto("http://127.0.0.1:4195/__strike_network?user=2")]);
@@ -82,7 +82,7 @@ try {
   await a.getByRole("button",{name:/MAÇI BAŞLAT/i}).click();
   for (const p of [a,b]) await p.waitForFunction(() => (window as any).strike?.remotePlayerList.length === 2);
   for (const p of [a,b]) assert.equal(await p.evaluate(() => (window as any).controllers.length),1,"Only one controller per match");
-  await a.getByRole("button",{name:"Oyuna dön",exact:true}).click();
+  await a.getByRole("button",{name:/Oyuna dön|Oyuna Devam Et/i}).click();
   await a.waitForFunction(() => document.pointerLockElement !== null);
   await b.waitForFunction(() => (window as any).strike?.active === true);
   await a.waitForTimeout(500);
@@ -154,15 +154,15 @@ try {
   for(const p of [a,b]) assert.equal(await p.evaluate(()=>(window as any).microphoneRequests),0,"No automatic microphone access");
   assert.deepEqual(errors,[]);
   await a.keyboard.press("Escape");
-  await a.getByRole("button",{name:"Oyuna dön",exact:true}).waitFor();
+  await a.getByRole("button",{name:/Oyuna dön|Oyuna Devam Et/i}).waitFor();
   await a.getByRole("button",{name:"Kontroller",exact:true}).click();
   await a.getByRole("button",{name:"Zıpla tuşunu değiştir",exact:true}).click();await a.keyboard.press('KeyJ');
   await a.waitForFunction(()=>(window as any).strike.bindings.jump==='KeyJ');
-  await a.getByRole('button',{name:'Oyuna dön',exact:true}).click();
+  await a.getByRole('button',{name:/Oyuna dön|Oyuna Devam Et/i}).click();
   await a.keyboard.down('KeyJ');await a.waitForFunction(()=>(window as any).strike.state.player.movement.position.y>.1);
   await a.keyboard.up('KeyJ');await a.waitForTimeout(100);assert.ok(players[0].state.movement.position.y>.1);
   await a.keyboard.press('Escape');
-  await a.getByRole("button",{name:"Menüye dön",exact:true}).click();
+  await a.getByRole("button",{name:/Menüye dön|Menüye \/ Lobiye Dön/i}).click();
   assert.equal(await a.evaluate(()=>(window as any).strike.disposed),true);
   await a.waitForTimeout(100);assert.equal(before.players.size,1);
   await b.close();await a.waitForTimeout(100);assert.equal(manager.rooms.size,0);

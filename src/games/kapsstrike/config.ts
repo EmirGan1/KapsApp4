@@ -1,5 +1,6 @@
 import { cleanBindings } from "./controls";
 import {cleanSkin} from './skins';
+import {currentInputDevice} from '../../utils/gameInput';
 import { WeaponId, StrikeSettings } from "./types";
 export const PHYSICS = {
   dt: 1 / 120,
@@ -138,9 +139,7 @@ export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
 export const WEAPON_ORDER: WeaponId[] = ["rifle","smg","sniper","shotgun","pistol","knife"];
 export function detectAutoQuality(): "low" | "medium" | "high" {
   if (typeof window === "undefined") return "medium";
-  const isMobile =
-    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-    window.innerWidth < 800;
+  const isMobile = currentInputDevice().touch;
   if (isMobile) return "low";
   const cores = navigator.hardwareConcurrency || 4;
   if (cores >= 8) return "high";
@@ -189,6 +188,7 @@ export function cleanSettings(s: Partial<StrikeSettings> & {binds?:unknown}): St
     dynamicResolution: s.dynamicResolution !== false,
     invertY: s.invertY === true,
     gyroMode,
+    controlMode:['auto','touch','keyboard'].includes(s.controlMode||'')?s.controlMode:'auto',
     gyroSensitivity: n(s.gyroSensitivity, 0.1, 4, 1.0),
     showDebugStats: s.showDebugStats === true,
   };

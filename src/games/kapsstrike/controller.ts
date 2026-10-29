@@ -14,6 +14,7 @@ import {
   StrikeTeam,
 } from "./types";
 import { MAPS } from "./maps";
+import {touchControls,currentInputDevice} from '../../utils/gameInput';
 import { createTraining, simulate } from "./combat";
 import { PHYSICS as C, WEAPONS, WEAPON_ORDER } from "./config";
 import { clamp, fits } from "./physics";
@@ -126,7 +127,8 @@ export class StrikeController {
   private remotePlayerList: PlayerSnapshot[] = [];
 
   // Mobile / Touch controls
-  readonly isTouchDevice: boolean;
+  get isTouchDevice(){return touchControls(this.settings.controlMode);}
+  private get usesPointerLock(){return typeof this.canvas.requestPointerLock==='function'&&!currentInputDevice().nativeTouch;}
   private touchMoveX = 0;
   private touchMoveZ = 0;
   private touchFire = false;
@@ -144,6 +146,7 @@ export class StrikeController {
     renderer?: StrikeRenderer,
     mpOptions?: MultiplayerOptions
   ) {
+    this.settings={...settings};
     this.bindings = cleanBindings(settings.bindings);
     this.callbacks = mpOptions;
     this.isMultiplayer = !!mpOptions?.isMultiplayer;
@@ -151,10 +154,6 @@ export class StrikeController {
     this.roomCode = mpOptions?.roomCode;
     this.localUserId = mpOptions?.userId;
     this.localTeam = mpOptions?.team || "none";
-    this.isTouchDevice =
-      typeof window !== "undefined" &&
-      (("ontouchstart" in window) || navigator.maxTouchPoints > 0) &&
-      window.innerWidth < 1024;
 
     this.state = createTraining(
       map,
@@ -169,7 +168,7 @@ export class StrikeController {
       this.state.targets = [];
     }
 
-    this.renderer = renderer || new StrikeRenderer(canvas, MAPS[map], settings);
+    this.renderer = renderer || new StrikeRenderer(canvas, MAPS[map], this.settings);
     this.audio.volume = settings.volume;
     this.previous = { ...this.state.player.movement.position };
 
@@ -186,11 +185,11 @@ export class StrikeController {
     listen(document, "pointerlockchange", () => {
       if (document.pointerLockElement === canvas)
         this.ignoreInitialMouseMove = true;
-      else if (this.active && !this.isTouchDevice) this.pause();
+      else if (this.active && !this.isTouchDevice && this.usesPointerLock) this.pause();
     });
 
     listen(document, "pointerlockerror", () => {
-      if (!this.isTouchDevice) {
+      if (!this.isTouchDevice && this.usesPointerLock) {
         this.pause("Fare kilitlenemedi. Oyuna dön düğmesine yeniden bas.");
       }
     });
@@ -209,7 +208,7 @@ export class StrikeController {
     listen(window, "keydown", ((e: KeyboardEvent) => {
       if (
         !this.active ||
-        (!this.isTouchDevice && document.pointerLockElement !== canvas) ||
+        (!this.isTouchDevice && this.usesPointerLock && document.pointerLockElement !== canvas) ||
         (e.target as HTMLElement)?.closest(
           'input,textarea,select,[contenteditable="true"]'
         )
@@ -227,7 +226,7 @@ export class StrikeController {
     }) as EventListener);
 
     listen(window, "mousemove", ((e: MouseEvent) => {
-      if (!this.active || document.pointerLockElement !== canvas) return;
+      if (!this.active || (document.pointerLockElement !== canvas && !(!this.usesPointerLock&&e.target===canvas&&e.buttons>0))) return;
       if (this.ignoreInitialMouseMove) {
         this.ignoreInitialMouseMove = false;
         return;
@@ -246,7 +245,7 @@ export class StrikeController {
     }) as EventListener);
 
     listen(canvas, "mousedown", ((e: MouseEvent) => {
-      if (!this.active || document.pointerLockElement !== canvas) return;
+      if (!this.active || (!this.isTouchDevice && this.usesPointerLock && document.pointerLockElement !== canvas)) return;
       e.preventDefault();
       this.keys.add(`Mouse${e.button}`);
       this.handleActions(false);
@@ -264,7 +263,7 @@ export class StrikeController {
       canvas,
       "wheel",
       ((e: WheelEvent) => {
-        if (!this.active || (!this.isTouchDevice && document.pointerLockElement !== canvas)) return;
+        if (!this.active || (!this.isTouchDevice && this.usesPointerLock && document.pointerLockElement !== canvas)) return;
         e.preventDefault();
         if (e.deltaY === 0 || performance.now() - this.lastWheel < 140) return;
         this.lastWheel = performance.now();
@@ -289,6 +288,19 @@ export class StrikeController {
   setBindings(value: Bindings) {
     this.bindings = cleanBindings(value);
     this.clearInput();
+  }
+
+  updateSettings(next:StrikeSettings){
+    const wasTouch=this.isTouchDevice;
+    const changed=JSON.stringify(next.bindings)!==JSON.stringify(this.settings.bindings);
+    Object.assign(this.settings,next);
+    if(changed)this.setBindings(cleanBindings(next.bindings));
+    this.audio.volume=next.volume;
+    if(wasTouch!==this.isTouchDevice){
+      this.clearInput();
+      if(this.isTouchDevice&&document.pointerLockElement===this.canvas)document.exitPointerLock();
+      if(this.active&&!this.isTouchDevice)this.pause('Klavye/fare kontrolüne geçildi. Oyuna devam et düğmesine bas.');
+    }
   }
 
   private updateHeldActions() {
@@ -695,13 +707,14 @@ export class StrikeController {
       return;
     }
     this.ignoreInitialMouseMove = true;
+    if(this.canvas.tabIndex<0)this.canvas.tabIndex=0;
     this.canvas.focus();
     this.audio.unlock();
     this.last = performance.now();
     this.accumulator = 0;
     this.active = true;
     try {
-      if (capturePointer && !this.isTouchDevice && "requestPointerLock" in this.canvas) {
+      if (capturePointer && !this.isTouchDevice && this.usesPointerLock) {
         const promise = this.canvas.requestPointerLock();
         if (promise) {
           promise.catch(() => {});
@@ -730,15 +743,16 @@ export class StrikeController {
   }
 
   public addGyroDelta(deltaYaw: number, deltaPitch: number) {
-    if (!this.active) return;
+    if (!this.active || !Number.isFinite(deltaYaw) || !Number.isFinite(deltaPitch)) return;
     const mode = this.settings.gyroMode || "off";
     if (mode === "off") return;
     if (mode === "ads" && !this.touchAds && !this.ads) return;
 
-    const sens = (this.settings.gyroSensitivity ?? 1.0) * 0.0015;
-    this.yaw += deltaYaw * sens;
+    // Deltas are radians from the shared sensor tracker. Apply user sensitivity once.
+    const sens = this.settings.gyroSensitivity ?? 1.0;
+    this.yaw += clamp(deltaYaw,-.35,.35) * sens;
     this.pitch = clamp(
-      this.pitch + deltaPitch * sens * (this.settings.invertY ? -1 : 1),
+      this.pitch + clamp(deltaPitch,-.35,.35) * sens * (this.settings.invertY ? -1 : 1),
       -1.48,
       1.48
     );
