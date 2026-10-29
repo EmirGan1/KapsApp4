@@ -729,6 +729,21 @@ export class StrikeController {
     );
   }
 
+  public addGyroDelta(deltaYaw: number, deltaPitch: number) {
+    if (!this.active) return;
+    const mode = this.settings.gyroMode || "off";
+    if (mode === "off") return;
+    if (mode === "ads" && !this.touchAds && !this.ads) return;
+
+    const sens = (this.settings.gyroSensitivity ?? 1.0) * 0.0015;
+    this.yaw += deltaYaw * sens;
+    this.pitch = clamp(
+      this.pitch + deltaPitch * sens * (this.settings.invertY ? -1 : 1),
+      -1.48,
+      1.48
+    );
+  }
+
   public setTouchFire(fire: boolean) { this.touchFire = fire; }
   public setTouchAds(ads: boolean) { this.touchAds = ads; }
   public setTouchJump(jump: boolean) { this.touchJump = jump; }

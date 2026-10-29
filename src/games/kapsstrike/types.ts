@@ -132,6 +132,9 @@ export interface StrikeSettings {
   voiceVolume?: number;
   dynamicResolution?: boolean;
   invertY: boolean;
+  gyroMode?: "off" | "ads" | "always";
+  gyroSensitivity?: number;
+  showDebugStats?: boolean;
 }
 
 export type StrikeGameMode = "ffa" | "tdm";

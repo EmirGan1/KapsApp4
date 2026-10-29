@@ -85,6 +85,94 @@ export default function KapsStrikeGame({
   const lookTouchId = useRef<number | null>(null);
   const lookLastPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [touchAdsActive, setTouchAdsActive] = useState(false);
+  const [weaponMenuOpen, setWeaponMenuOpen] = useState(false);
+  const [hasGyro, setHasGyro] = useState(false);
+  const lastGyroPos = useRef<{ beta: number; gamma: number } | null>(null);
+
+  // Check hardware Gyroscope support
+  useEffect(() => {
+    if (typeof window !== "undefined" && "DeviceOrientationEvent" in window) {
+      setHasGyro(true);
+    }
+  }, []);
+
+  // Gyroscope orientation listener during active gameplay
+  useEffect(() => {
+    if (view !== "play" || !settings.gyroMode || settings.gyroMode === "off") {
+      lastGyroPos.current = null;
+      return;
+    }
+
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      if (e.beta === null || e.gamma === null) return;
+
+      const shouldApply =
+        settings.gyroMode === "always" ||
+        (settings.gyroMode === "ads" && (hud?.ads || touchAdsActive));
+
+      if (!shouldApply) {
+        lastGyroPos.current = { beta: e.beta, gamma: e.gamma };
+        return;
+      }
+
+      if (lastGyroPos.current) {
+        const dBeta = e.beta - lastGyroPos.current.beta;
+        const dGamma = e.gamma - lastGyroPos.current.gamma;
+
+        if (Math.abs(dBeta) < 30 && Math.abs(dGamma) < 30) {
+          const isLandscape = window.innerWidth > window.innerHeight;
+          const sens = (settings.gyroSensitivity || 1.0) * 0.015;
+
+          let deltaYaw = 0;
+          let deltaPitch = 0;
+
+          if (isLandscape) {
+            const isAngle90 =
+              window.orientation === 90 ||
+              (screen.orientation && screen.orientation.type.includes("primary"));
+            if (isAngle90) {
+              deltaYaw = -dBeta * sens;
+              deltaPitch = dGamma * sens;
+            } else {
+              deltaYaw = dBeta * sens;
+              deltaPitch = -dGamma * sens;
+            }
+          } else {
+            deltaYaw = dGamma * sens;
+            deltaPitch = dBeta * sens;
+          }
+
+          game.current?.addGyroDelta(deltaYaw, deltaPitch);
+        }
+      }
+
+      lastGyroPos.current = { beta: e.beta, gamma: e.gamma };
+    };
+
+    window.addEventListener("deviceorientation", handleOrientation);
+    return () => {
+      window.removeEventListener("deviceorientation", handleOrientation);
+      lastGyroPos.current = null;
+    };
+  }, [view, settings.gyroMode, settings.gyroSensitivity, hud?.ads, touchAdsActive]);
+
+  const requestGyroPermission = async () => {
+    if (
+      typeof DeviceOrientationEvent !== "undefined" &&
+      typeof (DeviceOrientationEvent as any).requestPermission === "function"
+    ) {
+      try {
+        const res = await (DeviceOrientationEvent as any).requestPermission();
+        if (res === "granted") {
+          setting({ gyroMode: settings.gyroMode === "off" ? "ads" : settings.gyroMode });
+        } else {
+          setError("Jiroskop izni reddedildi.");
+        }
+      } catch {
+        setError("Jiroskop izni alınamadı.");
+      }
+    }
+  };
 
   // Multiplayer Room State
   const [rooms, setRooms] = useState<StrikeRoomSummary[]>([]);
@@ -701,7 +789,40 @@ export default function KapsStrikeGame({
         </div>
       )}
 
-      {/* MOBILE TOUCH CONTROLS OVERLAY */}
+      {/* TOP RIGHT PAUSE GEAR BUTTON */}
+      {view === "play" && (
+        <button
+          type="button"
+          className="ks-pause-gear-btn"
+          onClick={() => {
+            game.current?.pause();
+            setView("pause");
+          }}
+          title="Ayarlar & Duraklat"
+        >
+          ⚙️
+        </button>
+      )}
+
+      {/* TOP LEFT MINIMALIST VOICE MIC BUTTON */}
+      {view === "play" && (
+        <div className="ks-top-left-bar">
+          <button
+            type="button"
+            onClick={toggleVoice}
+            className="ks-mini-mic-btn"
+            style={{
+              borderColor: isVoiceMuted ? "rgba(239, 68, 68, 0.6)" : "rgba(34, 197, 94, 0.6)",
+              background: isVoiceMuted ? "rgba(239, 68, 68, 0.25)" : "rgba(34, 197, 94, 0.25)",
+            }}
+            title={isVoiceMuted ? "Mikrofon Kapalı" : "Mikrofon Açık"}
+          >
+            {isVoiceMuted ? "🔇" : "🎙️"}
+          </button>
+        </div>
+      )}
+
+      {/* MOBILE ERGONOMIC HUD OVERLAY */}
       {view === "play" && isMobile && (
         <div className="ks-touch-overlay">
           {/* Virtual Joystick Zone (Bottom-Left) */}
@@ -792,11 +913,12 @@ export default function KapsStrikeGame({
             }}
           />
 
-          {/* Action Touch Buttons */}
-          <div className="ks-touch-actions">
+          {/* Ergonomic Arc Action Buttons Around Main Fire Button */}
+          <div className="ks-touch-arc-container">
+            {/* Main Fire Button */}
             <button
               type="button"
-              className="ks-touch-btn ks-touch-btn-fire"
+              className="ks-touch-btn-fire-main"
               onTouchStart={(e) => {
                 e.preventDefault();
                 game.current?.setTouchFire(true);
@@ -809,80 +931,130 @@ export default function KapsStrikeGame({
             >
               ATEŞ
             </button>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="ks-touch-btn"
-                style={{
-                  background: touchAdsActive ? "rgba(236, 193, 123, 0.4)" : undefined,
-                  borderColor: touchAdsActive ? "#ecc17b" : undefined,
-                }}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  const next = hud?.weapon === "knife" ? true : !touchAdsActive;
-                  setTouchAdsActive(next);
-                  game.current?.setTouchAds(next);
-                }}
-                onTouchEnd={() => {if(hud?.weapon === "knife"){setTouchAdsActive(false);game.current?.setTouchAds(false);}}}
-                onTouchCancel={() => {setTouchAdsActive(false);game.current?.setTouchAds(false);}}
-              >
-                {hud?.weapon === "knife" ? "GÜÇLÜ" : "ADS"}
-              </button>
-              <button
-                type="button"
-                className="ks-touch-btn"
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  game.current?.setTouchJump(true);
-                }}
-                onTouchEnd={(e) => {
-                  e.preventDefault();
-                  game.current?.setTouchJump(false);
-                }}
-              onTouchCancel={() => game.current?.setTouchJump(false)}
-              >
-                ZIPLA
-              </button>
-              <button
-                type="button"
-                className="ks-touch-btn"
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  game.current?.setTouchCrouch(true);
-                }}
-                onTouchEnd={(e) => {
-                  e.preventDefault();
-                  game.current?.setTouchCrouch(false);
-                }}
+
+            {/* Arc Action Button: ADS / Dürbün */}
+            <button
+              type="button"
+              className="ks-touch-arc-btn"
+              style={{
+                bottom: "105px",
+                right: "15px",
+                background: touchAdsActive ? "rgba(236, 193, 123, 0.45)" : undefined,
+                borderColor: touchAdsActive ? "#ecc17b" : undefined,
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                const next = hud?.weapon === "knife" ? true : !touchAdsActive;
+                setTouchAdsActive(next);
+                game.current?.setTouchAds(next);
+              }}
+              onTouchEnd={() => {
+                if (hud?.weapon === "knife") {
+                  setTouchAdsActive(false);
+                  game.current?.setTouchAds(false);
+                }
+              }}
+              onTouchCancel={() => {
+                setTouchAdsActive(false);
+                game.current?.setTouchAds(false);
+              }}
+            >
+              {hud?.weapon === "knife" ? "GÜÇLÜ" : "ADS"}
+            </button>
+
+            {/* Arc Action Button: Şarjör (Reload) */}
+            <button
+              type="button"
+              className="ks-touch-arc-btn"
+              style={{ bottom: "88px", right: "75px" }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                game.current?.triggerReload();
+              }}
+            >
+              R
+            </button>
+
+            {/* Arc Action Button: Çömel / Kay */}
+            <button
+              type="button"
+              className="ks-touch-arc-btn"
+              style={{ bottom: "45px", right: "98px" }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                game.current?.setTouchCrouch(true);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                game.current?.setTouchCrouch(false);
+              }}
               onTouchCancel={() => game.current?.setTouchCrouch(false)}
-              >
-                KAY
-              </button>
-              <button
-                type="button"
-                className="ks-touch-btn"
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  game.current?.triggerReload();
-                }}
-              >
-                ŞARJÖR
-              </button>
-            </div>
+            >
+              KAY
+            </button>
+
+            {/* Arc Action Button: Zıpla */}
+            <button
+              type="button"
+              className="ks-touch-arc-btn"
+              style={{ bottom: "-8px", right: "88px" }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                game.current?.setTouchJump(true);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                game.current?.setTouchJump(false);
+              }}
+              onTouchCancel={() => game.current?.setTouchJump(false)}
+            >
+              ZIPLA
+            </button>
           </div>
 
-          {/* Quick Weapons Bar */}
-          <div className="ks-touch-weapons">
-            {WEAPON_ORDER.map((wId) => (
-              <button
-                key={wId}
-                type="button"
-                className={`ks-touch-weapon-btn ${hud?.weapon === wId ? "active" : ""}`}
-                onClick={() => game.current?.selectWeapon(wId)}
-              >
-                {WEAPONS[wId].name.split(" ")[0]}
-              </button>
-            ))}
+          {/* Quick Weapon Selector Wheel Popup Menu */}
+          {weaponMenuOpen && (
+            <div className="ks-weapon-wheel">
+              {WEAPON_ORDER.map((wId) => (
+                <button
+                  key={wId}
+                  type="button"
+                  className={`ks-weapon-wheel-btn ${hud?.weapon === wId ? "active" : ""}`}
+                  onClick={() => {
+                    game.current?.selectWeapon(wId);
+                    setWeaponMenuOpen(false);
+                  }}
+                >
+                  <span className="font-bold">{WEAPONS[wId].name.split(" ")[0]}</span>
+                  <span className="text-[10px] opacity-75">
+                    {wId === "knife" ? "Sınırsız" : `${WEAPONS[wId].capacity} Mermi`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Single Compact Active Weapon Card */}
+          <div
+            className="ks-compact-weapon-card"
+            onClick={() => setWeaponMenuOpen((prev) => !prev)}
+            title="Silah Değiştir"
+          >
+            <span
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: WEAPONS[hud?.weapon || "rifle"]?.color || "#ecc17b" }}
+            />
+            <div className="flex flex-col">
+              <span className="font-bold text-xs text-slate-100">
+                {WEAPONS[hud?.weapon || "rifle"]?.name || "Silah"}
+              </span>
+              <span className="text-[11px] font-mono text-amber-400">
+                {hud?.weapon === "knife" ? "Taktik Bıçak" : `${hud?.ammo || 0} / ${hud?.capacity || 0}`}
+              </span>
+            </div>
+            <span className="text-xs text-slate-400 font-bold ml-1">
+              {weaponMenuOpen ? "▲" : "▼"}
+            </span>
           </div>
         </div>
       )}
@@ -904,31 +1076,6 @@ export default function KapsStrikeGame({
               </span>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* VOICE STATUS HUD */}
-      {view === "play" && (
-        <div className="ks-voice-hud">
-          <button
-            onClick={toggleVoice}
-            className="ks-voice-btn"
-            style={{
-              padding: "4px 8px",
-              minHeight: "auto",
-              fontSize: "11px",
-              background: isVoiceMuted ? "#ef444433" : "#22c55e33",
-              borderColor: isVoiceMuted ? "#ef4444" : "#22c55e",
-            }}
-          >
-            {isVoiceMuted ? "🎤 Mikrofon Kapalı" : "🎙️ Mikrofon Açık (V: PTT)"}
-          </button>
-          <span
-            className={`ks-voice-indicator ${
-              speakingUsers.get(currentUserId) ? "speaking" : ""
-            }`}
-            title="Konuşma Durumu"
-          />
         </div>
       )}
 
@@ -1108,31 +1255,33 @@ export default function KapsStrikeGame({
                   : "AYAKTA"}
               </span>
             </div>
-            <div className="ks-ammo">
-              <small>{WEAPONS[hud.weapon]?.name}</small>
-              <strong>
-                {hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
-              </strong>
-              <span>
-                {hud.reload > 0
-                  ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
-                  : isMobile
-                  ? "Dokunmatik Kontroller Aktif"
-                  : "R · Yenile | 1–6 / Tekerlek · Silah"}
-              </span>
-            </div>
+            {!isMobile && (
+              <div className="ks-ammo">
+                <small>{WEAPONS[hud.weapon]?.name}</small>
+                <strong>
+                  {hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
+                </strong>
+                <span>
+                  {hud.reload > 0
+                    ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
+                    : "R · Yenile | 1–6 / Tekerlek · Silah"}
+                </span>
+              </div>
+            )}
           </div>
 
-          <div className="ks-perf">
-            {Math.round(hud.fps)} FPS · {hud.drawCalls} çizim ·{" "}
-            {hud.activeMeshes}/{hud.meshes} mesh ·{" "}
-            {hud.isMultiplayer
-              ? `Multiplayer (${hud.remotePlayerCount || 0} oyuncu) · Ping: ${Math.round(
-                  hud.ping || 0
-                )} ms · TAB Skor`
-              : "Yerel antrenman"}
-            {" · ESC Menü"}
-          </div>
+          {(!isMobile || settings.showDebugStats) && (
+            <div className="ks-perf">
+              {Math.round(hud.fps)} FPS · {hud.drawCalls} çizim ·{" "}
+              {hud.activeMeshes}/{hud.meshes} mesh ·{" "}
+              {hud.isMultiplayer
+                ? `Multiplayer (${hud.remotePlayerCount || 0} oyuncu) · Ping: ${Math.round(
+                    hud.ping || 0
+                  )} ms · TAB Skor`
+                : "Yerel antrenman"}
+              {" · ESC Menü"}
+            </div>
+          )}
 
           {hud.hurt && hud.hurt.until > hud.tick && <div className="ks-hurt-vignette" style={{opacity: Math.min(.85, .2 + (hud.hurt.damage || 10) / 110)}} />}
           {hud.hp > 0 && hud.hp <= 25 && <span className="ks-low-health" role="status">KRİTİK CAN</span>}
@@ -1865,20 +2014,165 @@ export default function KapsStrikeGame({
       {/* PAUSE OVERLAY */}
       {view === "pause" && (
         <div className="ks-overlay">
-          <div className="ks-menu">
+          <div className="ks-menu max-w-lg">
             <div className="ks-paused">
-              <h2>Duraklatıldı</h2>
-              <p>{game.current?.isMultiplayer ? "Maç devam ediyor. Kontrolü almak için Oyuna dön düğmesine bas." : "Simülasyon ve kontroller durduruldu."}</p>
-              <div className="flex gap-3">
-                <button className="ks-primary" onClick={resume}>
-                  Oyuna dön
-                </button>
-                <button onClick={exit}>Menüye dön</button>
-                <button onClick={() => setPanel(panel === "controls" ? null : "controls")}>Kontroller</button>
-                <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
+              <h2 className="text-2xl font-black text-amber-400 mb-1">OYUN DURDURULDU</h2>
+              <p className="text-xs text-slate-400 mb-4">
+                {game.current?.isMultiplayer
+                  ? "Maç arka planda devam ediyor. Kontrolü almak veya ayarları değiştirmek için düğmeleri kullanın."
+                  : "Simülasyon ve kontroller duraklatıldı."}
+              </p>
+
+              <div className="ks-settings text-left space-y-3 mb-4 max-h-[55vh] overflow-y-auto pr-1">
+                {/* Look Sensitivity */}
+                <label>
+                  <span>Kamera Hassasiyeti (Look Sensitivity) · {(isMobile ? (settings.mobileSensitivity || 1.2) : settings.sensitivity).toFixed(2)}</span>
+                  <input
+                    type="range"
+                    min=".15"
+                    max="4"
+                    step=".05"
+                    value={isMobile ? (settings.mobileSensitivity || 1.2) : settings.sensitivity}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (isMobile) {
+                        setting({ mobileSensitivity: val });
+                      } else {
+                        setting({ sensitivity: val });
+                      }
+                    }}
+                  />
+                </label>
+
+                {/* Gyroscope Controls */}
+                {(isMobile || hasGyro) && (
+                  <div className="p-3 bg-slate-900/80 rounded-lg border border-slate-700/80 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-xs text-amber-300">🎯 Jiroskopla Nişan Alma</span>
+                      {typeof DeviceOrientationEvent !== "undefined" &&
+                        typeof (DeviceOrientationEvent as any).requestPermission === "function" && (
+                          <button
+                            type="button"
+                            onClick={requestGyroPermission}
+                            className="text-[11px] px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded border border-amber-500/40"
+                          >
+                            İzin Ver (iOS)
+                          </button>
+                        )}
+                    </div>
+                    <label className="text-xs">
+                      <span>Jiroskop Modu</span>
+                      <select
+                        value={settings.gyroMode || "off"}
+                        onChange={(e) => setting({ gyroMode: e.target.value as any })}
+                      >
+                        <option value="off">Kapalı</option>
+                        <option value="ads">Sadece Dürbünde (ADS)</option>
+                        <option value="always">Her Zaman Açık</option>
+                      </select>
+                    </label>
+                    {settings.gyroMode !== "off" && (
+                      <label className="text-xs">
+                        <span>Jiroskop Hassasiyeti · {(settings.gyroSensitivity || 1.0).toFixed(1)}×</span>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="3.0"
+                          step="0.1"
+                          value={settings.gyroSensitivity || 1.0}
+                          onChange={(e) => setting({ gyroSensitivity: Number(e.target.value) })}
+                        />
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                {/* Sound & Voice Volume */}
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-xs">
+                    <span>Genel Ses · {Math.round(settings.volume * 100)}%</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step=".05"
+                      value={settings.volume}
+                      onChange={(e) => setting({ volume: Number(e.target.value) })}
+                    />
+                  </label>
+                  <label className="text-xs">
+                    <span>Sesli Sohbet · {Math.round((settings.voiceVolume ?? 1.0) * 100)}%</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1.5"
+                      step=".05"
+                      value={settings.voiceVolume ?? 1.0}
+                      onChange={(e) => setting({ voiceVolume: Number(e.target.value) })}
+                    />
+                  </label>
+                </div>
+
+                {/* Quick Mic Toggle */}
+                <div className="flex items-center justify-between p-2 bg-slate-900/60 rounded border border-slate-800">
+                  <span className="text-xs font-bold text-slate-300">Mikrofon Durumu</span>
+                  <button
+                    type="button"
+                    onClick={toggleVoice}
+                    className={`text-xs px-3 py-1 rounded font-bold ${
+                      isVoiceMuted ? "bg-red-500/20 text-red-400 border border-red-500/40" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                    }`}
+                  >
+                    {isVoiceMuted ? "🔇 Mikrofonu Aç" : "🎙️ Mikrofon Açık"}
+                  </button>
+                </div>
+
+                {/* Show Debug Stats Toggle */}
+                <label className="ks-check text-xs">
+                  <input
+                    type="checkbox"
+                    checked={settings.showDebugStats ?? !isMobile}
+                    onChange={(e) => setting({ showDebugStats: e.target.checked })}
+                  />{" "}
+                  Teknik İstatistikleri Göster (FPS, Mesh, Ping)
+                </label>
               </div>
-              {panel === "controls" && <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />}
-              {panel === "skins" && <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} />}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 flex-wrap justify-center">
+                <button className="ks-primary" onClick={resume}>
+                  ▶ Oyuna Devam Et
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanel(panel === "controls" ? null : "controls")}
+                >
+                  Kontroller
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanel(panel === "skins" ? null : "skins")}
+                >
+                  Karakter
+                </button>
+                <button
+                  className="bg-red-500/20 hover:bg-red-500/40 text-red-300 border border-red-500/40"
+                  onClick={exit}
+                >
+                  🚪 Menüye / Lobiye Dön
+                </button>
+              </div>
+
+              {panel === "controls" && (
+                <div className="mt-4">
+                  <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />
+                </div>
+              )}
+              {panel === "skins" && (
+                <div className="mt-4">
+                  <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} />
+                </div>
+              )}
             </div>
           </div>
         </div>

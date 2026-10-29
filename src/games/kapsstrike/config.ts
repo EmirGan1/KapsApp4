@@ -159,12 +159,20 @@ export const DEFAULT_SETTINGS: StrikeSettings = {
   voiceVolume: 1.0,
   dynamicResolution: true,
   invertY: false,
+  gyroMode: "off",
+  gyroSensitivity: 1.0,
+  showDebugStats: false,
 };
 export function cleanSettings(s: Partial<StrikeSettings> & {binds?:unknown}): StrikeSettings {
   const n = (v: unknown, min: number, max: number, fallback: number) =>
     typeof v === "number" && Number.isFinite(v)
       ? Math.max(min, Math.min(max, v))
       : fallback;
+  const validGyroModes = ["off", "ads", "always"];
+  const gyroMode = validGyroModes.includes(s.gyroMode || "")
+    ? (s.gyroMode as StrikeSettings["gyroMode"])
+    : "off";
+
   return {
     bindings: cleanBindings(s.bindings,s.binds),
     selectedSkin:s.selectedSkin?cleanSkin(s.selectedSkin):undefined,
@@ -180,6 +188,9 @@ export function cleanSettings(s: Partial<StrikeSettings> & {binds?:unknown}): St
     voiceVolume: n(s.voiceVolume, 0, 1.5, 1.0),
     dynamicResolution: s.dynamicResolution !== false,
     invertY: s.invertY === true,
+    gyroMode,
+    gyroSensitivity: n(s.gyroSensitivity, 0.1, 4, 1.0),
+    showDebugStats: s.showDebugStats === true,
   };
 }
 
