@@ -215,18 +215,86 @@ export default function MiniBattleRoyale({
   const [createMode, setCreateMode] = useState<'royale' | 'deathmatch'>('deathmatch');
   const [createDuration, setCreateDuration] = useState<number>(180); // 180s = 3 minutes
 
-  // Control Mode: 'touch' (Virtual Joystick) vs 'desktop' (WASD + Arrows/Mouse)
-  const [controlMode, setControlMode] = useState<'touch' | 'desktop'>(() => {
+  // Helper: Detect tablet devices (iPad, iPad Pro, Android tablets, Kindle, etc.)
+  const isTabletDevice = useCallback((): boolean => {
+    if (typeof window === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const isIPad = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || /iPad/i.test(ua);
+    const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
+    const isTabletUA = isIPad || isAndroidTablet || /Tablet|PlayBook|Silk|Kindle/i.test(ua);
     const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    const isMobileOrTabletUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Tablet|Macintosh/i.test(navigator.userAgent);
-    const isTabletOrMobileScreen = window.innerWidth <= 1280;
-    return (hasTouch && (isMobileOrTabletUA || isTabletOrMobileScreen)) ? 'touch' : 'desktop';
+    const isCoarse = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    return hasTouch && (isTabletUA || isCoarse || (window.innerWidth >= 600 && window.innerWidth <= 1440));
+  }, []);
+
+  // Helper: Detect mobile or tablet device to default to touch controls
+  const isMobileOrTabletDevice = useCallback((): boolean => {
+    if (typeof window === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const isIPad = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || /iPad/i.test(ua);
+    const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
+    const isMobileOrTabletUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Tablet|Silk|Kindle/i.test(ua) || isIPad || isAndroidTablet;
+    const isCoarse = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    return hasTouch && (isMobileOrTabletUA || isCoarse || window.innerWidth <= 1440);
+  }, []);
+
+  // Control Mode: 'touch' (Virtual Joystick) vs 'desktop' (WASD + Arrows/Mouse)
+  // Tablets & Mobile devices default to 'touch' automatically, with explicit switch to 'desktop'
+  const [controlMode, setControlMode] = useState<'touch' | 'desktop'>(() => {
+    try {
+      const saved = localStorage.getItem('kaps_br_control_mode');
+      if (saved === 'touch' || saved === 'desktop') return saved;
+    } catch {}
+    if (typeof window !== 'undefined') {
+      const ua = navigator.userAgent || '';
+      const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      const isIPad = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || /iPad/i.test(ua);
+      const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
+      const isMobileOrTabletUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Tablet|Silk|Kindle/i.test(ua) || isIPad || isAndroidTablet;
+      const isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      if (hasTouch && (isMobileOrTabletUA || isCoarse || window.innerWidth <= 1440)) {
+        return 'touch';
+      }
+    }
+    return 'desktop';
   });
 
+  const handleToggleControlMode = (mode?: 'touch' | 'desktop') => {
+    setControlMode(prev => {
+      const next = mode ?? (prev === 'touch' ? 'desktop' : 'touch');
+      try { localStorage.setItem('kaps_br_control_mode', next); } catch {}
+      return next;
+    });
+  };
+
   // Gyroscope Aiming Mode (Tablets & Mobile / iOS & Android)
-  const [isGyroEnabled, setIsGyroEnabled] = useState<boolean>(false);
-  const [gyroSensitivity, setGyroSensitivity] = useState<number>(0.016); // Default sensitivity
-  const [, setGyroPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
+  const [isGyroEnabled, setIsGyroEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('kaps_br_gyro_enabled') === 'true';
+    } catch {}
+    return false;
+  });
+  const [gyroSensitivity, setGyroSensitivity] = useState<number>(() => {
+    try {
+      const s = localStorage.getItem('kaps_br_gyro_sens');
+      if (s) return parseFloat(s);
+    } catch {}
+    return 0.024; // Smooth, responsive default for tablets & phones
+  });
+  const [invertGyro, setInvertGyro] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('kaps_br_gyro_invert') === 'true';
+    } catch {}
+    return false;
+  });
+  const [gyroPermissionStatus, setGyroPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
+  const [gyroLiveReadout, setGyroLiveReadout] = useState<{ alpha: number; beta: number; gamma: number; active: boolean }>({
+    alpha: 0,
+    beta: 0,
+    gamma: 0,
+    active: false
+  });
   const lastGyroData = useRef<{ alpha: number | null; beta: number | null; gamma: number | null }>({ alpha: null, beta: null, gamma: null });
   const [showCalibrationModal, setShowCalibrationModal] = useState<boolean>(false);
 
@@ -234,31 +302,38 @@ export default function MiniBattleRoyale({
   const enableGyroscope = async () => {
     if (isGyroEnabled) {
       setIsGyroEnabled(false);
+      try { localStorage.setItem('kaps_br_gyro_enabled', 'false'); } catch {}
       return;
     }
 
-    const DeviceOrientationEventAny = DeviceOrientationEvent as any;
+    const DeviceOrientationEventAny = typeof window !== 'undefined' ? (window as any).DeviceOrientationEvent : undefined;
     if (typeof DeviceOrientationEventAny !== 'undefined' && typeof DeviceOrientationEventAny.requestPermission === 'function') {
       try {
         const permission = await DeviceOrientationEventAny.requestPermission();
         if (permission === 'granted') {
           setGyroPermissionStatus('granted');
           setIsGyroEnabled(true);
+          try { localStorage.setItem('kaps_br_gyro_enabled', 'true'); } catch {}
+          const DeviceMotionEventAny = (window as any).DeviceMotionEvent;
+          if (typeof DeviceMotionEventAny !== 'undefined' && typeof DeviceMotionEventAny.requestPermission === 'function') {
+            try { await DeviceMotionEventAny.requestPermission(); } catch {}
+          }
         } else {
           setGyroPermissionStatus('denied');
           setIsGyroEnabled(false);
-          alert('Jiroskop erişim izni verilmedi. iOS Safari ayarlarından izin verebilirsiniz.');
+          alert('iOS Jiroskop erişim izni verilmedi. Safari Ayarları > Hareket ve Yön Sensörleri seçeneğini açıp tekrar deneyebilirsiniz.');
         }
       } catch (err) {
         console.error('[Gyro Permission Error]:', err);
         setGyroPermissionStatus('denied');
         alert('Jiroskop izni alınamadı.');
       }
-    } else if (window.DeviceOrientationEvent) {
+    } else if (typeof window !== 'undefined' && ('DeviceOrientationEvent' in window || 'ondeviceorientation' in window)) {
       setGyroPermissionStatus('granted');
       setIsGyroEnabled(true);
+      try { localStorage.setItem('kaps_br_gyro_enabled', 'true'); } catch {}
     } else {
-      alert('Cihazınızda jiroskop (DeviceOrientation) sensörü desteklenmiyor.');
+      alert('Cihazınızda jiroskop (DeviceOrientation) sensörü bulunamadı veya tarayıcınız desteklemiyor.');
       setGyroPermissionStatus('unsupported');
     }
   };
@@ -497,8 +572,7 @@ export default function MiniBattleRoyale({
     if (!socket) return;
     setErrorMessage('');
 
-    const isTablet = /iPad|Android(?!.*Mobile)|Tablet/i.test(navigator.userAgent) ||
-      (window.innerWidth >= 768 && window.innerWidth <= 1024 && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+    const isTablet = isTabletDevice();
     const platform = controlMode === 'touch' ? (isTablet ? 'tablet' : 'mobile') : 'pc';
 
     socket.emit(
@@ -527,8 +601,7 @@ export default function MiniBattleRoyale({
     if (!socket) return;
     setErrorMessage('');
 
-    const isTablet = /iPad|Android(?!.*Mobile)|Tablet/i.test(navigator.userAgent) ||
-      (window.innerWidth >= 768 && window.innerWidth <= 1024 && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+    const isTablet = isTabletDevice();
     const platform = controlMode === 'touch' ? (isTablet ? 'tablet' : 'mobile') : 'pc';
 
     socket.emit('royale:join_room', { roomId, platform }, (res: any) => {
@@ -681,8 +754,9 @@ export default function MiniBattleRoyale({
           shooting = true;
         }
       } else {
-        // If not using arrow keys, check Mouse Aim
-        if (canvasRef.current && (controlMode === 'desktop' || isMouseDown.current || isSpaceDown.current)) {
+        // If not using arrow keys, check Mouse Aim (Desktop mode only, and do not fight Gyroscope unless mouse click is active)
+        const isMouseActive = isMouseDown.current || isSpaceDown.current;
+        if (canvasRef.current && (!isGyroEnabled || isMouseActive) && controlMode === 'desktop') {
           const rect = canvasRef.current.getBoundingClientRect();
           const centerX = rect.width / 2;
           const centerY = rect.height / 2;
@@ -791,8 +865,7 @@ export default function MiniBattleRoyale({
         pickup = true;
       }
 
-      const isTablet = /iPad|Android(?!.*Mobile)|Tablet/i.test(navigator.userAgent) ||
-        (window.innerWidth >= 768 && window.innerWidth <= 1024 && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+      const isTablet = isTabletDevice();
       const platform: 'pc' | 'mobile' | 'tablet' = controlMode === 'touch' ? (isTablet ? 'tablet' : 'mobile') : 'pc';
 
       // Client-Side Prediction: Advance local predicted position instantly (Zero Latency Input Feel)
@@ -1034,50 +1107,99 @@ export default function MiniBattleRoyale({
     };
   }, [view]);
 
-  // Gyroscope Device Orientation Aiming Listener (Tablets & Phones)
+  // Gyroscope Device Orientation Aiming Listener (Tablets & Phones: iOS & Android)
   useEffect(() => {
-    if (!isGyroEnabled || view !== 'game') return;
+    if (!isGyroEnabled) return;
+
+    let receivedAnyData = false;
 
     const handleOrientation = (e: DeviceOrientationEvent) => {
-      const { beta, gamma } = e;
-      if (beta === null || gamma === null) return;
+      const { alpha, beta, gamma } = e;
+      if (alpha === null && beta === null && gamma === null) return;
 
+      if (!receivedAnyData) {
+        receivedAnyData = true;
+        setGyroLiveReadout(prev => ({ ...prev, active: true }));
+      }
+
+      const prevAlpha = lastGyroData.current.alpha;
       const prevBeta = lastGyroData.current.beta;
       const prevGamma = lastGyroData.current.gamma;
 
-      lastGyroData.current = { alpha: e.alpha, beta, gamma };
+      lastGyroData.current = { alpha: alpha ?? 0, beta: beta ?? 0, gamma: gamma ?? 0 };
 
-      if (prevBeta === null || prevGamma === null) return;
-
-      const dBeta = beta - prevBeta;
-      const dGamma = gamma - prevGamma;
-
-      // Filter out huge sudden jumps (device flip or glitch)
-      if (Math.abs(dBeta) > 30 || Math.abs(dGamma) > 30) return;
-
-      // Orientation compensation (Portrait vs Landscape)
-      const orientationAngle = typeof window.orientation !== 'undefined'
-        ? Number(window.orientation)
-        : (screen.orientation?.angle || 0);
-
-      let yawDelta = 0;
-
-      if (orientationAngle === 90) {
-        // Landscape Left
-        yawDelta = -dBeta * gyroSensitivity;
-      } else if (orientationAngle === -90 || orientationAngle === 270) {
-        // Landscape Right
-        yawDelta = dBeta * gyroSensitivity;
-      } else if (orientationAngle === 180) {
-        // Portrait Upside Down
-        yawDelta = -dGamma * gyroSensitivity;
-      } else {
-        // Portrait Default (0)
-        yawDelta = dGamma * gyroSensitivity;
+      // Update calibration modal live readout
+      if (showCalibrationModal) {
+        setGyroLiveReadout({
+          alpha: Math.round(alpha ?? 0),
+          beta: Math.round(beta ?? 0),
+          gamma: Math.round(gamma ?? 0),
+          active: true
+        });
       }
 
-      if (Math.abs(yawDelta) > 0.001) {
-        virtualAimAngle.current += yawDelta;
+      if (prevAlpha === null || prevBeta === null || prevGamma === null) return;
+
+      // Calculate deltas with 360-degree wrap-around handling
+      let dAlpha = (alpha !== null) ? alpha - prevAlpha : 0;
+      while (dAlpha < -180) dAlpha += 360;
+      while (dAlpha > 180) dAlpha -= 360;
+      if (Math.abs(dAlpha) > 35) dAlpha = 0; // Filter flip/jitter
+
+      let dBeta = (beta !== null) ? beta - prevBeta : 0;
+      while (dBeta < -180) dBeta += 360;
+      while (dBeta > 180) dBeta -= 360;
+      if (Math.abs(dBeta) > 35) dBeta = 0;
+
+      let dGamma = (gamma !== null) ? gamma - prevGamma : 0;
+      while (dGamma < -180) dGamma += 360;
+      while (dGamma > 180) dGamma -= 360;
+      if (Math.abs(dGamma) > 35) dGamma = 0;
+
+      // Screen Orientation & Landscape check
+      const screenAngle = typeof window !== 'undefined'
+        ? (screen.orientation?.angle ?? (typeof window.orientation !== 'undefined' ? Number(window.orientation) : 0))
+        : 0;
+      const isLandscape = typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : true;
+
+      let yawDeltaDeg = 0;
+
+      if (isLandscape) {
+        // Landscape holding posture (standard for tablets and phones)
+        // 1. Compass / horizontal body yaw: turning left/right rotates around earth's vertical axis
+        const yawPan = -dAlpha;
+
+        // 2. Steering wheel tilt: tilting left edge down / right edge up
+        let steeringTilt = 0;
+        if (screenAngle === 270 || screenAngle === -90) {
+          steeringTilt = dBeta;
+        } else {
+          steeringTilt = -dBeta;
+        }
+
+        // Blend: horizontal yaw rotation + steering tilt
+        yawDeltaDeg = (yawPan * 0.75) + (steeringTilt * 0.75);
+      } else {
+        // Portrait posture
+        const yawPan = -dAlpha;
+        let steeringTilt = 0;
+        if (screenAngle === 180) {
+          steeringTilt = -dGamma;
+        } else {
+          steeringTilt = dGamma;
+        }
+        yawDeltaDeg = (yawPan * 0.75) + (steeringTilt * 0.75);
+      }
+
+      if (invertGyro) {
+        yawDeltaDeg = -yawDeltaDeg;
+      }
+
+      // Convert degrees delta to radians with user sensitivity
+      const yawDeltaRad = (yawDeltaDeg * Math.PI / 180) * (gyroSensitivity * 70);
+
+      if (Math.abs(yawDeltaRad) > 0.0005) {
+        virtualAimAngle.current += yawDeltaRad;
         while (virtualAimAngle.current < -Math.PI) virtualAimAngle.current += Math.PI * 2;
         while (virtualAimAngle.current > Math.PI) virtualAimAngle.current -= Math.PI * 2;
 
@@ -1089,11 +1211,14 @@ export default function MiniBattleRoyale({
     };
 
     window.addEventListener('deviceorientation', handleOrientation, true);
+    window.addEventListener('deviceorientationabsolute' as any, handleOrientation as any, true);
+
     return () => {
       window.removeEventListener('deviceorientation', handleOrientation, true);
+      window.removeEventListener('deviceorientationabsolute' as any, handleOrientation as any, true);
       lastGyroData.current = { alpha: null, beta: null, gamma: null };
     };
-  }, [isGyroEnabled, view]);
+  }, [isGyroEnabled, gyroSensitivity, invertGyro, showCalibrationModal]);
 
   // 60 FPS HTML5 Canvas Render Loop
   useEffect(() => {
@@ -2985,6 +3110,34 @@ export default function MiniBattleRoyale({
                   )}
                 </div>
               )}
+
+              {/* Tablet & Mobile Quick Control Mode Switcher */}
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/70 border border-slate-800 text-[10px]">
+                <button
+                  onClick={() => handleToggleControlMode('touch')}
+                  className={`flex-1 py-1 px-1.5 rounded-lg font-black transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                    controlMode === 'touch'
+                      ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/25'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Tablette Sanal Joystickleri Kullan"
+                >
+                  <Smartphone size={11} />
+                  <span>Dokunmatik</span>
+                </button>
+                <button
+                  onClick={() => handleToggleControlMode('desktop')}
+                  className={`flex-1 py-1 px-1.5 rounded-lg font-black transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                    controlMode === 'desktop'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/25'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Harici veya Dahili Klavyeye Geç"
+                >
+                  <Keyboard size={11} />
+                  <span>Klavye</span>
+                </button>
+              </div>
             </div>
 
             {/* Top Center: Timer (Deathmatch) or Alive Count (Royale) */}
@@ -3014,7 +3167,7 @@ export default function MiniBattleRoyale({
 
             {/* Top Right: Live Scoreboard, Minimap & Control Buttons */}
             <div className="pointer-events-auto flex flex-col items-end gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 max-w-full">
                 {/* Arrow Keys Auto-Fire Toggle */}
                 <button
                   onClick={() => setArrowAutoFire(prev => !prev)}
@@ -3029,12 +3182,27 @@ export default function MiniBattleRoyale({
                   <span>🎯 Oto-Ateş: <strong className={arrowAutoFire ? 'text-amber-400' : 'text-slate-500'}>{arrowAutoFire ? 'AÇIK' : 'KAPALI'}</strong></span>
                 </button>
 
+                {/* Control Mode Toggle (Mobile / Tablet Touch vs Keyboard) */}
                 <button
-                  onClick={() => setControlMode(prev => prev === 'touch' ? 'desktop' : 'touch')}
-                  className="px-2.5 py-1.5 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-800 text-[11px] font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
-                  title="Kontrol Modu Seç"
+                  onClick={() => handleToggleControlMode()}
+                  className={`px-2.5 py-1.5 rounded-xl backdrop-blur-md border text-[11px] font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    controlMode === 'touch'
+                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm shadow-emerald-500/20'
+                      : 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-sm shadow-amber-500/20'
+                  }`}
+                  title="Dokunmatik ve Klavye modları arasında geçiş yap"
                 >
-                  {controlMode === 'touch' ? '📱 Dokunmatik' : '⌨️ Klavye'}
+                  {controlMode === 'touch' ? (
+                    <>
+                      <Smartphone size={13} className="text-emerald-400" />
+                      <span>📱 Dokunmatik</span>
+                    </>
+                  ) : (
+                    <>
+                      <Keyboard size={13} className="text-amber-400" />
+                      <span>⌨️ Klavye</span>
+                    </>
+                  )}
                 </button>
 
                 {/* Gyroscope Aiming Toggle Button */}
@@ -3042,24 +3210,23 @@ export default function MiniBattleRoyale({
                   onClick={enableGyroscope}
                   className={`px-2.5 py-1.5 rounded-xl backdrop-blur-md text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
                     isGyroEnabled
-                      ? 'bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-sm shadow-purple-500/20'
+                      ? 'bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm shadow-purple-600/30'
                       : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
                   }`}
                   title="Jiroskop Nişan Alma Modu (Tablet & Telefon)"
                 >
                   <Compass size={13} className={isGyroEnabled ? 'text-purple-400 animate-spin' : 'text-slate-500'} />
-                  <span>Jiroskop: <strong className={isGyroEnabled ? 'text-purple-400' : 'text-slate-500'}>{isGyroEnabled ? 'AÇIK' : 'KAPALI'}</strong></span>
+                  <span>Jiroskop: <strong className={isGyroEnabled ? 'text-purple-300' : 'text-slate-500'}>{isGyroEnabled ? 'AÇIK' : 'KAPALI'}</strong></span>
                 </button>
 
-                {isGyroEnabled && (
-                  <button
-                    onClick={() => setShowCalibrationModal(true)}
-                    className="px-2.5 py-1.5 rounded-xl bg-purple-950/80 backdrop-blur-md border border-purple-800 text-[11px] font-bold text-purple-300 hover:text-white transition-colors cursor-pointer"
-                    title="Jiroskopu Kalibre Et"
-                  >
-                    🛠️ Kalibre
-                  </button>
-                )}
+                {/* Calibration / Settings Modal Button */}
+                <button
+                  onClick={() => setShowCalibrationModal(true)}
+                  className="px-2.5 py-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 backdrop-blur-md border border-purple-800 text-[11px] font-bold text-purple-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
+                  title="Jiroskop ve Kontrol Ayarları"
+                >
+                  <span>⚙️ Ayarlar</span>
+                </button>
 
                 <button
                   onClick={() => setShowControlsModal(true)}
@@ -3257,34 +3424,36 @@ export default function MiniBattleRoyale({
             </div>
           )}
 
-          {/* TOUCH VIRTUAL JOYSTICKS (TOUCH MODE) */}
+          {/* TOUCH VIRTUAL JOYSTICKS & MOBILE/TABLET CONTROLS */}
           {controlMode === 'touch' && (
             <>
               {/* Left Analog Joystick (Movement) */}
               <div
                 onTouchStart={handleTouchStartLeft}
-                className="absolute bottom-6 left-6 w-32 h-32 rounded-full border-2 border-slate-700/60 bg-slate-900/40 backdrop-blur-sm pointer-events-auto flex items-center justify-center z-20 touch-none"
+                className="absolute bottom-6 sm:bottom-8 left-6 sm:left-8 w-32 sm:w-36 h-32 sm:h-36 rounded-full border-2 border-slate-700/70 bg-slate-900/50 backdrop-blur-md pointer-events-auto flex items-center justify-center z-20 touch-none shadow-2xl"
               >
                 <div
-                  className="w-12 h-12 rounded-full bg-white/30 border border-white/50 pointer-events-none transition-transform duration-75"
+                  className="w-12 sm:w-14 h-12 sm:h-14 rounded-full bg-white/30 border border-white/60 pointer-events-none transition-transform duration-75 flex items-center justify-center shadow-md"
                   style={{
                     transform: touchMoveOrigin.current && touchMoveCurrent.current
-                      ? `translate(${Math.max(-36, Math.min(36, touchMoveCurrent.current.x - touchMoveOrigin.current.x))}px, ${Math.max(-36, Math.min(36, touchMoveCurrent.current.y - touchMoveOrigin.current.y))}px)`
+                      ? `translate(${Math.max(-42, Math.min(42, touchMoveCurrent.current.x - touchMoveOrigin.current.x))}px, ${Math.max(-42, Math.min(42, touchMoveCurrent.current.y - touchMoveOrigin.current.y))}px)`
                       : 'none'
                   }}
-                />
+                >
+                  <Move size={18} className="text-white/80" />
+                </div>
               </div>
 
               {/* Right Analog Joystick (Aim & Shoot) */}
               <div
                 onTouchStart={handleTouchStartRight}
-                className="absolute bottom-6 right-6 w-32 h-32 rounded-full border-2 border-red-500/50 bg-red-950/20 backdrop-blur-sm pointer-events-auto flex items-center justify-center z-20 touch-none"
+                className="absolute bottom-6 sm:bottom-8 right-6 sm:right-8 w-32 sm:w-36 h-32 sm:h-36 rounded-full border-2 border-red-500/60 bg-red-950/30 backdrop-blur-md pointer-events-auto flex items-center justify-center z-20 touch-none shadow-2xl"
               >
                 <div
-                  className="w-12 h-12 rounded-full bg-red-500/40 border border-red-400 pointer-events-none transition-transform duration-75 flex items-center justify-center text-white text-[10px] font-black"
+                  className="w-12 sm:w-14 h-12 sm:h-14 rounded-full bg-red-500/50 border border-red-400 pointer-events-none transition-transform duration-75 flex items-center justify-center text-white text-[10px] sm:text-xs font-black shadow-md shadow-red-500/30"
                   style={{
                     transform: touchAimOrigin.current && touchAimCurrent.current
-                      ? `translate(${Math.max(-36, Math.min(36, touchAimCurrent.current.x - touchAimOrigin.current.x))}px, ${Math.max(-36, Math.min(36, touchAimCurrent.current.y - touchAimOrigin.current.y))}px)`
+                      ? `translate(${Math.max(-42, Math.min(42, touchAimCurrent.current.x - touchAimOrigin.current.x))}px, ${Math.max(-42, Math.min(42, touchAimCurrent.current.y - touchAimOrigin.current.y))}px)`
                       : 'none'
                   }}
                 >
@@ -3296,40 +3465,43 @@ export default function MiniBattleRoyale({
               <button
                 onTouchStart={() => { isTouchFiring.current = true; }}
                 onTouchEnd={() => { isTouchFiring.current = false; }}
-                className="absolute bottom-40 right-24 w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 to-orange-500 text-white font-black text-xl shadow-2xl flex items-center justify-center active:scale-90 border-2 border-orange-400 pointer-events-auto z-20 shadow-red-600/40"
+                onMouseDown={() => { isTouchFiring.current = true; }}
+                onMouseUp={() => { isTouchFiring.current = false; }}
+                className="absolute bottom-40 sm:bottom-48 right-24 sm:right-28 w-14 sm:w-16 h-14 sm:h-16 rounded-2xl bg-gradient-to-tr from-red-600 to-orange-500 text-white font-black text-2xl shadow-2xl flex items-center justify-center active:scale-90 border-2 border-orange-400 pointer-events-auto z-20 shadow-red-600/50 cursor-pointer select-none"
                 title="Ateş Et (Fire)"
               >
                 🔥
               </button>
 
               {/* Touch Action Buttons: Reload, Pickup & Gyroscope */}
-              <div className="absolute bottom-40 right-6 pointer-events-auto flex flex-col gap-2 z-20">
+              <div className="absolute bottom-40 sm:bottom-48 right-6 sm:right-8 pointer-events-auto flex flex-col gap-2.5 z-20">
                 <button
-                  onTouchStart={(e) => { e.preventDefault(); enableGyroscope(); }}
                   onClick={enableGyroscope}
-                  className={`w-12 h-12 rounded-2xl text-xs font-black shadow-lg flex flex-col items-center justify-center active:scale-90 border transition-all cursor-pointer ${
+                  className={`w-12 sm:w-14 h-12 sm:h-14 rounded-2xl text-xs font-black shadow-xl flex flex-col items-center justify-center active:scale-90 border transition-all cursor-pointer ${
                     isGyroEnabled
-                      ? 'bg-purple-600/90 text-white border-purple-400 shadow-purple-600/40'
-                      : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
+                      ? 'bg-purple-600 text-white border-purple-400 shadow-purple-600/50 ring-2 ring-purple-400/50'
+                      : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:text-white'
                   }`}
                   title="Jiroskop Nişan Alma Modu"
                 >
-                  <Compass size={16} className={isGyroEnabled ? 'animate-spin' : ''} />
-                  <span className="text-[8px] mt-0.5 font-bold">{isGyroEnabled ? 'JİRO: AÇ' : 'JİRO: KAP'}</span>
+                  <Compass size={18} className={isGyroEnabled ? 'animate-spin text-purple-200' : ''} />
+                  <span className="text-[8px] sm:text-[9px] mt-0.5 font-bold">{isGyroEnabled ? 'JİRO: AÇ' : 'JİRO: KAP'}</span>
                 </button>
 
                 <button
                   onTouchStart={() => socket?.emit('royale:input', { reload: true })}
-                  className="w-12 h-12 rounded-2xl bg-amber-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-amber-400 cursor-pointer"
-                  title="Şarjör Doldur"
+                  onClick={() => socket?.emit('royale:input', { reload: true })}
+                  className="w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-amber-500 text-slate-950 font-black text-sm shadow-xl flex items-center justify-center active:scale-90 border border-amber-300 cursor-pointer"
+                  title="Şarjör Doldur (R)"
                 >
                   R
                 </button>
 
                 <button
                   onTouchStart={() => socket?.emit('royale:input', { pickup: true, swapWeapon: true })}
-                  className="w-12 h-12 rounded-2xl bg-emerald-500/90 text-slate-950 font-black text-sm shadow-lg flex items-center justify-center active:scale-90 border border-emerald-400 cursor-pointer"
-                  title="Eşya Al / Silah Takas Et"
+                  onClick={() => socket?.emit('royale:input', { pickup: true, swapWeapon: true })}
+                  className="w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-emerald-500 text-slate-950 font-black text-sm shadow-xl flex items-center justify-center active:scale-90 border border-emerald-300 cursor-pointer"
+                  title="Eşya Al / Silah Takas Et (E)"
                 >
                   E
                 </button>
@@ -3441,31 +3613,228 @@ export default function MiniBattleRoyale({
         </div>
       )}
 
-      {/* Gyroscope Calibration Modal */}
+      {/* Gyroscope Calibration & Tablet Controls Settings Modal */}
       {showCalibrationModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in pointer-events-auto">
-          <div className="w-full max-w-sm bg-slate-900 border border-purple-700/80 rounded-3xl shadow-2xl p-6 space-y-5">
-            <h3 className="text-lg font-black text-white">Jiroskop Kalibrasyonu</h3>
-            <p className="text-xs text-slate-400">Nişan hassasiyetini cihazına göre ayarla.</p>
-            
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-purple-300">Hassasiyet: {gyroSensitivity.toFixed(3)}</label>
+          <div className="w-full max-w-md bg-slate-900 border border-purple-600/80 rounded-3xl shadow-2xl p-5 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-purple-500/20 border border-purple-500/30 text-purple-400 flex items-center justify-center">
+                  <Compass size={22} className={isGyroEnabled ? 'animate-spin' : ''} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Jiroskop & Tablet Ayarları</h3>
+                  <p className="text-[11px] text-slate-400">Canlı Sensör Testi, Hassasiyet ve Kontroller</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCalibrationModal(false)}
+                className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Live Sensor Radar / Aiming Reticle Test Field */}
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center space-y-3">
+              <div className="flex items-center justify-between w-full text-[11px]">
+                <span className="font-bold text-slate-400">Canlı Sensör Test Alanı</span>
+                <span className={`flex items-center gap-1.5 font-bold ${gyroLiveReadout.active ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  <span className={`w-2 h-2 rounded-full ${gyroLiveReadout.active ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+                  {gyroLiveReadout.active ? 'Sensör Aktif (Canlı)' : isGyroEnabled ? 'Cihazı Döndürün...' : 'Jiroskop Kapalı'}
+                </span>
+              </div>
+
+              {/* Interactive Aim Indicator Circle */}
+              <div className="w-36 h-36 rounded-full border-2 border-dashed border-purple-500/40 relative flex items-center justify-center bg-purple-950/20 overflow-hidden shadow-inner">
+                {/* Crosshairs */}
+                <div className="absolute inset-x-0 top-1/2 h-0.5 bg-purple-500/20 -translate-y-1/2" />
+                <div className="absolute inset-y-0 left-1/2 w-0.5 bg-purple-500/20 -translate-x-1/2" />
+                {/* Moving reticle based on virtualAimAngle */}
+                <div
+                  className="w-7 h-7 rounded-full bg-purple-500/80 border-2 border-white shadow-lg shadow-purple-500/50 absolute flex items-center justify-center transition-transform duration-75"
+                  style={{
+                    transform: `translate(${Math.cos(virtualAimAngle.current) * 52}px, ${Math.sin(virtualAimAngle.current) * 52}px)`
+                  }}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                </div>
+                {/* Center origin */}
+                <div className="w-3 h-3 rounded-full bg-white/40 pointer-events-none" />
+              </div>
+
+              {/* Degrees Readout */}
+              <div className="grid grid-cols-3 gap-2 w-full text-center text-[10px] font-mono">
+                <div className="p-1.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-slate-500 block">YAW (Yön)</span>
+                  <span className="text-purple-300 font-bold">{gyroLiveReadout.alpha}°</span>
+                </div>
+                <div className="p-1.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-slate-500 block">PITCH (Eğim)</span>
+                  <span className="text-purple-300 font-bold">{gyroLiveReadout.beta}°</span>
+                </div>
+                <div className="p-1.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-slate-500 block">ROLL (Dönüş)</span>
+                  <span className="text-purple-300 font-bold">{gyroLiveReadout.gamma}°</span>
+                </div>
+              </div>
+
+              {/* Reset/Center Button */}
+              <button
+                onClick={() => {
+                  virtualAimAngle.current = 0;
+                  virtualCrosshairOffset.current = { x: 160, y: 0 };
+                  lastGyroData.current = { alpha: null, beta: null, gamma: null };
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-purple-300 hover:text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 border border-purple-800/40"
+              >
+                <RotateCcw size={13} />
+                <span>Nişanı Sıfırla & Ortala</span>
+              </button>
+            </div>
+
+            {/* Toggle Gyroscope Master */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+              <div>
+                <span className="text-xs font-black text-white block">Jiroskop Nişan Alma</span>
+                <span className="text-[11px] text-slate-400">Cihazınızı döndürerek 360° nişan alın</span>
+              </div>
+              <button
+                onClick={enableGyroscope}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  isGyroEnabled
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {isGyroEnabled ? 'AÇIK' : 'KAPALI'}
+              </button>
+            </div>
+
+            {/* iOS Safari Permission helper button */}
+            {typeof window !== 'undefined' && typeof (window as any).DeviceOrientationEvent?.requestPermission === 'function' && (
+              <button
+                onClick={enableGyroscope}
+                className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              >
+                <Smartphone size={16} />
+                <span>iOS Safari Sensör İznini Etkinleştir</span>
+              </button>
+            )}
+
+            {/* Sensitivity Slider with Presets */}
+            <div className="space-y-2 p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-200">Jiroskop Hassasiyeti</span>
+                <span className="text-xs font-mono font-black text-purple-400">
+                  {gyroSensitivity.toFixed(3)}
+                </span>
+              </div>
               <input
                 type="range"
                 min="0.005"
-                max="0.05"
-                step="0.001"
+                max="0.060"
+                step="0.002"
                 value={gyroSensitivity}
-                onChange={(e) => setGyroSensitivity(parseFloat(e.target.value))}
-                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setGyroSensitivity(val);
+                  try { localStorage.setItem('kaps_br_gyro_sens', val.toString()); } catch {}
+                }}
+                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
               />
+              <div className="flex justify-between text-[10px] text-slate-500 font-bold">
+                <span>Düşük (Hassas)</span>
+                <span>Dengeli (Önerilen)</span>
+                <span>Yüksek (Hızlı)</span>
+              </div>
+
+              {/* Presets */}
+              <div className="flex gap-2 pt-1">
+                {[
+                  { label: 'Düşük', val: 0.012 },
+                  { label: 'Dengeli', val: 0.024 },
+                  { label: 'Yüksek', val: 0.040 }
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    onClick={() => {
+                      setGyroSensitivity(preset.val);
+                      try { localStorage.setItem('kaps_br_gyro_sens', preset.val.toString()); } catch {}
+                    }}
+                    className={`flex-1 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      Math.abs(gyroSensitivity - preset.val) < 0.003
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-900 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            
+
+            {/* Invert Yaw Switch */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950 border border-slate-800">
+              <div>
+                <span className="text-xs font-bold text-slate-200 block">Ters Nişan Yönü (Invert)</span>
+                <span className="text-[10px] text-slate-500">Cihaz döndürme yönünü tersine çevirir</span>
+              </div>
+              <button
+                onClick={() => {
+                  setInvertGyro(prev => {
+                    const next = !prev;
+                    try { localStorage.setItem('kaps_br_gyro_invert', next ? 'true' : 'false'); } catch {}
+                    return next;
+                  });
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  invertGyro ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {invertGyro ? 'AKTİF' : 'KAPALI'}
+              </button>
+            </div>
+
+            {/* Tablet Control Mode Toggle */}
+            <div className="space-y-2 p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+              <span className="text-xs font-bold text-slate-200 block">Varsayılan Kontrol Modu</span>
+              <p className="text-[10px] text-slate-400">
+                Tablette otomatik olarak Dokunmatik Sanal Joystickler açılır. Harici klavye kullanıyorsanız Klavyeye geçebilirsiniz.
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  onClick={() => handleToggleControlMode('touch')}
+                  className={`py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    controlMode === 'touch'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  <Smartphone size={15} />
+                  <span>📱 Dokunmatik</span>
+                </button>
+                <button
+                  onClick={() => handleToggleControlMode('desktop')}
+                  className={`py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    controlMode === 'desktop'
+                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  <Keyboard size={15} />
+                  <span>⌨️ Klavye</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Save & Close */}
             <button
               onClick={() => setShowCalibrationModal(false)}
-              className="w-full py-3 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-black text-sm transition-all"
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs sm:text-sm transition-all shadow-lg shadow-purple-600/30 cursor-pointer"
             >
-              Kaydet ve Kapat
+              Kaydet ve Arenaya Dön
             </button>
           </div>
         </div>
