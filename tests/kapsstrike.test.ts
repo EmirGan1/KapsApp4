@@ -205,7 +205,7 @@ test("ramp ray tests the sloped wedge, not an imaginary full box", () => {
     3,
   );
 });
-for (const id of WEAPON_ORDER)
+for (const id of WEAPON_ORDER.filter(id => id !== "knife"))
   test(`${id}: ammo, RPM, reload lock, capacity, switching`, () => {
     const s = createTraining("warehouse");
     s.player.weapon.selected = id;

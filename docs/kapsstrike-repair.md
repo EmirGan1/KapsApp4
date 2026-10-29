@@ -33,3 +33,12 @@ The host sent both `strike:start_game` and `strike:start_match`. Each reset a li
 ## Remaining request
 
 This milestone does **not** complete the uploaded specification. Eight skins/3D preview/account persistence, full rebinding UI, knife, redesigned city maps and extensive hardware/network/long-match performance validation remain. No physical Android/iOS/Edge/Opera or production-account/live-call validation was performed. Software-rendered Chromium results do not establish physical GPU FPS guarantees. Existing broader server tests are largely mock-transport tests; the new browser test adds real transport coverage for two clients only.
+
+## Second milestone — controls and melee
+
+- Physical-code rebinding editor: keyboard/modifier combinations, mouse buttons, wheel directions, overlap warnings, explicit replacement, individual/all resets. ESC remains a recovery shortcut. Settings persist locally immediately and update controller bindings. Mobile touch controls remain available.
+- Dedicated sixth knife slot (original five number slots preserved), wheel wrap/debounce and previous-weapon action. Normal 40 / heavy 65 damage, 2.2 m raycast range, 0.5 / 0.9 s cooldowns, no ammo consumption, authored low-poly viewmodel/swing/audio and third-person blade representation. Server validates combat and cover.
+- Equip requests no longer disappear during an equip delay; selecting restarts the delay, preserving fire cooldown. Fixed server scheduling uses elapsed time to avoid timer rounding changing match duration.
+- 147 unit/scene/server/binding tests passed. Added held-trigger/cooldown/heavy, out-of-range and wall-blocked knife assertions. Original five firearm tests retained.
+- Two-context WebGL network test additionally uses remapped I/F movement/fire, actual editor persistence, synchronous wheel burst debounce/wrap, sixth-slot selection and server-confirmed 40 melee damage. Three-map training and High/React browser regression passed after adding the sixth weapon.
+- Full skins and redesigned maps remain outstanding. The local binding store is device-specific; account sync is not claimed.

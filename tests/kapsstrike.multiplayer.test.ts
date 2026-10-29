@@ -1,3 +1,4 @@
+import { MAPS } from "../src/games/kapsstrike/maps";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { KapsStrikeServerManager } from "../src/server/kapsstrikeServer";
@@ -602,4 +603,42 @@ test("queued duplicates, invalid weapons and flood cannot buy extra simulation s
   assert.equal(p.inputQueue.length,23);
   assert.ok(Math.hypot(p.state.movement.position.x-start.x,p.state.movement.position.z-start.z)<=13/120);
   manager.leaveRoom("host",1);
+});
+
+test("knife: authoritative cooldown and heavy damage", () => {
+  const manager = new KapsStrikeServerManager(createMockIo() as any);
+  const room = manager.createRoom({id:1,username:"Host",avatar:null},"host",{mode:"ffa"});
+  manager.joinRoom(room.roomCode,{id:2,username:"Target",avatar:null},"target");
+  manager.startGame("host");manager.stopRoomSimulationLoop(room);
+  const host=room.players.get("host")!, target=room.players.get("target")!;
+  host.state.movement.position={x:0,y:0,z:-28};
+  target.state.movement.position={x:0,y:0,z:-26.3};
+  target.state.protectedUntil=0;
+  host.state.weapon.selected='knife';
+  const input:InputCommand={sequence:1,tick:0,moveX:0,moveZ:0,yaw:0,pitch:0,jump:false,sprint:false,crouch:false,fire:true,ads:false,reload:false};
+  manager.processPlayerInput('host',input);manager.tickSimulation(room);
+  assert.equal(target.state.hp,60);
+  assert.equal(host.state.weapon.ammo.knife,1);
+  for(let i=2;i<120;i++){manager.processPlayerInput('host',{...input,sequence:i,tick:room.tick});manager.tickSimulation(room);}
+  assert.equal(target.state.hp,60,'holding fire must not repeat knife attacks');
+  manager.processPlayerInput('host',{...input,sequence:120,fire:false});manager.tickSimulation(room);
+  manager.processPlayerInput('host',{...input,sequence:121,ads:true});manager.tickSimulation(room);
+  assert.equal(target.state.hp,0);
+  assert.equal(host.kills,1);
+  manager.leaveRoom('host',1);manager.leaveRoom('target',2);
+});
+
+for (const blocked of [false,true]) test(`knife refuses ${blocked ? "solid-covered" : "out-of-range"} targets`,()=>{
+ const manager = new KapsStrikeServerManager(createMockIo() as any);
+ const room=manager.createRoom({id:1,username:"Host",avatar:null},"h",{mode:"ffa"});
+ manager.joinRoom(room.roomCode,{id:2,username:"Target",avatar:null},"t");manager.startGame("h");manager.stopRoomSimulationLoop(room);
+ const h=room.players.get("h")!,t=room.players.get("t")!;
+ h.state.movement.position={x:0,y:0,z:-28};t.state.movement.position={x:0,y:0,z:blocked?-26.3:-24};
+ h.state.weapon.selected="knife";t.state.protectedUntil=0;
+ const solids=MAPS.warehouse.solids;
+ if(blocked) solids.push({id:"test-melee-wall",kind:"box",x:0,y:0,z:-27.2,w:4,h:3,d:.1,color:"#222222"});
+ try {
+  manager.processPlayerInput("h",{sequence:1,tick:0,moveX:0,moveZ:0,yaw:0,pitch:0,jump:false,sprint:false,crouch:false,fire:true,ads:false,reload:false});manager.tickSimulation(room);
+  assert.equal(t.state.hp,100);
+ } finally { if(blocked) solids.pop();manager.leaveRoom("h",1);manager.leaveRoom("t",2); }
 });

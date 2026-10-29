@@ -972,3 +972,7 @@
 .ks-network-error { position:absolute;top:12px;left:5%;right:5%;z-index:60;background:#451a1a;color:#fecaca;padding:12px;border-radius:8px; }
 
 .ks-retry { position:absolute; top:75px; left:5%; z-index:61; }
+
+.ks-binding-editor { max-height:55vh; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; }
+.ks-binding-row { display:grid; grid-template-columns:minmax(100px,1fr) minmax(90px,1fr) auto; gap:8px; align-items:center; padding:5px 0; }
+.ks-binding-row button { min-height:40px; padding:6px 9px; }

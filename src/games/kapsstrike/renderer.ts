@@ -266,6 +266,14 @@ export class StrikeRenderer {
           m.isPickable = false;
           return m;
         };
+        if (id === "knife") {
+          part("handle",0,-0.04,-0.1,0.09,0.12,0.23,"#26313c");
+          part("guard",0,0,0.015,0.22,0.035,0.045,"#637b8c");
+          const blade = part("blade",0,0.015,0.21,0.075,0.025,0.35,"#d8e3e9");
+          blade.rotation.z = 0.15;
+          this.weapons.set(id,root);
+          continue;
+        }
         part("receiver", 0, 0, 0, 0.14, 0.17, w.length * 0.43, w.color);
         part(
           "barrel",
@@ -499,7 +507,8 @@ export class StrikeRenderer {
       }
     }
     this.muzzle.position.z = WEAPONS[p.weapon.selected].length * 0.65 + 0.04;
-    this.muzzle.setEnabled(this.gunKick > 0.045);
+    this.muzzle.setEnabled(p.weapon.selected !== "knife" && this.gunKick > 0.045);
+    if (p.weapon.selected === "knife") this.gunRoot.rotation.z += Math.sin(this.gunKick / 0.06 * Math.PI) * 0.9;
     for (const a of this.tracerPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
     for (const a of this.impactPool)
@@ -606,6 +615,10 @@ export class StrikeRenderer {
         item.root.position.set(p.position.x, p.position.y, p.position.z);
         item.root.rotation.y = p.yaw;
         item.head.rotation.x = p.pitch;
+        if (item.gun) {
+          item.gun.scaling.set(p.selectedWeapon === "knife" ? 0.5 : 1, p.selectedWeapon === "knife" ? 0.22 : 1, 1);
+          item.gun.material = this.material(p.selectedWeapon === "knife" ? "#d8e3e9" : "#1e293b");
+        }
 
         const isCrouch = p.stance === "crouch" || p.stance === "slide";
         const offset = isCrouch ? C.standing - C.crouching : 0;

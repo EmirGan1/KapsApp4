@@ -1,3 +1,4 @@
+import { MELEE } from "../games/kapsstrike/config";
 import { Server, Socket } from "socket.io";
 import { Client as LibsqlClient } from "@libsql/client";
 import {
@@ -787,7 +788,7 @@ export class KapsStrikeServerManager {
 
         // Handle weapon switch request
         if (input.weapon && input.weapon !== player.state.weapon.selected) {
-          if (room.tick >= player.state.weapon.switchUntil) {
+          { // A new selection restarts the equip delay; it cannot bypass fire cooldown.
             player.state.weapon.reloadUntil = 0;
             player.state.weapon.selected = input.weapon;
             player.state.weapon.switchUntil = room.tick + 24;
@@ -848,10 +849,18 @@ export class KapsStrikeServerManager {
       clearInterval(room.loopInterval);
     }
 
+    let last = performance.now();
+    let accumulator = 0;
     room.loopInterval = setInterval(() => {
       try {
-        // 60 network callbacks/s, two shared 120 Hz physics steps per callback.
-        for (let i = 0; i < Math.round(1 / C.dt / SERVER_CONFIG.tickRate); i++) this.tickSimulation(room);
+        const now = performance.now();
+        accumulator += Math.min(0.15, (now - last) / 1000);
+        last = now;
+        let steps = 0;
+        while (accumulator >= C.dt && steps++ < 18 && room.status === "in_progress") {
+          this.tickSimulation(room);
+          accumulator -= C.dt;
+        }
       } catch (err) {
         console.error(`[Strike Simulation Error in room ${room.roomCode}]:`, err);
       }
@@ -891,8 +900,8 @@ export class KapsStrikeServerManager {
     }
 
     // Deduct ammo & enforce RPM fire cooldown
-    wState.ammo[weaponId]--;
-    const rpmCooldownTicks = Math.max(1, Math.ceil(60 / def.rpm / C.dt));
+    if (weaponId !== "knife") wState.ammo[weaponId]--;
+    const rpmCooldownTicks = Math.max(1, Math.ceil((weaponId === "knife" ? (ads ? MELEE.heavyCooldown : MELEE.cooldown) : 60 / def.rpm) / C.dt));
     wState.nextFire = room.tick + rpmCooldownTicks;
     wState.shotIndex++;
 
@@ -984,11 +993,11 @@ export class KapsStrikeServerManager {
       // Apply damage if target hit
       if (hitPlayer) {
         const falloff =
-          weaponId === "shotgun"
+          weaponId === "knife" ? 1 : weaponId === "shotgun"
             ? clamp(1 - nearest / 40, 0.25, 1)
             : clamp(1 - nearest / (def.range * 2.5), 0.7, 1);
 
-        const damagePerPellet = (def.damage / def.pellets) * (isHeadshot ? 2 : 1) * falloff;
+        const damagePerPellet = (weaponId === "knife" ? (ads ? MELEE.heavyDamage : MELEE.damage) : (def.damage / def.pellets) * (isHeadshot ? 2 : 1)) * falloff;
         const finalDamage = Math.min(hitPlayer.state.hp, damagePerPellet);
 
         hitPlayer.state.hp = Math.max(0, hitPlayer.state.hp - finalDamage);

@@ -1,3 +1,5 @@
+import StrikeControls from "./StrikeControls";
+import { cleanBindings } from "../../../games/kapsstrike/controls";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import type { Socket } from "socket.io-client";
 import {
@@ -113,6 +115,11 @@ export default function KapsStrikeGame({
   const [isVoiceMuted, setIsVoiceMuted] = useState(true);
   const [speakingUsers, setSpeakingUsers] = useState<Map<number, boolean>>(new Map());
   const [playerVolumes, setPlayerVolumes] = useState<Record<number, number>>({});
+
+  useEffect(() => {
+    try { localStorage.setItem("kapsstrike-settings", JSON.stringify(settings)); } catch {}
+    game.current?.setBindings(cleanBindings(settings.bindings));
+  }, [settings]);
 
   // Mobile detection & Orientation check
   useEffect(() => {
@@ -1081,14 +1088,14 @@ export default function KapsStrikeGame({
             <div className="ks-ammo">
               <small>{WEAPONS[hud.weapon]?.name}</small>
               <strong>
-                {hud.ammo} <span>/ {hud.capacity}</span>
+                {hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
               </strong>
               <span>
                 {hud.reload > 0
                   ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
                   : isMobile
                   ? "Dokunmatik Kontroller Aktif"
-                  : "R · Yenile | 1–5 · Silah"}
+                  : "R · Yenile | 1–6 / Tekerlek · Silah"}
               </span>
             </div>
           </div>
@@ -1771,27 +1778,7 @@ export default function KapsStrikeGame({
             {panel === "controls" && (
               <div className="ks-controls">
                 <h2>Kontroller</h2>
-                <dl>
-                  {[
-                    ["W A S D", "Hareket (Mobilde Sol Sanal Joystick)"],
-                    ["Fare", "Bakış ve nişan (Mobilde Sağ Ekran Kaydırma)"],
-                    ["Space", "Zıpla · zamanlamalı bunny hop"],
-                    ["Shift", "Koş"],
-                    ["Ctrl / C", "Çömel · koşarken kay"],
-                    ["Sol tık", "Ateş (Mobilde Sağ Ateş Butonu)"],
-                    ["Sağ tık", "ADS (Yakınlaştır / Dürbün)"],
-                    ["R", "Şarjör yenile"],
-                    ["1–5 / Tekerlek", "Silah seç"],
-                    ["TAB", "Canlı Skor Tablosu"],
-                    ["V", "Push-to-Talk (Bas-Konuş)"],
-                    ["ESC", "Duraklat / fareyi bırak"],
-                  ].map(([k, v]) => (
-                    <React.Fragment key={k}>
-                      <dt>{k}</dt>
-                      <dd>{v}</dd>
-                    </React.Fragment>
-                  ))}
-                </dl>
+                <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />
                 <button onClick={() => setPanel(null)}>Geri</button>
               </div>
             )}

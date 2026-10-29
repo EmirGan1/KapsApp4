@@ -1,3 +1,4 @@
+import { cleanBindings } from "./controls";
 import { WeaponId, StrikeSettings } from "./types";
 export const PHYSICS = {
   dt: 1 / 120,
@@ -39,7 +40,9 @@ export interface WeaponDefinition {
   length: number;
   zoom: number;
 }
+export const MELEE = { damage:40, heavyDamage:65, range:2.2, cooldown:0.5, heavyCooldown:0.9 };
 export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
+  knife: { id:"knife", name:"K-1 Çelik", capacity:1, damage:MELEE.damage, rpm:120, range:MELEE.range, reload:0, spread:0, recoil:0, ads:1, mobility:1.12, automatic:false, pellets:1, color:"#bccbd4", length:0.6, zoom:1 },
   rifle: {
     id: "rifle",
     name: "AR-30 Yörünge",
@@ -131,7 +134,7 @@ export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
     zoom: 0.85,
   },
 };
-export const WEAPON_ORDER = Object.keys(WEAPONS) as WeaponId[];
+export const WEAPON_ORDER: WeaponId[] = ["rifle","smg","sniper","shotgun","pistol","knife"];
 export function detectAutoQuality(): "low" | "medium" | "high" {
   if (typeof window === "undefined") return "medium";
   const isMobile =
@@ -162,6 +165,7 @@ export function cleanSettings(s: Partial<StrikeSettings>): StrikeSettings {
       ? Math.max(min, Math.min(max, v))
       : fallback;
   return {
+    bindings: cleanBindings(s.bindings),
     quality: ["low", "medium", "high", "auto"].includes(s.quality || "")
       ? (s.quality as StrikeSettings["quality"])
       : DEFAULT_SETTINGS.quality,

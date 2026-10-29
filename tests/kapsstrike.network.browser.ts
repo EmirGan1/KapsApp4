@@ -22,6 +22,13 @@ try {
   const b = await mobile.newPage();
   for (const p of [a,b]) { p.on("pageerror", e => errors.push(e.message)); p.on('console', m=> {if(m.type()==='error') { errors.push(m.text()); console.log(m.text()); }}); }
   await Promise.all([a.goto("http://127.0.0.1:4195/__strike_network?user=1"),b.goto("http://127.0.0.1:4195/__strike_network?user=2")]);
+  await a.getByRole("button",{name:"Kontroller",exact:true}).click();
+  await a.getByRole("button",{name:"İleri tuşunu değiştir",exact:true}).click();
+  await a.keyboard.press("KeyI");
+  await a.getByRole("button",{name:"Ateş tuşunu değiştir",exact:true}).click();
+  await a.keyboard.press("KeyF");
+  await a.getByRole("button",{name:"Geri",exact:true}).click();
+  assert.equal(await a.evaluate(()=>JSON.parse(localStorage.getItem('kapsstrike-settings')!).bindings.forward),'KeyI');
   await a.getByRole("button",{name:"+ Oda Oluştur",exact:true}).click();
   await a.getByLabel("Oyun Modu").selectOption("ffa");
   await a.getByLabel(/^Harita/).selectOption(process.env.STRIKE_TEST_MAP || "warehouse");
@@ -41,12 +48,12 @@ try {
     assert.equal(await p.evaluate(() => (window as any).controllers.length),1,"Only one controller per match");
     assert.ok(await p.evaluate(() => (window as any).strike.renderer.scene.getMeshByName('remote-body-'+(window as any).strike.remotePlayerList.find((x:any)=>x.id !== (window as any).socket.id).id)));
   }
-  await a.keyboard.down("KeyW");
+  await a.keyboard.down("KeyI");
   await b.evaluate(() => (window as any).strike.setTouchMovement(1,0));
   const before = [...manager.rooms.values()][0];
   const pos = [...before.players.values()].map(p=>({...p.state.movement.position}));
   await a.waitForTimeout(500);
-  await a.keyboard.up("KeyW");
+  await a.keyboard.up("KeyI");
   await b.evaluate(() => (window as any).strike.setTouchMovement(0,0));
   [...before.players.values()].forEach((p,i)=>assert.ok(Math.hypot(p.state.movement.position.x-pos[i].x,p.state.movement.position.z-pos[i].z)>.1));
   // Deterministic server-side setup of a clear firing lane; actual inputs,
@@ -60,15 +67,35 @@ try {
     players[i].inputQueue = [];
   }
   await a.waitForTimeout(300);
-  await a.evaluate(() => { const c=(window as any).strike; c.yaw=0; c.pitch=0; c.mouseFire=true; });
+  await a.evaluate(() => { const c=(window as any).strike; c.yaw=0; c.pitch=0; });
+  await a.keyboard.down("KeyF");
   await b.waitForFunction(() => (window as any).strike.state.player.hp <= 0);
-  await a.evaluate(() => (window as any).strike.mouseFire=false);
+  await a.keyboard.up("KeyF");
   assert.equal(players[0].kills,1);
   assert.equal(players[1].deaths,1);
   assert.ok(await a.evaluate(() => (window as any).strike.lastHit));
   assert.equal(await b.evaluate(() => (window as any).strike.lastHit),undefined,"Victim must not receive shooter's hitmarker");
   await b.waitForFunction(() => (window as any).strike.state.player.hp === 100,{},{timeout:10000});
   assert.ok(players[1].state.protectedUntil > before.tick);
+  // Six-slot wheel cycling, debounce, keyboard slot and actual server melee.
+  await a.keyboard.press("Digit6");
+  await a.waitForFunction(() => (window as any).strike.state.player.weapon.selected === 'knife');
+  await a.evaluate(() => { const canvas = document.querySelector("canvas")!;
+    canvas.dispatchEvent(new WheelEvent("wheel",{deltaY:100,cancelable:true}));
+    canvas.dispatchEvent(new WheelEvent("wheel",{deltaY:100,cancelable:true}));
+  });
+  await a.waitForFunction(() => (window as any).strike.state.player.weapon.selected === "rifle");
+  await a.waitForTimeout(200);
+  assert.equal(await a.evaluate(()=>(window as any).strike.state.player.weapon.selected),'rifle');
+  await a.keyboard.press("Digit6");
+  await a.waitForTimeout(300);
+  for(let i=0;i<2;i++) {players[i].state.movement.position={x:0,y:0,z:i===0?-28:-26.3};players[i].state.movement.velocity={x:0,y:0,z:0};players[i].state.protectedUntil=0;players[i].history=[];players[i].inputQueue=[];}
+  await a.waitForTimeout(300);
+  await a.evaluate(() => { const c=(window as any).strike;c.yaw=0;c.pitch=0; });
+  await a.keyboard.down('KeyF');
+  await b.waitForFunction(()=>(window as any).strike.state.player.hp < 100);
+  await a.keyboard.up('KeyF');
+  assert.equal(players[1].state.hp,60);
   assert.deepEqual(errors,[]);
   await a.keyboard.press("Escape");
   await a.getByRole("button",{name:"Oyuna dön",exact:true}).waitFor();

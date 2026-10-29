@@ -4,7 +4,7 @@ export interface Vec3 {
   z: number;
 }
 export type MapId = "warehouse" | "dust" | "neon";
-export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol";
+export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol" | "knife";
 export interface Solid {
   id: string;
   kind: "box" | "ramp";
@@ -113,6 +113,7 @@ export interface TrainingState {
   lastSequence: number;
 }
 export interface StrikeSettings {
+  bindings?: import("./controls").Bindings;
   quality: "low" | "medium" | "high" | "auto";
   scale: number;
   sensitivity: number;

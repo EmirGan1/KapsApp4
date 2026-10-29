@@ -1,3 +1,4 @@
+import { MELEE } from "./config";
 import {
   TrainingState,
   PlayerState,
@@ -120,8 +121,8 @@ export function shoot(s: TrainingState, ads: boolean) {
     w.ammo[w.selected] <= 0
   )
     return false;
-  w.ammo[w.selected]--;
-  w.nextFire = Math.max(w.nextFire, s.tick - 1) + 7200 / def.rpm;
+  if (w.selected !== "knife") w.ammo[w.selected]--;
+  w.nextFire = Math.max(w.nextFire, s.tick - 1) + (w.selected === "knife" ? (ads ? MELEE.heavyCooldown : MELEE.cooldown) / C.dt : 7200 / def.rpm);
   const origin = eye(p);
   w.shotIndex++;
   const spread =
@@ -171,12 +172,12 @@ export function shoot(s: TrainingState, ads: boolean) {
     event(s, { kind: "shot", weapon: w.selected, from: origin, to });
     if (hit) {
       const falloff =
-        w.selected === "shotgun"
+        w.selected === "knife" ? 1 : w.selected === "shotgun"
           ? clamp(1 - nearest / 45, 0.2, 1)
           : clamp(1 - nearest / (def.range * 3), 0.7, 1);
       const dmg = Math.min(
         hit.hp,
-        (def.damage / def.pellets) * (head ? 2 : 1) * falloff,
+        (w.selected === "knife" ? (ads ? MELEE.heavyDamage : MELEE.damage) : (def.damage / def.pellets) * (head ? 2 : 1)) * falloff,
       );
       hit.hp -= dmg;
       s.damage += dmg;

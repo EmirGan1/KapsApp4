@@ -1,3 +1,4 @@
+import { cleanBindings, held, Bindings, Action } from "./controls";
 import type { Socket } from "socket.io-client";
 import { StrikeRenderer } from "./renderer";
 import { StrikeAudio } from "./audio";
@@ -75,6 +76,9 @@ export class StrikeController {
   readonly renderer: StrikeRenderer;
   readonly audio = new StrikeAudio();
   private keys = new Set<string>();
+  private bindings: Bindings;
+  private callbacks?: MultiplayerOptions;
+  private previousWeapon: WeaponId = "rifle";
   private mouseFire = false;
   private ads = false;
   private ignoreInitialMouseMove = false;
@@ -133,6 +137,8 @@ export class StrikeController {
     renderer?: StrikeRenderer,
     mpOptions?: MultiplayerOptions
   ) {
+    this.bindings = cleanBindings(settings.bindings);
+    this.callbacks = mpOptions;
     this.isMultiplayer = !!mpOptions?.isMultiplayer;
     this.socket = mpOptions?.socket;
     this.roomCode = mpOptions?.roomCode;
@@ -203,86 +209,14 @@ export class StrikeController {
       )
         return;
 
-      const key = e.code;
-      if (key === "Escape") {
-        e.preventDefault();
-        this.pause();
-        return;
-      }
-
-      // Tab for Scoreboard in multiplayer
-      if (key === "Tab") {
-        e.preventDefault();
-        if (!this.scoreboardOpen) {
-          this.scoreboardOpen = true;
-          mpOptions?.onScoreboardToggle?.(true);
-          this.pushHUD();
-        }
-        return;
-      }
-
-      // V for Push-to-Talk voice
-      if (key === "KeyV" && !e.repeat) {
-        e.preventDefault();
-        this.pttActive = true;
-        mpOptions?.onPttChange?.(true);
-        if (this.socket && this.roomCode) {
-          this.socket.emit("strike:voice_status", { isSpeaking: true });
-        }
-        this.pushHUD();
-        return;
-      }
-
-      if (
-        [
-          "Space",
-          "ControlLeft",
-          "ControlRight",
-          "ShiftLeft",
-          "ShiftRight",
-          "KeyW",
-          "KeyA",
-          "KeyS",
-          "KeyD",
-          "KeyC",
-          "KeyR",
-          "Digit1",
-          "Digit2",
-          "Digit3",
-          "Digit4",
-          "Digit5",
-        ].includes(key)
-      )
-        e.preventDefault();
-
-      this.keys.add(key);
-      if (key === "KeyR" && !e.repeat) this.pendingReload = true;
-      if (/^Digit[1-5]$/.test(key) && !e.repeat)
-        this.pendingWeapon = WEAPON_ORDER[Number(key.at(-1)) - 1];
+      if (e.code === "Escape") { e.preventDefault(); this.pause(); return; }
+      this.keys.add(e.code);
+      if (this.handleActions(e.repeat)) e.preventDefault();
     }) as EventListener);
 
     listen(window, "keyup", ((e: KeyboardEvent) => {
-      const key = e.code;
-      this.keys.delete(key);
-
-      if (key === "Tab") {
-        e.preventDefault();
-        this.scoreboardOpen = false;
-        mpOptions?.onScoreboardToggle?.(false);
-        this.pushHUD();
-        return;
-      }
-
-      if (key === "KeyV") {
-        e.preventDefault();
-        this.pttActive = false;
-        mpOptions?.onPttChange?.(false);
-        if (this.socket && this.roomCode) {
-          this.socket.emit("strike:voice_status", { isSpeaking: false });
-        }
-        this.pushHUD();
-        return;
-      }
+      this.keys.delete(e.code);
+      if (this.active) this.updateHeldActions();
     }) as EventListener);
 
     listen(window, "mousemove", ((e: MouseEvent) => {
@@ -307,13 +241,13 @@ export class StrikeController {
     listen(canvas, "mousedown", ((e: MouseEvent) => {
       if (!this.active || document.pointerLockElement !== canvas) return;
       e.preventDefault();
-      if (e.button === 0) this.mouseFire = true;
-      if (e.button === 2) this.ads = true;
+      this.keys.add(`Mouse${e.button}`);
+      this.handleActions(false);
     }) as EventListener);
 
     listen(window, "mouseup", ((e: MouseEvent) => {
-      if (e.button === 0) this.mouseFire = false;
-      if (e.button === 2) this.ads = false;
+      this.keys.delete(`Mouse${e.button}`);
+      this.updateHeldActions();
     }) as EventListener);
 
     listen(canvas, "contextmenu", (e) => e.preventDefault());
@@ -326,11 +260,10 @@ export class StrikeController {
         e.preventDefault();
         if (e.deltaY === 0 || performance.now() - this.lastWheel < 140) return;
         this.lastWheel = performance.now();
-        const id = this.pendingWeapon || this.state.player.weapon.selected;
-        this.pendingWeapon =
-          WEAPON_ORDER[
-            (WEAPON_ORDER.indexOf(id) + (e.deltaY > 0 ? 1 : -1) + WEAPON_ORDER.length) % WEAPON_ORDER.length
-          ];
+        const code = e.deltaY > 0 ? "WheelDown" : "WheelUp";
+        this.keys.add(code);
+        this.handleActions(false);
+
       }) as EventListener,
       { passive: false }
     );
@@ -341,6 +274,42 @@ export class StrikeController {
     }
 
     this.pushHUD();
+  }
+
+  private down(action: Action) { return held(this.bindings[action], this.keys); }
+
+  setBindings(value: Bindings) {
+    this.bindings = cleanBindings(value);
+    this.clearInput();
+  }
+
+  private updateHeldActions() {
+    const scoreboard = this.active && this.down("scoreboard");
+    const ptt = this.active && this.down("ptt");
+    if (scoreboard !== this.scoreboardOpen) {
+      this.scoreboardOpen = scoreboard;
+      this.callbacks?.onScoreboardToggle?.(scoreboard);
+    }
+    if (ptt !== this.pttActive) {
+      this.pttActive = ptt;
+      this.callbacks?.onPttChange?.(ptt);
+    }
+  }
+
+  private handleActions(repeat: boolean): boolean {
+    this.updateHeldActions();
+    if (this.down("menu")) { this.pause(); return true; }
+    if (!repeat) {
+      if (this.down("reload")) this.pendingReload = true;
+      const current = this.pendingWeapon || this.state.player.weapon.selected;
+      let weapon: WeaponId | undefined = WEAPON_ORDER.find(w => this.down(w));
+      if (this.down("next") || this.down("previous")) {
+        weapon = WEAPON_ORDER[(WEAPON_ORDER.indexOf(current) + (this.down("next") ? 1 : -1) + WEAPON_ORDER.length) % WEAPON_ORDER.length];
+      }
+      if (this.down("last")) weapon = this.previousWeapon;
+      if (weapon && current !== weapon) { this.previousWeapon = current; this.pendingWeapon = weapon; }
+    }
+    return (Object.keys(this.bindings) as Action[]).some(a => this.down(a));
   }
 
   private setupMultiplayerSocket(socket: Socket, onSynchronized?: () => void) {
@@ -456,8 +425,8 @@ export class StrikeController {
 
       while (this.accumulator >= C.dt && steps < 8) {
         this.previous = { ...this.state.player.movement.position };
-        const keyMoveX = Number(this.keys.has("KeyD")) - Number(this.keys.has("KeyA"));
-        const keyMoveZ = Number(this.keys.has("KeyW")) - Number(this.keys.has("KeyS"));
+        const keyMoveX = Number(this.down("right")) - Number(this.down("left"));
+        const keyMoveZ = Number(this.down("forward")) - Number(this.down("backward"));
         const cmd: InputCommand = {
           sequence: ++this.sequence,
           tick: this.state.tick,
@@ -465,15 +434,13 @@ export class StrikeController {
           moveZ: this.touchMoveZ !== 0 ? this.touchMoveZ : keyMoveZ,
           yaw: this.yaw,
           pitch: this.pitch,
-          jump: this.touchJump || this.keys.has("Space"),
-          sprint: this.touchSprint || this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"),
+          jump: this.touchJump || this.down("jump"),
+          sprint: this.touchSprint || this.down("sprint"),
           crouch:
             this.touchCrouch ||
-            this.keys.has("KeyC") ||
-            this.keys.has("ControlLeft") ||
-            this.keys.has("ControlRight"),
-          fire: this.touchFire || this.mouseFire,
-          ads: this.touchAds || this.ads,
+            this.down("crouch") || this.down("slide"),
+          fire: this.touchFire || this.mouseFire || this.down("fire"),
+          ads: this.touchAds || this.ads || this.down("ads"),
           reload: this.pendingReload,
           weapon: this.pendingWeapon,
         };
@@ -487,6 +454,8 @@ export class StrikeController {
           this.socket.emit("strike:input", cmd);
         }
 
+        this.keys.delete("WheelUp");
+        this.keys.delete("WheelDown");
         this.pendingReload = false;
         this.pendingWeapon = undefined;
         this.accumulator -= C.dt;
@@ -514,7 +483,7 @@ export class StrikeController {
         this.state,
         this.yaw,
         this.pitch,
-        this.ads,
+        this.touchAds || this.ads || this.down("ads"),
         this.accumulator / C.dt,
         this.previous,
         elapsed
@@ -681,6 +650,8 @@ export class StrikeController {
     this.pendingWeapon = undefined;
     this.scoreboardOpen = false;
     this.pttActive = false;
+    this.callbacks?.onPttChange?.(false);
+    this.callbacks?.onScoreboardToggle?.(false);
     this.touchMoveX = this.touchMoveZ = 0;
     this.touchFire = this.touchAds = this.touchJump = this.touchCrouch = this.touchSprint = false;
   }
