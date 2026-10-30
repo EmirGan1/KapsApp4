@@ -783,11 +783,23 @@ export default function Games({
         'Entegre WebRTC Sesli Sohbet (Bas-Konuş V & Oyuncu Ses Ayarları)'
       ],
       preview: (
-        <div className="flex items-center justify-center gap-1.5 py-1">
-          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">🔫 Silahlar</span>
-          <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-300 text-[10px] font-mono font-bold border border-red-500/30">🔴 Red</span>
-          <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-mono font-bold border border-blue-500/30">🔵 Blue</span>
-          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/30">🎙️ Ses</span>
+        <div className="flex flex-col items-center justify-center py-1.5 h-14 w-full gap-0.5">
+          <div className="flex justify-center items-center h-6">
+            <img
+              src="/assets/aistudio/KS_GO_Tactical_Soldier_Logo_206d63af.png"
+              alt="KapsStrike 3D"
+              className="h-6 max-w-full object-contain dark:hidden opacity-90"
+            />
+            <img
+              src="/assets/aistudio/ChatGPT_Image_Oct_29__2026__06_27_13_PM_065d4212.png"
+              alt="KapsStrike 3D"
+              className="h-6 max-w-full object-contain hidden dark:block filter drop-shadow-[0_0_6px_rgba(234,179,8,0.4)]"
+            />
+          </div>
+          <span className="text-xs font-black tracking-wider uppercase">
+            <span className="text-slate-900 dark:text-slate-100">KAPS</span>
+            <span className="text-amber-500 dark:text-amber-400">STRIKE</span>
+          </span>
         </div>
       ),
       actionPrimary: 'KapsStrike 3D Oyna',

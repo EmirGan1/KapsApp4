@@ -1106,7 +1106,7 @@ export default function KapsStrikeGame({
         <div className="ks-hud" aria-live="off">
           <div className="ks-top">
             <div>
-              <strong>KAPSSTRIKE 3D</strong>
+              <strong><span className="text-slate-100">KAPS</span><span className="text-amber-400">STRIKE</span> 3D</strong>
               <span>
                 {MAPS[map]?.name || map} ·{" "}
                 {hud.isMultiplayer
@@ -1429,11 +1429,31 @@ export default function KapsStrikeGame({
       {view === "menu" && (
         <div className="ks-overlay">
           <div className="ks-menu">
-            <header>
+            <header className="flex flex-col items-center text-center">
               <div className="ks-eyebrow">KAPSAPP · RESMİ 3D MULTIPLAYER FPS</div>
-              <h1>
-                KAPS<span>STRIKE</span>
+              
+              {/* Small theme logo */}
+              <div className="my-1.5 flex justify-center items-center">
+                {/* Light theme: Black logo */}
+                <img
+                  src="/assets/aistudio/KS_GO_Tactical_Soldier_Logo_206d63af.png"
+                  alt="KapsStrike Tactical Logo"
+                  className="h-10 sm:h-12 max-w-full object-contain dark:hidden opacity-90"
+                />
+                {/* Dark theme: Yellow logo */}
+                <img
+                  src="/assets/aistudio/ChatGPT_Image_Oct_29__2026__06_27_13_PM_065d4212.png"
+                  alt="KapsStrike Tactical Logo"
+                  className="h-10 sm:h-12 max-w-full object-contain hidden dark:block filter drop-shadow-[0_0_8px_rgba(234,179,8,0.4)]"
+                />
+              </div>
+
+              {/* Large KAPSSTRIKE title with KAPS and STRIKE in distinct colors */}
+              <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight my-1 uppercase">
+                <span className="text-slate-900 dark:text-slate-100">KAPS</span>
+                <span className="text-amber-500 dark:text-amber-400">STRIKE</span>
               </h1>
+
               <p>
                 Düşük gecikmeli, sunucu otoriteli 3D FPS arenası. Arkadaşlarınla takım kur ya da tek başına kapış!
               </p>

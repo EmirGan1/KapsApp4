@@ -54,6 +54,34 @@
   align-items: center;
   justify-content: center;
 }
+html:not(.dark) .ks-root {
+  background: #f8fafc;
+  color: #0f172a;
+}
+html:not(.dark) .ks-overlay {
+  background: linear-gradient(110deg, #f8fafce0, #f1f5f9f5);
+  color: #0f172a;
+}
+html:not(.dark) .ks-eyebrow {
+  color: #475569;
+}
+html:not(.dark) .ks-menu p {
+  color: #334155;
+}
+html:not(.dark) .ks-room-card {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+html:not(.dark) .ks-root button {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+}
+html:not(.dark) .ks-root button:hover {
+  border-color: #d97706;
+  background: #f1f5f9;
+}
 .ks-menu {
   max-width: 1120px;
   width: 100%;
