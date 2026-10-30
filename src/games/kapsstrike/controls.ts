@@ -1,11 +1,11 @@
 /** Physical codes are stored separately from translated UI labels. */
 export const ACTIONS = {
-  forward:"İleri", backward:"Geri", left:"Sola", right:"Sağa", jump:"Zıpla", sprint:"Koş", crouch:"Çömel", slide:"Kay", fire:"Ateş", ads:"ADS / ağır bıçak", reload:"Şarjör", rifle:"Tüfek", smg:"SMG", sniper:"Sniper", shotgun:"Shotgun", pistol:"Tabanca", knife:"Bıçak", next:"Sonraki silah", previous:"Önceki silah", last:"Son silah", scoreboard:"Skor tablosu", menu:"Menü", ptt:"Bas-konuş"
+  inspect:"Silahı incele", interact:"Sandık / silah al", forward:"İleri", backward:"Geri", left:"Sola", right:"Sağa", jump:"Zıpla", sprint:"Koş", crouch:"Çömel", slide:"Kay", fire:"Ateş", ads:"ADS / ağır bıçak", reload:"Şarjör", rifle:"Tüfek", smg:"SMG", sniper:"Sniper", shotgun:"Shotgun", pistol:"Tabanca", knife:"Bıçak", next:"Sonraki silah", previous:"Önceki silah", last:"Son silah", scoreboard:"Skor tablosu", menu:"Menü", ptt:"Bas-konuş"
 } as const;
 export type Action = keyof typeof ACTIONS;
 export type Bindings = Record<Action,string>;
 export const DEFAULT_BINDINGS: Bindings = {
-  forward:"KeyW",backward:"KeyS",left:"KeyA",right:"KeyD",jump:"Space",sprint:"ShiftLeft",crouch:"KeyC",slide:"ControlLeft",fire:"Mouse0",ads:"Mouse2",reload:"KeyR",rifle:"Digit1",smg:"Digit2",sniper:"Digit3",shotgun:"Digit4",pistol:"Digit5",knife:"Digit6",next:"WheelDown",previous:"WheelUp",last:"KeyQ",scoreboard:"Tab",menu:"Escape",ptt:"KeyV"
+  inspect:"KeyF", interact:"KeyE", forward:"KeyW",backward:"KeyS",left:"KeyA",right:"KeyD",jump:"Space",sprint:"ShiftLeft",crouch:"KeyC",slide:"ControlLeft",fire:"Mouse0",ads:"Mouse2",reload:"KeyR",rifle:"Digit1",smg:"Digit2",sniper:"Digit3",shotgun:"Digit4",pistol:"Digit5",knife:"Digit6",next:"WheelDown",previous:"WheelUp",last:"KeyQ",scoreboard:"Tab",menu:"Escape",ptt:"KeyV"
 };
 const code = /^(Key[A-Z]|Digit[0-9]|F([1-9]|1[0-2])|Arrow(Up|Down|Left|Right)|Space|Tab|Enter|Escape|Backspace|CapsLock|(Shift|Control|Alt)(Left|Right)|Mouse[0-4]|Wheel(Up|Down)|Bracket(Left|Right)|Semicolon|Quote|Comma|Period|Slash|Backslash|Minus|Equal|Backquote)$/;
 export function validBinding(value: unknown): value is string {
@@ -29,7 +29,11 @@ export function cleanBindings(value: unknown,legacy?:unknown): Bindings {
   }
   if (value && typeof value === "object") for (const action of Object.keys(result) as Action[]) {
     const candidate=(value as any)[action];
-    if(validBinding(candidate)) result[action]=candidate;
+    if(validBinding(candidate)) {
+      if(action!=="inspect"&&candidate===result.inspect)result.inspect="Unbound";
+      if(action!=="interact"&&candidate===result.interact)result.interact="Unbound";
+      result[action]=candidate;
+    }
   }
   return result;
 }

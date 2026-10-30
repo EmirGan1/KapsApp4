@@ -43,7 +43,7 @@ export interface WeaponDefinition {
   zoom: number;
 }
 export const MELEE = { damage:40, heavyDamage:65, range:2.2, cooldown:0.5, heavyCooldown:0.9 };
-export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
+export const WEAPONS = {
   knife: { id:"knife", name:"K-1 Çelik", capacity:1, damage:MELEE.damage, rpm:120, range:MELEE.range, reload:0, spread:0, recoil:0, ads:1, mobility:1.12, automatic:false, pellets:1, color:"#bccbd4", length:0.6, zoom:1 },
   rifle: {
     id: "rifle",
@@ -135,8 +135,14 @@ export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
     length: 0.53,
     zoom: 0.85,
   },
-};
-export const WEAPON_ORDER: WeaponId[] = ["rifle","smg","sniper","shotgun","pistol","knife"];
+} as Record<WeaponId, WeaponDefinition>;
+export const STARTER_WEAPONS: WeaponId[] = ["rifle","smg","sniper","shotgun","pistol","knife"];
+export const SPECIAL_WEAPONS: WeaponId[] = ["carbine","lmg","railgun"];
+WEAPONS.carbine = {...WEAPONS.rifle, id:"carbine",name:"XR-24 Fırtına",capacity:24,damage:32,rpm:540,spread:.008,reload:2.3,color:"#61d6b0"};
+WEAPONS.lmg = {...WEAPONS.rifle,id:"lmg",name:"MG-60 Kalkan",capacity:60,damage:29,rpm:660,mobility:.78,reload:3.8,spread:.02,color:"#f1b85b",length:1.25};
+WEAPONS.railgun = {...WEAPONS.sniper,id:"railgun",name:"RX-3 Şimşek",capacity:3,damage:120,rpm:40,range:220,reload:3.6,color:"#ef6577",zoom:.25};
+export function ownsWeapon(state: import('./types').WeaponState,id:WeaponId){return STARTER_WEAPONS.includes(id)||!!state.inventory?.includes(id);}
+export const WEAPON_ORDER: WeaponId[] = ["rifle","smg","sniper","shotgun","pistol","knife","carbine","lmg","railgun"];
 export function detectAutoQuality(): "low" | "medium" | "high" {
   if (typeof window === "undefined") return "medium";
   const isMobile = currentInputDevice().touch;

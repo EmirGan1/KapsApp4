@@ -24,9 +24,10 @@ const browser = await chromium.launch({headless:true,args:["--use-gl=angle","--u
 const errors: string[] = [];
 try {
   const a = await browser.newPage({viewport:{width:960,height:600}});
-  await a.addInitScript(()=>{if(!localStorage.getItem('kapsstrike-settings'))localStorage.setItem('kapsstrike-settings',JSON.stringify({binds:{forward:'KeyI'},selectedSkin:'cyber_agent'}));});
+  await a.addInitScript(()=>{if(!localStorage.getItem('kapsstrike-settings'))localStorage.setItem('kapsstrike-settings',JSON.stringify({quality:'low',binds:{forward:'KeyI'},selectedSkin:'cyber_agent'}));});
   const mobile = await browser.newContext({viewport:{width:1366,height:1024},hasTouch:true,isMobile:true});
   const b = await mobile.newPage();
+  await b.addInitScript({content:"localStorage.setItem('kapsstrike-settings',JSON.stringify({quality:'low'}));"});
   for (const p of [a,b]) { p.on("pageerror", e => errors.push(e.message)); p.on('console', m=> {if(m.type()==='error') { errors.push(m.text()); console.log(m.text()); }}); }
   await Promise.all([a.goto("http://127.0.0.1:4195/__strike_network?user=1"),b.goto("http://127.0.0.1:4195/__strike_network?user=2")]);
   await a.getByRole("button",{name:"Karakter / Skin",exact:true}).click();
@@ -50,19 +51,20 @@ try {
   await a.mouse.move(box.x+box.width/2,box.y+box.height/2);await a.mouse.down();await a.mouse.move(box.x+box.width/2+80,box.y+box.height/2);await a.mouse.up();
   assert.ok(await a.evaluate(angle=>(window as any).engineStore.Instances[0].scenes[0].getTransformNodeByName('character-preview').rotation.y>angle,angle));
   await a.screenshot({path:"/tmp/strike-skins-preview.png"});
+  await a.getByRole("button",{name:"Paneli kapat",exact:true}).click();
   await a.getByRole("button",{name:"Kontroller",exact:true}).click();
   assert.equal(await a.evaluate(()=>(window as any).engineStore.Instances.length),0,"Preview engine disposed when panel closes");
   await a.getByRole("button",{name:"İleri tuşunu değiştir",exact:true}).click();
   await a.keyboard.press("KeyI");
   await a.getByRole("button",{name:"Ateş tuşunu değiştir",exact:true}).click();
-  await a.keyboard.press("KeyF");
+  await a.keyboard.press("KeyH");
   await a.getByRole("button",{name:"ADS / ağır bıçak tuşunu değiştir",exact:true}).click();
   await a.keyboard.press("KeyG");
   await a.getByRole("button",{name:"Zıpla tuşunu değiştir",exact:true}).click();
   await a.keyboard.press("KeyI");
   await a.getByRole('alert').filter({hasText:'çakışıyor'}).waitFor();
   await a.getByRole('button',{name:'İptal',exact:true}).click();
-  await a.getByRole("button",{name:"Geri",exact:true}).click();
+  await a.getByRole("button",{name:"Paneli kapat",exact:true}).click();
   assert.equal(await a.evaluate(()=>JSON.parse(localStorage.getItem('kapsstrike-settings')!).bindings.forward),'KeyI');
   await a.getByRole("button",{name:"+ Oda Oluştur",exact:true}).click();
   await a.getByLabel("Oyun Modu").selectOption("ffa");
@@ -74,10 +76,10 @@ try {
   await b.getByRole('button',{name:'Koda Katıl',exact:true}).click();
   await a.getByRole('button',{name:'Karakter / Skin',exact:true}).click();
   await a.getByRole('heading',{name:'Karakter / Skin',exact:true}).waitFor();
-  await a.getByRole('button',{name:'Lobiye dön',exact:true}).click();
+  await a.getByRole('button',{name:'Paneli kapat',exact:true}).click();
   await a.getByRole('button',{name:'Kontroller',exact:true}).click();
   await a.getByRole('heading',{name:'Kontroller',exact:true}).waitFor();
-  await a.getByRole('button',{name:'Lobiye dön',exact:true}).click();
+  await a.getByRole('button',{name:'Paneli kapat',exact:true}).click();
   await b.getByRole("button",{name:"HAZIR OL",exact:true}).click();
   await a.getByRole("button",{name:/MAÇI BAŞLAT/i}).click();
   for (const p of [a,b]) await p.waitForFunction(() => (window as any).strike?.remotePlayerList.length === 2);
@@ -95,12 +97,17 @@ try {
     assert.equal(await p.evaluate(() => (window as any).controllers.length),1,"Only one controller per match");
     assert.ok(await p.evaluate(() => (window as any).strike.renderer.scene.getMeshByName('remote-body-'+(window as any).strike.remotePlayerList.find((x:any)=>x.id !== (window as any).socket.id).id)));
   }
+  await a.evaluate("window.walkSamples=[];let samples=0;requestAnimationFrame(function sample(){const c=window.strike;window.walkSamples.push({t:performance.now(),z:c.renderer.camera.position.z});if(samples++<50)requestAnimationFrame(sample);});");
   await a.keyboard.down("KeyI");
   await b.evaluate(() => (window as any).strike.setTouchMovement(1,0));
   const before = [...manager.rooms.values()][0];
   const pos = [...before.players.values()].map(p=>({...p.state.movement.position}));
   await a.waitForTimeout(500);
   await a.keyboard.up("KeyI");
+  const walk=await a.evaluate(()=>(window as any).walkSamples as {t:number;z:number}[]);
+  assert.ok(walk.length>5);assert.ok(walk.every((p,i)=>i===0||p.z>=walk[i-1].z-.15),'displayed forward motion must not repeatedly snap backwards');
+  console.log('PASS sampled multiplayer camera movement without backwards correction spikes',walk.length);
+
   await b.evaluate(() => (window as any).strike.setTouchMovement(0,0));
   [...before.players.values()].forEach((p,i)=>assert.ok(Math.hypot(p.state.movement.position.x-pos[i].x,p.state.movement.position.z-pos[i].z)>.1));
   // Deterministic server-side setup of a clear firing lane; actual inputs,
@@ -111,13 +118,15 @@ try {
     players[i].state.movement.velocity = {x:0,y:0,z:0};
     players[i].state.protectedUntil = 0;
     players[i].history = [];
-    players[i].inputQueue = [];
+    players[i].inputQueue = [];players[i].heldInput=undefined;
   }
   await a.waitForTimeout(300);
   await a.evaluate(() => { const c=(window as any).strike; c.yaw=0; c.pitch=.01; });
-  await a.keyboard.down("KeyF");
+  await a.evaluate("window.aimTestTimer=setInterval(function(){window.strike.yaw=0;window.strike.pitch=.01;},16)");
+  await a.keyboard.down("KeyH");
   await b.waitForFunction(() => (window as any).strike.state.player.hp <= 0);
-  await a.keyboard.up("KeyF");
+  await a.keyboard.up("KeyH");
+  await a.evaluate("clearInterval(window.aimTestTimer)");
   assert.equal(players[0].kills,1);
   assert.equal(players[1].deaths,1);
   assert.ok(await a.evaluate(() => (window as any).strike.lastHit));
@@ -139,9 +148,9 @@ try {
   for(let i=0;i<2;i++) {players[i].state.movement.position={x:0,y:0,z:i===0?-28:-26.3};players[i].state.movement.velocity={x:0,y:0,z:0};players[i].state.protectedUntil=0;players[i].history=[];players[i].inputQueue=[];}
   await a.waitForTimeout(300);
   await a.evaluate(() => { const c=(window as any).strike;c.yaw=0;c.pitch=0; });
-  await a.keyboard.down('KeyF');
+  await a.keyboard.down('KeyH');
   await b.waitForFunction(()=>(window as any).strike.state.player.hp < 100);
-  await a.keyboard.up('KeyF');
+  await a.keyboard.up('KeyH');
   assert.equal(players[1].state.hp,60);
   await a.waitForTimeout(600);
   await a.keyboard.down('KeyG');
@@ -158,6 +167,7 @@ try {
   await a.getByRole("button",{name:"Kontroller",exact:true}).click();
   await a.getByRole("button",{name:"Zıpla tuşunu değiştir",exact:true}).click();await a.keyboard.press('KeyJ');
   await a.waitForFunction(()=>(window as any).strike.bindings.jump==='KeyJ');
+  await a.getByRole("button",{name:"Paneli kapat",exact:true}).click();
   await a.getByRole('button',{name:/Oyuna dön|Oyuna Devam Et/i}).click();
   await a.keyboard.down('KeyJ');await a.waitForFunction(()=>(window as any).strike.state.player.movement.position.y>.1);
   await a.keyboard.up('KeyJ');await a.waitForTimeout(100);assert.ok(players[0].state.movement.position.y>.1);

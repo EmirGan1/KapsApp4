@@ -41,7 +41,7 @@ export function createCharacter(scene:Scene,id:string,skinValue:unknown,team='no
   shell.parent=mesh;shell.scaling.setAll(1.045);
   const rim=new StandardMaterial(`${id}-outline-${outlineColor}`,scene);
   rim.diffuseColor=Color3.FromHexString(outlineColor);rim.emissiveColor=rim.diffuseColor;
-  rim.specularColor=Color3.Black();rim.disableLighting=true;rim.alpha=1;rim.backFaceCulling=false;rim.freeze();materials.push(rim);
+  rim.specularColor=Color3.Black();rim.disableLighting=true;rim.alpha=1;rim.backFaceCulling=true;rim.freeze();materials.push(rim);
   shell.material=rim;shell.isPickable=false;
  }
  const normal=body.material;

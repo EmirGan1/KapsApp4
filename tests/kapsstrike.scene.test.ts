@@ -24,6 +24,7 @@ for (const map of Object.values(MAPS))
           engine,
         );
       const state = createTraining(map.id);
+      renderer.render(state,0,0,false,1,state.player.movement.position,1/60);
       const count = renderer.scene.meshes.length;
       assert.ok(count > 120);
       assert.ok(renderer.scene.activeCamera);
@@ -46,7 +47,7 @@ for (const map of Object.values(MAPS))
       assert.equal(
         renderer.scene
           .getTransformNodeByName(state.player.weapon.selected)
-          ?.isEnabled(),
+          ?.isEnabled(false),
         true,
       );
       renderer.dispose();

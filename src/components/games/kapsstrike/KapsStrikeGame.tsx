@@ -1,5 +1,7 @@
+import StrikeMinimap from './StrikeMinimap';
+import StrikeGraphicsSettings from './StrikeGraphicsSettings';
 import StrikeInputSettings from './StrikeInputSettings';
-import {touchControls} from '../../../utils/gameInput';
+import {touchControls,currentInputDevice} from '../../../utils/gameInput';
 import {useGameGyroscope} from '../../../hooks/useGameGyroscope';
 import StrikeSkins from "./StrikeSkins";
 import StrikeControls from "./StrikeControls";
@@ -92,7 +94,22 @@ export default function KapsStrikeGame({
   const gyro = useGameGyroscope(settings.gyroMode !== undefined && settings.gyroMode !== 'off', delta => {
     if(view === 'play')game.current?.addGyroDelta(delta.yaw,delta.pitch);
   });
-  useEffect(()=>{gyro.recenter();},[view]);
+  useEffect(()=>{gyro.recenter();},[view,hud?.dead]);
+  const panelOpener=useRef<HTMLElement|null>(null);
+  useEffect(()=>{
+    if(!panel)return;
+    panelOpener.current=document.activeElement as HTMLElement;
+    const close=(e:KeyboardEvent)=>{
+      if(e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();setPanel(null);}
+      if(e.code==='Tab'){
+        const dialog=document.querySelector('.ks-feature-card');
+        const items=Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]')||[]).filter(el=>el.getClientRects().length);
+        const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
+      }
+    };
+    window.addEventListener('keydown',close,true);
+    return ()=>{window.removeEventListener('keydown',close,true);panelOpener.current?.focus();};
+  },[panel]);
 
   // Multiplayer Room State
   const [rooms, setRooms] = useState<StrikeRoomSummary[]>([]);
@@ -683,7 +700,7 @@ export default function KapsStrikeGame({
   });
 
   return (
-    <section className="ks-root" aria-label="KapsStrike 3D FPS">
+    <section className={`ks-root ks-experience ks-view-${view} ${hud?.ads&&(hud.weapon==='sniper'||hud.weapon==='railgun')?'ks-scoped':''}`} aria-label="KapsStrike 3D FPS">
       <canvas
         ref={canvas}
         className="ks-canvas"
@@ -933,7 +950,7 @@ export default function KapsStrikeGame({
           {/* Quick Weapon Selector Wheel Popup Menu */}
           {weaponMenuOpen && (
             <div className="ks-weapon-wheel">
-              {WEAPON_ORDER.map((wId) => (
+              {(hud?.inventory||WEAPON_ORDER.slice(0,6)).map((wId) => (
                 <button
                   key={wId}
                   type="button"
@@ -1182,7 +1199,7 @@ export default function KapsStrikeGame({
                 <span>
                   {hud.reload > 0
                     ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
-                    : "R · Yenile | 1–6 / Tekerlek · Silah"}
+                    : "R · Yenile | F · İncele | E · Al"}
                 </span>
               </div>
             )}
@@ -1201,6 +1218,10 @@ export default function KapsStrikeGame({
             </div>
           )}
 
+          {!currentInputDevice().phone && <StrikeMinimap map={MAPS[currentRoom?.map||map]} hud={hud}/>}
+          {hud.ads && !hud.dead && (hud.weapon==='sniper'||hud.weapon==='railgun') && <div className="ks-scope" aria-label="Dürbün açık"><div className="ks-scope-lens"><i/><b/><span>{hud.weapon==='railgun'?'5×':'3.5×'} / UFUK OPTICS</span></div></div>}
+          {hud.supplyPrompt && !hud.dead && <button className="ks-supply-prompt" onClick={()=>game.current?.interact()}>{isMobile?'Dokun':'E'} · {hud.supplyPrompt}</button>}
+          {hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · RX-3 Şimşek</small></div>}
           {hud.hurt && hud.hurt.until > hud.tick && <div className="ks-hurt-vignette" style={{opacity: Math.min(.85, .2 + (hud.hurt.damage || 10) / 110)}} />}
           {hud.hp > 0 && hud.hp <= 25 && <span className="ks-low-health" role="status">KRİTİK CAN</span>}
           {hud.hurt && hud.hurt.until > hud.tick && (
@@ -1270,7 +1291,7 @@ export default function KapsStrikeGame({
       )}
       {/* ROOM LOBBY VIEW */}
       {view === "lobby" && currentRoom && (
-        <div className="ks-overlay">
+        <div className="ks-overlay" inert={!!panel}>
           <div className="ks-menu">
             <div className="ks-lobby-container">
               <div className="ks-lobby-header">
@@ -1427,8 +1448,8 @@ export default function KapsStrikeGame({
 
       {/* MAIN MENU & BROWSER */}
       {view === "menu" && (
-        <div className="ks-overlay">
-          <div className="ks-menu">
+        <div className="ks-overlay ks-home-overlay" inert={!!panel&&panel!=="create_room"}>
+          <div className="ks-menu ks-home">
             <header className="flex flex-col items-center text-center">
               <div className="ks-eyebrow">KAPSAPP · RESMİ 3D MULTIPLAYER FPS</div>
               
@@ -1455,7 +1476,7 @@ export default function KapsStrikeGame({
               </h1>
 
               <p>
-                Düşük gecikmeli, sunucu otoriteli 3D FPS arenası. Arkadaşlarınla takım kur ya da tek başına kapış!
+                Üç farklı bölge. Tek bir hedef. Takımını kur, sokağa çık ve maça katıl.
               </p>
 
               {/* TABS: Multiplayer vs Training */}
@@ -1463,14 +1484,14 @@ export default function KapsStrikeGame({
                 <button
                   type="button"
                   className={`ks-mp-tab ${modeTab === "multiplayer" ? "active" : ""}`}
-                  onClick={() => setModeTab("multiplayer")}
+                  onClick={() => {setPanel(null);setModeTab("multiplayer");}}
                 >
                   🎯 Çok Oyunculu (Multiplayer)
                 </button>
                 <button
                   type="button"
                   className={`ks-mp-tab ${modeTab === "training" ? "active" : ""}`}
-                  onClick={() => setModeTab("training")}
+                  onClick={() => {setPanel(null);setModeTab("training");}}
                 >
                   🏹 Tek Oyunculu Antrenman (Offline)
                 </button>
@@ -1480,7 +1501,7 @@ export default function KapsStrikeGame({
                 <button type="button" onClick={() => setPanel("controls")}>Kontrolleri düzenle</button>
                 <button type="button" onClick={() => setPanel("input")}>Mobil Kontroller / Jiroskop</button>
               </div>
-              <p className="ks-visibility-note">Maçta diğer oyuncular takım rengiyle çevrelenir; duvarlar oyuncuları örtmeye devam eder.</p>
+              <p className="ks-visibility-note">Rakiplerde ince kırmızı hat; özgün karakter görünümleri korunur.</p>
             </header>
 
             {error && (
@@ -1770,145 +1791,6 @@ export default function KapsStrikeGame({
             )}
 
             {/* SETTINGS PANEL */}
-            {panel === "settings" && (
-              <div className="ks-settings">
-                <h2>Ayarlar</h2>
-                <StrikeInputSettings settings={settings} onChange={setting} gyro={gyro} />
-                <label>
-                  Grafik Kalitesi
-                  <select
-                    value={settings.quality}
-                    onChange={(e) =>
-                      setting({
-                        quality: e.target.value as StrikeSettings["quality"],
-                      })
-                    }
-                  >
-                    <option value="auto">Auto · Otomatik Algıla (Önerilen)</option>
-                    <option value="low">Low · Düşük Yük / Mobil</option>
-                    <option value="medium">Medium · Dengeli</option>
-                    <option value="high">High · Gölgeli / Yüksek</option>
-                  </select>
-                </label>
-                <label className="ks-check">
-                  <input
-                    type="checkbox"
-                    checked={settings.dynamicResolution !== false}
-                    onChange={(e) => setting({ dynamicResolution: e.target.checked })}
-                  />{" "}
-                  Dinamik Çözünürlük (Kare hızı düşerse otomatik optimize eder)
-                </label>
-                <label>
-                  Çözünürlük Ölçeği · {settings.scale.toFixed(2)}×
-                  <input
-                    type="range"
-                    min=".5"
-                    max="1.5"
-                    step=".05"
-                    value={settings.scale}
-                    onChange={(e) => setting({ scale: Number(e.target.value) })}
-                  />
-                </label>
-                <label>
-                  Fare Hassasiyeti (Mouse Sensitivity) · {settings.sensitivity.toFixed(2)}
-                  <input
-                    type="range"
-                    min=".15"
-                    max="3"
-                    step=".05"
-                    value={settings.sensitivity}
-                    onChange={(e) =>
-                      setting({ sensitivity: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                {isMobile && (
-                  <label>
-                    Mobil Dokunmatik Hassasiyet · {(settings.mobileSensitivity || 1.2).toFixed(2)}
-                    <input
-                      type="range"
-                      min=".2"
-                      max="4"
-                      step=".1"
-                      value={settings.mobileSensitivity || 1.2}
-                      onChange={(e) =>
-                        setting({ mobileSensitivity: Number(e.target.value) })
-                      }
-                    />
-                  </label>
-                )}
-                <label>
-                  Görüş Açısı (FOV) · {settings.fov}°
-                  <input
-                    type="range"
-                    min="65"
-                    max="115"
-                    step="1"
-                    value={settings.fov}
-                    onChange={(e) => setting({ fov: Number(e.target.value) })}
-                  />
-                </label>
-                <label>
-                  Genel Ses (Master Volume) · {Math.round(settings.volume * 100)}%
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step=".05"
-                    value={settings.volume}
-                    onChange={(e) =>
-                      setting({ volume: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                <label>
-                  Silah ve Çevre Sesleri · {Math.round((settings.effectsVolume ?? 0.8) * 100)}%
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step=".05"
-                    value={settings.effectsVolume ?? 0.8}
-                    onChange={(e) =>
-                      setting({ effectsVolume: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                <label>
-                  Sesli Sohbet Düzeyi · {Math.round((settings.voiceVolume ?? 1.0) * 100)}%
-                  <input
-                    type="range"
-                    min="0"
-                    max="1.5"
-                    step=".05"
-                    value={settings.voiceVolume ?? 1.0}
-                    onChange={(e) =>
-                      setting({ voiceVolume: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                <label className="ks-check">
-                  <input
-                    type="checkbox"
-                    checked={settings.invertY}
-                    onChange={(e) => setting({ invertY: e.target.checked })}
-                  />{" "}
-                  Dikey fareyi ters çevir (Invert Y)
-                </label>
-                <button onClick={() => setPanel(null)}>Kaydet ve Dön</button>
-              </div>
-            )}
-
-            {panel === "skins" && <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} />}
-
-            {/* CONTROLS PANEL */}
-            {panel === "controls" && (
-              <div className="ks-controls">
-                <h2>Kontroller</h2>
-                <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />
-                <button onClick={() => setPanel(null)}>Geri</button>
-              </div>
-            )}
 
             <footer>
               <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
@@ -1952,151 +1834,37 @@ export default function KapsStrikeGame({
         </div>
       )}
 
-      {/* PAUSE OVERLAY */}
+      {/* Pause has one clear primary action; detailed settings live in dismissible panels. */}
       {view === "pause" && (
-        <div className="ks-overlay">
-          <div className="ks-menu max-w-lg">
-            <div className="ks-paused">
-              <h2 className="text-2xl font-black text-amber-400 mb-1">OYUN DURDURULDU</h2>
-              <p className="text-xs text-slate-400 mb-4">
-                {game.current?.isMultiplayer
-                  ? "Maç arka planda devam ediyor. Kontrolü almak veya ayarları değiştirmek için düğmeleri kullanın."
-                  : "Simülasyon ve kontroller duraklatıldı."}
-              </p>
-
-              <div className="ks-settings text-left space-y-3 mb-4 max-h-[55vh] overflow-y-auto pr-1">
-                {/* Look Sensitivity */}
-                <label>
-                  <span>Kamera Hassasiyeti (Look Sensitivity) · {(isMobile ? (settings.mobileSensitivity || 1.2) : settings.sensitivity).toFixed(2)}</span>
-                  <input
-                    type="range"
-                    min=".15"
-                    max="4"
-                    step=".05"
-                    value={isMobile ? (settings.mobileSensitivity || 1.2) : settings.sensitivity}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      if (isMobile) {
-                        setting({ mobileSensitivity: val });
-                      } else {
-                        setting({ sensitivity: val });
-                      }
-                    }}
-                  />
-                </label>
-
-                <StrikeInputSettings settings={settings} onChange={setting} gyro={gyro} />
-
-                {/* Sound & Voice Volume */}
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="text-xs">
-                    <span>Genel Ses · {Math.round(settings.volume * 100)}%</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step=".05"
-                      value={settings.volume}
-                      onChange={(e) => setting({ volume: Number(e.target.value) })}
-                    />
-                  </label>
-                  <label className="text-xs">
-                    <span>Sesli Sohbet · {Math.round((settings.voiceVolume ?? 1.0) * 100)}%</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1.5"
-                      step=".05"
-                      value={settings.voiceVolume ?? 1.0}
-                      onChange={(e) => setting({ voiceVolume: Number(e.target.value) })}
-                    />
-                  </label>
-                </div>
-
-                {/* Quick Mic Toggle */}
-                <div className="flex items-center justify-between p-2 bg-slate-900/60 rounded border border-slate-800">
-                  <span className="text-xs font-bold text-slate-300">Mikrofon Durumu</span>
-                  <button
-                    type="button"
-                    onClick={toggleVoice}
-                    className={`text-xs px-3 py-1 rounded font-bold ${
-                      isVoiceMuted ? "bg-red-500/20 text-red-400 border border-red-500/40" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                    }`}
-                  >
-                    {isVoiceMuted ? "🔇 Mikrofonu Aç" : "🎙️ Mikrofon Açık"}
-                  </button>
-                </div>
-
-                {/* Show Debug Stats Toggle */}
-                <label className="ks-check text-xs">
-                  <input
-                    type="checkbox"
-                    checked={settings.showDebugStats ?? !isMobile}
-                    onChange={(e) => setting({ showDebugStats: e.target.checked })}
-                  />{" "}
-                  Teknik İstatistikleri Göster (FPS, Mesh, Ping)
-                </label>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 flex-wrap justify-center">
-                <button className="ks-primary" onClick={resume}>
-                  ▶ Oyuna Devam Et
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPanel(panel === "controls" ? null : "controls")}
-                >
-                  Kontroller
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPanel(panel === "skins" ? null : "skins")}
-                >
-                  Karakter
-                </button>
-                <button
-                  className="bg-red-500/20 hover:bg-red-500/40 text-red-300 border border-red-500/40"
-                  onClick={exit}
-                >
-                  🚪 Menüye / Lobiye Dön
-                </button>
-              </div>
-
-              {panel === "controls" && (
-                <div className="mt-4">
-                  <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />
-                </div>
-              )}
-              {panel === "skins" && (
-                <div className="mt-4">
-                  <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {view === "lobby" && (panel === "controls" || panel === "skins") && (
-        <div className="ks-overlay ks-feature-overlay">
-          <div className="ks-menu ks-feature-card">
-            {panel === "skins" ? <StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin => setting({selectedSkin:skin})} /> : (
-              <div className="ks-controls">
-                <h2>Kontroller</h2>
-                <StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings => setting({ bindings })} />
-              </div>
-            )}
-            <button type="button" onClick={() => setPanel(null)}>Lobiye dön</button>
-          </div>
-        </div>
-      )}
-      {panel === 'input' && (view === 'menu' || view === 'lobby' || view === 'pause') && (
-        <div className="ks-overlay ks-feature-overlay"><div className="ks-menu ks-feature-card">
-          <StrikeInputSettings settings={settings} onChange={setting} gyro={gyro} />
-          <button type="button" onClick={()=>setPanel(null)}>Geri dön</button>
+        <div className="ks-overlay ks-pause-overlay" inert={!!panel}><div className="ks-menu ks-pause-card">
+          <div className="ks-eyebrow">KAPSSTRIKE / MENÜ</div><h2>Kısa bir mola.</h2>
+          <p>{game.current?.isMultiplayer?"Maç devam ediyor. Hazır olduğunda geri dön.":"Antrenman duraklatıldı."}</p>
+          <button className="ks-primary ks-resume" onClick={()=>{setPanel(null);resume();}}>▶ Oyuna Devam Et</button>
+          <nav className="ks-pause-options" aria-label="Duraklatma seçenekleri">
+            <button aria-label="Görüntü ve ses" onClick={()=>setPanel('settings')}>Görüntü ve ses<small>Kalite, FOV, ses düzeyleri</small></button>
+            <button aria-label="Kontroller" onClick={()=>setPanel('controls')}>Kontroller<small>Tuş atamaları ve silah inceleme</small></button>
+            <button onClick={()=>setPanel('input')}>Mobil Kontroller / Jiroskop<small>Dokunma, hassasiyet ve sensör</small></button>
+            <button aria-label="Karakter" onClick={()=>setPanel('skins')}>Karakter<small>Görünümünü seç</small></button>
+          </nav>
+          <button className="ks-mic-toggle" onClick={toggleVoice}>{isVoiceMuted?'Mikrofonu aç':'Mikrofonu sustur'}</button>
+          <button className="ks-leave" onClick={()=>{setPanel(null);exit();}}>Menüye / Lobiye Dön</button>
         </div></div>
       )}
+      {panel && panel !== 'create_room' && ['menu','lobby','pause'].includes(view) && (
+        <div className="ks-overlay ks-feature-overlay" onClick={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
+          <div className="ks-menu ks-feature-card" role="dialog" aria-modal="true" aria-label={{skins:'Karakter seçimi',controls:'Kontroller',settings:'Görüntü ve ses',input:'Mobil kontroller'}[panel]}>
+            <div className="ks-panel-bar"><span>KAPSSTRIKE / {{skins:'KARAKTER',controls:'KONTROLLER',settings:'AYARLAR',input:'MOBİL KONTROLLER'}[panel]}</span><button autoFocus onClick={()=>setPanel(null)} aria-label="Paneli kapat">Geri dön <span aria-hidden="true">×</span></button></div>
+            <div className="ks-panel-content">
+              {panel==='skins'&&<StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin=>setting({selectedSkin:skin})}/>}
+              {panel==='controls'&&<div className="ks-controls"><h2>Kontroller</h2><p>F · Silahı incele. E · Sandığı aç / silahı al. Dürbünlü silahta sağ tık · Nişan.</p><StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings=>setting({bindings})}/></div>}
+              {panel==='settings'&&<StrikeGraphicsSettings settings={settings} onChange={setting}/>}
+              {panel==='input'&&<StrikeInputSettings settings={settings} onChange={setting} gyro={gyro}/>}
+            </div>
+            <button className="ks-primary ks-panel-done" onClick={()=>setPanel(null)}>Kaydet ve Dön</button>
+          </div>
+        </div>
+      )}
+
     </section>
   );
 }

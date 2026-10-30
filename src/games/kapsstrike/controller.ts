@@ -1,3 +1,4 @@
+import {nearestSupply} from './world';
 import { cleanBindings, held, Bindings, Action } from "./controls";
 import type { Socket } from "socket.io-client";
 import { StrikeRenderer } from "./renderer";
@@ -8,6 +9,8 @@ import {
   InputCommand,
   WeaponId,
   TrainingState,
+  Vec3,
+  StrikeWorld,
   CombatEvent,
   StrikeSnapshot,
   PlayerSnapshot,
@@ -16,10 +19,16 @@ import {
 import { MAPS } from "./maps";
 import {touchControls,currentInputDevice} from '../../utils/gameInput';
 import { createTraining, simulate } from "./combat";
-import { PHYSICS as C, WEAPONS, WEAPON_ORDER } from "./config";
+import { PHYSICS as C, WEAPONS, WEAPON_ORDER, ownsWeapon } from "./config";
 import { clamp, fits } from "./physics";
 
 export interface StrikeHUD {
+  inventory?:WeaponId[];
+  world?: StrikeWorld;
+  position?: Vec3;
+  yaw?: number;
+  radar?: {x:number;z:number;team:StrikeTeam}[];
+  supplyPrompt?: string;
   hp: number;
   ammo: number;
   capacity: number;
@@ -100,6 +109,8 @@ export class StrikeController {
   private processed = 0;
   private shotSounds = new Map<string,number>();
   private dropped = 0;
+  private correction={x:0,y:0,z:0};
+  private pendingInteract=false;
   private previous = { x: 0, y: 0, z: 0 };
   private lastHit?: StrikeHUD["hit"];
   private lastHurt?: StrikeHUD["hurt"];
@@ -169,7 +180,7 @@ export class StrikeController {
     }
 
     this.renderer = renderer || new StrikeRenderer(canvas, MAPS[map], this.settings);
-    this.audio.volume = settings.volume;
+    this.audio.volume = settings.volume*(settings.effectsVolume??.8);
     this.previous = { ...this.state.player.movement.position };
 
     const listen = (
@@ -295,7 +306,8 @@ export class StrikeController {
     const changed=JSON.stringify(next.bindings)!==JSON.stringify(this.settings.bindings);
     Object.assign(this.settings,next);
     if(changed)this.setBindings(cleanBindings(next.bindings));
-    this.audio.volume=next.volume;
+    this.audio.volume=next.volume*(next.effectsVolume??.8);
+    this.renderer.updateSettings(next);
     if(wasTouch!==this.isTouchDevice){
       this.clearInput();
       if(this.isTouchDevice&&document.pointerLockElement===this.canvas)document.exitPointerLock();
@@ -320,13 +332,16 @@ export class StrikeController {
     this.updateHeldActions();
     if (this.down("menu")) { this.pause(); return true; }
     if (!repeat) {
+      if(this.down("inspect"))this.renderer.inspect();
+      if(this.down("interact"))this.pendingInteract=true;
       if (this.down("reload")) this.pendingReload = true;
+      const available=WEAPON_ORDER.filter(w=>ownsWeapon(this.state.player.weapon,w));
       const current = this.pendingWeapon || this.state.player.weapon.selected;
-      let weapon: WeaponId | undefined = WEAPON_ORDER.find(w => this.down(w));
+      let weapon: WeaponId | undefined = available.find(w => w in this.bindings && this.down(w as Action));
       if (this.down("next") || this.down("previous")) {
-        weapon = WEAPON_ORDER[(WEAPON_ORDER.indexOf(current) + (this.down("next") ? 1 : -1) + WEAPON_ORDER.length) % WEAPON_ORDER.length];
+        weapon = available[(available.indexOf(current) + (this.down("next") ? 1 : -1) + available.length) % available.length];
       }
-      if (this.down("last")) weapon = this.previousWeapon;
+      if (this.down("last")&&ownsWeapon(this.state.player.weapon,this.previousWeapon)) weapon = this.previousWeapon;
       if (weapon && current !== weapon) { this.previousWeapon = current; this.pendingWeapon = weapon; }
     }
     return (Object.keys(this.bindings) as Action[]).some(a => this.down(a));
@@ -382,6 +397,9 @@ export class StrikeController {
           this.receivedInitialState = true;
           this.callbacks?.onLoadingStage?.("Grafikler hazırlanıyor…");
         }
+        const respawned=this.state.player.hp<=0&&myServerState.hp>0;
+        const oldPosition={...this.state.player.movement.position};
+        if(snapshot.world)this.state.world=snapshot.world;
         this.state.player.hp = myServerState.hp;
         this.state.score = myServerState.score;
         this.state.player.deadUntil = myServerState.deadUntil;
@@ -401,9 +419,15 @@ export class StrikeController {
           this.state.tick = snapshot.tick;
           this.state.lastSequence = ackSeq;
           for (const cmd of this.unacknowledgedInputs) {
-            if (this.state.player.hp > 0) simulate(this.state, cmd, !this.isMultiplayer);
+            if (this.state.player.hp > 0&&!respawned) simulate(this.state, {...cmd,tick:this.state.tick}, false);
           }
-          this.previous = { ...this.state.player.movement.position };
+          const position=this.state.player.movement.position;
+          const dx=oldPosition.x-position.x,dy=oldPosition.y-position.y,dz=oldPosition.z-position.z;
+          // Simulation snaps to truth immediately; only its visual correction eases out.
+          if(!respawned&&Math.hypot(dx,dy,dz)<3){this.correction.x+=dx;this.correction.y+=dy;this.correction.z+=dz;}
+          else this.correction={x:0,y:0,z:0};
+          this.previous={...position};
+          if(respawned){this.unacknowledgedInputs=[];this.resetView();}
         } else {
           this.state.player.movement.position = { ...myServerState.position };
           this.state.player.movement.velocity = { ...myServerState.velocity };
@@ -472,13 +496,14 @@ export class StrikeController {
           ads: this.touchAds || this.ads || this.down("ads"),
           reload: this.pendingReload,
           weapon: this.pendingWeapon,
+          interact:this.pendingInteract,
         };
 
         // Client prediction: simulate locally
         const beforeEvent=this.state.eventId;
         if (!this.isMultiplayer || this.state.player.hp > 0) simulate(this.state, cmd, !this.isMultiplayer);
 
-        if (this.isMultiplayer && this.socket) {
+        if (this.isMultiplayer && this.socket && this.state.player.hp>0) {
           const immediate=this.state.events.filter(e=>e.id>beforeEvent && (e.kind==="shot" || e.kind==="reload"));
           this.renderer.process(immediate,this.state.player.id,true);
           for(const e of immediate)this.feedback(e,true);
@@ -489,6 +514,7 @@ export class StrikeController {
 
         this.keys.delete("WheelUp");
         this.keys.delete("WheelDown");
+        this.pendingInteract=false;
         this.pendingReload = false;
         this.pendingWeapon = undefined;
         this.accumulator -= C.dt;
@@ -512,6 +538,8 @@ export class StrikeController {
         this.updateAndRenderRemotePlayers();
       }
 
+      const decay=Math.exp(-elapsed*16);
+      for(const axis of ["x","y","z"] as const)this.correction[axis]*=decay;
       this.renderer.render(
         this.state,
         this.yaw,
@@ -519,7 +547,8 @@ export class StrikeController {
         this.touchAds || this.ads || this.down("ads"),
         this.accumulator / C.dt,
         this.previous,
-        elapsed
+        elapsed,
+        this.correction
       );
 
       if(this.receivedInitialState && !this.notifiedReady && this.renderer.scene.isReady()){
@@ -636,12 +665,18 @@ export class StrikeController {
       this.audio.play("damage");
     }
     if (e.kind === "respawn") {
-      this.yaw = 0;
-      this.pitch = 0;
-      this.previous = { ...this.state.player.movement.position };
-      this.clearInput();
+      this.resetView();
     }
   }
+
+  private resetView(){
+    this.yaw=0;this.pitch=0;this.correction={x:0,y:0,z:0};
+    this.state.player.yaw=0;this.state.player.pitch=0;
+    this.previous={...this.state.player.movement.position};
+    this.lastHurt=undefined;this.lastHit=undefined;this.state.lastDamageTick=-10000;
+    this.clearInput();this.pendingInteract=false;this.renderer.resetView();
+  }
+  interact(){if(this.active)this.pendingInteract=true;}
 
   private pushHUD() {
     const s = this.state,
@@ -650,6 +685,10 @@ export class StrikeController {
       stats = this.renderer.stats();
 
     this.onHUD({
+      inventory:WEAPON_ORDER.filter(w=>ownsWeapon(p.weapon,w)),
+      world:s.world, position:{...p.movement.position}, yaw:this.yaw,
+      radar:this.remotePlayerList.filter(r=>r.hp>0&&r.id!==p.id&&this.localTeam!=="none"&&r.team===this.localTeam).map(r=>({...r.position,team:r.team})),
+      supplyPrompt:s.world?(()=>{const supply=nearestSupply(s.world,MAPS[s.map],p);return supply?`${supply.kind==="dropped"?"Al":"Aç"} · ${WEAPONS[supply.weapon].name}`:undefined;})():undefined,
       hp: p.hp,
       ads: this.touchAds || this.ads || this.down("ads"),
       ammo: w.ammo[w.selected],
@@ -691,6 +730,7 @@ export class StrikeController {
     this.mouseFire = false;
     this.ads = false;
     this.pendingReload = false;
+    this.pendingInteract=false;
     this.pendingWeapon = undefined;
     this.scoreboardOpen = false;
     this.pttActive = false;

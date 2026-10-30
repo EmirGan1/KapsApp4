@@ -64,6 +64,12 @@ export class StrikeRenderer {
   private impactPool: { mesh: Mesh; until: number }[] = [];
   private poolIndex = 0;
   private gunKick = 0;
+  private inspectTime=0;
+  private qualityApplied="";
+  private supplyMeshes=new Map<string,TransformNode>();
+  private plane?:TransformNode;
+  private falling?:Mesh;
+  private smoke:Mesh[]=[];
   private reloadAt = 0;
   private muzzle: Mesh;
   private shadow?: ShadowGenerator;
@@ -141,10 +147,10 @@ export class StrikeRenderer {
       ground.material = this.material(map.floor,false,map.id==='dust'?'plaster':'concrete');
       this.worldUV(ground);
       ground.receiveShadows = true;
-      const batches = new Map<StandardMaterial, Mesh[]>();
+      const batches = new Map<string, Mesh[]>();
       for (const s of map.solids) {
         if(s.hidden)continue;
-        if(effectiveQuality==='low'&&s.detail&&(Math.abs(s.x)>40||Math.abs(s.z)>40)&&Math.max(s.w,s.h,s.d)<8)continue;
+
         let mesh: Mesh | ReturnType<Mesh["createInstance"]>;
         if (s.kind === "ramp") {
           const x = s.w / 2,
@@ -201,13 +207,15 @@ export class StrikeRenderer {
         mesh.isPickable = false;
         mesh.receiveShadows = true;
         const material=mesh.material as StandardMaterial;
-        const group=batches.get(material) || [];group.push(mesh as Mesh);batches.set(material,group);
+        const groupKey=material.name+"|"+(s.detail?"detail":"structure");
+        const group=batches.get(groupKey) || [];group.push(mesh as Mesh);batches.set(groupKey,group);
       }
       // Small authored districts are geometry-light: one static batch per material
       // trades fine-grained culling for substantially fewer draw calls.
-      for(const [material,meshes] of batches){
+      for(const [key,meshes] of batches){
+        const material=meshes[0].material as StandardMaterial;
         const batch=Mesh.MergeMeshes(meshes,true,true)!;
-        batch.name="district-"+material.name;batch.material=material;
+        batch.name="district-"+key;batch.metadata={detail:key.endsWith("|detail")};batch.material=material;
         batch.receiveShadows=true;batch.isPickable=false;batch.freezeWorldMatrix();
         this.shadow?.addShadowCaster(batch);
       }
@@ -345,7 +353,7 @@ export class StrikeRenderer {
           0.035,
           "#17222d",
         );
-        if (id === "sniper") {
+        if (id === "sniper" || id === "railgun") {
           part("scope-mount-front", 0, 0.11, 0.1, 0.07, 0.06, 0.04, "#273442");
           part("scope-mount-back", 0, 0.11, -0.1, 0.07, 0.06, 0.04, "#273442");
           part("scope", 0, 0.19, 0, 0.1, 0.1, 0.35, "#223845");
@@ -388,6 +396,8 @@ export class StrikeRenderer {
         impact.setEnabled(false);
         this.impactPool.push({ mesh: impact, until: 0 });
       }
+      this.qualityApplied=effectiveQuality;
+      for(const mesh of this.scene.meshes)if(mesh.name.startsWith("district-"))mesh.setEnabled(effectiveQuality!=="low"||!mesh.metadata?.detail);
       if (!injectedEngine) {
         this.resize();
         this.observer = new ResizeObserver(() => this.resize());
@@ -401,6 +411,54 @@ export class StrikeRenderer {
       this.engine.dispose();
       throw error;
     }
+  }
+  private textureSize(){const q=this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;return q==='high'?1024:q==='medium'?512:128;}
+  inspect(){this.inspectTime=1.8;}
+  resetView(){this.inspectTime=0;this.gunKick=0;this.camera.rotationQuaternion=null;this.camera.rotation.set(0,0,0);this.camera.upVector.set(0,1,0);this.camera.cameraRotation.set(0,0);this.camera.cameraDirection.set(0,0,0);}
+  updateSettings(next:StrikeSettings){
+    this.settings=next;
+    const q=next.quality==='auto'?detectAutoQuality():next.quality;
+    if(q!==this.qualityApplied){
+      this.qualityApplied=q;
+      for(const m of this.materials.values())if(m.metadata){
+        const {color,surface,label,emissive}=m.metadata;
+        m.unfreeze();m.diffuseTexture?.dispose();const tex=surfaceTexture(this.scene,m.name,color,surface,label,this.textureSize());m.diffuseTexture=tex||null;if(emissive)m.emissiveTexture=tex||null;m.freeze();
+      }
+      for(const m of this.scene.meshes)if(m.name.startsWith('district-'))m.setEnabled(q!=='low'||!m.metadata?.detail);
+      const sun=this.scene.getLightByName('sun') as DirectionalLight;
+      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(1024,sun);this.shadow.usePoissonSampling=true;for(const m of this.scene.meshes)if(m.name.startsWith('district-'))this.shadow.addShadowCaster(m);}
+      if(q!=='high'&&this.shadow){this.shadow.dispose();this.shadow=undefined;}
+    }
+    if(!next.dynamicResolution)this.dynamicScale=1;
+    this.resize();
+  }
+  private renderSupplies(state:TrainingState){
+    const world=state.world;if(!world)return;
+    const ids=new Set(world.pickups.map(p=>p.id));
+    for(const [id,node] of this.supplyMeshes)if(!ids.has(id)){node.dispose();this.supplyMeshes.delete(id);}
+    for(const p of world.pickups){
+      let node=this.supplyMeshes.get(p.id);
+      if(!node){
+        node=new TransformNode(p.id,this.scene);
+        const box=MeshBuilder.CreateBox(p.id+'-case',{width:p.kind==='dropped'?.65:1.1,height:p.kind==='dropped'?.14:.65,depth:.7},this.scene);box.parent=node;box.position.y=.4;box.material=this.material(p.kind==='airdrop'?'#a64d55':'#556d63',false,'metal');
+        const lid=MeshBuilder.CreateBox(p.id+'-lid',{width:1.12,height:.09,depth:.72},this.scene);lid.parent=node;lid.position.y=.77;lid.material=this.material(WEAPONS[p.weapon].color,true);lid.setEnabled(p.kind!=='dropped');
+        this.supplyMeshes.set(p.id,node);
+      }
+      node.position.set(p.position.x,p.position.y,p.position.z);node.setEnabled(!p.opened);
+      if(p.kind==='dropped')node.rotation.y=state.tick*C.dt;
+    }
+    if(!this.plane){
+      this.plane=new TransformNode('supply-aircraft',this.scene);
+      for(const [name,w,h,d] of [['fuselage',1,1,8],['wings',12,.2,2],['tail',4,.25,1]] as const){const m=MeshBuilder.CreateBox(name,{width:w,height:h,depth:d},this.scene);m.parent=this.plane;m.position.z=name==='tail'?-3:0;m.material=this.material('#8e9da8',false,'metal');}
+      this.falling=MeshBuilder.CreateBox('descending-supply',{size:1.1},this.scene);this.falling.material=this.material('#b65c63',false,'metal');
+      const chute=MeshBuilder.CreateSphere('supply-parachute',{diameter:4,segments:8,slice:.5},this.scene);chute.parent=this.falling;chute.position.y=4;chute.material=this.material('#c6bba5');
+      for(let i=0;i<12;i++){const puff=MeshBuilder.CreateSphere('red-supply-smoke',{diameter:1,segments:6},this.scene);const mat=new StandardMaterial('smoke-'+i,this.scene);mat.diffuseColor=Color3.FromHexString('#df314f');mat.emissiveColor=mat.diffuseColor.scale(.5);mat.alpha=.3;mat.disableLighting=true;puff.material=mat;puff.isPickable=false;this.smoke.push(puff);}
+    }
+    const drop=world.drop;
+    this.plane.setEnabled(!!drop);this.falling!.setEnabled(!!drop);
+    if(drop){const t=clamp((state.tick-drop.warning)/(drop.landing-drop.warning),0,1);this.plane.position.set(drop.position.x-85+t*170,55,drop.position.z);this.plane.rotation.y=Math.PI/2;this.falling!.position.set(drop.position.x,(1-t)*42+1,drop.position.z);}
+    const smokeTarget=world.pickups.find(p=>p.kind==='airdrop'&&!p.opened);
+    this.smoke.forEach((p,i)=>{p.setEnabled(!!smokeTarget);if(smokeTarget){const t=((state.tick*C.dt*.3+i/12)%1);p.position.set(smokeTarget.position.x+Math.sin(i*2+t*2)*t,smokeTarget.position.y+.8+t*12,smokeTarget.position.z+Math.cos(i*2+t*2)*t);p.scaling.setAll(.6+t*2);}});
   }
   private worldUV(mesh:Mesh){
     const positions=mesh.getVerticesData(VertexBuffer.PositionKind),normals=mesh.getVerticesData(VertexBuffer.NormalKind);
@@ -418,7 +476,7 @@ export class StrikeRenderer {
     if (!m) {
       m = new StandardMaterial(key, this.scene);
       m.diffuseColor = Color3.FromHexString(color);
-      const texture=surfaceTexture(this.scene,key,color,surface,label);
+      const texture=surfaceTexture(this.scene,key,color,surface,label,this.textureSize());
       if(texture){m.diffuseTexture=texture;m.diffuseColor=Color3.White();}
       m.specularColor = color === "#253140" ? new Color3(.22,.25,.3) : new Color3(0.035, 0.035, 0.035);
       if(surface==='water'||surface==='glass') {m.specularColor=new Color3(.45,.52,.57);m.specularPower=64;}
@@ -428,6 +486,7 @@ export class StrikeRenderer {
         if(texture)m.emissiveTexture=texture;
         m.disableLighting = true;
       }
+      m.metadata={color,surface,label,emissive};
       m.freeze();
       this.materials.set(key, m);
     }
@@ -448,6 +507,7 @@ export class StrikeRenderer {
       if (e.kind === "hit" && e.target && this.remotePlayerMeshes.has(e.target)) this.flashes.set(e.target, performance.now() + 120);
       if (e.kind === "shot" && e.from && e.to) {
         if (!localActor || e.actor === localActor) this.gunKick = 0.06;
+        if(e.weapon==="knife")continue;
         const item = this.tracerPool[this.poolIndex % 48],
           impact = this.impactPool[this.poolIndex++ % 48];
         const positions = new Float32Array([
@@ -481,15 +541,18 @@ export class StrikeRenderer {
     alpha: number,
     previous: Vec3,
     delta: number,
+    correction:Vec3={x:0,y:0,z:0},
   ) {
     const p = state.player,
       m = p.movement;
     this.camera.position.set(
-      previous.x + (m.position.x - previous.x) * alpha,
-      m.position.y + (m.stance === "stand" ? C.eye : C.crouchEye),
-      previous.z + (m.position.z - previous.z) * alpha,
+      previous.x + (m.position.x - previous.x) * alpha+correction.x,
+      previous.y+(m.position.y-previous.y)*alpha + (m.stance === "stand" ? C.eye : C.crouchEye)+correction.y,
+      previous.z + (m.position.z - previous.z) * alpha+correction.z,
     );
     const hurtAge = (state.tick - state.lastDamageTick) * C.dt;
+    this.camera.rotationQuaternion=null;this.camera.upVector.set(0,1,0);
+    this.camera.cameraRotation.set(0,0);this.camera.cameraDirection.set(0,0,0);
     this.camera.rotation.set(pitch, yaw, hurtAge >= 0 && hurtAge < .12 ? Math.sin(hurtAge * 60) * .008 : 0);
     this.camera.fov +=
       (((this.settings.fov * Math.PI) / 180) *
@@ -525,6 +588,11 @@ export class StrikeRenderer {
         Math.hypot(m.velocity.x, m.velocity.z) *
         0.001,
     );
+    if(this.inspectTime>0){
+      if(ads||this.gunKick>0||p.weapon.reloadUntil||p.hp<=0)this.inspectTime=0;
+      else{this.inspectTime=Math.max(0,this.inspectTime-delta);const t=(1.8-this.inspectTime)/1.8,pose=Math.sin(Math.PI*t);this.gunRoot.rotation.z+=pose*1.15;this.gunRoot.rotation.y+=pose*.75;this.gunRoot.position.x-=pose*.15;this.gunRoot.position.y+=pose*.1;}
+    }
+    this.gunRoot.setEnabled(!(ads&&(p.weapon.selected==='sniper'||p.weapon.selected==='railgun')));
     this.gunRoot.scaling.setAll(ads ? 0.85 : 1);
     for (const [id, mesh] of this.weapons)
       mesh.setEnabled(id === p.weapon.selected);
@@ -547,6 +615,7 @@ export class StrikeRenderer {
       if (a.until < state.tick) a.mesh.setEnabled(false);
     for (const a of this.impactPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
+    this.renderSupplies(state);
     this.scene.render();
     if(this.observer && this.settings.dynamicResolution && performance.now()-this.scaleTimer>1500){
       this.scaleTimer=performance.now();const fps=this.engine.getFps();
@@ -689,6 +758,7 @@ export class StrikeRenderer {
     this.shadow?.dispose();
     this.scene.dispose();
     this.engine.dispose();
+    this.supplyMeshes.clear();this.smoke=[];this.plane=undefined;this.falling=undefined;
     this.materials.clear();
     this.tracerPool = [];
     this.impactPool = [];
