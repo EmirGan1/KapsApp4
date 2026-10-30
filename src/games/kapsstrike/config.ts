@@ -148,8 +148,11 @@ export function detectAutoQuality(): "low" | "medium" | "high" {
   const isMobile = currentInputDevice().touch;
   if (isMobile) return "low";
   const cores = navigator.hardwareConcurrency || 4;
-  if (cores >= 8) return "high";
-  if (cores <= 2) return "low";
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory || 4;
+  // A high core count does not mean the browser can reserve hundreds of MB for textures.
+  // Keep Auto compatible with integrated GPUs; High remains explicitly selectable.
+  if (cores >= 12 && memory >= 16) return "high";
+  if (cores <= 2 || memory <= 2) return "low";
   return "medium";
 }
 
