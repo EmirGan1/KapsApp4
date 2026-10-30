@@ -1,3 +1,4 @@
+import StrikeInventory from "./StrikeInventory";
 import StrikeMinimap from './StrikeMinimap';
 import StrikeGraphicsSettings from './StrikeGraphicsSettings';
 import StrikeInputSettings from './StrikeInputSettings';
@@ -32,7 +33,6 @@ import {
 } from "../../../games/kapsstrike/types";
 import { MAPS } from "../../../games/kapsstrike/maps";
 import { StrikeVoiceManager } from "../../../games/kapsstrike/voice";
-
 interface KapsStrikeGameProps {
   onBack: () => void;
   socket?: Socket | null;
@@ -74,7 +74,7 @@ export default function KapsStrikeGame({
     }
   });
   const [view, setView] = useState<"menu" | "lobby" | "loading" | "play" | "pause" | "match_end">("menu");
-  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "input" | "create_room" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "inventory" | "input" | "create_room" | null>(null);
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
   const [returnFire, setReturnFire] = useState(false);
@@ -688,6 +688,12 @@ export default function KapsStrikeGame({
     setTimeout(() => setInviteCopied(false), 2500);
   };
 
+  useEffect(()=>{
+    let active=true;
+    const sync=()=>{setSettings(old=>({...old,cosmeticLoadout:{}}));socket?.timeout(6000).emit('strike:inventory_get',{},(err:any,r:any)=>{if(active&&!err&&r?.success)setSettings(old=>({...old,cosmeticLoadout:r.state.equipped}));});};
+    if(socket?.connected)sync();socket?.on('connect',sync);
+    return()=>{active=false;socket?.off('connect',sync);};
+  },[socket,currentUserId]);
   const setting = (patch: Partial<StrikeSettings>) =>
     setSettings((old) => cleanSettings({ ...old, ...patch }));
 
@@ -1318,7 +1324,7 @@ export default function KapsStrikeGame({
 
               <div className="ks-feature-shortcuts ks-lobby-shortcuts" aria-label="Oyun ayarları">
                 <button type="button" onClick={() => setPanel("input")}>Mobil Kontroller / Jiroskop</button>
-                <button type="button" onClick={() => setPanel("skins")}>Karakter / Skin</button>
+                <button type="button" onClick={() => setPanel("inventory")}>Envanter / Kasalar</button><button type="button" onClick={() => setPanel("skins")}>Karakter / Skin</button>
                 <button type="button" onClick={() => setPanel("controls")}>Kontroller</button>
               </div>
 
@@ -1496,7 +1502,7 @@ export default function KapsStrikeGame({
                 </button>
               </div>
               <div className="ks-feature-shortcuts" aria-label="Oyun özelleştirmeleri">
-                <button type="button" onClick={() => setPanel("skins")}>Karakterini seç</button>
+                <button type="button" onClick={() => setPanel("inventory")}>Envanter / Kasalar</button><button type="button" onClick={() => setPanel("skins")}>Karakterini seç</button>
                 <button type="button" onClick={() => setPanel("controls")}>Kontrolleri düzenle</button>
                 <button type="button" onClick={() => setPanel("input")}>Mobil Kontroller / Jiroskop</button>
               </div>
@@ -1843,7 +1849,7 @@ export default function KapsStrikeGame({
             <button aria-label="Görüntü ve ses" onClick={()=>setPanel('settings')}>Görüntü ve ses<small>Kalite, FOV, ses düzeyleri</small></button>
             <button aria-label="Kontroller" onClick={()=>setPanel('controls')}>Kontroller<small>Tuş atamaları ve silah inceleme</small></button>
             <button onClick={()=>setPanel('input')}>Mobil Kontroller / Jiroskop<small>Dokunma, hassasiyet ve sensör</small></button>
-            <button aria-label="Karakter" onClick={()=>setPanel('skins')}>Karakter<small>Görünümünü seç</small></button>
+            <button onClick={()=>setPanel('inventory')}>Envanter / Kasalar<small>Kaplamalarını seç</small></button><button aria-label="Karakter" onClick={()=>setPanel('skins')}>Karakter<small>Görünümünü seç</small></button>
           </nav>
           <button className="ks-mic-toggle" onClick={toggleVoice}>{isVoiceMuted?'Mikrofonu aç':'Mikrofonu sustur'}</button>
           <button className="ks-leave" onClick={()=>{setPanel(null);exit();}}>Menüye / Lobiye Dön</button>
@@ -1851,9 +1857,10 @@ export default function KapsStrikeGame({
       )}
       {panel && panel !== 'create_room' && ['menu','lobby','pause'].includes(view) && (
         <div className="ks-overlay ks-feature-overlay" onClick={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
-          <div className="ks-menu ks-feature-card" role="dialog" aria-modal="true" aria-label={{skins:'Karakter seçimi',controls:'Kontroller',settings:'Görüntü ve ses',input:'Mobil kontroller'}[panel]}>
-            <div className="ks-panel-bar"><span>KAPSSTRIKE / {{skins:'KARAKTER',controls:'KONTROLLER',settings:'AYARLAR',input:'MOBİL KONTROLLER'}[panel]}</span><button autoFocus onClick={()=>setPanel(null)} aria-label="Paneli kapat">Geri dön <span aria-hidden="true">×</span></button></div>
+          <div className="ks-menu ks-feature-card" role="dialog" aria-modal="true" aria-label={{inventory:'Envanter ve kasalar',skins:'Karakter seçimi',controls:'Kontroller',settings:'Görüntü ve ses',input:'Mobil kontroller'}[panel]}>
+            <div className="ks-panel-bar"><span>KAPSSTRIKE / {{inventory:'ENVANTER',skins:'KARAKTER',controls:'KONTROLLER',settings:'AYARLAR',input:'MOBİL KONTROLLER'}[panel]}</span><button autoFocus onClick={()=>setPanel(null)} aria-label="Paneli kapat">Geri dön <span aria-hidden="true">×</span></button></div>
             <div className="ks-panel-content">
+              {panel==='inventory'&&<StrikeInventory socket={socket} initialSkin={settings.selectedSkin} onSkin={skin=>setting({selectedSkin:skin})} onChange={state=>setting({cosmeticLoadout:state.equipped})}/>}
               {panel==='skins'&&<StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin=>setting({selectedSkin:skin})}/>}
               {panel==='controls'&&<div className="ks-controls"><h2>Kontroller</h2><p>F · Silahı incele. E · Sandığı aç / silahı al. Dürbünlü silahta sağ tık · Nişan.</p><StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings=>setting({bindings})}/></div>}
               {panel==='settings'&&<StrikeGraphicsSettings settings={settings} onChange={setting}/>}

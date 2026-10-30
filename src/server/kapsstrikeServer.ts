@@ -1,5 +1,6 @@
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
 import { randomBytes } from "node:crypto";
+import { StrikeInventory } from "./strikeInventory";
 import { StrikeProfiles } from "./strikeProfiles";
 import { SkinId } from "../games/kapsstrike/skins";
 import { Server, Socket } from "socket.io";
@@ -53,6 +54,7 @@ interface HistoricalPosition {
 
 export class StrikeServerPlayer {
   skin: SkinId = "classic";
+  cosmeticLoadout:import("../games/kapsstrike/cosmetics").Inventory["equipped"]={};
   id: string; // Socket ID
   userId: number;
   username: string;
@@ -231,6 +233,7 @@ export class StrikeRoom {
       userId: p.userId,
       username: p.username,
       skin: p.skin,
+      weaponSkin:p.cosmeticLoadout[p.state.weapon.selected],
       avatar: p.avatar,
       color: p.color,
       team: p.team,
@@ -284,6 +287,7 @@ export class StrikeRoom {
       userId: p.userId,
       username: p.username,
       skin: p.skin,
+      weaponSkin:p.cosmeticLoadout[p.state.weapon.selected],
       team: p.team,
       color: p.color,
       hp: p.state.hp,
@@ -333,10 +337,11 @@ export class KapsStrikeServerManager {
   private socketToRoom: Map<string, string> = new Map();
 
   readonly profiles: StrikeProfiles;
+  readonly inventory: StrikeInventory;
   constructor(
     private io: Server,
     private dbClient?: LibsqlClient
-  ) { this.profiles = new StrikeProfiles(dbClient); }
+  ) { this.profiles = new StrikeProfiles(dbClient); this.inventory=new StrikeInventory(dbClient); }
 
   public getRoomsList(): StrikeRoomSummary[] {
     const list: StrikeRoomSummary[] = [];
@@ -477,6 +482,7 @@ export class KapsStrikeServerManager {
     );
 
     hostPlayer.skin = this.profiles.cache.get(user.id) || "classic";
+    hostPlayer.cosmeticLoadout=this.inventory.cache.get(user.id)?.equipped||{};
     room.players.set(socketId, hostPlayer);
     this.rooms.set(roomCode, room);
     this.userToRoom.set(user.id, roomCode);
@@ -543,6 +549,7 @@ export class KapsStrikeServerManager {
     );
 
     player.skin = this.profiles.cache.get(user.id) || "classic";
+    player.cosmeticLoadout=this.inventory.cache.get(user.id)?.equipped||{};
     room.players.set(socketId, player);
     this.userToRoom.set(user.id, roomCode);
     this.socketToRoom.set(socketId, roomCode);
@@ -1281,6 +1288,18 @@ export class KapsStrikeServerManager {
       if (player && room) {player.skin=skin;this.broadcastRoomState(room);}
     };
     void this.profiles.get(userIdNum).then(applyProfile).catch(() => {});
+    const applyInventory=(state:import('../games/kapsstrike/cosmetics').Inventory)=>{const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const player=room?.players.get(socket.id);if(player&&room){player.cosmeticLoadout=state.equipped;this.broadcastRoomState(room);}};
+    void this.inventory.get(userIdNum).then(applyInventory).catch(()=>{});
+    let inventoryBusy=false, inventoryRequest=0;
+    for(const event of ['get','open','equip'] as const)socket.on('strike:inventory_'+event,async(data:any,cb:any)=>{
+      if(typeof cb!=='function')return;
+      if(inventoryBusy||(event!=='get'&&Date.now()-inventoryRequest<250)){cb({success:false,error:'Biraz bekle.'});return;}
+      inventoryBusy=true;if(event!=='get')inventoryRequest=Date.now();
+      try{if(event==='get')cb({success:true,state:await this.inventory.get(userIdNum)});
+      else if(event==='open'){if(typeof data?.caseId!=='string'||data.caseId.length>32)throw new Error('Geçersiz kasa.');cb({success:true,...await this.inventory.open(userIdNum,data.caseId)});}
+      else {if(typeof data?.itemId!=='string'||data.itemId.length>64)throw new Error('Geçersiz görünüm.');const state=await this.inventory.equip(userIdNum,data.itemId);applyInventory(state);cb({success:true,state});}}
+      catch(e){cb({success:false,error:e instanceof Error?e.message:'Envanter işlemi başarısız.'});}finally{inventoryBusy=false;}
+    });
     let lastProfileGet = 0, lastProfileSet = 0;
     socket.on("strike:profile_get", async (cb) => {
       if(Date.now()-lastProfileGet<1000 && this.profiles.cache.has(userIdNum)){if(typeof cb === "function")cb({success:true,skin:this.profiles.cache.get(userIdNum),saved:this.profiles.persisted.has(userIdNum)});return;}lastProfileGet=Date.now();

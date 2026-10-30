@@ -232,6 +232,24 @@ export function townMap(id:MapId):MapDefinition {
    sign('YUKLEME / DIKKAT',x+4,1.6,z+7.8,2.8,'#886b42');
   }
  }
+ // Authored central cover islands: low cover and flank gaps, never a solid central wall.
+ if(id==='dust'){
+  for(const [x,z] of [[-4,-10],[7,3],[6,28]]){
+   b('market-stone-planter',x,0,z,2.7,1.05,1.25,'#ac8e68','stone');
+   deco('planter-top',x,1.05,z,2.4,.06,1,'#796445','stone');
+   for(const dx of [-.7,.7])deco('desert-succulent',x+dx,1.11,z,.3,.45,.35,'#768760').shape='cone';
+  }
+ }else if(id==='neon'){
+  for(const [x,z] of [[-5,-22],[5,-10],[-5,27]]){
+   b('transit-cover',x,0,z,2.8,1.15,1.3,'#4c6278','metal');
+   deco('transit-cover-strip',x,.9,z-.67,2.5,.09,.04,'#62d6d1').glow=true;
+  }
+ }else{
+  for(const [x,z] of [[5,-2],[14,13],[12,27]]){
+   b('loading-concrete-barrier',x,0,z,2.8,1.1,1.2,'#88938e','concrete');
+   deco('barrier-warning',x,.75,z-.62,2.5,.18,.04,'#c9ad62','metal');
+  }
+ }
  // Authored district expansion: longer routes and broader doors/alleys; unchanged step risers.
  const expansion=1.35;
  for(const solid of solids){solid.x*=expansion;solid.z*=expansion;solid.w*=expansion;solid.d*=expansion;}

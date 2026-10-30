@@ -608,6 +608,7 @@ export class StrikeController {
         team: p1.team,
         color: p1.color,
         skin: p2.skin,
+        weaponSkin:p2.weaponSkin,
         hp: p2.hp,
         stance: p2.stance,
         selectedWeapon: p2.selectedWeapon,

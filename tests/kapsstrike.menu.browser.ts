@@ -49,6 +49,12 @@ try {
     await page
       .getByText("Bu oyun WebGL destekli", { exact: false })
       .waitFor();
+    await page.getByRole('button',{name:'Envanter / Kasalar',exact:true}).click();
+    await page.getByRole('heading',{name:'Envanter ve Kasalar',exact:true}).waitFor();
+    assert.equal(await page.locator('.ks-case-grid button').count(),6);
+    await page.getByRole('button',{name:'Karakterler',exact:true}).click();
+    await page.getByRole('heading',{name:'Karakter / Skin',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Paneli kapat',exact:true}).click();
     await page.getByRole("button", { name: "Karakterini seç", exact: true }).click();
     await page.getByRole("heading", { name: "Karakter / Skin", exact: true }).waitFor();
     await page.getByRole("button", { name: "Paneli kapat", exact: true }).click();

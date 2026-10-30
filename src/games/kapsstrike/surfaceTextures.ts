@@ -40,5 +40,16 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
   // Fine grain is generated at native resolution, with mipmaps for distant surfaces.
   let fine=3719;for(let i=0;i<size*size/25;i++){fine=(Math.imul(fine,1664525)+1013904223)>>>0;const x=fine%size;fine=(Math.imul(fine,1664525)+1013904223)>>>0;const y=fine%size;c.fillStyle=i%2?'#ffffff0a':'#0000000a';c.fillRect(x,y,1,1);}
  }
+ // Native-resolution weathering retains fine surface detail at high quality.
+ if(!label&&resolution>=512){
+  let grain=71473;const random=()=>{grain=(Math.imul(grain,1664525)+1013904223)>>>0;return grain/4294967296;};
+  if(surface==='brick'||surface==='stone'||surface==='concrete'||surface==='plaster'){
+   c.strokeStyle='#17202b24';c.lineWidth=Math.max(.65,size/1600);
+   for(let i=0;i<42;i++){let x=random()*size,y=random()*size;c.beginPath();c.moveTo(x,y);for(let j=0;j<4;j++){x+=(random()-.5)*size*.035;y+=random()*size*.018;c.lineTo(x,y);}c.stroke();}
+   for(let i=0;i<size*3;i++){const shade=random()>.5?'#e4dfce20':'#17202b1b';c.fillStyle=shade;c.fillRect(random()*size,random()*size,1+random()*2,1+random()*2);}
+  }
+  if(surface==='metal'){c.strokeStyle='#e8f1f526';c.lineWidth=.7;for(let i=0;i<90;i++){const x=random()*size,y=random()*size;c.beginPath();c.moveTo(x,y);c.lineTo(x+random()*25,y+random()*3);c.stroke();}}
+  if(surface==='wood'){c.strokeStyle='#261a1740';for(let i=0;i<9;i++){const x=random()*size,y=random()*size;for(let j=1;j<6;j++){c.beginPath();c.ellipse(x,y,j*2,j*7,.12,0,Math.PI*2);c.stroke();}}}
+ }
  texture.update();texture.anisotropicFilteringLevel=resolution>=512?8:2;return texture;
 }
