@@ -16,6 +16,8 @@ import MiniBattleRoyale from './MiniBattleRoyale';
 import PartyMode from './PartyMode';
 import BilliardsGame from './BilliardsGame';
 import StrikeBoundary from './games/kapsstrike/StrikeBoundary';
+// Keep game styles in the eagerly loaded stylesheet so a stale deploy cannot break the lazy game import.
+import './games/kapsstrike/kapsstrike.css';
 const KapsStrikeGame = lazy(() => import('./games/kapsstrike/KapsStrikeGame'));
 import DungeonGame from './games/dungeon/DungeonGame';
 import KapstorialGame from './games/kapstorial/KapstorialGame';

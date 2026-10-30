@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {io} from 'socket.io-client';
 import {EngineStore} from '@babylonjs/core/Engines/engineStore';
 import KapsStrikeGame from '../src/components/games/kapsstrike/KapsStrikeGame';
+import '../src/components/games/kapsstrike/kapsstrike.css';
 import MiniBattleRoyale from '../src/components/MiniBattleRoyale';
 import {StrikeController} from '../src/games/kapsstrike/controller';
 import '../src/index.css';
