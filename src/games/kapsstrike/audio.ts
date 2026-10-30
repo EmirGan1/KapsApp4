@@ -22,6 +22,7 @@ export class StrikeAudio {
     const oscillator = ctx.createOscillator(),
       gain = ctx.createGain();
     const frequencies = {
+      carbine: 120, lmg: 100, railgun: 50,
       knife: 420,
       rifle: 130,
       smg: 180,

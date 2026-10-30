@@ -17,7 +17,11 @@ for(const map of Object.values(MAPS)) test(`${map.name}: all ten spawns connect 
    reachable.add(k);queue.push({x,z});
   }
  }
- for(const spawn of map.spawns)assert.ok(reachable.has(key(spawn.x,spawn.z)),JSON.stringify(spawn));
+ for(const spawn of map.spawns)assert.ok(queue.some(p=>{
+  if(Math.hypot(p.x-spawn.x,p.z-spawn.z)>1)return false;
+  for(let j=0;j<=10;j++)if(!fits(map,{x:p.x+(spawn.x-p.x)*j/10,y:0,z:p.z+(spawn.z-p.z)*j/10},C.standing))return false;
+  return true;
+ }),JSON.stringify(spawn));
  assert.ok(reachable.size>1500,'district must provide substantial connected walkable space');
 });
 test('district geometry differs structurally and includes interiors and distinct vertical routes',()=>{

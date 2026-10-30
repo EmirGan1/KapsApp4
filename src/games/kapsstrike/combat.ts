@@ -1,3 +1,4 @@
+import {createWorld,advanceWorld,claimSupply,dropInventory} from './world';
 import { MELEE } from "./config";
 import {
   TrainingState,
@@ -7,7 +8,7 @@ import {
   Vec3,
   WeaponId,
 } from "./types";
-import { PHYSICS as C, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "./config";
+import { PHYSICS as C, ownsWeapon, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "./config";
 import { MAPS } from "./maps";
 import { newMovement, move, clamp, rayBox, raySolid, fits } from "./physics";
 export function createTraining(
@@ -36,6 +37,7 @@ export function createTraining(
     pitch: 0,
   };
   return {
+    world: createWorld(MAPS[map]),
     tick: 0,
     map,
     player,
@@ -83,6 +85,7 @@ export function takeDamage(s: TrainingState, amount: number, from: Vec3) {
       ) - p.yaw,
   });
   if (!p.hp) {
+    if(s.world)dropInventory(s.world,p,s.tick);
     p.deadUntil = s.tick + C.respawnTicks;
     p.weapon.reloadUntil = 0;
     event(s, { kind: "death" });
@@ -203,6 +206,7 @@ export function shoot(s: TrainingState, ads: boolean) {
 export function simulate(s: TrainingState, input: InputCommand, training = true) {
   if (
     !input ||
+    (input.interact!==undefined&&typeof input.interact!=="boolean") ||
     !Number.isSafeInteger(input.sequence) ||
     input.sequence <= s.lastSequence ||
     input.tick !== s.tick ||
@@ -221,6 +225,7 @@ export function simulate(s: TrainingState, input: InputCommand, training = true)
     return false;
   s.lastSequence = input.sequence;
   s.tick++;
+  if(training&&s.world)advanceWorld(s.world,MAPS[s.map],s.tick);
   s.player.yaw = input.yaw;
   s.player.pitch = clamp(input.pitch, -1.48, 1.48);
   const p = s.player,
@@ -242,6 +247,7 @@ export function simulate(s: TrainingState, input: InputCommand, training = true)
     }
     return true;
   }
+  if(training&&input.interact&&s.world)claimSupply(s.world,MAPS[s.map],p,s.tick);
   for (const t of s.targets) {
     const def = MAPS[s.map].targets.find((d) => d.id === t.id)!;
     if (t.hp <= 0 && s.tick >= t.respawnAt) {
@@ -259,7 +265,7 @@ export function simulate(s: TrainingState, input: InputCommand, training = true)
   }
   if (
     input.weapon &&
-    Object.hasOwn(WEAPONS, input.weapon) &&
+    Object.hasOwn(WEAPONS, input.weapon) && ownsWeapon(w,input.weapon) &&
     input.weapon !== w.selected
   ) {
     w.selected = input.weapon;

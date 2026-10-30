@@ -51,10 +51,10 @@ try {
       .waitFor();
     await page.getByRole("button", { name: "Karakterini seç", exact: true }).click();
     await page.getByRole("heading", { name: "Karakter / Skin", exact: true }).waitFor();
-    await page.getByRole("button", { name: "Karakter / Skin", exact: true }).click();
+    await page.getByRole("button", { name: "Paneli kapat", exact: true }).click();
     await page.getByRole("button", { name: "Kontrolleri düzenle", exact: true }).click();
     await page.getByRole("heading", { name: "Kontroller", exact: true }).waitFor();
-    await page.getByRole("button", { name: "Kontroller", exact: true }).click();
+    await page.getByRole("button", { name: "Paneli kapat", exact: true }).click();
     await page.getByRole("button", { name: /Tek Oyunculu Antrenman/ }).click();
     assert.ok(
       await page
@@ -71,9 +71,10 @@ try {
       await page.getByLabel("FOV", { exact: false }).inputValue(),
       "105",
     );
+    await page.getByRole("button", { name: "Paneli kapat", exact: true }).click();
     await page.getByRole("button", { name: "Kontroller", exact: true }).click();
     await page.getByRole("heading", { name: "Kontroller" }).waitFor();
-    await page.getByRole("button", { name: "Geri", exact: true }).click();
+    await page.getByRole("button", { name: "Paneli kapat", exact: true }).click();
     assert.ok(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

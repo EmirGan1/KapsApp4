@@ -19,14 +19,15 @@
     "test:dungeon:browser": "node --import tsx tests/dungeon.browser.ts",
     "test:dungeon:expedition": "node --import tsx tests/dungeon.full-browser.ts",
     "test:dungeon:performance": "node --import tsx tests/dungeon.performance.ts",
-    "test:strike": "node --import tsx --test tests/kapsstrike.test.ts tests/kapsstrike.scene.test.ts tests/kapsstrike.multiplayer.test.ts tests/kapsstrike.controls.test.ts tests/kapsstrike.skins.test.ts tests/kapsstrike.routes.test.ts tests/kapsstrike.transport.test.ts tests/kapsstrike.invite.test.ts",
+    "test:strike": "node --import tsx --test tests/kapsstrike.test.ts tests/kapsstrike.scene.test.ts tests/kapsstrike.multiplayer.test.ts tests/kapsstrike.controls.test.ts tests/kapsstrike.skins.test.ts tests/kapsstrike.routes.test.ts tests/kapsstrike.transport.test.ts tests/kapsstrike.invite.test.ts tests/kapsstrike.world.test.ts",
     "test:strike:browser": "node --import tsx tests/kapsstrike.browser.ts",
     "test:strike:menu": "node --import tsx tests/kapsstrike.menu.browser.ts",
     "test:strike:maps": "node --import tsx tests/kapsstrike.maps.browser.ts",
     "test:strike:controller": "node --import tsx tests/kapsstrike.browser.ts --null",
     "test:strike:network": "node --import tsx tests/kapsstrike.network.browser.ts",
     "test:game-input": "node --import tsx --test tests/gameInput.test.ts",
-    "test:game-input:browser": "node --import tsx tests/gameInput.browser.ts"
+    "test:game-input:browser": "node --import tsx tests/gameInput.browser.ts",
+    "test:strike:experience": "node --import tsx tests/kapsstrike.experience.browser.ts"
   },
   "dependencies": {
     "@babylonjs/core": "8.50.2",

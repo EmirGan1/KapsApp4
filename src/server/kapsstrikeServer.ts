@@ -1,9 +1,11 @@
+import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
 import { randomBytes } from "node:crypto";
 import { StrikeProfiles } from "./strikeProfiles";
 import { SkinId } from "../games/kapsstrike/skins";
 import { Server, Socket } from "socket.io";
 import { Client as LibsqlClient } from "@libsql/client";
 import {
+  StrikeWorld,
   MapId,
   WeaponId,
   Vec3,
@@ -24,7 +26,7 @@ import {
   MatchStats,
 } from "../games/kapsstrike/types";
 import { MAPS } from "../games/kapsstrike/maps";
-import { PHYSICS as C, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "../games/kapsstrike/config";
+import { PHYSICS as C, ownsWeapon, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "../games/kapsstrike/config";
 import { newMovement, move, fits, clamp, raySolid, rayBox } from "../games/kapsstrike/physics";
 import { aimDirection, eye, fireDelay, spreadFor, weaponDamage } from "../games/kapsstrike/combat";
 
@@ -72,6 +74,7 @@ export class StrikeServerPlayer {
   lastSequence = -1;
   lastQueuedSequence = -1;
   lastInputTick = 0;
+  heldInput?: InputCommand;
   inputQueue: InputCommand[] = [];
   history: HistoricalPosition[] = [];
   isSpeaking = false;
@@ -161,6 +164,7 @@ export class StrikeServerPlayer {
 }
 
 export class StrikeRoom {
+  world: StrikeWorld;
   roomCode: string;
   name: string;
   map: MapId;
@@ -198,6 +202,7 @@ export class StrikeRoom {
     scoreLimit = 30,
     password?: string
   ) {
+    this.world = createWorld(MAPS[map]);
     this.roomCode = roomCode;
     this.name = name;
     this.map = map;
@@ -300,6 +305,7 @@ export class StrikeRoom {
     return {
       tick: this.tick,
       roomCode:this.roomCode,
+      world: structuredClone(this.world),
       localState: targetPlayer ? structuredClone(targetPlayer.state) : undefined,
       serverTime: Date.now(),
       ackSequence,
@@ -504,7 +510,7 @@ export class KapsStrikeServerManager {
         const previous=this.io.sockets?.sockets?.get(sId);
         previous?.emit("strike:session_replaced");previous?.leave(`strike:${roomCode}`);
         p.id = socketId;p.state.id=socketId;p.lastSequence=-1;p.lastQueuedSequence=-1;
-        p.inputQueue=[];p.history=[];p.state.weapon.triggerHeld=false;
+        p.inputQueue=[];p.heldInput=undefined;p.lastInputTick=room.tick;p.history=[];p.state.weapon.triggerHeld=false;
         room.players.delete(sId);room.players.set(socketId,p);
         this.socketToRoom.set(socketId,roomCode);this.userToRoom.set(user.id,roomCode);
         this.broadcastRoomState(room);return {success:true,room};
@@ -664,6 +670,7 @@ export class KapsStrikeServerManager {
     room.killFeed = [];
     room.events = [];
     room.tick = 0;
+    room.world=createWorld(MAPS[room.map]);
 
     // Reset all players and position them at spawns
     let idx = 0;
@@ -677,11 +684,13 @@ export class KapsStrikeServerManager {
       p.headshots = 0;
       p.lastSequence = -1;
       p.lastQueuedSequence = -1;
-      p.inputQueue = [];
+      p.inputQueue = [];p.heldInput=undefined;p.lastInputTick=0;
       p.history = [];
 
       const spawn = room.getSpawnPosition(p.team, idx++);
       p.state.movement = newMovement(spawn);
+      p.state.weapon.inventory=[];p.state.weapon.selected="rifle";
+      p.state.yaw=0;p.state.pitch=0;
       p.state.hp = 100;
       p.state.deadUntil = 0;
       p.state.protectedUntil = room.tick + C.protectionTicks;
@@ -691,7 +700,7 @@ export class KapsStrikeServerManager {
         p.state.weapon.ammo[wId] = WEAPONS[wId].capacity;
       });
       p.state.weapon.reloadUntil = 0;
-      p.state.weapon.nextFire = 0;
+      p.state.weapon.nextFire = 0;p.state.weapon.switchUntil=0;p.state.weapon.triggerHeld=false;p.state.weapon.shotIndex=0;
     });
 
     this.startRoomSimulationLoop(room);
@@ -736,6 +745,7 @@ export class KapsStrikeServerManager {
     // Security: Input validation
     if (
       !command ||
+      (command.interact !== undefined && typeof command.interact !== "boolean") ||
       !Number.isSafeInteger(command.sequence) ||
       command.sequence < 0 ||
       command.sequence <= Math.max(player.lastSequence, player.lastQueuedSequence) ||
@@ -757,7 +767,7 @@ export class KapsStrikeServerManager {
     player.inputQueue.push({ sequence:command.sequence, tick:command.tick,
       yaw:command.yaw, pitch:command.pitch, moveX:command.moveX, moveZ:command.moveZ,
       jump:command.jump, sprint:command.sprint, crouch:command.crouch,
-      fire:command.fire, ads:command.ads, reload:command.reload, weapon:command.weapon });
+      fire:command.fire, ads:command.ads, reload:command.reload, weapon:command.weapon, interact:command.interact });
   }
 
   /**
@@ -769,6 +779,7 @@ export class KapsStrikeServerManager {
   public tickSimulation(room: StrikeRoom): void {
     const mapDef = MAPS[room.map];
     room.tick++;
+    advanceWorld(room.world,mapDef,room.tick);
     const now = Date.now();
 
     // Sample a consistent start-of-step history before applying any player's input.
@@ -783,6 +794,8 @@ export class KapsStrikeServerManager {
           const spawnPos = room.getSpawnPosition(player.team, Math.floor(Math.random() * 10));
           player.state.movement = newMovement(spawnPos);
           player.damageCredits.clear();
+          player.state.yaw=0;player.state.pitch=0;
+          player.state.weapon.triggerHeld=false;player.state.weapon.nextFire=0;player.state.weapon.switchUntil=0;
           player.state.hp = 100;
           player.state.protectedUntil = room.tick + C.protectionTicks;
           player.state.deadUntil = 0;
@@ -796,7 +809,7 @@ export class KapsStrikeServerManager {
             from: spawnPos,
           });
         }
-        player.inputQueue = [];
+        player.inputQueue = [];player.heldInput=undefined;
         return;
       }
 
@@ -804,18 +817,17 @@ export class KapsStrikeServerManager {
       {
         // One command per fixed physics step: packet volume cannot buy movement time.
         const queued = player.inputQueue.shift();
-        const input: InputCommand = queued || { sequence:player.lastSequence, tick:room.tick,
-          yaw:player.state.yaw, pitch:player.state.pitch, moveX:0, moveZ:0,
-          jump:player.state.movement.jumpHeld,sprint:false,crouch:player.state.movement.stance !== "stand",
-          fire:false,ads:false,reload:false };
-        if (queued) player.lastSequence = input.sequence;
-        player.lastInputTick = room.tick;
+        const neutral:InputCommand={sequence:player.lastSequence,tick:room.tick,yaw:player.state.yaw,pitch:player.state.pitch,moveX:0,moveZ:0,jump:player.state.movement.jumpHeld,sprint:false,crouch:player.state.movement.stance!=="stand",fire:false,ads:false,reload:false};
+        const input:InputCommand=queued || (player.heldInput&&room.tick-player.lastInputTick<12 ? {...player.heldInput,tick:room.tick,fire:false,reload:false,interact:false,weapon:undefined} : neutral);
+        if(queued){player.lastSequence=input.sequence;player.lastInputTick=room.tick;player.heldInput={...input};}
 
         player.state.yaw = input.yaw;
         player.state.pitch = clamp(input.pitch, -1.48, 1.48);
 
+        if(input.interact)claimSupply(room.world,mapDef,player.state,room.tick);
+
         // Handle weapon switch request
-        if (input.weapon && input.weapon !== player.state.weapon.selected) {
+        if (input.weapon && ownsWeapon(player.state.weapon,input.weapon) && input.weapon !== player.state.weapon.selected) {
           { // A new selection restarts the equip delay; it cannot bypass fire cooldown.
             player.state.weapon.reloadUntil = 0;
             player.state.weapon.selected = input.weapon;
@@ -1076,6 +1088,7 @@ export class KapsStrikeServerManager {
       if(id!==killer.id && helper && credit.amount>=20 && room.tick-credit.tick<=8/C.dt){helper.assists++;helper.score+=25;}
     }
     victim.damageCredits.clear();
+    dropInventory(room.world,victim.state,room.tick);
     victim.deaths++;
     victim.state.deadUntil = room.tick + C.respawnTicks;
 

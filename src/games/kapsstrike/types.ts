@@ -4,7 +4,7 @@ export interface Vec3 {
   z: number;
 }
 export type MapId = "warehouse" | "dust" | "neon";
-export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol" | "knife";
+export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol" | "knife" | "carbine" | "lmg" | "railgun";
 export interface Solid {
   id: string;
   kind: "box" | "ramp";
@@ -56,6 +56,7 @@ export interface InputCommand {
   ads: boolean;
   reload: boolean;
   weapon?: WeaponId;
+  interact?: boolean;
 }
 export interface MovementState {
   position: Vec3;
@@ -67,7 +68,14 @@ export interface MovementState {
   jumpHeld: boolean;
   crouchHeld: boolean;
 }
+export interface WorldPickup {
+  id: string; position: Vec3; weapon: WeaponId; kind: "chest" | "dropped" | "airdrop"; opened: boolean; expires: number;
+}
+export interface StrikeWorld {
+  pickups: WorldPickup[]; nextDrop: number; drop?: {position: Vec3; warning: number; landing: number}; serial: number; seed: number;
+}
 export interface WeaponState {
+  inventory?: WeaponId[];
   selected: WeaponId;
   ammo: Record<WeaponId, number>;
   nextFire: number;
@@ -106,6 +114,7 @@ export interface CombatEvent {
   direction?: number;
 }
 export interface TrainingState {
+  world?: StrikeWorld;
   tick: number;
   map: MapId;
   player: PlayerState;
@@ -198,6 +207,7 @@ export interface PlayerSnapshot {
 }
 
 export interface StrikeSnapshot {
+  world?: StrikeWorld;
   roomCode?: string;
   localState?: PlayerState;
   tick: number;

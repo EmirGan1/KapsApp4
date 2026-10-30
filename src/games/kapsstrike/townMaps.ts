@@ -201,5 +201,48 @@ export function townMap(id:MapId):MapDefinition {
   route('Doğu servis yolu',[[0,-38],[42.5,-38],[42.5,-4],[42.5,33],[39,39],[0,39]]);
   landmarks=['deniz kıyısı','üç iskele','yük vinci','gümrük ofisi','depo içleri','açık yükleme alanı'];
  }
- return {id,name,subtitle,bounds:48,sky,floor,solids,spawns,routes,landmarks,targets:[{id:'close',position:{x:0,y:0,z:-25}},{id:'mid',position:{x:9,y:0,z:-4}},{id:'far',position:id==='dust'?{x:32,y:0,z:34}:{x:40,y:0,z:35}},{id:'elevated',position:elevated},{id:'strafer',position:{x:0,y:0,z:-10},moving:true}],hazard:id==='dust'?{x:-4,z:43,r:1.4}:{x:45,z:-43,r:1.4}};
+
+ // Purposeful small combat pockets beside the through-routes, with readable cover.
+ if(id==='dust'){
+  for(const [x,z] of [[-8,-12],[11,36],[9,-36]]){
+   b('courtyard-planter',x,0,z,2.3,.85,1.1,'#a78d6a','stone');
+   deco('planter-soil',x,.85,z,2.1,.03,.9,'#706650');
+   for(const dx of [-.65,0,.65])deco('dry-plant',x+dx,.88,z,.18,.45,.18,'#7b8863').shape='cone';
+  }
+  for(const [x,z,y] of [[-15,-24,5.9],[15,-24,6.5],[-19,25,4.8],[19,27,5.5]]){
+   deco('woven-roof-rug',x,y,z,3,.025,2,'#a87660','fabric');
+   for(const dx of [-.8,.8])deco('wall-ceramic',x+dx,1,z-8.2,.35,.55,.35,'#b88760','stone').shape='cylinder';
+  }
+ }else if(id==='neon'){
+  for(const [x,z] of [[11,-26],[-11,28],[31,-29]]){
+   b('street-power-cabinet',x,0,z,1.8,1.25,.9,'#48677e','metal');
+   const display=deco('public-map-display',x,1.28,z,1.6,.45,.6,'#4cbba9');display.glow=true;
+  }
+  for(const [x,z,y] of [[-23,-18,12.4],[24,-6,18.4],[25,25,7.4]]){
+   for(const dx of [-2,2])deco('roof-solar-array',x+dx,y,z,3,.15,4,'#375475','glass');
+  }
+ }else{
+  vehicle(21,-43,true);
+  for(const [x,z] of [[18,5],[-5,10],[23,37]]){
+   b('dock-cable-spool',x,0,z,1.3,1.2,1.3,'#857357','wood',false,'cylinder');
+   deco('spool-cable',x,.18,z,1.36,.85,1.36,'#4b5962','metal').shape='cylinder';
+  }
+  for(const [x,z,y] of [[-9,-18,6.28],[29,-23,7.28],[28,20,8.28]]){
+   deco('roof-duct',x+3,y,z,1.4,.55,4,'#70858a','metal');
+   sign('YUKLEME / DIKKAT',x+4,1.6,z+7.8,2.8,'#886b42');
+  }
+ }
+ // Authored district expansion: longer routes and broader doors/alleys; unchanged step risers.
+ const expansion=1.35;
+ for(const solid of solids){solid.x*=expansion;solid.z*=expansion;solid.w*=expansion;solid.d*=expansion;}
+ for(const p of spawns){p.x*=expansion;p.z*=expansion;}
+ for(const r of routes)for(const p of r.points){p.x*=expansion;p.z*=expansion;}
+ elevated={...elevated,x:elevated.x*expansion,z:elevated.z*expansion};
+ // Façade-level street detail is cosmetic and never blocks a traversal route.
+ for(const base of [...solids].filter(s=>s.id.includes('lamp-post'))){
+  deco('street-bin',base.x+.8,0,base.z,.5,.8,.5,id==='neon'?'#426279':'#667775','metal');
+  deco('street-drain',base.x, .025,base.z+1.3,.7,.02,.4,'#35424a','metal');
+ }
+
+ return {id,name,subtitle,bounds:48*expansion,sky,floor,solids,spawns,routes,landmarks,targets:[{id:'close',position:{x:0,y:0,z:-25*expansion}},{id:'mid',position:{x:9*expansion,y:0,z:-4*expansion}},{id:'far',position:id==='dust'?{x:32*expansion,y:0,z:34*expansion}:{x:40*expansion,y:0,z:35*expansion}},{id:'elevated',position:elevated},{id:'strafer',position:{x:0,y:0,z:-10*expansion},moving:true}],hazard:id==='dust'?{x:-4*expansion,z:43*expansion,r:1.4}:{x:45*expansion,z:-43*expansion,r:1.4}};
 }

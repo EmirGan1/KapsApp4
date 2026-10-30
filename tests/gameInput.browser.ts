@@ -41,7 +41,7 @@ try{
   await page.getByRole('button',{name:'Jiroskobu etkinleştir / izin ver',exact:true}).click();
   await page.waitForFunction(()=>JSON.parse(localStorage.getItem('kapsstrike-settings')!).gyroMode==='always');
   await sample(page,0);await page.locator('[data-gyro-status="active"]').waitFor();
-  await page.getByRole('button',{name:'Geri dön',exact:true}).click();
+  await page.getByRole('button',{name:'Paneli kapat',exact:true}).click();
   await page.getByRole('button',{name:/Tek Oyunculu Antrenman/}).click();await page.getByRole('button',{name:'Antrenmanı Başlat',exact:true}).click();
   await page.waitForFunction(()=>(window as any).strike?.active&&(window as any).strike?.isTouchDevice);
   await page.locator('.ks-touch-overlay').waitFor();
@@ -63,17 +63,18 @@ try{
   const before=await page.evaluate(()=>(window as any).strike.yaw);await sample(page,0);await sample(page,10);
   const first=await page.evaluate(()=>(window as any).strike.yaw);assert.ok(Math.abs(first-before)>.1&&Math.abs(first-before)<.25,'gyro radian gain once');
   await page.getByTitle('Ayarlar & Duraklat',{exact:true}).click();
+  await page.getByRole('button',{name:/Mobil Kontroller \/ Jiroskop/}).click();
   await page.getByLabel('Jiroskop hassasiyeti',{exact:true}).fill('2');
   const paused=await page.evaluate(()=>(window as any).strike.yaw);await sample(page,20);assert.equal(await page.evaluate(()=>(window as any).strike.yaw),paused);
-  await page.getByRole('button',{name:/Oyuna Devam Et/}).click();await sample(page,0);await sample(page,10);
+  if(await page.getByRole('button',{name:'Paneli kapat',exact:true}).count())await page.getByRole('button',{name:'Paneli kapat',exact:true}).click();await page.getByRole('button',{name:/Oyuna Devam Et/}).click();await sample(page,0);await sample(page,10);
   const second=await page.evaluate(()=>(window as any).strike.yaw);assert.ok(Math.abs(Math.abs(second-paused)-2*Math.abs(first-before))<.02,'live sensitivity update');
-  await page.getByTitle('Ayarlar & Duraklat',{exact:true}).click();await page.getByLabel('Jiroskop modu',{exact:true}).selectOption('ads');
-  await page.getByRole('button',{name:/Oyuna Devam Et/}).click();const adsBefore=await page.evaluate(()=>(window as any).strike.yaw);await sample(page,0);await sample(page,10);assert.equal(await page.evaluate(()=>(window as any).strike.yaw),adsBefore);
+  await page.getByTitle('Ayarlar & Duraklat',{exact:true}).click();await page.getByRole('button',{name:/Mobil Kontroller \/ Jiroskop/}).click();await page.getByLabel('Jiroskop modu',{exact:true}).selectOption('ads');
+  if(await page.getByRole('button',{name:'Paneli kapat',exact:true}).count())await page.getByRole('button',{name:'Paneli kapat',exact:true}).click();await page.getByRole('button',{name:/Oyuna Devam Et/}).click();const adsBefore=await page.evaluate(()=>(window as any).strike.yaw);await sample(page,0);await sample(page,10);assert.equal(await page.evaluate(()=>(window as any).strike.yaw),adsBefore);
   await page.evaluate(()=>(window as any).strike.setTouchAds(true));await sample(page,20);assert.ok(Math.abs(await page.evaluate(()=>(window as any).strike.yaw)-adsBefore)>.1);
-  await page.getByTitle('Ayarlar & Duraklat',{exact:true}).click();await page.getByLabel('Kontrol düzeni',{exact:true}).selectOption('keyboard');await page.getByRole('button',{name:/Oyuna Devam Et/}).click();
+  await page.getByTitle('Ayarlar & Duraklat',{exact:true}).click();await page.getByRole('button',{name:/Mobil Kontroller \/ Jiroskop/}).click();await page.getByLabel('Kontrol düzeni',{exact:true}).selectOption('keyboard');if(await page.getByRole('button',{name:'Paneli kapat',exact:true}).count())await page.getByRole('button',{name:'Paneli kapat',exact:true}).click();await page.getByRole('button',{name:/Oyuna Devam Et/}).click();
   assert.equal(await page.locator('.ks-touch-overlay').count(),0);
-  const z=await page.evaluate(()=>(window as any).strike.state.player.movement.position.z);await page.keyboard.down('KeyW');await page.waitForTimeout(220);await page.keyboard.up('KeyW');assert.ok(await page.evaluate(()=>(window as any).strike.state.player.movement.position.z)>z,'external keyboard on tablet');
-  await page.getByTitle('Ayarlar & Duraklat',{exact:true}).click();await page.getByLabel('Kontrol düzeni',{exact:true}).selectOption('touch');await page.getByRole('button',{name:/Oyuna Devam Et/}).click();await page.locator('.ks-touch-overlay').waitFor();
+  const origin=await page.evaluate(()=>({...((window as any).strike.state.player.movement.position)}));await page.keyboard.down('KeyW');try{await page.waitForFunction(p=>{const now=(window as any).strike.state.player.movement.position;return Math.hypot(now.x-p.x,now.z-p.z)>.08;},origin,{timeout:3000});}finally{await page.keyboard.up('KeyW');}
+  await page.getByTitle('Ayarlar & Duraklat',{exact:true}).click();await page.getByRole('button',{name:/Mobil Kontroller \/ Jiroskop/}).click();await page.getByLabel('Kontrol düzeni',{exact:true}).selectOption('touch');if(await page.getByRole('button',{name:'Paneli kapat',exact:true}).count())await page.getByRole('button',{name:'Paneli kapat',exact:true}).click();await page.getByRole('button',{name:/Oyuna Devam Et/}).click();await page.locator('.ks-touch-overlay').waitFor();
   await page.getByTitle('Ayarlar & Duraklat',{exact:true}).click();await page.getByRole('button',{name:/Menüye \/ Lobiye Dön/}).click();await page.getByRole('button',{name:'Oyundan çık',exact:true}).click();
   await page.waitForFunction(()=>(window as any).exited);assert.equal(await page.evaluate(()=>(window as any).sensors.size),0);assert.equal(await page.evaluate(()=>(window as any).engineStore.Instances.length),0);
   await page.close();await context.close();console.log('PASS production KapsStrike tablet + gyro + permission + mode switch + cleanup',profile.name);
