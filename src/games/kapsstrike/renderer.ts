@@ -1,3 +1,4 @@
+import {cosmetic} from "./cosmetics";
 import { createCharacter } from "./character";
 import { cleanSkin } from "./skins";
 import { surfaceTexture } from "./surfaceTextures";
@@ -197,6 +198,7 @@ export class StrikeRenderer {
           data.applyToMesh(mesh);
           mesh.convertToFlatShadedMesh();
           mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
+          (mesh.material as StandardMaterial).backFaceCulling=false;
         } else {
           mesh = s.shape ? MeshBuilder.CreateCylinder(s.id,{height:s.h,diameter:s.w,diameterTop:s.shape==='cone'?0:s.w,tessellation:s.shape==='cone'?8:12},this.scene) : MeshBuilder.CreateBox(s.id,{width:s.w,height:s.h,depth:s.d},this.scene);
           if(s.shape)mesh.scaling.z=s.d/s.w;
@@ -292,10 +294,17 @@ export class StrikeRenderer {
           return m;
         };
         if (id === "knife") {
-          part("handle",0,-0.04,-0.1,0.09,0.12,0.23,"#26313c");
-          part("guard",0,0,0.015,0.22,0.035,0.045,"#637b8c");
-          const blade = part("blade",0,0.015,0.21,0.075,0.025,0.35,"#d8e3e9");
-          blade.rotation.z = 0.15;
+          const stylePart=(style:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number,color:string)=>{const m=part(name,x,y,z,w,h,d,color);m.metadata={knifeStyle:style};return m;};
+          for(const style of ['default','tanto']){
+            stylePart(style,'handle',0,-.04,-.1,.09,.12,.23,'#26313c');
+            stylePart(style,'guard',0,0,.015,.22,.035,.045,'#637b8c');
+            const blade=stylePart(style,'blade',0,.015,.21,style==='tanto'?.11:.075,.025,.35,'#d8e3e9');blade.rotation.z=.15;
+          }
+          for(const side of [-1,1]){const handle=stylePart('butterfly','butterfly-handle'+side,side*.065,-.02,-.12,.045,.07,.32,'#26313c');handle.metadata.side=side;}
+          stylePart('butterfly','blade',0,.015,.21,.075,.025,.39,'#d8e3e9');
+          stylePart('karambit','handle',0,0,-.1,.08,.08,.25,'#26313c');
+          const ring=MeshBuilder.CreateTorus('knife-ring',{diameter:.12,thickness:.02,tessellation:20},this.scene);ring.parent=root;ring.position.z=-.25;ring.renderingGroupId=2;ring.metadata={knifeStyle:'karambit'};ring.material=this.material('#a7b6c6');
+          const curved=MeshBuilder.CreateTube('knife-blade-curve',{path:Array.from({length:12},(_,i)=>new Vector3(.12-Math.cos(i/11*2)*.12,0,.02+Math.sin(i/11*2)*.23)),radius:.035,tessellation:6,cap:3},this.scene);curved.parent=root;curved.renderingGroupId=2;curved.metadata={knifeStyle:'karambit'};curved.material=this.material('#d8e3e9');
           this.weapons.set(id,root);
           continue;
         }
@@ -371,6 +380,7 @@ export class StrikeRenderer {
         this.scene,
       );
       this.muzzle.parent = this.gunRoot;
+      this.applyCosmetics();
       this.muzzle.position.set(0, 0.02, 0.75);
       this.muzzle.material = this.material("#ffdd94", true);
       this.muzzle.renderingGroupId = 2;
@@ -413,10 +423,39 @@ export class StrikeRenderer {
     }
   }
   private textureSize(){const q=this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;return q==='high'?1024:q==='medium'?512:128;}
+  private applyCosmetics(){
+    for(const [weapon,root] of this.weapons){
+      const finish=cosmetic(this.settings.cosmeticLoadout?.[weapon]);
+      let material:StandardMaterial|undefined;
+      if(finish){
+        const key='finish-'+finish.id;
+        material=this.materials.get(key);
+        if(!material){
+          material=new StandardMaterial(key,this.scene);material.diffuseColor=Color3.FromHexString(finish.color);material.specularColor=Color3.FromHexString(finish.accent).scale(.6);material.specularPower=64;
+          material.emissiveColor=Color3.FromHexString(finish.accent).scale(finish.rarity==='knife'?.3:finish.rarity==='legendary'?.24:finish.rarity==='epic'?.12:.015);
+          if(typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine'){
+            const t=new DynamicTexture(key,{width:256,height:256},this.scene,true),c=t.getContext();c.fillStyle=finish.color;c.fillRect(0,0,256,256);
+            c.strokeStyle=finish.accent;c.lineWidth=finish.pattern>=2?7:3;
+            for(let i=-256;i<512;i+=finish.pattern===0?43:27){c.beginPath();c.moveTo(i,0);c.lineTo(i+(finish.pattern>=2?210:90),256);c.stroke();}
+            if(finish.pattern===3){c.fillStyle='#fff0b8';for(let i=0;i<25;i++)c.fillRect((i*83)%256,(i*47)%256,3,3);}
+            t.update();material.diffuseTexture=t;material.diffuseColor=Color3.White();
+          }
+          material.freeze();this.materials.set(key,material);
+        }
+      }
+      for(const mesh of root.getChildMeshes()){
+        if(!mesh.metadata?.baseMaterial)mesh.metadata={...mesh.metadata,baseMaterial:mesh.material};
+        if(weapon==='knife')mesh.setEnabled(mesh.metadata.knifeStyle===(finish?.knife||'default'));
+        const tinted=weapon==='knife'||/receiver|stock/.test(mesh.name);
+        mesh.material=material&&tinted?material:mesh.metadata.baseMaterial;
+      }
+    }
+  }
   inspect(){this.inspectTime=1.8;}
   resetView(){this.inspectTime=0;this.gunKick=0;this.camera.rotationQuaternion=null;this.camera.rotation.set(0,0,0);this.camera.upVector.set(0,1,0);this.camera.cameraRotation.set(0,0);this.camera.cameraDirection.set(0,0,0);}
   updateSettings(next:StrikeSettings){
     this.settings=next;
+    this.applyCosmetics();
     const q=next.quality==='auto'?detectAutoQuality():next.quality;
     if(q!==this.qualityApplied){
       this.qualityApplied=q;
@@ -493,8 +532,9 @@ export class StrikeRenderer {
     return m;
   }
   private resize() {
+    if(this.engine.getClassName()==='NullEngine')return;
     const dpr = Math.min(
-      devicePixelRatio || 1,
+      globalThis.devicePixelRatio || 1,
       this.settings.quality === "high" ? 2 : (this.settings.quality === "low" || this.settings.quality === "auto" && detectAutoQuality() === "low") ? 1 : 1.5,
     );
     this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.scale * this.dynamicScale));
@@ -592,6 +632,13 @@ export class StrikeRenderer {
       if(ads||this.gunKick>0||p.weapon.reloadUntil||p.hp<=0)this.inspectTime=0;
       else{this.inspectTime=Math.max(0,this.inspectTime-delta);const t=(1.8-this.inspectTime)/1.8,pose=Math.sin(Math.PI*t);this.gunRoot.rotation.z+=pose*1.15;this.gunRoot.rotation.y+=pose*.75;this.gunRoot.position.x-=pose*.15;this.gunRoot.position.y+=pose*.1;}
     }
+    if(this.inspectTime>0){
+      const progress=1-this.inspectTime/1.8, wave=Math.sin(progress*Math.PI),finish=cosmetic(this.settings.cosmeticLoadout?.[p.weapon.selected]);
+      if(p.weapon.selected==='knife'){
+        this.gunRoot.rotation.z+=finish?.knife==='karambit'?Math.sin(progress*Math.PI*2)*2:finish?.knife==='butterfly'?progress*Math.PI*4:wave*.4;
+      }else{const index=WEAPON_ORDER.indexOf(p.weapon.selected);this.gunRoot.rotation.x+=wave*(.15+index*.04);this.gunRoot.position.z+=Math.sin(progress*Math.PI*2)*(.02+index*.005);}
+    }
+    for(const m of this.weapons.get('knife')?.getChildMeshes()||[])if(m.metadata?.knifeStyle==='butterfly'&&m.metadata.side)m.rotation.x=this.inspectTime>0?Math.sin((1.8-this.inspectTime)*12)*2.4*m.metadata.side:0;
     this.gunRoot.setEnabled(!(ads&&(p.weapon.selected==='sniper'||p.weapon.selected==='railgun')));
     this.gunRoot.scaling.setAll(ads ? 0.85 : 1);
     for (const [id, mesh] of this.weapons)
@@ -643,6 +690,7 @@ export class StrikeRenderer {
       stance?: string;
       selectedWeapon?: WeaponId;
       skin?: string;
+      weaponSkin?:string;
     }>,
     localPlayerId?: string,
     localTeam?: string
@@ -721,7 +769,8 @@ export class StrikeRenderer {
         item.head.rotation.x = p.pitch;
         if (item.gun) {
           item.gun.scaling.set(p.selectedWeapon === "knife" ? 0.5 : 1, p.selectedWeapon === "knife" ? 0.22 : 1, 1);
-          item.gun.material = this.material(p.selectedWeapon === "knife" ? "#d8e3e9" : "#1e293b");
+          const finish=cosmetic(p.weaponSkin);
+          item.gun.material = this.material(finish?.color||(p.selectedWeapon === "knife" ? "#d8e3e9" : "#1e293b"),finish?.rarity==='knife'||finish?.rarity==='legendary');
         }
 
         const isCrouch = p.stance === "crouch" || p.stance === "slide";

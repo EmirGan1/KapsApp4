@@ -84,3 +84,15 @@ test("failed scene construction releases its engine and partial scene", () => {
   assert.ok(engine.isDisposed);
   assert.equal(EngineStore.Instances.length, before);
 });
+test('cosmetic knife models switch safely, preserve gameplay and dispose owned materials',()=>{
+ const engine=new NullEngine();const renderer=new StrikeRenderer({} as HTMLCanvasElement,MAPS.dust,{...DEFAULT_SETTINGS},engine);
+ const state=createTraining('dust');state.player.weapon.selected='knife';
+ for(const style of ['butterfly','karambit','tanto']){
+  renderer.updateSettings({...DEFAULT_SETTINGS,cosmeticLoadout:{knife:'knife-'+style,rifle:'rifle-3'}});
+  const meshes=renderer.scene.getTransformNodeByName('knife')!.getChildMeshes();
+  const active=meshes.filter(m=>m.isEnabled(false));assert.ok(active.length>0);assert.ok(active.every(m=>m.metadata.knifeStyle===style));
+  renderer.inspect();renderer.render(state,0,0,false,1,state.player.movement.position,1/60);
+  assert.equal(state.player.hp,100);
+ }
+ renderer.dispose();assert.ok(engine.isDisposed);
+});

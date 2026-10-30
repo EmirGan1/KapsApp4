@@ -1,3 +1,4 @@
+import {cleanLoadout} from "./cosmetics";
 import { cleanBindings } from "./controls";
 import {cleanSkin} from './skins';
 import {currentInputDevice} from '../../utils/gameInput';
@@ -182,6 +183,7 @@ export function cleanSettings(s: Partial<StrikeSettings> & {binds?:unknown}): St
     : "off";
 
   return {
+    cosmeticLoadout: cleanLoadout(s.cosmeticLoadout),
     bindings: cleanBindings(s.bindings,s.binds),
     selectedSkin:s.selectedSkin?cleanSkin(s.selectedSkin):undefined,
     quality: ["low", "medium", "high", "auto"].includes(s.quality || "")

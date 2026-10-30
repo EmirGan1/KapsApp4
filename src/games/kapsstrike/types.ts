@@ -129,6 +129,7 @@ export interface TrainingState {
   lastSequence: number;
 }
 export interface StrikeSettings {
+  cosmeticLoadout?: import("./cosmetics").Inventory["equipped"];
   bindings?: import("./controls").Bindings;
   selectedSkin?: import("./skins").SkinId;
   quality: "low" | "medium" | "high" | "auto";
@@ -153,6 +154,7 @@ export type StrikeRoomStatus = "lobby" | "in_progress" | "game_over";
 
 export interface NetworkPlayer {
   skin?: import("./skins").SkinId;
+  weaponSkin?:string;
   id: string; // Actor / Socket ID
   userId: number; // KapsApp user ID
   username: string;
@@ -186,6 +188,7 @@ export interface PlayerSnapshot {
   damage?: number;
   headshots?: number;
   skin?: import("./skins").SkinId;
+  weaponSkin?:string;
   id: string;
   userId: number;
   username: string;
