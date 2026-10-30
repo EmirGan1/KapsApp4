@@ -1,4 +1,5 @@
 import StrikeInventory from "./StrikeInventory";
+import StrikeInventoryAdmin from "./StrikeInventoryAdmin";
 import StrikeMinimap from './StrikeMinimap';
 import StrikeGraphicsSettings from './StrikeGraphicsSettings';
 import StrikeInputSettings from './StrikeInputSettings';
@@ -74,11 +75,13 @@ export default function KapsStrikeGame({
     }
   });
   const [view, setView] = useState<"menu" | "lobby" | "loading" | "play" | "pause" | "match_end">("menu");
-  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "inventory" | "input" | "create_room" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "inventory" | "inventory_admin" | "input" | "create_room" | null>(null);
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
   const [returnFire, setReturnFire] = useState(false);
   const [supported, setSupported] = useState(true);
+  const [inventoryAdmin,setInventoryAdmin]=useState(false);
+  useEffect(()=>{if(!socket?.connected)return;const check=()=>socket.timeout(4000).emit('strike:inventory_admin_check',(e:any,r:any)=>setInventoryAdmin(!e&&r?.success&&r.allowed===true));check();socket.on('connect',check);return()=>{socket.off('connect',check);};},[socket]);
 
   // Mobile / Touch state
   const [isMobile, setIsMobile] = useState(()=>touchControls(settings.controlMode));
@@ -1798,6 +1801,7 @@ export default function KapsStrikeGame({
             {/* SETTINGS PANEL */}
 
             <footer>
+              {inventoryAdmin&&<button onClick={()=>setPanel('inventory_admin')}>KapsStrike yönetimi</button>}
               <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
               <button
                 onClick={() =>
@@ -1857,10 +1861,11 @@ export default function KapsStrikeGame({
       )}
       {panel && panel !== 'create_room' && ['menu','lobby','pause'].includes(view) && (
         <div className="ks-overlay ks-feature-overlay" onClick={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
-          <div className="ks-menu ks-feature-card" role="dialog" aria-modal="true" aria-label={{inventory:'Envanter ve kasalar',skins:'Karakter seçimi',controls:'Kontroller',settings:'Görüntü ve ses',input:'Mobil kontroller'}[panel]}>
-            <div className="ks-panel-bar"><span>KAPSSTRIKE / {{inventory:'ENVANTER',skins:'KARAKTER',controls:'KONTROLLER',settings:'AYARLAR',input:'MOBİL KONTROLLER'}[panel]}</span><button autoFocus onClick={()=>setPanel(null)} aria-label="Paneli kapat">Geri dön <span aria-hidden="true">×</span></button></div>
+          <div className="ks-menu ks-feature-card" role="dialog" aria-modal="true" aria-label={{inventory_admin:'Yönetici envanteri',inventory:'Envanter ve kasalar',skins:'Karakter seçimi',controls:'Kontroller',settings:'Görüntü ve ses',input:'Mobil kontroller'}[panel]}>
+            <div className="ks-panel-bar"><span>KAPSSTRIKE / {{inventory_admin:'YÖNETİM',inventory:'ENVANTER',skins:'KARAKTER',controls:'KONTROLLER',settings:'AYARLAR',input:'MOBİL KONTROLLER'}[panel]}</span><button autoFocus onClick={()=>setPanel(null)} aria-label="Paneli kapat">Geri dön <span aria-hidden="true">×</span></button></div>
             <div className="ks-panel-content">
               {panel==='inventory'&&<StrikeInventory socket={socket} initialSkin={settings.selectedSkin} onSkin={skin=>setting({selectedSkin:skin})} onChange={state=>setting({cosmeticLoadout:state.equipped})}/>}
+              {panel==='inventory_admin'&&<StrikeInventoryAdmin socket={socket}/>}
               {panel==='skins'&&<StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin=>setting({selectedSkin:skin})}/>}
               {panel==='controls'&&<div className="ks-controls"><h2>Kontroller</h2><p>F · Silahı incele. E · Sandığı aç / silahı al. Dürbünlü silahta sağ tık · Nişan.</p><StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings=>setting({bindings})}/></div>}
               {panel==='settings'&&<StrikeGraphicsSettings settings={settings} onChange={setting}/>}

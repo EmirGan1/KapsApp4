@@ -1291,14 +1291,28 @@ export class KapsStrikeServerManager {
     const applyInventory=(state:import('../games/kapsstrike/cosmetics').Inventory)=>{const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const player=room?.players.get(socket.id);if(player&&room){player.cosmeticLoadout=state.equipped;this.broadcastRoomState(room);}};
     void this.inventory.get(userIdNum).then(applyInventory).catch(()=>{});
     let inventoryBusy=false, inventoryRequest=0;
+    const isInventoryAdmin=String(user.username||'').trim().toLocaleLowerCase('en-US')==='emirgan';
     for(const event of ['get','open','equip'] as const)socket.on('strike:inventory_'+event,async(data:any,cb:any)=>{
       if(typeof cb!=='function')return;
       if(inventoryBusy||(event!=='get'&&Date.now()-inventoryRequest<250)){cb({success:false,error:'Biraz bekle.'});return;}
       inventoryBusy=true;if(event!=='get')inventoryRequest=Date.now();
-      try{if(event==='get')cb({success:true,state:await this.inventory.get(userIdNum)});
+      try{if(event==='get'){const state=isInventoryAdmin?await this.inventory.grantAll(userIdNum):await this.inventory.get(userIdNum);applyInventory(state);cb({success:true,state});}
       else if(event==='open'){if(typeof data?.caseId!=='string'||data.caseId.length>32)throw new Error('Geçersiz kasa.');cb({success:true,...await this.inventory.open(userIdNum,data.caseId)});}
       else {if(typeof data?.itemId!=='string'||data.itemId.length>64)throw new Error('Geçersiz görünüm.');const state=await this.inventory.equip(userIdNum,data.itemId);applyInventory(state);cb({success:true,state});}}
       catch(e){cb({success:false,error:e instanceof Error?e.message:'Envanter işlemi başarısız.'});}finally{inventoryBusy=false;}
+    });
+    // Privilege is derived only from the authenticated server-side account name.
+    socket.on('strike:inventory_admin_check',(cb:any)=>{if(typeof cb==='function')cb({success:true,allowed:isInventoryAdmin});});
+    socket.on('strike:inventory_admin_search',async(data:any,cb:any)=>{
+      if(typeof cb!=='function')return;if(!isInventoryAdmin){cb({success:false,error:'Yetkin yok.'});return;}
+      try{const users=await this.inventory.searchUsers(typeof data?.query==='string'?data.query:'');const results=[];for(const target of users)results.push({...target,inventory:await this.inventory.get(target.id)});cb({success:true,users:results});}
+      catch{cb({success:false,error:'Kullanıcılar veya envanterleri yüklenemedi.'});}
+    });
+    socket.on('strike:inventory_admin_grant_all',async(data:any,cb:any)=>{
+      if(typeof cb!=='function')return;if(!isInventoryAdmin){cb({success:false,error:'Yetkin yok.'});return;}
+      const targetId=Number(data?.userId);if(!Number.isSafeInteger(targetId)||targetId<=0){cb({success:false,error:'Geçersiz kullanıcı.'});return;}
+      try{const target=await this.inventory.getUser(targetId);if(!target)throw new Error('Kullanıcı bulunamadı.');const state=await this.inventory.grantAll(targetId);cb({success:true,user:{...target,inventory:state}});}
+      catch(e){cb({success:false,error:e instanceof Error?e.message:'Görünümler eklenemedi.'});}
     });
     let lastProfileGet = 0, lastProfileSet = 0;
     socket.on("strike:profile_get", async (cb) => {
