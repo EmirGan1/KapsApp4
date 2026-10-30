@@ -3,6 +3,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { io } from "socket.io-client";
 import KapsStrikeGame from "../src/components/games/kapsstrike/KapsStrikeGame";
+import '../src/components/games/kapsstrike/kapsstrike.css';
 import { StrikeController } from "../src/games/kapsstrike/controller";
 (window as any).engineStore = EngineStore;
 (window as any).microphoneRequests=0;

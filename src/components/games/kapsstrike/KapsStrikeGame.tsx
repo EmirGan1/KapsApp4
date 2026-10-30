@@ -32,7 +32,6 @@ import {
 } from "../../../games/kapsstrike/types";
 import { MAPS } from "../../../games/kapsstrike/maps";
 import { StrikeVoiceManager } from "../../../games/kapsstrike/voice";
-import "./kapsstrike.css";
 
 interface KapsStrikeGameProps {
   onBack: () => void;

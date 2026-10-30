@@ -4,6 +4,7 @@ import { MAPS } from "../src/games/kapsstrike/maps";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import KapsStrikeGame from "../src/components/games/kapsstrike/KapsStrikeGame";
+import '../src/components/games/kapsstrike/kapsstrike.css';
 import { StrikeController } from "../src/games/kapsstrike/controller";
 import { DEFAULT_SETTINGS } from "../src/games/kapsstrike/config";
 import { MapId, StrikeSettings } from "../src/games/kapsstrike/types";
