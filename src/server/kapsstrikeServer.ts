@@ -1,4 +1,4 @@
-import {createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
+import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
 import { randomBytes } from "node:crypto";
 import { StrikeInventory } from "./strikeInventory";
@@ -315,7 +315,7 @@ export class StrikeRoom {
       localState: targetPlayer ? structuredClone(targetPlayer.state) : undefined,
       serverTime: Date.now(),
       ackSequence,
-      bomb:this.bomb?structuredClone(this.bomb):undefined,
+      bomb:this.bomb?bombView(this.bomb,playerSocketId):undefined,
       players: playerSnapshots,
       teamScores: this.mode !== "ffa" ? { ...this.teamScores } : undefined,
       timeLeft: this.timeLeft,
@@ -604,6 +604,11 @@ export class KapsStrikeServerManager {
     if (!room || room.players.get(socketId)?.userId !== userId) return;
 
     const wasHost = room.players.get(socketId)?.isHost;
+    if(room.bomb){
+      dropBomb(room.bomb,socketId);
+      if(room.bomb.action?.player===socketId)delete room.bomb.action;
+      delete room.bomb.players[socketId];
+    }
     room.players.delete(socketId);
     this.socketToRoom.delete(socketId);
     if(this.userToRoom.get(userId)===roomCode)this.userToRoom.delete(userId);
@@ -679,6 +684,7 @@ export class KapsStrikeServerManager {
     if(room.mode==='bomb'&&(room.players.size<2||!['red','blue'].every(t=>[...room.players.values()].some(p=>p.team===t))))return {success:false,error:'Her takımda en az bir oyuncu gerekli.'};
     // Both supported event aliases must never reset an already running round.
     if (room.status === "in_progress") return { success: true };
+    if(room.mode==='bomb'&&[...room.players.values()].some(p=>!p.ready))return {success:false,error:'Maç başlamadan önce bütün oyuncular hazır olmalı.'};
     room.status = "in_progress";
     room.timeLeft = room.timeLimit;
     room.teamScores = { red: 0, blue: 0 };
@@ -718,6 +724,7 @@ export class KapsStrikeServerManager {
       p.state.weapon.nextFire = 0;p.state.weapon.switchUntil=0;p.state.weapon.triggerHeld=false;p.state.weapon.shotIndex=0;
     });
 
+    room.bomb=undefined;
     if(room.mode==='bomb')room.bomb=createBombMatch([...room.players.values()].map(p=>({id:p.id,team:p.team==='red'?'T':'CT',position:{...p.state.movement.position}})),0);
     this.startRoomSimulationLoop(room);
     this.broadcastRoomState(room);
@@ -741,6 +748,7 @@ export class KapsStrikeServerManager {
     }
 
     room.status = "lobby";
+    room.bomb=undefined;
     room.winner = undefined;
     room.timeLeft = room.timeLimit;
 
@@ -799,8 +807,9 @@ export class KapsStrikeServerManager {
     if(room.bomb){const b=room.bomb,round=b.round;
       for(const p of Object.values(b.players)){const live=room.players.get(p.id);p.alive=!!live&&live.state.hp>0;if(live)p.position={...live.state.movement.position};}
       stepBomb(b,room.tick*C.dt);
+      room.teamScores={red:b.scores.T,blue:b.scores.CT};
       if(b.phase==='finished'){this.concludeMatch(room,{team:b.winner==='T'?'red':'blue',reason:b.reason||'Bomba maçı sona erdi'});return;}
-      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.yaw=0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
+      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
     }
     const now = Date.now();
 
@@ -1113,7 +1122,7 @@ export class KapsStrikeServerManager {
     }
     victim.damageCredits.clear();
     dropInventory(room.world,victim.state,room.tick);
-    if(room.bomb){room.bomb.players[victim.id].alive=false;dropBomb(room.bomb,victim.id);killer.state.hp=Math.min(100,killer.state.hp);const p=room.bomb.players[killer.id];if(p)p.money=Math.min(16000,p.money+300);}
+    if(room.bomb){room.bomb.players[victim.id].alive=false;dropBomb(room.bomb,victim.id);killer.state.hp=Math.min(100,killer.state.hp);const p=room.bomb.players[killer.id];if(p)p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.killReward);}
     victim.deaths++;
     victim.state.deadUntil = room.tick + C.respawnTicks;
 
@@ -1300,7 +1309,37 @@ export class KapsStrikeServerManager {
    */
   public register(socket: Socket, user: any): void {
     const userIdNum = Number(user.id);
-    socket.on('strike:bomb_action',(data:any)=>{const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const b=room?.bomb;if(!room||!b||room.status!=='in_progress')return;const now=room.tick*C.dt;if(data?.kind==='drop')dropBomb(b,socket.id);else if(data?.kind==='hold'&&typeof data.held==='boolean')bombInteract(b,socket.id,data.held,now);else if(data?.kind==='buy'&&typeof data.item==='string')buyBombEquipment(b,socket.id,data.item,now);});
+    let bombWindow=0,bombRequests=0;
+    socket.on('strike:bomb_action',(data:unknown,callback?:unknown)=>{
+      const reply=(success:boolean,error?:string)=>{if(typeof callback==='function')callback({success,error});};
+      const clock=Date.now();if(clock-bombWindow>1000){bombWindow=clock;bombRequests=0;}
+      if(++bombRequests>25){reply(false,'Çok hızlı işlem yapıyorsun.');return;}
+      const room=this.rooms.get(this.socketToRoom.get(socket.id)||''),b=room?.bomb;
+      if(!room||!b||room.status!=='in_progress'||!b.players[socket.id]){reply(false,'Aktif bomba maçında değilsin.');return;}
+      if(!data||typeof data!=='object'){reply(false,'Geçersiz işlem.');return;}
+      const request=data as {kind?:unknown;item?:unknown;held?:unknown},now=room.tick*C.dt;
+      if(request.kind==='buy'&&typeof request.item==='string'){
+        const error=bombPurchaseError(b,socket.id,request.item,now);
+        if(error){reply(false,error);return;}
+        const success=buyBombEquipment(b,socket.id,request.item,now);
+        this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(success);return;
+      }
+      if(request.kind==='drop'){reply(dropBomb(b,socket.id));return;}
+      if(request.kind==='hold'&&typeof request.held==='boolean'){
+        // Objective interaction cannot reach through a wall, even at close range.
+        const player=room.players.get(socket.id)!;
+        if(request.held&&b.position){
+          const from=eye(player.state),to={...b.position,y:b.position.y+.15};
+          const distance=Math.hypot(to.x-from.x,to.y-from.y,to.z-from.z);
+          const dir={x:(to.x-from.x)/distance,y:(to.y-from.y)/distance,z:(to.z-from.z)/distance};
+          if(distance>0&&MAPS[room.map].solids.some(s=>!s.detail&&raySolid(from,dir,s,distance)<distance-.05)){
+            bombInteract(b,socket.id,false,now);reply(false,'Bombaya ulaşmak için engelin etrafından geç.');return;
+          }
+        }
+        reply(bombInteract(b,socket.id,request.held,now));return;
+      }
+      reply(false,'Geçersiz işlem.');
+    });
     const applyProfile = (skin: SkinId) => {
       const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
       const player = room?.players.get(socket.id);

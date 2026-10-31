@@ -27,7 +27,8 @@
     "test:strike:network": "node --import tsx tests/kapsstrike.network.browser.ts",
     "test:game-input": "node --import tsx --test tests/gameInput.test.ts",
     "test:game-input:browser": "node --import tsx tests/gameInput.browser.ts",
-    "test:strike:experience": "node --import tsx tests/kapsstrike.experience.browser.ts"
+    "test:strike:experience": "node --import tsx tests/kapsstrike.experience.browser.ts",
+    "test:strike:bomb:browser": "node --import tsx tests/kapsstrike.bomb.browser.ts"
   },
   "dependencies": {
     "@babylonjs/core": "8.50.2",
