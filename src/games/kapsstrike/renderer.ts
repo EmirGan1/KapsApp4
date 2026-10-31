@@ -131,7 +131,7 @@ export class StrikeRenderer {
       sun.intensity = map.id === "neon" ? 0.45 : 0.65;
       if (effectiveQuality === "high") {
         this.shadow = new ShadowGenerator(1024, sun);
-        this.shadow.usePoissonSampling = true;
+        this.shadow.usePoissonSampling = true;this.shadow.bias=.003;this.shadow.normalBias=.06;
       }
       this.camera = new UniversalCamera(
         "eyes",
@@ -442,9 +442,11 @@ export class StrikeRenderer {
           material.emissiveColor=Color3.FromHexString(finish.accent).scale(finish.rarity==='knife'?.3:finish.rarity==='legendary'?.24:finish.rarity==='epic'?.12:.015);
           if(typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine'){
             const t=new DynamicTexture(key,{width:256,height:256},this.scene,true),c=t.getContext();c.fillStyle=finish.color;c.fillRect(0,0,256,256);
-            c.strokeStyle=finish.accent;c.lineWidth=finish.pattern>=2?7:3;
-            for(let i=-256;i<512;i+=finish.pattern===0?43:27){c.beginPath();c.moveTo(i,0);c.lineTo(i+(finish.pattern>=2?210:90),256);c.stroke();}
-            if(finish.pattern===3){c.fillStyle='#fff0b8';for(let i=0;i<25;i++)c.fillRect((i*83)%256,(i*47)%256,3,3);}
+            // Restrained enamel panels and edge wear replace full-surface diagonal stripes.
+            const tint=c.createLinearGradient(0,0,256,256);tint.addColorStop(0,finish.accent+'25');tint.addColorStop(.45,finish.color);tint.addColorStop(1,finish.accent+'12');c.fillStyle=tint;c.fillRect(0,0,256,256);
+            c.fillStyle=finish.accent+'38';c.fillRect(18,28,64,30);c.fillRect(172,174,56,24);
+            c.strokeStyle=finish.accent+'60';c.lineWidth=1;c.strokeRect(12,12,232,232);
+            if(finish.pattern>=2){c.fillStyle=finish.accent+'55';for(let i=0;i<14;i++){c.beginPath();c.arc(28+(i*53)%200,45+(i*37)%170,2+i%3,0,Math.PI*2);c.fill();}}
             t.update();material.diffuseTexture=t;material.diffuseColor=Color3.White();
           }
           material.freeze();this.materials.set(key,material);
@@ -472,7 +474,7 @@ export class StrikeRenderer {
       }
       for(const m of this.scene.meshes)if(m.name.startsWith('district-'))m.setEnabled(q!=='low'||!m.metadata?.detail);
       const sun=this.scene.getLightByName('sun') as DirectionalLight;
-      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(1024,sun);this.shadow.usePoissonSampling=true;for(const m of this.scene.meshes)if(m.name.startsWith('district-'))this.shadow.addShadowCaster(m);}
+      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(1024,sun);this.shadow.usePoissonSampling=true;this.shadow.bias=.003;this.shadow.normalBias=.06;for(const m of this.scene.meshes)if(m.name.startsWith('district-'))this.shadow.addShadowCaster(m);}
       if(q!=='high'&&this.shadow){this.shadow.dispose();this.shadow=undefined;}
     }
     if(!next.dynamicResolution)this.dynamicScale=1;

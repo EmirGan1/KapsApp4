@@ -1,50 +1,63 @@
-import type {MapDefinition,Solid} from './types';
+import type {MapDefinition,Solid,Vec3} from './types';
 import {BOMB_SITES} from './bomb';
-export function dustDistrict():MapDefinition{
+/** Streets are carved out of closed city blocks, rather than scattered into a field. */
+export function dustDistrict():MapDefinition {
  const solids:Solid[]=[];let serial=0;
- const box=(name:string,x:number,y:number,z:number,w:number,h:number,d:number,color='#c5a67f',detail=false,surface:Solid['surface']='plaster')=>{const s:Solid={id:'district-'+name+'-'+serial++,kind:'box',x,y,z,w,h,d,color,detail,surface};solids.push(s);return s;};
- const house=(x:number,z:number,w:number,d:number,h:number)=>{for(const side of [-1,1]){box('side-wall',x+side*w/2,0,z,.4,h,d);for(const q of [-1,1])box('door-pier',x+q*(w+3)/4,0,z+side*d/2,(w-3)/2,h,.4);box('entry-lintel',x,2.8,z+side*d/2,3,h-2.8,.4);for(let wx=-w/2+1.5;wx<w/2;wx+=3)for(let y=3.2;y<h-1;y+=2.8)box('window',x+wx,y,z+side*(d/2+.22),1.2,1,.04,'#385364',true,'glass');}box('roof',x,h,z,w+.5,.3,d+.5,'#a88c6a',false,'stone');};
- // Offset blocks divide three approaches; through-door interiors create lateral connections.
- house(-10,-24,12,15,6);house(12,-22,13,12,5.5);house(-10,3,10,17,7);house(10,4,9,14,6);house(-35,5,10,20,7);house(36,8,10,19,6);house(0,30,14,9,6);
- for(const [x,z,w,d] of [[-23,-8,9,65],[24,-7,9,65],[0,-6,7,65],[0,18,54,7]])box('street',x,.015,z,w,.025,d,'#b6a28a',true,'stone');
- for(const [x,z] of [[-27,13],[-18,19],[20,14],[27,20],[4,-8]]){box('cover',x,0,z,2.8,1.15,1.4,'#9f8765',false,'stone');box('cover-cap',x,1.15,z,3,.1,1.6,'#c1a67d',true,'stone');}
- for(const [x,z] of [[21,23],[27,24]]){box('market-counter',x,0,z,3,1,1.5,'#8e6e4e',false,'wood');box('market-canopy',x,2.7,z,3.5,.1,2.4,'#a66b58',true,'fabric');for(const q of [-1,1])box('market-post',x+q*1.4,0,z,.1,2.7,.1,'#776248',false,'wood');}
- // Local architecture closes edges without a surrounding arena wall.
- for(const [x,z] of [[-44,-28],[44,-28],[-43,35],[43,36],[-19,49],[20,49],[-20,-49],[20,-49]])house(x,z,16,17,8);
- solids.push({id:'district-access-ramp',kind:'ramp',x:-30,y:0,z:-24,w:3,h:3,d:20,axis:'z',color:'#aa9579',surface:'stone'});
- box('ramp-landing',-30,3,-12,4,.25,4,'#aa9579',false,'stone');
- for(let i=0;i<20;i++)box('stair-tread',30,0,-24+(i+.5)*.5,2.5,(i+1)*.15,.515,'#aa9579',false,'stone');
- box('stair-landing',30,3,-12,3,.25,4,'#aa9579',false,'stone');
- // Expand street distances while preserving connected doors, ramps and collision surfaces.
- const scale=1.7;
- for(const s of solids){s.x*=scale;s.z*=scale;s.w*=scale;s.d*=scale;}
- // Architectural identity: cornices, shutters, balconies, drainpipes and rooftop equipment.
- const walls=solids.filter(s=>s.id.includes('side-wall'));
- for(const wall of walls){
-   box('cornice',wall.x,wall.h-.2,wall.z,.8,.28,wall.d+.7,'#dbc69f',true,'stone');
-   box('drainpipe',wall.x+.5,0,wall.z-wall.d/2+.7,.16,wall.h,.16,'#726e62',true,'metal');
-   for(let z=wall.z-wall.d/2+3;z<wall.z+wall.d/2-1;z+=5){
-     box('side-window',wall.x+.38,2.6,z,.08,1.25,1.5,'#45616a',true,'glass');
-     for(const q of [-1,1])box('shutter',wall.x+.43,2.6,z+q*.95,.12,1.3,.35,'#64776b',true,'wood');
-     box('sill',wall.x+.55,2.45,z,.5,.16,2.1,'#d8c29c',true,'stone');
-   }
+ const box=(name:string,x:number,y:number,z:number,w:number,h:number,d:number,color='#baaa90',detail=false,surface:Solid['surface']='plaster')=>{
+  const s:Solid={id:`district-${name}-${serial++}`,kind:'box',x,y,z,w,h,d,color,detail,surface};solids.push(s);return s;
+ };
+ const point=(x:number,z:number):Vec3=>({x,y:0,z});
+ const routes=[
+  {name:'A kervan geçidi',points:[[0,-64],[-32,-64],[-32,-40],[-52,-40],[-52,4],[-40,4],[-40,26]].map(([x,z])=>point(x,z))},
+  {name:'Orta han',points:[[0,-64],[0,-36],[-12,-36],[-12,-12],[8,-12],[8,12],[0,12],[0,46],[24,46],[24,64],[0,64]].map(([x,z])=>point(x,z))},
+  {name:'B kapalı çarşı',points:[[0,-64],[32,-64],[32,-44],[52,-44],[52,-12],[32,-12],[32,8],[48,8],[48,29],[41,29]].map(([x,z])=>point(x,z))},
+  {name:'CT A dönüşü',points:[[0,64],[-24,64],[-24,46],[-40,46],[-40,26]].map(([x,z])=>point(x,z))},
+  {name:'CT B dönüşü',points:[[0,64],[24,64],[24,29],[41,29]].map(([x,z])=>point(x,z))},
+  {name:'A kısa bağlantı',points:[[-40,26],[-24,26],[-24,8],[-12,8],[-12,-12]].map(([x,z])=>point(x,z))},
+ ];
+ const rooms=[{x:0,z:-64,w:24,d:14},{x:0,z:64,w:24,d:14},{x:-40,z:26,w:20,d:20},{x:41,z:29,w:20,d:20},{x:-12,z:-12,w:16,d:16},{x:32,z:-12,w:16,d:14}];
+ const street=(x:number,z:number)=>rooms.some(r=>Math.abs(x-r.x)<r.w/2&&Math.abs(z-r.z)<r.d/2)||routes.some(r=>r.points.some((p,i)=>{
+  if(!i)return false;const a=r.points[i-1];
+  return x>=Math.min(a.x,p.x)-4&&x<=Math.max(a.x,p.x)+4&&z>=Math.min(a.z,p.z)-4&&z<=Math.max(a.z,p.z)+4;
+ }));
+ // 2m authored cells, greedily merged into collision blocks. No escape around buildings.
+ const n=80,step=2,closed=Array.from({length:n},(_,z)=>Array.from({length:n},(_,x)=>!street(-79+x*step,-79+z*step)));
+ const used=closed.map(row=>row.map(()=>false));
+ for(let z=0;z<n;z++)for(let x=0;x<n;x++){
+  if(!closed[z][x]||used[z][x])continue;
+  let w=1,d=1;while(w<12&&x+w<n&&closed[z][x+w]&&!used[z][x+w])w++;
+  outer:while(d<12&&z+d<n){for(let a=0;a<w;a++)if(!closed[z+d][x+a]||used[z+d][x+a])break outer;d++;}
+  for(let b=0;b<d;b++)for(let a=0;a<w;a++)used[z+b][x+a]=true;
+  const h=7+((x*7+z*11)%4),cx=-80+x*2+w,cz=-80+z*2+d;
+  box('city-block',cx,0,cz,w*2,h,d*2,['#baaa90','#c3b49a','#ab9d86'][(x+z)%3]);
+  box('roof-cornice',cx,h,cz,w*2+.25,.2,d*2+.25,'#d5c7ad',true,'stone');
  }
- for(const site of BOMB_SITES){
-   // Paint only: the server uses these exact shared site centers and radii.
-   box('site-paving-'+site.id,site.x,.055,site.z,16,.035,16,'#a8926b',true,'stone');
-   for(const q of [-1,1]){
-     box('site-boundary',site.x+q*8,.10,site.z,.18,.03,16,'#f7cc67',true);
-     box('site-boundary',site.x,.10,site.z+q*8,16,.03,.18,'#f7cc67',true);
-   }
-   const sign=box('site-beacon-'+site.id,site.x,3.1,site.z+9,4,2,.18,'#be633e',true);sign.label='BOMBSITE '+site.id;
-   for(const q of [-1,1])box('sign-post',site.x+q*1.6,0,site.z+9,.12,3.1,.12,'#716958',false,'metal');
-   // Cover on the perimeter leaves a clear, usable plant zone in the center.
-   box('site-cover',site.x-6,0,site.z-5,3,1.2,2,'#a09073',false,'stone');
-   const ground=box('site-letter-'+site.id,site.x,.12,site.z,3,.04,3,'#d6ae64',true);ground.label=site.id;
+ // Facade fittings only along exposed street edges; all remain outside capsule clearance.
+ for(let z=1;z<n-1;z+=3)for(let x=1;x<n-1;x+=3){
+  if(!closed[z][x])continue;
+  const cx=-79+x*2,cz=-79+z*2;
+  for(const [dx,dz] of [[-1,0],[1,0],[0,-1],[0,1]]){
+   if(closed[z+dz][x+dx])continue;
+   const px=cx+dx*1.03,pz=cz+dz*1.03;
+   box('window',px,2.7,pz,dx?.08:1.1,1.3,dz?.08:1.1,'#426064',true,'glass');
+   box('window-sill',px+dx*.12,2.55,pz+dz*.12,dx?.3:1.5,.12,dz?.3:1.5,'#d5c7ad',true,'stone');
+  }
  }
- for(const [x,z,label] of [[-39,-35,'A LONG →'],[40,-35,'B MARKET →'],[0,-54,'MID / A ←  B →']] as const){
-   const sign=box('wayfinding',x,2.4,z,4,1,.1,'#456a70',true);sign.label=label;
+ // Covered interiors break the skyline and distinguish the two approaches.
+ for(const [x,z,w,d] of [[-12,-12,16,16],[32,-12,16,14],[-52,-20,8,16],[24,51,8,14]]){
+  box('interior-ceiling',x,4.8,z,w,.3,d,'#8e8170',false,'wood');
+  box('entry-lintel',x,4.4,z,w,.3,.25,'#a89474',false,'stone');
  }
- const spawns=[-8,-4,0,4,8].map(x=>({x:x*scale,y:0,z:-39*scale})).concat([-8,-4,0,4,8].map(x=>({x:x*scale,y:0,z:40*scale})));
- return {hazard:{x:160,z:160,r:0},id:'district',name:'Dust District',subtitle:'Genişletilmiş A Avlusu, B Pazarı ve bağlantılı sokaklar',bounds:80,sky:'#d7c4a5',floor:'#cbb38c',solids,spawns,targets:[],routes:[{name:'A uzun',points:[{x:0,y:0,z:-66},{x:-39,y:0,z:-63},{x:-40,y:0,z:26}]},{name:'Mid',points:[{x:0,y:0,z:-66},{x:0,y:0,z:30}]},{name:'B ara sokak',points:[{x:0,y:0,z:-66},{x:41,y:0,z:-63},{x:41,y:0,z:29}]}],landmarks:['A Avlusu','B Pazarı','Orta Sokak']};
+ for(const s of BOMB_SITES){
+  const sign=box('site-sign',s.x,2.8,s.z+8.9,3.5,1.4,.12,'#9f5339',true);sign.label='BOMBSITE '+s.id;
+  box('site-paving',s.x,.015,s.z,16,.02,16,'#9b927f',true,'stone');
+  box('site-cover',s.x-7,0,s.z-6,2,1.2,1.8,'#776c59',false,'wood');
+  box('site-cover',s.x+7,0,s.z+6,2,1.2,1.8,'#8b8578',false,'metal');
+ }
+ for(const [x,z,label] of [[-32,-42,'A ←'],[32,-42,'B →'],[-24,44,'A ←'],[24,44,'B →']] as const){const sign=box('route-sign',x,2.8,z,2.4,.9,.08,'#4d6b68',true);sign.label=label;}
+ for(let i=0;i<20;i++)box('stair-tread',-55,0,-29+(i+.5)*.5,1.5,(i+1)*.12,.51,'#9b927f',false,'stone');
+ box('stair-landing',-55,2.4,-18,1.5,.18,2,'#9b927f',false,'stone');
+ solids.push({id:'district-access-ramp',kind:'ramp',x:55,y:0,z:-30,w:1.5,h:2.4,d:16,axis:'z',color:'#9b927f',surface:'stone'});
+ const spawns=[-8,-4,0,4,8].map(x=>point(x,-64)).concat([-8,-4,0,4,8].map(x=>point(x,64)));
+ return {id:'district',name:'Dust District',subtitle:'Dar geçitler, kapalı hanlar ve ayrılmış A/B bölgeleri',bounds:80,sky:'#d4dce0',floor:'#b7ae9b',solids,spawns,targets:[],hazard:{x:160,z:160,r:0},routes,landmarks:['A Kervansaray','B Kapalı Çarşı','Orta Han']};
 }

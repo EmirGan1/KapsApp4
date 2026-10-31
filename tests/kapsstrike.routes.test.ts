@@ -67,3 +67,20 @@ for(const map of Object.values(MAPS)) test(`${map.id}: authored staircase reache
  }
  assert.ok(highest>=height-.05,JSON.stringify({height,highest}));
 });
+test('district sites cannot see each other from any sampled plant position',async()=>{
+ const {BOMB_SITES}=await import('../src/games/kapsstrike/bomb');const {raySolid}=await import('../src/games/kapsstrike/physics');
+ const [a,b]=BOMB_SITES,map=MAPS.district;
+ for(const ax of [-5,0,5])for(const az of [-5,0,5])for(const bx of [-5,0,5])for(const bz of [-5,0,5]){
+  const from={x:a.x+ax,y:1.6,z:a.z+az},to={x:b.x+bx,y:1.6,z:b.z+bz};
+  const length=Math.hypot(to.x-from.x,to.z-from.z),dir={x:(to.x-from.x)/length,y:0,z:(to.z-from.z)/length};
+  assert.ok(map.solids.some(s=>!s.detail&&raySolid(from,dir,s,length)<length),'A/B sightline must be blocked');
+ }
+});
+test('district has no 24m wide open square and both sites connect to T spawn',()=>{
+ const map=MAPS.district;
+ for(let x=-60;x<=60;x+=8)for(let z=-60;z<=60;z+=8){
+  let open=true;
+  for(let dx=-12;dx<=12;dx+=4)for(let dz=-12;dz<=12;dz+=4)if(!fits(map,{x:x+dx,y:0,z:z+dz},C.standing))open=false;
+  assert.equal(open,false,`excessive open space at ${x},${z}`);
+ }
+});
