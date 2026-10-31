@@ -13,6 +13,7 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
@@ -40,6 +41,7 @@ export class StrikeRenderer {
   readonly scene: Scene;
   readonly camera: UniversalCamera;
   private materials = new Map<string, StandardMaterial>();
+  private terrainMaterials=new Map<string,PBRMaterial>();
   private targetMeshes = new Map<
     string,
     { root: TransformNode; body: Mesh; head: Mesh }
@@ -148,7 +150,7 @@ export class StrikeRenderer {
         { width: 320, height: 320 },
         this.scene,
       );
-      ground.material = this.material(map.floor,false,map.id==='dust'?'plaster':'concrete');
+      ground.material = this.terrainMaterial(map.floor,false,map.id==='dust'?'plaster':'concrete');
       this.worldUV(ground);
       ground.receiveShadows = true;
       if(map.id==='district')for(const site of BOMB_SITES){
@@ -204,12 +206,12 @@ export class StrikeRenderer {
           mesh = new Mesh(s.id, this.scene);
           data.applyToMesh(mesh);
           mesh.convertToFlatShadedMesh();
-          mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
+          mesh.material = this.terrainMaterial(s.color,!!s.glow,s.surface,s.label);
           (mesh.material as StandardMaterial).backFaceCulling=false;
         } else {
           mesh = s.shape ? MeshBuilder.CreateCylinder(s.id,{height:s.h,diameter:s.w,diameterTop:s.shape==='cone'?0:s.w,tessellation:s.shape==='cone'?8:12},this.scene) : MeshBuilder.CreateBox(s.id,{width:s.w,height:s.h,depth:s.d},this.scene);
           if(s.shape)mesh.scaling.z=s.d/s.w;
-          mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
+          mesh.material = this.terrainMaterial(s.color,!!s.glow,s.surface,s.label);
         }
         if(s.surface&&!s.label&&!s.shape)this.worldUV(mesh as Mesh);
         mesh.position.set(s.x, s.y + (s.kind === "box" ? s.h / 2 : 0), s.z);
@@ -468,6 +470,10 @@ export class StrikeRenderer {
     const q=next.quality==='auto'?detectAutoQuality():next.quality;
     if(q!==this.qualityApplied){
       this.qualityApplied=q;
+      for(const mesh of this.scene.meshes){
+        if(mesh.name!=='ground'&&!mesh.name.startsWith('district-'))continue;
+        const data=mesh.material?.metadata;if(data?.surface)mesh.material=this.terrainMaterial(data.color,data.emissive,data.surface,data.label);
+      }
       for(const m of this.materials.values())if(m.metadata){
         const {color,surface,label,emissive}=m.metadata;
         m.unfreeze();m.diffuseTexture?.dispose();const tex=surfaceTexture(this.scene,m.name,color,surface,label,this.textureSize(color));m.diffuseTexture=tex||null;if(emissive)m.emissiveTexture=tex||null;m.freeze();
@@ -517,6 +523,28 @@ export class StrikeRenderer {
       uv.push((nx>.5?positions[i+2]:positions[i])/2,(ny>.5?positions[i+2]:positions[i+1])/2);
     }
     mesh.setVerticesData(VertexBuffer.UVKind,uv);
+  }
+  private terrainMaterial(color:string,emissive=false,surface?:Solid['surface'],label?:string){
+    const q=this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;
+    if(q!=='high'||emissive||label||!surface)return this.material(color,emissive,surface,label);
+    const key=color+surface;let m=this.terrainMaterials.get(key);
+    if(!m){
+      m=new PBRMaterial('terrain-pbr-'+key,this.scene);m.albedoColor=Color3.FromHexString(color);m.metallic=surface==='metal'?.65:0;m.roughness=surface==='glass'?.2:surface==='metal'?.48:.92;
+      const t=surfaceTexture(this.scene,key+'-pbr',color,surface,undefined,color===this.map.floor?2048:1024);
+      if(t){m.albedoTexture=t;m.albedoColor=Color3.White();}
+      if(typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine'){
+        const n=256,bump=new DynamicTexture(key+'-normal',{width:n,height:n},this.scene,true),ctx=bump.getContext() as unknown as CanvasRenderingContext2D,pixels=ctx.createImageData(n,n);
+        const hash=(x:number,y:number)=>{let v=Math.imul((x+32)%32,374761393)^Math.imul((y+32)%32,668265263);v=Math.imul(v^(v>>>13),1274126177);return ((v^(v>>>16))>>>0)/4294967295;};
+        const h=(x:number,y:number)=>{const a=Math.floor(x/8),b=Math.floor(y/8),u=(x/8-a),v=(y/8-b),sx=u*u*(3-2*u),sy=v*v*(3-2*v);return ((hash(a,b)*(1-sx)+hash(a+1,b)*sx)*(1-sy)+(hash(a,b+1)*(1-sx)+hash(a+1,b+1)*sx)*sy)*.2;};
+        for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+          const i=(y*n+x)*4,dx=h(x+1,y)-h(x-1,y),dy=h(x,y+1)-h(x,y-1);
+          pixels.data[i]=128-dx*90;pixels.data[i+1]=128-dy*90;pixels.data[i+2]=253;pixels.data[i+3]=255;
+        }
+        ctx.putImageData(pixels,0,0);bump.update();bump.level=surface==='metal'?.03:.08;m.bumpTexture=bump;
+      }
+      m.metadata={color,surface,emissive,label};this.terrainMaterials.set(key,m);
+    }
+    return m;
   }
   private material(color: string, emissive = false, surface?:Solid['surface'],label?:string) {
     const key = color + emissive + (surface||'') + (label||'');
