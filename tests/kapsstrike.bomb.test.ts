@@ -36,3 +36,36 @@ test('expanded district has clear shared A/B centers, painted zones and world si
  assert.ok(MAPS.district.bounds>=80);
  for(const site of BOMB_SITES){assert.ok(fits(MAPS.district,{x:site.x,y:0,z:site.z},1.8));assert.ok(MAPS.district.solids.some(s=>s.label==='BOMBSITE '+site.id));assert.ok(MAPS.district.solids.some(s=>s.id.includes('site-paving')&&s.x===site.x&&s.z===site.z));}
 });
+test('district: 0% line of sight between Bombsite A and Bombsite B (100% building occlusion)',async()=>{
+ const {MAPS}=await import('../src/games/kapsstrike/maps');
+ const {raySolid}=await import('../src/games/kapsstrike/physics');
+ const {BOMB_SITES}=await import('../src/games/kapsstrike/bomb');
+ const map=MAPS.district;
+ const siteA=BOMB_SITES.find(s=>s.id==='A')!;
+ const siteB=BOMB_SITES.find(s=>s.id==='B')!;
+ let checked=0;
+ for(let ax=-siteA.radius+1;ax<=siteA.radius-1;ax+=2){
+  for(let az=-siteA.radius+1;az<=siteA.radius-1;az+=2){
+   if(Math.hypot(ax,az)>siteA.radius)continue;
+   const pA={x:siteA.x+ax,y:1.62,z:siteA.z+az};
+   for(let bx=-siteB.radius+1;bx<=siteB.radius-1;bx+=2){
+    for(let bz=-siteB.radius+1;bz<=siteB.radius-1;bz+=2){
+     if(Math.hypot(bx,bz)>siteB.radius)continue;
+     const pB={x:siteB.x+bx,y:1.62,z:siteB.z+bz};
+     checked++;
+     const dir={x:pB.x-pA.x,y:pB.y-pA.y,z:pB.z-pA.z};
+     const dist=Math.hypot(dir.x,dir.y,dir.z);
+     dir.x/=dist;dir.y/=dist;dir.z/=dist;
+     let hitDist=Infinity;
+     for(const s of map.solids){
+      if(s.detail||s.hidden)continue;
+      const hit=raySolid(pA,dir,s,dist);
+      if(hit<hitDist)hitDist=hit;
+     }
+     assert.ok(hitDist<dist-0.1,`Unblocked sightline detected from A(${pA.x},${pA.z}) to B(${pB.x},${pB.z})`);
+    }
+   }
+  }
+ }
+ assert.ok(checked>500,`Must test substantial sample rays across sites: ${checked}`);
+});
