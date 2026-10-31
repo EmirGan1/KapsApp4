@@ -13,9 +13,10 @@ const categories: {name:string;items:Item[]}[] = [
 const names=(item:Item)=>item==='armor'?'Balistik zırh':item==='kit'?'Çözme kiti':WEAPONS[item].name;
 const phases={buy:'Hazırlık ve satın alma',active:'Raund devam ediyor',planted:'BOMBA KURULDU',result:'Raund sonucu',finished:'Maç tamamlandı'};
 
-export default function StrikeBombHUD({socket,players,interactKey,onShopChange}:{socket?:Socket|null;players:NetworkPlayer[];interactKey:string;onShopChange:(open:boolean)=>void}){
+export default function StrikeBombHUD({socket,players,interactKey,onShopChange,touch,onEquipBomb}:{socket?:Socket|null;players:NetworkPlayer[];interactKey:string;onShopChange:(open:boolean)=>void;touch:boolean;onEquipBomb:()=>void}){
   const [bomb,setBomb]=useState<BombMatch|null>(null),[now,setNow]=useState(0),[shop,setShop]=useState(false),[message,setMessage]=useState(''),[pending,setPending]=useState(false);
   const holding=useRef(false),shopRef=useRef(false),bombRef=useRef<BombMatch|null>(null),changeRef=useRef(onShopChange),dialog=useRef<HTMLDivElement>(null);
+  const equipRef=useRef(onEquipBomb);equipRef.current=onEquipBomb;
   changeRef.current=onShopChange;
   const release=()=>{holding.current=false;socket?.emit('strike:bomb_action',{kind:'hold',held:false});};
   const changeShop=(open:boolean)=>{release();shopRef.current=open;setShop(open);setMessage('');changeRef.current(open);};
@@ -34,6 +35,8 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange}:
         if(e.code==='Escape'||e.code==='KeyB'){e.preventDefault();e.stopImmediatePropagation();changeShop(false);}
         return;
       }
+      if(e.code==='KeyG'&&!e.repeat){socket.emit('strike:bomb_action',{kind:'drop'});return;}
+      if(e.code==='Digit7'&&!e.repeat){equipRef.current();return;}
       if(e.code==='KeyB'&&bombRef.current?.phase==='buy'&&!e.repeat){e.preventDefault();e.stopImmediatePropagation();changeShop(true);}
       else if(bindingFromEvent(e)===interactKey&&!e.repeat){holding.current=true;socket.emit('strike:bomb_action',{kind:'hold',held:true});}
     };
@@ -60,15 +63,17 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange}:
   })}</div>;
   return <>
     <header className="ks-tactical-bar">{cards('CT')}<div className="ks-bomb-score"><div><b>CT {bomb.scores.CT}</b><strong>{Math.max(0,Math.ceil(bomb.deadline-now))}<small>sn</small></strong><b>{bomb.scores.T} T</b></div><small>RAUND {bomb.round} · {phases[bomb.phase]}</small></div>{cards('T')}</header>
-    <aside className="ks-bomb-objective">
+    <aside className={`ks-bomb-objective ${touch?'is-touch':'is-desktop'}`}>
       <span>{me?.team==='CT'?'CT · Savunma':'T · Saldırı'} · ${me?.money||0} · Zırh {Math.ceil(me?.armor||0)}</span>
       {bomb.carrier===socket?.id&&<strong>Bomba sende · A veya B bölgesine ilerle</strong>}
-      {bomb.phase==='buy'&&me?.alive&&<button onClick={()=>changeShop(true)}>Satın al <kbd>B</kbd></button>}
-      {me?.alive&&(bomb.phase==='active'||bomb.phase==='planted')&&<div>
+      {bomb.phase==='buy'&&me?.alive&&(touch?<button onClick={()=>changeShop(true)}>Satın al <kbd>B</kbd></button>:<span>B · Satın alma menüsü</span>)}
+      {me?.alive&&(bomb.phase==='active'||bomb.phase==='planted')&&(touch?<div className="ks-bomb-touch-actions">
         <button onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);holding.current=true;socket?.emit('strike:bomb_action',{kind:'hold',held:true});}} onPointerUp={release} onPointerCancel={release}>Basılı tut: {me.team==='CT'?'Çöz':'Kur / Al'} <kbd>{label(interactKey)}</kbd></button>
+        {bomb.carrier===socket?.id&&<button onClick={onEquipBomb}>Bombayı ele al</button>}
         {bomb.carrier===socket?.id&&<button onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop'})}>Bombayı bırak</button>}
-      </div>}
+      </div>:<span>{label(interactKey)} basılı tut · Kur / Çöz / Al{bomb.carrier===socket?.id?' · 7: Bombayı ele al · G: Bırak':''}</span>)}
       {bomb.action&&<label>{bomb.action.kind==='plant'?'Bomba kuruluyor':'Bomba çözülüyor'}<progress max={bomb.action.kind==='plant'?BOMB_RULES.plant:me?.kit?BOMB_RULES.kitDefuse:BOMB_RULES.defuse} value={Math.max(0,now-bomb.action.started)}/></label>}
+      {bomb.phase==='planted'&&<strong role="alert">Bomba {bomb.site} bölgesine kuruldu!</strong>}
       {bomb.reason&&<strong role="status">{bomb.winner} kazandı · {bomb.reason}</strong>}
       {!me?.alive&&<span>Elendin · Yeni raundda yeniden doğacaksın.</span>}
     </aside>

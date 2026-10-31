@@ -25,3 +25,10 @@ HE/flash/smoke mechanics; first/third-person objective animations; spatial beeps
 Do not represent the passing basic-mode tests as completion of the entire quality update or proof of live deployment.
 
 Visibility audit: production KapsStrikeGame-DIZq-Bgn.js contained neither BOMBA KURMA nor strike:bomb_action. The production bundle predates this feature. Entry visibility was explicitly tested at phone, touch tablet and desktop sizes.
+
+## Sites, controls and audio update
+District now spans 160×160m (1.7× previous linear dimensions, approximately 2.9× footprint). Shared A/B centers drive server planting rules, minimap circles and in-world paint/signs/rings; route signs, architectural fittings and peripheral cover added. High ground texture uses 2048px, other surfaces 512px (Medium256/Low128) with a texture memory budget; these are procedural surfaces, not photogrammetry assets. CT spawn view faces into the town.
+
+Bomb can be held using 7 / touch button, dropped with G / touch and retrieved with the interaction control by a living T. Desktop objective buttons replaced by keyboard hints; B opens a cursor-enabled purchase dialog. Phone/tablet objective, health, minimap and weapon controls moved to separate lanes. Plant announcement text, optional Turkish speech synthesis, synthesized accelerating countdown and explosion sound use game volume. Speech voice availability depends on browser/OS.
+
+209 automated tests passed, including new shared site geometry checks. Two-context Chromium/WebGL browser flow passed at phone portrait/landscape and tablet sizes, including 7→held model→G→pickup→plant→kit defuse→next round and radar A/B labels. Screenshots inspected for objective/radar overlap; test positioning is explicitly fixture-controlled. A first all-surfaces-2048 High attempt closed the browser, so the texture budget was reduced and rechecked. Typecheck and production build passed. Physical iOS/Android device testing, audible sound output and real-device High FPS could not be verified here. Deployment remains separate from GitHub merge.

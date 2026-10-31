@@ -1,3 +1,4 @@
+import {BOMB_SITES} from './bomb';
 import {cosmetic} from "./cosmetics";
 import { createCharacter } from "./character";
 import { cleanSkin } from "./skins";
@@ -72,6 +73,7 @@ export class StrikeRenderer {
   private falling?:Mesh;
   private smoke:Mesh[]=[];
   private bombMesh?:Mesh;
+  private heldBomb?:Mesh;
   private reloadAt = 0;
   private muzzle: Mesh;
   private shadow?: ShadowGenerator;
@@ -149,6 +151,10 @@ export class StrikeRenderer {
       ground.material = this.material(map.floor,false,map.id==='dust'?'plaster':'concrete');
       this.worldUV(ground);
       ground.receiveShadows = true;
+      if(map.id==='district')for(const site of BOMB_SITES){
+        const ring=MeshBuilder.CreateTorus('plant-zone-'+site.id,{diameter:site.radius*2,thickness:.12,tessellation:64},this.scene);
+        ring.position.set(site.x,.14,site.z);ring.material=this.material('#ffd078',true);ring.isPickable=false;
+      }
       const batches = new Map<string, Mesh[]>();
       for (const s of map.solids) {
         if(s.hidden)continue;
@@ -423,7 +429,7 @@ export class StrikeRenderer {
       throw error;
     }
   }
-  private textureSize(){const q=this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;return q==='high'?1024:q==='medium'?512:128;}
+  private textureSize(color?:string){const q=this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;return q==='high'?(color===this.map.floor?2048:512):q==='medium'?256:128;}
   private applyCosmetics(){
     for(const [weapon,root] of this.weapons){
       const finish=cosmetic(this.settings.cosmeticLoadout?.[weapon]);
@@ -462,7 +468,7 @@ export class StrikeRenderer {
       this.qualityApplied=q;
       for(const m of this.materials.values())if(m.metadata){
         const {color,surface,label,emissive}=m.metadata;
-        m.unfreeze();m.diffuseTexture?.dispose();const tex=surfaceTexture(this.scene,m.name,color,surface,label,this.textureSize());m.diffuseTexture=tex||null;if(emissive)m.emissiveTexture=tex||null;m.freeze();
+        m.unfreeze();m.diffuseTexture?.dispose();const tex=surfaceTexture(this.scene,m.name,color,surface,label,this.textureSize(color));m.diffuseTexture=tex||null;if(emissive)m.emissiveTexture=tex||null;m.freeze();
       }
       for(const m of this.scene.meshes)if(m.name.startsWith('district-'))m.setEnabled(q!=='low'||!m.metadata?.detail);
       const sun=this.scene.getLightByName('sun') as DirectionalLight;
@@ -516,7 +522,7 @@ export class StrikeRenderer {
     if (!m) {
       m = new StandardMaterial(key, this.scene);
       m.diffuseColor = Color3.FromHexString(color);
-      const texture=surfaceTexture(this.scene,key,color,surface,label,this.textureSize());
+      const texture=surfaceTexture(this.scene,key,color,surface,label,this.textureSize(color));
       if(texture){m.diffuseTexture=texture;m.diffuseColor=Color3.White();}
       m.specularColor = color === "#253140" ? new Color3(.22,.25,.3) : new Color3(0.035, 0.035, 0.035);
       if(surface==='water'||surface==='glass') {m.specularColor=new Color3(.45,.52,.57);m.specularPower=64;}
@@ -584,6 +590,7 @@ export class StrikeRenderer {
     delta: number,
     correction:Vec3={x:0,y:0,z:0},
     spectator?:{position:Vec3;yaw:number;pitch:number;stance:string},
+    bombEquipped=false,
   ) {
     const p = state.player,
       m = p.movement;
@@ -668,6 +675,13 @@ export class StrikeRenderer {
     if(state.bomb){const b=state.bomb;if(!this.bombMesh){this.bombMesh=MeshBuilder.CreateBox('tactical-bomb',{width:.5,height:.22,depth:.36},this.scene);this.bombMesh.material=this.material('#626c54',false,'metal');const light=MeshBuilder.CreateBox('bomb-indicator',{width:.09,height:.025,depth:.08},this.scene);light.parent=this.bombMesh;light.position.y=.12;light.material=this.material('#ff4d4d',true);}
       this.bombMesh.setEnabled(!!b.position&&(b.phase==='active'||b.phase==='planted'));if(b.position)this.bombMesh.position.set(b.position.x,b.position.y+.15,b.position.z);
     }else this.bombMesh?.setEnabled(false);
+    if(bombEquipped&&!this.heldBomb){
+      this.heldBomb=MeshBuilder.CreateBox('held-bomb',{width:.36,height:.22,depth:.25},this.scene);
+      this.heldBomb.parent=this.camera;this.heldBomb.position.set(.18,-.25,.55);this.heldBomb.material=this.material('#596253',false,'metal');
+      const screen=MeshBuilder.CreateBox('held-bomb-display',{width:.16,height:.025,depth:.10},this.scene);screen.parent=this.heldBomb;screen.position.y=.12;screen.material=this.material('#73c69b',true);
+    }
+    this.heldBomb?.setEnabled(bombEquipped&&p.hp>0);
+    if(bombEquipped)this.gunRoot.setEnabled(false);
     if(state.bomb&&p.hp<=0){
       this.gunRoot.setEnabled(false);
       if(spectator){this.camera.position.set(spectator.position.x,spectator.position.y+(spectator.stance==='stand'?C.eye:C.crouchEye),spectator.position.z);this.camera.rotation.set(spectator.pitch,spectator.yaw,0);}

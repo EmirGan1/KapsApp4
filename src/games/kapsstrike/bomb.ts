@@ -2,7 +2,7 @@ import type {Vec3,WeaponId} from './types';
 export type BombSide='T'|'CT';
 export type BombPhase='buy'|'active'|'planted'|'result'|'finished';
 export const BOMB_RULES={buy:15,round:105,plant:3.2,explode:40,defuse:10,kitDefuse:5,transition:5,maxMoney:16000,startMoney:800,winReward:3250,lossReward:1400,lossStep:500,killReward:300,objectiveReward:300};
-export const BOMB_SITES=[{id:'A',x:-23,z:15,radius:6},{id:'B',x:24,z:17,radius:5}] as const;
+export const BOMB_SITES=[{id:'A',x:-40,z:26,radius:8},{id:'B',x:41,z:29,radius:8}] as const;
 export const BOMB_SHOP={pistol:200,smg:1200,rifle:2700,shotgun:1800,sniper:4500,armor:650,kit:400} as const;
 export interface BombPlayer {id:string;team:BombSide;alive:boolean;position:Vec3;money:number;armor:number;kit:boolean;weapons:WeaponId[];plants:number;defuses:number;holdUntil:number}
 export interface BombMatch {phase:BombPhase;round:number;deadline:number;scores:{T:number;CT:number};carrier?:string;position?:Vec3;site?:string;action?:{player:string;kind:'plant'|'defuse';started:number;position:Vec3};winner?:BombSide;reason?:string;target:number;half:number;swapped:boolean;loss:{T:number;CT:number};players:Record<string,BombPlayer>}

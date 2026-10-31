@@ -23,6 +23,7 @@ import { PHYSICS as C, WEAPONS, WEAPON_ORDER, ownsWeapon } from "./config";
 import { clamp, fits } from "./physics";
 
 export interface StrikeHUD {
+  bombEquipped?:boolean;
   spectating?:string;
   inventory?:WeaponId[];
   world?: StrikeWorld;
@@ -116,6 +117,9 @@ export class StrikeController {
   private dropped = 0;
   private correction={x:0,y:0,z:0};
   private pendingInteract=false;
+  private nextBombBeep=0;
+  private bombEquipped=false;
+  equipBomb(){this.bombEquipped=!this.bombEquipped;this.clearInput();}
   private previous = { x: 0, y: 0, z: 0 };
   private lastHit?: StrikeHUD["hit"];
   private lastHurt?: StrikeHUD["hurt"];
@@ -406,7 +410,10 @@ export class StrikeController {
         const frozen=!!snapshot.bomb&&!["active","planted"].includes(snapshot.bomb.phase);
         if(frozen)this.unacknowledgedInputs=[];
         const oldPosition={...this.state.player.movement.position};
+        const oldBomb=this.state.bomb;
         this.state.bomb=snapshot.bomb;
+        if(snapshot.bomb?.phase==='planted'&&oldBomb?.phase!=='planted'){this.audio.play('bombPlant');this.audio.announce('Bomba kuruldu');}
+        if(snapshot.bomb?.reason==='Bomba patladı'&&oldBomb?.reason!=='Bomba patladı')this.audio.play('bombExplode');
         if(snapshot.world)this.state.world=snapshot.world;
         this.state.player.hp = myServerState.hp;
         this.state.score = myServerState.score;
@@ -510,6 +517,8 @@ export class StrikeController {
         const frozen=!!this.state.bomb&&!["active","planted"].includes(this.state.bomb.phase);
         if(this.menuOverlay){cmd.moveX=0;cmd.moveZ=0;cmd.fire=false;cmd.reload=false;cmd.jump=false;cmd.interact=false;cmd.weapon=undefined;}
         const owned=this.state.bomb?.players[this.socket?.id||'']?.weapons;
+        if(cmd.weapon)this.bombEquipped=false;
+        if(this.bombEquipped){cmd.fire=false;cmd.reload=false;cmd.ads=false;}
         if(owned&&cmd.weapon&&!owned.includes(cmd.weapon))cmd.weapon=undefined;
         // Client prediction uses the same round gate as the authoritative server.
         const beforeEvent=this.state.eventId;
@@ -550,6 +559,11 @@ export class StrikeController {
         this.updateAndRenderRemotePlayers();
       }
 
+      const bomb=this.state.bomb;
+      if(bomb?.phase==='planted'&&now>=this.nextBombBeep){
+        const left=bomb.deadline-this.state.tick*C.dt;
+        this.audio.play('bombTick');this.nextBombBeep=now+(left>20?1000:left>10?600:left>5?300:150);
+      }
       const decay=Math.exp(-elapsed*16);
       for(const axis of ["x","y","z"] as const)this.correction[axis]*=decay;
       this.renderer.render(
@@ -561,7 +575,8 @@ export class StrikeController {
         this.previous,
         elapsed,
         this.correction,
-        this.spectator
+        this.spectator,
+        this.bombEquipped&&this.state.bomb?.carrier===this.socket?.id
       );
 
       if(this.receivedInitialState && !this.notifiedReady && this.renderer.scene.isReady()){
@@ -686,8 +701,9 @@ export class StrikeController {
   }
 
   private resetView(){
-    this.yaw=0;this.pitch=0;this.correction={x:0,y:0,z:0};
-    this.state.player.yaw=0;this.state.player.pitch=0;
+    this.bombEquipped=false;
+    this.yaw=this.state.bomb&&this.localTeam==='blue'?Math.PI:0;this.pitch=0;this.correction={x:0,y:0,z:0};
+    this.state.player.yaw=this.yaw;this.state.player.pitch=0;
     this.previous={...this.state.player.movement.position};
     this.lastHurt=undefined;this.lastHit=undefined;this.state.lastDamageTick=-10000;
     this.clearInput();this.pendingInteract=false;this.renderer.resetView();
@@ -701,6 +717,7 @@ export class StrikeController {
       stats = this.renderer.stats();
 
     this.onHUD({
+      bombEquipped:this.bombEquipped&&s.bomb?.carrier===this.socket?.id,
       spectating:this.spectator?.username,
       inventory:s.bomb?.players[this.socket?.id||'']?.weapons||WEAPON_ORDER.filter(w=>ownsWeapon(p.weapon,w)),
       world:s.bomb?undefined:s.world, position:{...p.movement.position}, yaw:this.yaw,

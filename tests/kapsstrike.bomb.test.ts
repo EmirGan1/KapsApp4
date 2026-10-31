@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,bombView,bombPurchaseError} from '../src/games/kapsstrike/bomb';
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
-const players=(count=2)=>Array.from({length:count},(_,i)=>({id:String(i),team:(i%2?'CT':'T') as 'T'|'CT',position:{x:-23,y:0,z:15}}));
+const players=(count=2)=>Array.from({length:count},(_,i)=>({id:String(i),team:(i%2?'CT':'T') as 'T'|'CT',position:{x:-40,y:0,z:26}}));
 function planted(){const m=createBombMatch(players(),0);stepBomb(m,15);bombInteract(m,'0',true,16);m.players['0'].holdUntil=20;stepBomb(m,19.21);assert.equal(m.phase,'planted');return m;}
 for(const count of [2,4,10])test(`${count} players: minimum teams, 40s planted timer, explosion and one result`,()=>{const m=createBombMatch(players(count),0);stepBomb(m,15);bombInteract(m,'0',true,16);m.players['0'].holdUntil=20;stepBomb(m,19.21);assert.equal(m.deadline,59.21);stepBomb(m,59.21);assert.equal(m.winner,'T');assert.equal(m.scores.T,1);stepBomb(m,59.22);assert.equal(m.scores.T,1);});
 test('invalid teams and overfull teams rejected',()=>{assert.throws(()=>createBombMatch(players(1),0));assert.throws(()=>createBombMatch(players(12),0));assert.throws(()=>createBombMatch(players().map(p=>({...p,team:'T'})),0));});
@@ -30,4 +30,9 @@ test('leaving removes objective owner and action, and cannot respawn a ghost par
  server.joinRoom(room.roomCode,{id:2,username:'b',avatar:null},'b');server.setReady('b',true);server.startGame('a');server.stopRoomSimulationLoop(room);server.tickSimulation(room);
  room.bomb!.phase='active';room.bomb!.carrier='a';server.leaveRoom('a',1);
  assert.equal(room.bomb!.carrier,undefined);assert.equal(room.bomb!.players.a,undefined);server.tickSimulation(room);assert.equal(room.bomb!.winner,'CT');assert.equal(room.hostId,2);
+});
+test('expanded district has clear shared A/B centers, painted zones and world signs',async()=>{
+ const {MAPS}=await import('../src/games/kapsstrike/maps');const {fits}=await import('../src/games/kapsstrike/physics');const {BOMB_SITES}=await import('../src/games/kapsstrike/bomb');
+ assert.ok(MAPS.district.bounds>=80);
+ for(const site of BOMB_SITES){assert.ok(fits(MAPS.district,{x:site.x,y:0,z:site.z},1.8));assert.ok(MAPS.district.solids.some(s=>s.label==='BOMBSITE '+site.id));assert.ok(MAPS.district.solids.some(s=>s.id.includes('site-paving')&&s.x===site.x&&s.z===site.z));}
 });
