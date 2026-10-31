@@ -730,7 +730,7 @@ export default function KapsStrikeGame({
       {error && view !== "menu" && <p className="ks-network-error" role="alert">{error}</p>}
 
       {/* MOBILE PORTRAIT ORIENTATION BANNER */}
-      {view === "play" && isMobile && isPortrait && (
+      {view === "play" && isMobile && isPortrait && currentRoom?.mode!=="bomb" && (
         <div className="ks-landscape-banner">
           📱 En iyi 3D FPS kontrolü ve geniş görüş için telefonunuzu yatay çeviriniz!
         </div>
@@ -1204,7 +1204,7 @@ export default function KapsStrikeGame({
             </div>
             {!isMobile && (
               <div className="ks-ammo">
-                <small>{WEAPONS[hud.weapon]?.name}</small>
+                <small>{hud.bombEquipped?"BOMBA · G ile bırak":WEAPONS[hud.weapon]?.name}</small>
                 <strong>
                   {hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
                 </strong>
@@ -1231,7 +1231,7 @@ export default function KapsStrikeGame({
           )}
 
           {hud.dead && currentRoom?.mode==='bomb' && <div className="ks-bomb-spectator"><b>{hud.spectating?`İzleniyor: ${hud.spectating}`:'Takımın elendi'}</b><span>Sonraki raundda yeniden doğacaksın.</span>{hud.spectating&&<button onClick={()=>game.current?.cycleSpectator()}>Sonraki takım arkadaşı</button>}</div>}
-          {!currentInputDevice().phone && <StrikeMinimap map={MAPS[currentRoom?.map||map]} hud={hud}/>}
+          {(!currentInputDevice().phone||currentRoom?.mode==='bomb') && <StrikeMinimap map={MAPS[currentRoom?.map||map]} hud={hud}/>}
           {hud.ads && !hud.dead && (hud.weapon==='sniper'||hud.weapon==='railgun') && <div className="ks-scope" aria-label="Dürbün açık"><div className="ks-scope-lens"><i/><b/><span>{hud.weapon==='railgun'?'5×':'3.5×'} / UFUK OPTICS</span></div></div>}
           {hud.supplyPrompt && !hud.dead && <button className="ks-supply-prompt" onClick={()=>game.current?.interact()}>{isMobile?'Dokun':'E'} · {hud.supplyPrompt}</button>}
           {hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · RX-3 Şimşek</small></div>}
@@ -1852,7 +1852,7 @@ export default function KapsStrikeGame({
         </div>
       )}
 
-      {currentRoom?.mode==='bomb'&&view==='play'&&<StrikeBombHUD socket={socket} players={currentRoom.players} interactKey={settings.bindings?.interact||"KeyE"} onShopChange={open=>game.current?.setMenuOverlay(open)}/>}
+      {currentRoom?.mode==='bomb'&&view==='play'&&<StrikeBombHUD touch={isMobile} onEquipBomb={()=>game.current?.equipBomb()} socket={socket} players={currentRoom.players} interactKey={settings.bindings?.interact||"KeyE"} onShopChange={open=>game.current?.setMenuOverlay(open)}/>}
       {view==='menu'&&<button className="ks-mode-back" onClick={()=>setCategory(null)}>Oyun modu seçimi</button>}
       {view==='menu'&&category===null&&<div className="ks-mode-gate"><h1>KapsStrike · Oyununu seç</h1><div><button onClick={()=>{setCategory('kill');setCreateMode('tdm');setCreateMap('warehouse');}}>KILL YARIŞI<small>Mevcut FFA ve takım savaşı · Haritalar, kasalar ve envanter</small></button><button onClick={()=>{setCategory('bomb');setModeTab('multiplayer');setCreateMode('bomb');setCreateMap('district');}}>BOMBA KURMA<small>Takımını seç, bomba bölgelerini savun veya bombayı kur. Raundları kazan ve zafere ulaş.</small></button></div></div>}
       {/* Pause has one clear primary action; detailed settings live in dismissible panels. */}

@@ -809,7 +809,7 @@ export class KapsStrikeServerManager {
       stepBomb(b,room.tick*C.dt);
       room.teamScores={red:b.scores.T,blue:b.scores.CT};
       if(b.phase==='finished'){this.concludeMatch(room,{team:b.winner==='T'?'red':'blue',reason:b.reason||'Bomba maçı sona erdi'});return;}
-      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
+      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
     }
     const now = Date.now();
 
