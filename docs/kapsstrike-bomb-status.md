@@ -1,6 +1,6 @@
 # Bomb mode quality update — 2026-10-31
 
-Status: partial implementation, draft PR #8; not ready to merge or deploy.
+Status: basic bomb mode release candidate in PR #8. Advanced quality-update features below remain incomplete. Deployment must be verified separately.
 
 ## This increment
 - Server enforces all-ready before bomb match start; safely removes departed objective owners/actions and ghost round participants; synchronizes round scores and resets protection/weapon timers on each round.
@@ -22,4 +22,6 @@ Status: partial implementation, draft PR #8; not ready to merge or deploy.
 ## Still required
 HE/flash/smoke mechanics; first/third-person objective animations; spatial beeps and explosion effects; richer architecture/PBR and visual quality acceptance; full spectator testing; disconnect grace/rejoin; MR12 selection; tactical site radar; isolated bomb statistics persistence; complete match/overtime browser tests, 5v5 stress tests, physical mobile and voice regression checks. The fixture's test authentication is never used in production.
 
-Do not represent this draft or passing subset of tests as a completed game or live deployment.
+Do not represent the passing basic-mode tests as completion of the entire quality update or proof of live deployment.
+
+Visibility audit: production KapsStrikeGame-DIZq-Bgn.js contained neither BOMBA KURMA nor strike:bomb_action. The production bundle predates this feature. Entry visibility was explicitly tested at phone, touch tablet and desktop sizes.
