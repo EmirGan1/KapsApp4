@@ -1,3 +1,4 @@
+import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
 import { randomBytes } from "node:crypto";
 import { StrikeInventory } from "./strikeInventory";
@@ -166,6 +167,7 @@ export class StrikeServerPlayer {
 }
 
 export class StrikeRoom {
+  bomb?:BombMatch;
   world: StrikeWorld;
   roomCode: string;
   name: string;
@@ -313,8 +315,9 @@ export class StrikeRoom {
       localState: targetPlayer ? structuredClone(targetPlayer.state) : undefined,
       serverTime: Date.now(),
       ackSequence,
+      bomb:this.bomb?bombView(this.bomb,playerSocketId):undefined,
       players: playerSnapshots,
-      teamScores: this.mode === "tdm" ? { ...this.teamScores } : undefined,
+      teamScores: this.mode !== "ffa" ? { ...this.teamScores } : undefined,
       timeLeft: this.timeLeft,
       events: [...this.events],
     };
@@ -322,7 +325,7 @@ export class StrikeRoom {
 
   getSpawnPosition(team: StrikeTeam, playerIndex: number): Vec3 {
     const mapDef = MAPS[this.map];
-    if (this.mode === "tdm") {
+    if (this.mode !== "ffa") {
       const half = Math.max(1, Math.floor(mapDef.spawns.length / 2));
       const pool = team === "red" ? mapDef.spawns.slice(0, half) : mapDef.spawns.slice(half);
       return pool[playerIndex % pool.length] || mapDef.spawns[0];
@@ -449,8 +452,8 @@ export class KapsStrikeServerManager {
       roomCode = "KS-" + randomBytes(8).toString("hex").toUpperCase();
     } while (this.rooms.has(roomCode));
 
-    const mapId: MapId = options.map && MAPS[options.map] ? options.map : "warehouse";
-    const mode: StrikeGameMode = options.mode === "tdm" ? "tdm" : "ffa";
+    const mapId: MapId = options.mode === "bomb" ? "district" : options.map && MAPS[options.map] ? options.map : "warehouse";
+    const mode: StrikeGameMode = options.mode === "bomb" ? "bomb" : options.mode === "tdm" ? "tdm" : "ffa";
     const maxPlayers = Math.max(2, Math.min(10, Number(options.maxPlayers) || 8));
     const timeLimit = Math.max(60, Math.min(900, Number(options.timeLimit) || 300));
     const scoreLimit = Math.max(10, Math.min(100, Number(options.scoreLimit) || (mode === "tdm" ? 50 : 30)));
@@ -468,7 +471,7 @@ export class KapsStrikeServerManager {
       options.password
     );
 
-    const team: StrikeTeam = mode === "tdm" ? "red" : "none";
+    const team: StrikeTeam = mode !== "ffa" ? "red" : "none";
     const spawn = room.getSpawnPosition(team, 0);
     const hostPlayer = new StrikeServerPlayer(
       socketId,
@@ -517,16 +520,18 @@ export class KapsStrikeServerManager {
         previous?.emit("strike:session_replaced");previous?.leave(`strike:${roomCode}`);
         p.id = socketId;p.state.id=socketId;p.lastSequence=-1;p.lastQueuedSequence=-1;
         p.inputQueue=[];p.heldInput=undefined;p.lastInputTick=room.tick;p.history=[];p.state.weapon.triggerHeld=false;
+        if(room.bomb?.players[sId]){const bp=room.bomb.players[sId];delete room.bomb.players[sId];bp.id=socketId;room.bomb.players[socketId]=bp;if(room.bomb.carrier===sId)room.bomb.carrier=socketId;if(room.bomb.action?.player===sId)delete room.bomb.action;}
         room.players.delete(sId);room.players.set(socketId,p);
         this.socketToRoom.set(socketId,roomCode);this.userToRoom.set(user.id,roomCode);
         this.broadcastRoomState(room);return {success:true,room};
       }
     }
+    if(room.mode==='bomb'&&room.status==='in_progress'&&!room.players.has(socketId))return {success:false,error:'Aktif bomba maçına yeni oyuncu alınmıyor.'};
     if (room.players.size >= room.maxPlayers) return {success:false,error:"Oda dolu."};
     this.removePreviousMembership(user.id,socketId);
 
     let team: StrikeTeam = "none";
-    if (room.mode === "tdm") {
+    if (room.mode !== "ffa") {
       let redCount = 0;
       let blueCount = 0;
       room.players.forEach((p) => {
@@ -599,6 +604,11 @@ export class KapsStrikeServerManager {
     if (!room || room.players.get(socketId)?.userId !== userId) return;
 
     const wasHost = room.players.get(socketId)?.isHost;
+    if(room.bomb){
+      dropBomb(room.bomb,socketId);
+      if(room.bomb.action?.player===socketId)delete room.bomb.action;
+      delete room.bomb.players[socketId];
+    }
     room.players.delete(socketId);
     this.socketToRoom.delete(socketId);
     if(this.userToRoom.get(userId)===roomCode)this.userToRoom.delete(userId);
@@ -643,11 +653,13 @@ export class KapsStrikeServerManager {
     const roomCode = this.socketToRoom.get(socketId);
     if (!roomCode) return false;
     const room = this.rooms.get(roomCode);
-    if (!room || room.mode !== "tdm" || room.status !== "lobby") return false;
+    if (!room || room.mode === "ffa" || room.status !== "lobby") return false;
 
     const player = room.players.get(socketId);
     if (!player) return false;
 
+    if(team!=='red'&&team!=='blue')return false;
+    if(room.mode==='bomb'&&[...room.players.values()].filter(p=>p.team===team&&p.id!==socketId).length>=5)return false;
     player.team = team;
     player.color = team === "red" ? "#ef4444" : "#3b82f6";
     this.broadcastRoomState(room);
@@ -669,8 +681,10 @@ export class KapsStrikeServerManager {
       return { success: false, error: "Odada en az 1 oyuncu olmalıdır." };
     }
 
+    if(room.mode==='bomb'&&(room.players.size<2||!['red','blue'].every(t=>[...room.players.values()].some(p=>p.team===t))))return {success:false,error:'Her takımda en az bir oyuncu gerekli.'};
     // Both supported event aliases must never reset an already running round.
     if (room.status === "in_progress") return { success: true };
+    if(room.mode==='bomb'&&[...room.players.values()].some(p=>!p.ready))return {success:false,error:'Maç başlamadan önce bütün oyuncular hazır olmalı.'};
     room.status = "in_progress";
     room.timeLeft = room.timeLimit;
     room.teamScores = { red: 0, blue: 0 };
@@ -710,6 +724,8 @@ export class KapsStrikeServerManager {
       p.state.weapon.nextFire = 0;p.state.weapon.switchUntil=0;p.state.weapon.triggerHeld=false;p.state.weapon.shotIndex=0;
     });
 
+    room.bomb=undefined;
+    if(room.mode==='bomb')room.bomb=createBombMatch([...room.players.values()].map(p=>({id:p.id,team:p.team==='red'?'T':'CT',position:{...p.state.movement.position}})),0);
     this.startRoomSimulationLoop(room);
     this.broadcastRoomState(room);
     this.io.to(`strike:${room.roomCode}`).emit("strike:match_started", room.getPublicRoomState());
@@ -732,6 +748,7 @@ export class KapsStrikeServerManager {
     }
 
     room.status = "lobby";
+    room.bomb=undefined;
     room.winner = undefined;
     room.timeLeft = room.timeLimit;
 
@@ -786,7 +803,14 @@ export class KapsStrikeServerManager {
   public tickSimulation(room: StrikeRoom): void {
     const mapDef = MAPS[room.map];
     room.tick++;
-    advanceWorld(room.world,mapDef,room.tick);
+    if(!room.bomb)advanceWorld(room.world,mapDef,room.tick);
+    if(room.bomb){const b=room.bomb,round=b.round;
+      for(const p of Object.values(b.players)){const live=room.players.get(p.id);p.alive=!!live&&live.state.hp>0;if(live)p.position={...live.state.movement.position};}
+      stepBomb(b,room.tick*C.dt);
+      room.teamScores={red:b.scores.T,blue:b.scores.CT};
+      if(b.phase==='finished'){this.concludeMatch(room,{team:b.winner==='T'?'red':'blue',reason:b.reason||'Bomba maçı sona erdi'});return;}
+      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
+    }
     const now = Date.now();
 
     // Sample a consistent start-of-step history before applying any player's input.
@@ -795,9 +819,10 @@ export class KapsStrikeServerManager {
     // 1. Process player inputs & movement simulation
     room.players.forEach((player) => {
 
+      if(room.bomb&&(room.bomb.phase==='buy'||room.bomb.phase==='result')){player.inputQueue=[];player.heldInput=undefined;return;}
       // Handle respawn when dead
       if (player.state.hp <= 0) {
-        if (room.tick >= player.state.deadUntil) {
+        if (!room.bomb && room.tick >= player.state.deadUntil) {
           const spawnPos = room.getSpawnPosition(player.team, Math.floor(Math.random() * 10));
           player.state.movement = newMovement(spawnPos);
           player.damageCredits.clear();
@@ -831,10 +856,10 @@ export class KapsStrikeServerManager {
         player.state.yaw = input.yaw;
         player.state.pitch = clamp(input.pitch, -1.48, 1.48);
 
-        if(input.interact)claimSupply(room.world,mapDef,player.state,room.tick);
+        if(!room.bomb&&input.interact)claimSupply(room.world,mapDef,player.state,room.tick);
 
         // Handle weapon switch request
-        if (input.weapon && ownsWeapon(player.state.weapon,input.weapon) && input.weapon !== player.state.weapon.selected) {
+        if (input.weapon && (!room.bomb||room.bomb.players[player.id]?.weapons.includes(input.weapon)) && ownsWeapon(player.state.weapon,input.weapon) && input.weapon !== player.state.weapon.selected) {
           { // A new selection restarts the equip delay; it cannot bypass fire cooldown.
             player.state.weapon.reloadUntil = 0;
             player.state.weapon.selected = input.weapon;
@@ -890,7 +915,7 @@ export class KapsStrikeServerManager {
 
     // 3. Match Timer Countdown & Win Condition Checks (Every second = 60 ticks)
     if (room.tick % Math.round(1 / C.dt) === 0) {
-      room.timeLeft = Math.max(0, room.timeLeft - 1);
+      room.timeLeft = room.bomb?Math.max(0,room.bomb.deadline-room.tick*C.dt):Math.max(0, room.timeLeft - 1);
       this.checkMatchEndConditions(room);
     }
   }
@@ -993,7 +1018,7 @@ export class KapsStrikeServerManager {
       room.players.forEach((target) => {
         if (target.id === shooter.id || target.state.hp <= 0) return;
         // TDM friendly fire check: teammates take no damage
-        if (room.mode === "tdm" && target.team === shooter.team) return;
+        if (room.mode !== "ffa" && target.team === shooter.team) return;
 
         // Spawn protection check
         if (room.tick < target.state.protectedUntil) return;
@@ -1042,7 +1067,8 @@ export class KapsStrikeServerManager {
         const apply=()=>{
           if(victim.state.hp<=0)return;
         const damagePerPellet = weaponDamage(weaponId,nearest,isHeadshot,ads);
-        const finalDamage = Math.min(victim.state.hp, damagePerPellet);
+        const armor=room.bomb?.players[victim.id];const absorbed=armor?Math.min(armor.armor,damagePerPellet*.35):0;if(armor)armor.armor-=absorbed;
+        const finalDamage = Math.min(victim.state.hp, damagePerPellet-absorbed);
 
         victim.state.hp = Math.max(0, victim.state.hp - finalDamage);
         shooter.damage += finalDamage;
@@ -1096,6 +1122,7 @@ export class KapsStrikeServerManager {
     }
     victim.damageCredits.clear();
     dropInventory(room.world,victim.state,room.tick);
+    if(room.bomb){room.bomb.players[victim.id].alive=false;dropBomb(room.bomb,victim.id);killer.state.hp=Math.min(100,killer.state.hp);const p=room.bomb.players[killer.id];if(p)p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.killReward);}
     victim.deaths++;
     victim.state.deadUntil = room.tick + C.respawnTicks;
 
@@ -1138,7 +1165,7 @@ export class KapsStrikeServerManager {
   }
 
   private checkMatchEndConditions(room: StrikeRoom): void {
-    if (room.status !== "in_progress") return;
+    if (room.status !== "in_progress"||room.bomb) return;
 
     let matchEnded = false;
     let winnerTeam: StrikeTeam | undefined;
@@ -1147,7 +1174,7 @@ export class KapsStrikeServerManager {
     let winReason = "";
 
     // Evaluate score limits after the full combat step, including trades.
-    if (room.mode === "tdm" && Math.max(room.teamScores.red,room.teamScores.blue)>=room.scoreLimit) {
+    if (room.mode !== "ffa" && Math.max(room.teamScores.red,room.teamScores.blue)>=room.scoreLimit) {
       matchEnded=true;
       winnerTeam=room.teamScores.red===room.teamScores.blue ? "none" : room.teamScores.red>room.teamScores.blue ? "red":"blue";
       winReason=winnerTeam==="none"?"Skor sınırında beraberlik!":`${winnerTeam==="red"?"Kırmızı":"Mavi"} Takım skor sınırına ulaştı!`;
@@ -1162,7 +1189,7 @@ export class KapsStrikeServerManager {
     // 2. Time limit expired
     if (!matchEnded && room.timeLeft <= 0) {
       matchEnded = true;
-      if (room.mode === "tdm") {
+      if (room.mode !== "ffa") {
         if (room.teamScores.red > room.teamScores.blue) {
           winnerTeam = "red";
           winReason = "Süre bitti. Kırmızı Takım galip!";
@@ -1211,7 +1238,7 @@ export class KapsStrikeServerManager {
       room.players.forEach(async (p) => {
         try {
           const isWin =
-            (room.mode === "tdm" && p.team === winner.team && winner.team !== "none") ||
+            (room.mode !== "ffa" && p.team === winner.team && winner.team !== "none") ||
             (room.mode === "ffa" && p.userId === winner.userId);
 
           await this.dbClient!.execute({
@@ -1242,7 +1269,7 @@ export class KapsStrikeServerManager {
 
     room.players.forEach((p) => {
       const isWin =
-        (room.mode === "tdm" && p.team === winner.team && winner.team !== "none") ||
+        (room.mode !== "ffa" && p.team === winner.team && winner.team !== "none") ||
         (room.mode === "ffa" && p.userId === winner.userId);
 
       const pStats = {
@@ -1282,6 +1309,37 @@ export class KapsStrikeServerManager {
    */
   public register(socket: Socket, user: any): void {
     const userIdNum = Number(user.id);
+    let bombWindow=0,bombRequests=0;
+    socket.on('strike:bomb_action',(data:unknown,callback?:unknown)=>{
+      const reply=(success:boolean,error?:string)=>{if(typeof callback==='function')callback({success,error});};
+      const clock=Date.now();if(clock-bombWindow>1000){bombWindow=clock;bombRequests=0;}
+      if(++bombRequests>25){reply(false,'Çok hızlı işlem yapıyorsun.');return;}
+      const room=this.rooms.get(this.socketToRoom.get(socket.id)||''),b=room?.bomb;
+      if(!room||!b||room.status!=='in_progress'||!b.players[socket.id]){reply(false,'Aktif bomba maçında değilsin.');return;}
+      if(!data||typeof data!=='object'){reply(false,'Geçersiz işlem.');return;}
+      const request=data as {kind?:unknown;item?:unknown;held?:unknown},now=room.tick*C.dt;
+      if(request.kind==='buy'&&typeof request.item==='string'){
+        const error=bombPurchaseError(b,socket.id,request.item,now);
+        if(error){reply(false,error);return;}
+        const success=buyBombEquipment(b,socket.id,request.item,now);
+        this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(success);return;
+      }
+      if(request.kind==='drop'){reply(dropBomb(b,socket.id));return;}
+      if(request.kind==='hold'&&typeof request.held==='boolean'){
+        // Objective interaction cannot reach through a wall, even at close range.
+        const player=room.players.get(socket.id)!;
+        if(request.held&&b.position){
+          const from=eye(player.state),to={...b.position,y:b.position.y+.15};
+          const distance=Math.hypot(to.x-from.x,to.y-from.y,to.z-from.z);
+          const dir={x:(to.x-from.x)/distance,y:(to.y-from.y)/distance,z:(to.z-from.z)/distance};
+          if(distance>0&&MAPS[room.map].solids.some(s=>!s.detail&&raySolid(from,dir,s,distance)<distance-.05)){
+            bombInteract(b,socket.id,false,now);reply(false,'Bombaya ulaşmak için engelin etrafından geç.');return;
+          }
+        }
+        reply(bombInteract(b,socket.id,request.held,now));return;
+      }
+      reply(false,'Geçersiz işlem.');
+    });
     const applyProfile = (skin: SkinId) => {
       const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
       const player = room?.players.get(socket.id);

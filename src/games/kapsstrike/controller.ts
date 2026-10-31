@@ -23,6 +23,7 @@ import { PHYSICS as C, WEAPONS, WEAPON_ORDER, ownsWeapon } from "./config";
 import { clamp, fits } from "./physics";
 
 export interface StrikeHUD {
+  spectating?:string;
   inventory?:WeaponId[];
   world?: StrikeWorld;
   position?: Vec3;
@@ -102,6 +103,10 @@ export class StrikeController {
   private pitch = 0;
   private sequence = 0;
   private active = false;
+  private menuOverlay=false;
+  private spectator?:{id:string;username:string;position:Vec3;yaw:number;pitch:number;stance:string};
+  private spectatorIndex=0;
+  cycleSpectator(){this.spectatorIndex++;}
   private disposed = false;
   private last = 0;
   private accumulator = 0;
@@ -196,7 +201,7 @@ export class StrikeController {
     listen(document, "pointerlockchange", () => {
       if (document.pointerLockElement === canvas)
         this.ignoreInitialMouseMove = true;
-      else if (this.active && !this.isTouchDevice && this.usesPointerLock) this.pause();
+      else if (this.active && !this.menuOverlay && !this.isTouchDevice && this.usesPointerLock) this.pause();
     });
 
     listen(document, "pointerlockerror", () => {
@@ -218,7 +223,7 @@ export class StrikeController {
 
     listen(window, "keydown", ((e: KeyboardEvent) => {
       if (
-        !this.active ||
+        !this.active || this.menuOverlay ||
         (!this.isTouchDevice && this.usesPointerLock && document.pointerLockElement !== canvas) ||
         (e.target as HTMLElement)?.closest(
           'input,textarea,select,[contenteditable="true"]'
@@ -397,8 +402,11 @@ export class StrikeController {
           this.receivedInitialState = true;
           this.callbacks?.onLoadingStage?.("Grafikler hazırlanıyor…");
         }
-        const respawned=this.state.player.hp<=0&&myServerState.hp>0;
+        const respawned=(this.state.player.hp<=0&&myServerState.hp>0)||(snapshot.bomb?.round!==this.state.bomb?.round);
+        const frozen=!!snapshot.bomb&&!["active","planted"].includes(snapshot.bomb.phase);
+        if(frozen)this.unacknowledgedInputs=[];
         const oldPosition={...this.state.player.movement.position};
+        this.state.bomb=snapshot.bomb;
         if(snapshot.world)this.state.world=snapshot.world;
         this.state.player.hp = myServerState.hp;
         this.state.score = myServerState.score;
@@ -419,7 +427,7 @@ export class StrikeController {
           this.state.tick = snapshot.tick;
           this.state.lastSequence = ackSeq;
           for (const cmd of this.unacknowledgedInputs) {
-            if (this.state.player.hp > 0&&!respawned) simulate(this.state, {...cmd,tick:this.state.tick}, false);
+            if (this.state.player.hp > 0&&!respawned&&!frozen) simulate(this.state, {...cmd,tick:this.state.tick}, false);
           }
           const position=this.state.player.movement.position;
           const dx=oldPosition.x-position.x,dy=oldPosition.y-position.y,dz=oldPosition.z-position.z;
@@ -499,11 +507,15 @@ export class StrikeController {
           interact:this.pendingInteract,
         };
 
-        // Client prediction: simulate locally
+        const frozen=!!this.state.bomb&&!["active","planted"].includes(this.state.bomb.phase);
+        if(this.menuOverlay){cmd.moveX=0;cmd.moveZ=0;cmd.fire=false;cmd.reload=false;cmd.jump=false;cmd.interact=false;cmd.weapon=undefined;}
+        const owned=this.state.bomb?.players[this.socket?.id||'']?.weapons;
+        if(owned&&cmd.weapon&&!owned.includes(cmd.weapon))cmd.weapon=undefined;
+        // Client prediction uses the same round gate as the authoritative server.
         const beforeEvent=this.state.eventId;
-        if (!this.isMultiplayer || this.state.player.hp > 0) simulate(this.state, cmd, !this.isMultiplayer);
+        if (!frozen&&(!this.isMultiplayer || this.state.player.hp > 0)) simulate(this.state, cmd, !this.isMultiplayer);
 
-        if (this.isMultiplayer && this.socket && this.state.player.hp>0) {
+        if (!frozen&&this.isMultiplayer && this.socket && this.state.player.hp>0) {
           const immediate=this.state.events.filter(e=>e.id>beforeEvent && (e.kind==="shot" || e.kind==="reload"));
           this.renderer.process(immediate,this.state.player.id,true);
           for(const e of immediate)this.feedback(e,true);
@@ -548,7 +560,8 @@ export class StrikeController {
         this.accumulator / C.dt,
         this.previous,
         elapsed,
-        this.correction
+        this.correction,
+        this.spectator
       );
 
       if(this.receivedInitialState && !this.notifiedReady && this.renderer.scene.isReady()){
@@ -624,7 +637,9 @@ export class StrikeController {
       };
     });
 
-    this.renderer.renderRemotePlayers(interpolatedPlayers, myId, this.localTeam);
+    const teammates=interpolatedPlayers.filter(p=>p.id!==myId&&p.team===this.localTeam&&p.hp>0);
+    this.spectator=this.state.bomb&&this.state.player.hp<=0&&teammates.length?teammates[this.spectatorIndex%teammates.length]:undefined;
+    this.renderer.renderRemotePlayers(interpolatedPlayers.filter(p=>p.id!==this.spectator?.id), myId, this.localTeam);
   }
 
   private feedback(e: CombatEvent, predicted=false) {
@@ -686,10 +701,11 @@ export class StrikeController {
       stats = this.renderer.stats();
 
     this.onHUD({
-      inventory:WEAPON_ORDER.filter(w=>ownsWeapon(p.weapon,w)),
-      world:s.world, position:{...p.movement.position}, yaw:this.yaw,
+      spectating:this.spectator?.username,
+      inventory:s.bomb?.players[this.socket?.id||'']?.weapons||WEAPON_ORDER.filter(w=>ownsWeapon(p.weapon,w)),
+      world:s.bomb?undefined:s.world, position:{...p.movement.position}, yaw:this.yaw,
       radar:this.remotePlayerList.filter(r=>r.hp>0&&r.id!==p.id&&this.localTeam!=="none"&&r.team===this.localTeam).map(r=>({...r.position,team:r.team})),
-      supplyPrompt:s.world?(()=>{const supply=nearestSupply(s.world,MAPS[s.map],p);return supply?`${supply.kind==="dropped"?"Al":"Aç"} · ${WEAPONS[supply.weapon].name}`:undefined;})():undefined,
+      supplyPrompt:!s.bomb&&s.world?(()=>{const supply=nearestSupply(s.world,MAPS[s.map],p);return supply?`${supply.kind==="dropped"?"Al":"Aç"} · ${WEAPONS[supply.weapon].name}`:undefined;})():undefined,
       hp: p.hp,
       ads: this.touchAds || this.ads || this.down("ads"),
       ammo: w.ammo[w.selected],
@@ -806,6 +822,12 @@ export class StrikeController {
   public setTouchSprint(sprint: boolean) { this.touchSprint = sprint; }
   public triggerReload() { this.pendingReload = true; }
   public selectWeapon(w: WeaponId) { this.pendingWeapon = w; }
+
+  setMenuOverlay(open:boolean){
+    this.menuOverlay=open;this.clearInput();
+    if(open&&document.pointerLockElement===this.canvas)document.exitPointerLock();
+    if(!open&&this.active&&!this.isTouchDevice)this.start();
+  }
 
   pause(reason?: string) {
     if (!this.active) return;

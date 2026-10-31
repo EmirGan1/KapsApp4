@@ -30,7 +30,7 @@ try {
     [768, 1024],
     [1440, 900],
   ]) {
-    const context = await browser.newContext({ viewport: { width, height } });
+    const context = await browser.newContext({ viewport: { width, height }, hasTouch: width <= 768, isMobile: width <= 768 });
     await context.addInitScript(() => {
       const original = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function (
@@ -46,6 +46,11 @@ try {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("http://127.0.0.1:4192/__strike-menu");
+    await page.getByRole("button",{name:/BOMBA KURMA/}).waitFor();
+    assert.ok(await page.getByRole("button",{name:/BOMBA KURMA/}).isVisible());
+    await page.getByRole("button",{name:/BOMBA KURMA/}).click();
+    await page.getByRole("button",{name:"Oyun modu seçimi",exact:true}).click();
+    await page.getByRole("button",{name:/KILL YARIŞI/}).click();
     await page
       .getByText("Bu oyun WebGL destekli", { exact: false })
       .waitFor();

@@ -3,7 +3,7 @@ export interface Vec3 {
   y: number;
   z: number;
 }
-export type MapId = "warehouse" | "dust" | "neon";
+export type MapId = "warehouse" | "dust" | "neon" | "district";
 export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol" | "knife" | "carbine" | "lmg" | "railgun";
 export interface Solid {
   id: string;
@@ -114,6 +114,7 @@ export interface CombatEvent {
   direction?: number;
 }
 export interface TrainingState {
+  bomb?:import("./bomb").BombMatch;
   world?: StrikeWorld;
   tick: number;
   map: MapId;
@@ -148,7 +149,7 @@ export interface StrikeSettings {
   showDebugStats?: boolean;
 }
 
-export type StrikeGameMode = "ffa" | "tdm";
+export type StrikeGameMode = "ffa" | "tdm" | "bomb";
 export type StrikeTeam = "red" | "blue" | "none";
 export type StrikeRoomStatus = "lobby" | "in_progress" | "game_over";
 
@@ -210,6 +211,7 @@ export interface PlayerSnapshot {
 }
 
 export interface StrikeSnapshot {
+  bomb?:import("./bomb").BombMatch;
   world?: StrikeWorld;
   roomCode?: string;
   localState?: PlayerState;
