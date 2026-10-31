@@ -71,6 +71,7 @@ export class StrikeRenderer {
   private plane?:TransformNode;
   private falling?:Mesh;
   private smoke:Mesh[]=[];
+  private bombMesh?:Mesh;
   private reloadAt = 0;
   private muzzle: Mesh;
   private shadow?: ShadowGenerator;
@@ -663,6 +664,9 @@ export class StrikeRenderer {
     for (const a of this.impactPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
     this.renderSupplies(state);
+    if(state.bomb){const b=state.bomb;if(!this.bombMesh){this.bombMesh=MeshBuilder.CreateBox('tactical-bomb',{width:.5,height:.22,depth:.36},this.scene);this.bombMesh.material=this.material('#626c54',false,'metal');const light=MeshBuilder.CreateBox('bomb-indicator',{width:.09,height:.025,depth:.08},this.scene);light.parent=this.bombMesh;light.position.y=.12;light.material=this.material('#ff4d4d',true);}
+      this.bombMesh.setEnabled(!!b.position&&(b.phase==='active'||b.phase==='planted'));if(b.position)this.bombMesh.position.set(b.position.x,b.position.y+.15,b.position.z);
+    }else this.bombMesh?.setEnabled(false);
     this.scene.render();
     if(this.observer && this.settings.dynamicResolution && performance.now()-this.scaleTimer>1500){
       this.scaleTimer=performance.now();const fps=this.engine.getFps();

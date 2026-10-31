@@ -1,3 +1,4 @@
+import StrikeBombHUD from "./StrikeBombHUD";
 import StrikeInventory from "./StrikeInventory";
 import StrikeInventoryAdmin from "./StrikeInventoryAdmin";
 import StrikeMinimap from './StrikeMinimap';
@@ -63,6 +64,7 @@ export default function KapsStrikeGame({
   const [loadStage, setLoadStage] = useState("");
 
   // General state
+  const [category,setCategory]=useState<"kill"|"bomb"|null>(null);
   const [modeTab, setModeTab] = useState<"multiplayer" | "training">("multiplayer");
   const [map, setMap] = useState<MapId>("warehouse");
   const [settings, setSettings] = useState<StrikeSettings>(() => {
@@ -122,7 +124,7 @@ export default function KapsStrikeGame({
     setCurrentRoom(r);
   }, []);
   const [roomFilter, setRoomFilter] = useState("");
-  const [roomModeFilter, setRoomModeFilter] = useState<"all" | "ffa" | "tdm">("all");
+  const [roomModeFilter, setRoomModeFilter] = useState<"all" | "ffa" | "tdm" | "bomb">("all");
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordModalRoomId, setPasswordModalRoomId] = useState<string | null>(null);
@@ -530,6 +532,7 @@ export default function KapsStrikeGame({
   };
 
   const handleQuickMatch = () => {
+    if(category==='bomb'){setPanel('create_room');return;}
     if (!socket) return;
     setError("");
     socket.emit(
@@ -702,6 +705,7 @@ export default function KapsStrikeGame({
 
   const isHost = currentRoom?.hostId === currentUserId;
   const filteredRooms = rooms.filter((r) => {
+    if((r.mode==='bomb')!==(category==='bomb'))return false;
     const matchQuery = r.name.toLowerCase().includes(roomFilter.toLowerCase());
     const matchMode = roomModeFilter === "all" || r.mode === roomModeFilter;
     return matchQuery && matchMode;
@@ -1033,7 +1037,7 @@ export default function KapsStrikeGame({
                 </h3>
                 <span className="text-xs text-slate-400">
                   {MAPS[currentRoom.map]?.name} ·{" "}
-                  {currentRoom.mode === "tdm" ? "Takım Savaşı (TDM)" : "Herkes Tek (FFA)"}
+                  {currentRoom.mode !== "ffa" ? "Takım Savaşı (TDM)" : "Herkes Tek (FFA)"}
                 </span>
               </div>
               <div className="text-right">
@@ -1135,14 +1139,14 @@ export default function KapsStrikeGame({
               <span>
                 {MAPS[map]?.name || map} ·{" "}
                 {hud.isMultiplayer
-                  ? currentRoom?.mode === "tdm"
+                  ? currentRoom?.mode !== "ffa"
                     ? "TAKIM SAVAŞI (TDM)"
                     : "HERKES TEK (FFA)"
                   : "ANTRENMAN"}
               </span>
             </div>
             <div>
-              {hud.isMultiplayer && currentRoom?.mode === "tdm" ? (
+              {hud.isMultiplayer && currentRoom?.mode !== "ffa" ? (
                 <div className="flex items-center gap-3">
                   <span className="text-red-400 font-black text-lg">
                     {hud.redScore ?? 0}
@@ -1310,7 +1314,7 @@ export default function KapsStrikeGame({
                   </h1>
                   <span className="text-xs text-slate-400">
                     Harita: <b>{MAPS[currentRoom.map]?.name}</b> · Mod:{" "}
-                    <b>{currentRoom.mode === "tdm" ? "Takım Savaşı" : "Herkes Tek"}</b> · Süre:{" "}
+                    <b>{currentRoom.mode !== "ffa" ? "Takım Savaşı" : "Herkes Tek"}</b> · Süre:{" "}
                     <b>{Math.round(currentRoom.timeLimit / 60)} dk</b>
                   </span>
                 </div>
@@ -1332,7 +1336,7 @@ export default function KapsStrikeGame({
               </div>
 
               {/* TDM TEAMS OR FFA LIST */}
-              {currentRoom.mode === "tdm" ? (
+              {currentRoom.mode !== "ffa" ? (
                 <div className="ks-teams-grid">
                   <div className="ks-team-col red">
                     <div className="ks-team-header red">
@@ -1579,7 +1583,7 @@ export default function KapsStrikeGame({
                       className="ks-filter-select"
                     >
                       <option value="all">Tüm Modlar</option>
-                      <option value="tdm">Takım Savaşı (TDM)</option>
+                      {category==='bomb'&&<option value="bomb">Bomba Kurma (T / CT)</option>}<option value="tdm">Takım Savaşı (TDM)</option>
                       <option value="ffa">Herkes Tek (FFA)</option>
                     </select>
                   </div>
@@ -1613,7 +1617,7 @@ export default function KapsStrikeGame({
                                 r.mode === "tdm" ? "ks-badge-tdm" : "ks-badge-ffa"
                               }`}
                             >
-                              {r.mode === "tdm" ? "TDM" : "FFA"}
+                              {r.mode === "bomb" ? "BOMBA" : r.mode === "tdm" ? "TDM" : "FFA"}
                             </span>
                             <span>
                               👥 {r.playerCount}/{r.maxPlayers}
@@ -1700,7 +1704,7 @@ export default function KapsStrikeGame({
                     value={createMode}
                     onChange={(e) => setCreateMode(e.target.value as StrikeGameMode)}
                   >
-                    <option value="tdm">Takım Savaşı (TDM - Red vs Blue)</option>
+                    {category==='bomb'&&<option value="bomb">Bomba Kurma (T / CT)</option>}<option value="tdm">Takım Savaşı (TDM - Red vs Blue)</option>
                     <option value="ffa">Herkes Tek (FFA - Deathmatch)</option>
                   </select>
                 </label>
@@ -1843,6 +1847,9 @@ export default function KapsStrikeGame({
         </div>
       )}
 
+      {currentRoom?.mode==='bomb'&&view==='play'&&<StrikeBombHUD socket={socket}/>}
+      {view==='menu'&&<button className="ks-mode-back" onClick={()=>setCategory(null)}>Oyun modu seçimi</button>}
+      {view==='menu'&&category===null&&<div className="ks-mode-gate"><h1>KapsStrike · Oyununu seç</h1><div><button onClick={()=>{setCategory('kill');setCreateMode('tdm');setCreateMap('warehouse');}}>KILL YARIŞI<small>Mevcut FFA ve takım savaşı · Haritalar, kasalar ve envanter</small></button><button onClick={()=>{setCategory('bomb');setModeTab('multiplayer');setCreateMode('bomb');setCreateMap('district');}}>BOMBA KURMA<small>Takımını seç, bomba bölgelerini savun veya bombayı kur. Raundları kazan ve zafere ulaş.</small></button></div></div>}
       {/* Pause has one clear primary action; detailed settings live in dismissible panels. */}
       {view === "pause" && (
         <div className="ks-overlay ks-pause-overlay" inert={!!panel}><div className="ks-menu ks-pause-card">

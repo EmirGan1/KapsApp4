@@ -26,7 +26,7 @@ for(const map of Object.values(MAPS)) test(`${map.name}: all ten spawns connect 
 });
 test('district geometry differs structurally and includes interiors and distinct vertical routes',()=>{
  const signatures=Object.values(MAPS).map(m=>JSON.stringify(m.solids.filter(s=>!s.detail).map(({x,y,z,w,h,d,kind})=>[x,y,z,w,h,d,kind])));
- assert.equal(new Set(signatures).size,3);
+ assert.equal(new Set(signatures).size,Object.keys(MAPS).length);
  for(const map of Object.values(MAPS)){
   assert.ok(map.solids.some(s=>s.kind==='ramp'));
   assert.ok(map.solids.some(s=>s.id.includes('entry-lintel')),'enterable structures');

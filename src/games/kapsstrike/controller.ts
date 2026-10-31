@@ -399,6 +399,7 @@ export class StrikeController {
         }
         const respawned=this.state.player.hp<=0&&myServerState.hp>0;
         const oldPosition={...this.state.player.movement.position};
+        this.state.bomb=snapshot.bomb;
         if(snapshot.world)this.state.world=snapshot.world;
         this.state.player.hp = myServerState.hp;
         this.state.score = myServerState.score;

@@ -6,7 +6,8 @@ import {createTraining,simulate,takeDamage} from '../src/games/kapsstrike/combat
 import {ownsWeapon,PHYSICS as C,WEAPONS} from '../src/games/kapsstrike/config';
 import {fits} from '../src/games/kapsstrike/physics';
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
-for(const map of Object.values(MAPS)){
+// Supply crates are the Kill Race ruleset; the tactical map uses round purchases.
+for(const map of Object.values(MAPS).filter(map=>map.id!=='district')){
  test(`${map.id}: expanded map, 100 seeded supplies and reachable warning/landing cycles`,()=>{
   assert.ok(map.bounds>=64);assert.ok(supplyLocations(map).length>15);
   for(let seed=0;seed<100;seed++){
