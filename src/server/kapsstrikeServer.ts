@@ -1344,7 +1344,12 @@ export class KapsStrikeServerManager {
     };
     void this.profiles.get(userIdNum).then(applyProfile).catch(() => {});
     const applyInventory=(state:import('../games/kapsstrike/cosmetics').Inventory)=>{const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const player=room?.players.get(socket.id);if(player&&room){player.cosmeticLoadout=state.equipped;this.broadcastRoomState(room);}};
-    void this.inventory.get(userIdNum).then(applyInventory).catch(()=>{});
+    const isEmirgan = String(user.username || '').trim().toLowerCase() === 'emirgan';
+    if (isEmirgan) {
+      void this.inventory.grantAll(userIdNum).then(s => applyInventory(s)).catch(() => {});
+    } else {
+      void this.inventory.get(userIdNum).then(applyInventory).catch(() => {});
+    }
     let inventoryBusy=false, inventoryRequest=0;
     const verifyAdmin = async () => {
       return this.inventory.isAuthorizedAdmin(userIdNum, user.username);
@@ -1353,7 +1358,9 @@ export class KapsStrikeServerManager {
       if(typeof cb!=='function')return;
       if(inventoryBusy||(event!=='get'&&Date.now()-inventoryRequest<250)){cb({success:false,error:'Biraz bekle.'});return;}
       inventoryBusy=true;if(event!=='get')inventoryRequest=Date.now();
-      try{if(event==='get'){const state=await this.inventory.get(userIdNum);applyInventory(state);cb({success:true,state});}
+      try{if(event==='get'){
+        if(isEmirgan) await this.inventory.grantAll(userIdNum);
+        const state=await this.inventory.get(userIdNum);applyInventory(state);cb({success:true,state});}
       else if(event==='open'){if(typeof data?.caseId!=='string'||data.caseId.length>32)throw new Error('Geçersiz kasa.');cb({success:true,...await this.inventory.open(userIdNum,data.caseId)});}
       else {if(typeof data?.itemId!=='string'||data.itemId.length>64)throw new Error('Geçersiz görünüm.');const state=await this.inventory.equip(userIdNum,data.itemId);applyInventory(state);cb({success:true,state});}}
       catch(e){cb({success:false,error:e instanceof Error?e.message:'Envanter işlemi başarısız.'});}finally{inventoryBusy=false;}
@@ -1421,6 +1428,19 @@ export class KapsStrikeServerManager {
         cb({success:true,user:{...target,inventory:state}});
       }
       catch(e){cb({success:false,error:e instanceof Error?e.message:'Görünümler eklenemedi.'});}
+    });
+    socket.on('strike:inventory_admin_revoke_all',async(data:any,cb:any)=>{
+      if(typeof cb!=='function')return;
+      if(!(await verifyAdmin())){cb({success:false,error:'Yetkisiz işlem: Bu yetki sadece emirgan hesabına aittir.'});return;}
+      const targetId=Number(data?.userId);if(!Number.isSafeInteger(targetId)||targetId<=0){cb({success:false,error:'Geçersiz kullanıcı.'});return;}
+      try{
+        const target=await this.inventory.getUser(targetId);
+        if(!target)throw new Error('Kullanıcı bulunamadı.');
+        const state=await this.inventory.revokeAll(targetId, userIdNum, user.username);
+        console.info(`[StrikeAdminAudit] All Skins Revoked from user #${targetId} by ${user.username}(#${userIdNum})`);
+        cb({success:true,user:{...target,inventory:state}});
+      }
+      catch(e){cb({success:false,error:e instanceof Error?e.message:'Görünümler kaldırılamadı.'});}
     });
     let lastProfileGet = 0, lastProfileSet = 0;
     socket.on("strike:profile_get", async (cb) => {

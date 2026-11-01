@@ -38,7 +38,18 @@ export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | nul
   useEffect(() => {
     if (!socket?.connected) return;
     socket.timeout(5000).emit('strike:inventory_admin_check', (e: any, r: any) => {
-      setAllowed(!e && r?.success && r.allowed === true);
+      const isOk = !e && r?.success && r.allowed === true;
+      setAllowed(isOk);
+      if (isOk) {
+        socket.timeout(8000).emit('strike:inventory_admin_search', { query: '' }, (e2: any, r2: any) => {
+          if (!e2 && r2?.success && Array.isArray(r2.users)) {
+            setUsers(r2.users);
+            if (r2.users.length > 0) setSelectedId(r2.users[0].id);
+            setMessage(`${r2.users.length} hesap yüklendi.`);
+            setMsgType('info');
+          }
+        });
+      }
     });
   }, [socket]);
 
@@ -57,7 +68,7 @@ export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | nul
         return;
       }
       setUsers(r.users);
-      setSelectedId(r.users.length === 1 ? r.users[0].id : null);
+      setSelectedId(r.users.length === 1 ? r.users[0].id : r.users.length > 0 ? r.users[0].id : null);
       setSelectedItemIds(new Set());
       notify(`${r.users.length} hesap bulundu.`, 'success');
     });
@@ -166,6 +177,23 @@ export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | nul
       }
       setUsers((prev) => prev.map((u) => (u.id === activeUser.id ? r.user : u)));
       notify(`@${activeUser.username} hesabına tüm kozmetikler başarıyla eklendi.`, 'success');
+    });
+  };
+
+  // Revoke all skins
+  const revokeAll = () => {
+    if (!allowed || !socket?.connected || busy || !activeUser) return;
+    const confirm = window.confirm(`@${activeUser.username} hesabındaki TÜM kaplamalar kaldırılıp envanter sıfırlansın mı?`);
+    if (!confirm) return;
+    setBusy(true);
+    socket.timeout(12000).emit('strike:inventory_admin_revoke_all', { userId: activeUser.id }, (e: any, r: any) => {
+      setBusy(false);
+      if (e || !r?.success) {
+        notify(r?.error || 'Görünümler kaldırılamadı.', 'error');
+        return;
+      }
+      setUsers((prev) => prev.map((u) => (u.id === activeUser.id ? r.user : u)));
+      notify(`@${activeUser.username} hesabının envanteri başarıyla sıfırlandı.`, 'info');
     });
   };
 
@@ -314,6 +342,14 @@ export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | nul
                 className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded text-xs transition-colors"
               >
                 ⚡ Tümünü Ekle (Toplu)
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={revokeAll}
+                className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded text-xs transition-colors"
+              >
+                🗑️ Tümünü Kaldır / Sıfırla
               </button>
             </div>
           </div>
