@@ -1,6 +1,7 @@
 import type {MapDefinition,PlayerState,StrikeWorld,Vec3} from './types';
 import {PHYSICS as C,SPECIAL_WEAPONS,WEAPONS} from './config';
 import {collisionSolids,fits,raySolid,support} from './physics';
+export const SUPPLY_RESPAWN = Math.round(10/C.dt);
 export const DROP_INTERVAL = Math.round(90/C.dt);
 export const DROP_WARNING = Math.round(12/C.dt);
 /** Candidates are on authored, continuous spawn-to-spawn routes, never random rooftops or water. */
@@ -9,7 +10,7 @@ export function supplyLocations(map:MapDefinition):Vec3[]{
  for(const route of map.routes||[])for(let i=1;i<route.points.length;i++){
   const a=route.points[i-1],b=route.points[i],n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/7));
   for(let j=1;j<=n;j++){
-   const p={x:a.x+(b.x-a.x)*j/n,y:0,z:a.z+(b.z-a.z)*j/n};p.y=support(map,p,C.step);
+   const p={x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n,z:a.z+(b.z-a.z)*j/n};p.y=support(map,p,p.y+C.step);
    if(fits(map,p,C.standing)&&map.spawns.every(s=>Math.hypot(s.x-p.x,s.z-p.z)>7)&&!points.some(q=>Math.hypot(q.x-p.x,q.z-p.z)<4))points.push(p);
   }
  }
@@ -28,6 +29,14 @@ export function createWorld(map:MapDefinition,seed=Date.now()):StrikeWorld{
  return w;
 }
 export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
+ for(const job of [...(w.respawns||[])]){
+  if(tick<job.at)continue;
+  const pool=locations(map).filter(p=>Math.hypot(p.x-job.pickup.position.x,p.z-job.pickup.position.z)>4&&w.pickups.every(s=>s.opened||Math.hypot(s.position.x-p.x,s.position.z-p.z)>3.5)&&(!w.drop||Math.hypot(w.drop.position.x-p.x,w.drop.position.z-p.z)>3.5));
+  if(!pool.length)continue; // Retry once space is free; never fall back into a wall or the old position.
+  const position={...pool[Math.floor(random(w)*pool.length)]};
+  w.pickups.push({...job.pickup,id:`supply-${++w.serial}`,position,opened:false,expires:0});
+  w.respawns!.splice(w.respawns!.indexOf(job),1);
+ }
  w.pickups=w.pickups.filter(p=>!p.expires||p.expires>tick);
  if(!w.drop&&tick>=w.nextDrop-DROP_WARNING){
   const pool=locations(map).filter(p=>w.pickups.every(s=>s.opened||Math.hypot(s.position.x-p.x,s.position.z-p.z)>3.5));if(pool.length)w.drop={position:{...pool[Math.floor(random(w)*pool.length)]},warning:tick,landing:w.nextDrop};
@@ -37,7 +46,9 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
   w.nextDrop=tick+DROP_INTERVAL;w.drop=undefined;
  }
  // Bounded even when a match is configured for a long duration.
- if(w.pickups.length>32)w.pickups.splice(3,w.pickups.length-32);
+ for(let i=0;w.pickups.length>32&&i<w.pickups.length;){
+  if(w.pickups[i].opened||w.pickups[i].kind==='dropped')w.pickups.splice(i,1);else i++;
+ }
 }
 export function nearestSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState){
  if(p.hp<=0)return undefined;
@@ -61,6 +72,7 @@ export function claimSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState,tick:n
   p.weapon.selected=weapons[0];p.weapon.reloadUntil=0;p.weapon.switchUntil=tick+24;p.weapon.triggerHeld=true;
   p.lootNotice=weapons.map(weapon=>WEAPONS[weapon].name).join(' + ');
  }
+ if(s.kind!=='dropped')(w.respawns??=[]).push({at:tick+SUPPLY_RESPAWN,pickup:{...s,position:{...s.position}}});
  s.opened=true;s.expires=tick+Math.round(15/C.dt);p.lootNoticeUntil=tick+Math.round(3/C.dt);
  return true;
 }
