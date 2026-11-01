@@ -1,0 +1,20 @@
+2026-11-01 — isolated Linux/Chromium SwiftShader QA; not a hardware benchmark.
+main baseline: 9984cda64641d83650d0985c3f2de27ca6f54daf
+
+npm run lint: exit 0
+npm run build: exit 0
+npm run test:strike: exit 0
+ℹ tests 251
+ℹ suites 0
+ℹ pass 251
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 35683.462054
+
+{"diagnostic":"10-shooter empty-range stress","acceptedShots":600,"p95StepMs":1.6563109999997323,"meanStepMs":0.3360388522222062}
+{"players":8,"delayedInputRttMs":[0,100,200,300],"snapshots":[72,90,90,90,90,90,90,90],"physicsSteps":360,"p95StepMs":1.261504999999488}
+{"players":10,"delayedInputRttMs":[0,100,200,300],"snapshots":[72,90,90,90,90,90,90,90,90,90],"physicsSteps":360,"p95StepMs":2.869434000000183}
+
+PASS two production knife rigs; inspect samples each: 48 zero page errors

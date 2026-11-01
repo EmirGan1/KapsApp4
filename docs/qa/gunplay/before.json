@@ -1,0 +1,127 @@
+{
+  "label": "before",
+  "sparseDelivery": {
+    "inputMessages": 30,
+    "acceptedShots": 13,
+    "damage": 227.3405130186402
+  },
+  "movingTarget": {
+    "inputTick": 1000,
+    "renderedTick": 980,
+    "damage": 0
+  },
+  "ttk": [
+    {
+      "weapon": "rifle",
+      "armor": 0,
+      "shots": 5,
+      "killed": true,
+      "ttkMs": 392
+    },
+    {
+      "weapon": "rifle",
+      "armor": 100,
+      "shots": 7,
+      "killed": true,
+      "ttkMs": 592
+    },
+    {
+      "weapon": "smg",
+      "armor": 0,
+      "shots": 6,
+      "killed": true,
+      "ttkMs": 350
+    },
+    {
+      "weapon": "smg",
+      "armor": 100,
+      "shots": 9,
+      "killed": true,
+      "ttkMs": 558
+    },
+    {
+      "weapon": "sniper",
+      "armor": 0,
+      "shots": 2,
+      "killed": true,
+      "ttkMs": 1192
+    },
+    {
+      "weapon": "sniper",
+      "armor": 100,
+      "shots": 2,
+      "killed": true,
+      "ttkMs": 1192
+    },
+    {
+      "weapon": "shotgun",
+      "armor": 0,
+      "shots": 2,
+      "killed": true,
+      "ttkMs": 792
+    },
+    {
+      "weapon": "shotgun",
+      "armor": 100,
+      "shots": 3,
+      "killed": true,
+      "ttkMs": 1592
+    },
+    {
+      "weapon": "pistol",
+      "armor": 0,
+      "shots": 4,
+      "killed": true,
+      "ttkMs": 492
+    },
+    {
+      "weapon": "pistol",
+      "armor": 100,
+      "shots": 6,
+      "killed": true,
+      "ttkMs": 825
+    },
+    {
+      "weapon": "carbine",
+      "armor": 0,
+      "shots": 4,
+      "killed": true,
+      "ttkMs": 325
+    },
+    {
+      "weapon": "carbine",
+      "armor": 100,
+      "shots": 5,
+      "killed": true,
+      "ttkMs": 442
+    },
+    {
+      "weapon": "lmg",
+      "armor": 0,
+      "shots": 4,
+      "killed": true,
+      "ttkMs": 267
+    },
+    {
+      "weapon": "lmg",
+      "armor": 100,
+      "shots": 6,
+      "killed": true,
+      "ttkMs": 450
+    },
+    {
+      "weapon": "railgun",
+      "armor": 0,
+      "shots": 1,
+      "killed": true,
+      "ttkMs": 0
+    },
+    {
+      "weapon": "railgun",
+      "armor": 100,
+      "shots": 2,
+      "killed": true,
+      "ttkMs": 1492
+    }
+  ]
+}

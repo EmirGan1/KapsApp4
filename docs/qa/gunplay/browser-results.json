@@ -1,0 +1,680 @@
+{
+  "results": [
+    {
+      "label": "20 single shots with reload",
+      "weapon": "pistol",
+      "distance": 2,
+      "accepted": 20,
+      "hits": 20,
+      "damage": 555.007733864962,
+      "buffered": 0,
+      "rejected": []
+    },
+    {
+      "label": "20 single shots with reload",
+      "weapon": "pistol",
+      "distance": 5,
+      "accepted": 20,
+      "hits": 20,
+      "damage": 546.5153896114437,
+      "buffered": 0,
+      "rejected": []
+    },
+    {
+      "label": "20 single shots with reload",
+      "weapon": "pistol",
+      "distance": 10,
+      "accepted": 20,
+      "hits": 20,
+      "damage": 532.2053940232888,
+      "buffered": 0,
+      "rejected": []
+    },
+    {
+      "label": "20 single shots with reload",
+      "weapon": "pistol",
+      "distance": 20,
+      "accepted": 20,
+      "hits": 20,
+      "damage": 503.5122250720793,
+      "buffered": 0,
+      "rejected": []
+    },
+    {
+      "label": "20 single shots with reload",
+      "weapon": "pistol",
+      "distance": 40,
+      "accepted": 20,
+      "hits": 20,
+      "damage": 446.08921797755096,
+      "buffered": 0,
+      "rejected": []
+    },
+    {
+      "label": "full magazine; one-way 0ms + 0/7ms jitter",
+      "weapon": "rifle",
+      "distance": 5,
+      "accepted": 30,
+      "hits": 30,
+      "damage": 736.9579125684184,
+      "buffered": 3,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 0ms + 0/7ms jitter",
+      "weapon": "smg",
+      "distance": 5,
+      "accepted": 35,
+      "hits": 35,
+      "damage": 612.0722443043101,
+      "buffered": 0,
+      "rejected": [
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 0ms + 0/7ms jitter",
+      "weapon": "carbine",
+      "distance": 5,
+      "accepted": 24,
+      "hits": 24,
+      "damage": 754.6434554850191,
+      "buffered": 0,
+      "rejected": []
+    },
+    {
+      "label": "full magazine; one-way 0ms + 0/7ms jitter",
+      "weapon": "lmg",
+      "distance": 5,
+      "accepted": 60,
+      "hits": 60,
+      "damage": 1709.739078272322,
+      "buffered": 1,
+      "rejected": [
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 30ms + 0/7ms jitter",
+      "weapon": "rifle",
+      "distance": 5,
+      "accepted": 30,
+      "hits": 30,
+      "damage": 736.9581239849128,
+      "buffered": 4,
+      "rejected": [
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 30ms + 0/7ms jitter",
+      "weapon": "smg",
+      "distance": 5,
+      "accepted": 35,
+      "hits": 35,
+      "damage": 612.0662262233226,
+      "buffered": 2,
+      "rejected": [
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 30ms + 0/7ms jitter",
+      "weapon": "carbine",
+      "distance": 5,
+      "accepted": 24,
+      "hits": 24,
+      "damage": 754.6454399341751,
+      "buffered": 4,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 30ms + 0/7ms jitter",
+      "weapon": "lmg",
+      "distance": 5,
+      "accepted": 60,
+      "hits": 60,
+      "damage": 1709.741710077168,
+      "buffered": 3,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 60ms + 0/7ms jitter",
+      "weapon": "rifle",
+      "distance": 5,
+      "accepted": 30,
+      "hits": 30,
+      "damage": 736.9573187617262,
+      "buffered": 3,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 60ms + 0/7ms jitter",
+      "weapon": "smg",
+      "distance": 5,
+      "accepted": 35,
+      "hits": 35,
+      "damage": 612.0676113036035,
+      "buffered": 2,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 60ms + 0/7ms jitter",
+      "weapon": "carbine",
+      "distance": 5,
+      "accepted": 24,
+      "hits": 24,
+      "damage": 754.6437298276804,
+      "buffered": 1,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 60ms + 0/7ms jitter",
+      "weapon": "lmg",
+      "distance": 5,
+      "accepted": 60,
+      "hits": 60,
+      "damage": 1709.735572067723,
+      "buffered": 8,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 100ms + 0/7ms jitter",
+      "weapon": "rifle",
+      "distance": 5,
+      "accepted": 30,
+      "hits": 30,
+      "damage": 736.9588268149527,
+      "buffered": 4,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 100ms + 0/7ms jitter",
+      "weapon": "smg",
+      "distance": 5,
+      "accepted": 35,
+      "hits": 35,
+      "damage": 612.07003470243,
+      "buffered": 6,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 100ms + 0/7ms jitter",
+      "weapon": "carbine",
+      "distance": 5,
+      "accepted": 24,
+      "hits": 24,
+      "damage": 754.6450737532731,
+      "buffered": 4,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 100ms + 0/7ms jitter",
+      "weapon": "lmg",
+      "distance": 5,
+      "accepted": 60,
+      "hits": 60,
+      "damage": 1709.7460240173689,
+      "buffered": 0,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 150ms + 0/7ms jitter",
+      "weapon": "rifle",
+      "distance": 5,
+      "accepted": 30,
+      "hits": 30,
+      "damage": 736.9613457872724,
+      "buffered": 1,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "stale-or-future-view",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 150ms + 0/7ms jitter",
+      "weapon": "smg",
+      "distance": 5,
+      "accepted": 35,
+      "hits": 35,
+      "damage": 612.0734372796561,
+      "buffered": 0,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "stale-or-future-view",
+        "stale-or-future-view",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "empty"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 150ms + 0/7ms jitter",
+      "weapon": "carbine",
+      "distance": 5,
+      "accepted": 24,
+      "hits": 24,
+      "damage": 754.6457804744398,
+      "buffered": 1,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 150ms + 0/7ms jitter",
+      "weapon": "lmg",
+      "distance": 5,
+      "accepted": 60,
+      "hits": 60,
+      "damage": 1709.745952949068,
+      "buffered": 9,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 200ms + 0/7ms jitter",
+      "weapon": "rifle",
+      "distance": 5,
+      "accepted": 30,
+      "hits": 30,
+      "damage": 736.9602148694237,
+      "buffered": 7,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 200ms + 0/7ms jitter",
+      "weapon": "smg",
+      "distance": 5,
+      "accepted": 35,
+      "hits": 35,
+      "damage": 612.0716314210326,
+      "buffered": 6,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "full magazine; one-way 200ms + 0/7ms jitter",
+      "weapon": "carbine",
+      "distance": 5,
+      "accepted": 24,
+      "hits": 24,
+      "damage": 754.6458693488444,
+      "buffered": 6,
+      "rejected": []
+    },
+    {
+      "label": "full magazine; one-way 200ms + 0/7ms jitter",
+      "weapon": "lmg",
+      "distance": 5,
+      "accepted": 60,
+      "hits": 60,
+      "damage": 1709.7404232550168,
+      "buffered": 5,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving right; one-way 0ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 9,
+      "hits": 9,
+      "damage": 216.74681277361532,
+      "buffered": 2,
+      "rejected": []
+    },
+    {
+      "label": "moving left; one-way 0ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 9,
+      "hits": 9,
+      "damage": 216.77900314891025,
+      "buffered": 0,
+      "rejected": [
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving crouch; one-way 0ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 9,
+      "hits": 9,
+      "damage": 216.89888256059646,
+      "buffered": 0,
+      "rejected": []
+    },
+    {
+      "label": "moving jump; one-way 0ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 9,
+      "hits": 9,
+      "damage": 216.93830468283466,
+      "buffered": 0,
+      "rejected": [
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving diagonal; one-way 0ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 9,
+      "hits": 9,
+      "damage": 216.44659067181465,
+      "buffered": 0,
+      "rejected": []
+    },
+    {
+      "label": "moving right; one-way 100ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 240.7928996993192,
+      "buffered": 0,
+      "rejected": [
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving left; one-way 100ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 240.79219263256357,
+      "buffered": 1,
+      "rejected": [
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving crouch; one-way 100ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 240.99898075798922,
+      "buffered": 2,
+      "rejected": []
+    },
+    {
+      "label": "moving jump; one-way 100ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 241.0394046837901,
+      "buffered": 2,
+      "rejected": [
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving diagonal; one-way 100ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 240.29915006113524,
+      "buffered": 0,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving right; one-way 200ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 240.78543857460718,
+      "buffered": 3,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving left; one-way 200ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 240.78800785430914,
+      "buffered": 1,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving crouch; one-way 200ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 240.99371832035774,
+      "buffered": 4,
+      "rejected": [
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving jump; one-way 200ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 241.04089993175245,
+      "buffered": 1,
+      "rejected": [
+        "cooldown",
+        "cooldown",
+        "cooldown",
+        "cooldown"
+      ]
+    },
+    {
+      "label": "moving diagonal; one-way 200ms",
+      "weapon": "rifle",
+      "distance": 10,
+      "accepted": 10,
+      "hits": 10,
+      "damage": 240.27975410421024,
+      "buffered": 2,
+      "rejected": [
+        "cooldown",
+        "cooldown"
+      ]
+    }
+  ],
+  "ackLatencyLast128": {
+    "meanMs": 188.1125000000102,
+    "samples": 128
+  },
+  "errors": [],
+  "notes": "Empty diagnostic range; fixture-controlled initial poses/health; inbound delivery delay is one-way, not measured WAN RTT. Normal production controller/fire/raycast/damage/socket paths."
+}

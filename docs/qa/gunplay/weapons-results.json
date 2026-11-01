@@ -1,0 +1,98 @@
+{
+  "results": [
+    {
+      "label": "100 HP body TTK",
+      "weapon": "rifle",
+      "distance": 5,
+      "accepted": 6,
+      "hits": 5,
+      "damage": 100,
+      "buffered": 0,
+      "rejected": [],
+      "ttkMs": 708.3333333333334
+    },
+    {
+      "label": "100 HP body TTK",
+      "weapon": "smg",
+      "distance": 5,
+      "accepted": 6,
+      "hits": 6,
+      "damage": 100,
+      "buffered": 0,
+      "rejected": [],
+      "ttkMs": 533.3333333333334
+    },
+    {
+      "label": "100 HP body TTK",
+      "weapon": "carbine",
+      "distance": 5,
+      "accepted": 4,
+      "hits": 4,
+      "damage": 100,
+      "buffered": 0,
+      "rejected": [],
+      "ttkMs": 575
+    },
+    {
+      "label": "100 HP body TTK",
+      "weapon": "lmg",
+      "distance": 5,
+      "accepted": 4,
+      "hits": 4,
+      "damage": 100.00000000000001,
+      "buffered": 0,
+      "rejected": [],
+      "ttkMs": 433.33333333333337
+    },
+    {
+      "label": "100 HP body TTK",
+      "weapon": "pistol",
+      "distance": 5,
+      "accepted": 4,
+      "hits": 4,
+      "damage": 100,
+      "buffered": 0,
+      "rejected": [],
+      "ttkMs": 658.3333333333334
+    },
+    {
+      "label": "100 HP body TTK",
+      "weapon": "sniper",
+      "distance": 5,
+      "accepted": 2,
+      "hits": 2,
+      "damage": 100,
+      "buffered": 0,
+      "rejected": [],
+      "ttkMs": 1266.6666666666665
+    },
+    {
+      "label": "100 HP body TTK",
+      "weapon": "shotgun",
+      "distance": 5,
+      "accepted": 2,
+      "hits": 2,
+      "damage": 100,
+      "buffered": 0,
+      "rejected": [],
+      "ttkMs": 866.6666666666667
+    },
+    {
+      "label": "100 HP body TTK",
+      "weapon": "railgun",
+      "distance": 5,
+      "accepted": 1,
+      "hits": 1,
+      "damage": 100,
+      "buffered": 0,
+      "rejected": [],
+      "ttkMs": 0
+    }
+  ],
+  "ackLatencyLast128": {
+    "meanMs": 39.313333333299184,
+    "samples": 30
+  },
+  "errors": [],
+  "notes": "Empty diagnostic range; fixture-controlled initial poses/health; inbound delivery delay is one-way, not measured WAN RTT. Normal production controller/fire/raycast/damage/socket paths."
+}

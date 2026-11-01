@@ -1,0 +1,87 @@
+npm run test:strike:hitreg (44 cases + real 1v1 kill + visual capture): exit 0
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> react-example@0.0.0 test:strike:hitreg
+> node --import tsx tests/kapsstrike.hitreg.browser.ts
+
+CASE {"label":"20 single shots with reload","weapon":"pistol","distance":2,"accepted":20,"hits":20,"damage":555.007733864962,"buffered":0,"rejected":[]}
+CASE {"label":"20 single shots with reload","weapon":"pistol","distance":5,"accepted":20,"hits":20,"damage":546.5153896114437,"buffered":0,"rejected":[]}
+CASE {"label":"20 single shots with reload","weapon":"pistol","distance":10,"accepted":20,"hits":20,"damage":532.2053940232888,"buffered":0,"rejected":[]}
+CASE {"label":"20 single shots with reload","weapon":"pistol","distance":20,"accepted":20,"hits":20,"damage":503.5122250720793,"buffered":0,"rejected":[]}
+CASE {"label":"20 single shots with reload","weapon":"pistol","distance":40,"accepted":20,"hits":20,"damage":446.08921797755096,"buffered":0,"rejected":[]}
+CASE {"label":"full magazine; one-way 0ms + 0/7ms jitter","weapon":"rifle","distance":5,"accepted":30,"hits":30,"damage":736.9579125684184,"buffered":3,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 0ms + 0/7ms jitter","weapon":"smg","distance":5,"accepted":35,"hits":35,"damage":612.0722443043101,"buffered":0,"rejected":["cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 0ms + 0/7ms jitter","weapon":"carbine","distance":5,"accepted":24,"hits":24,"damage":754.6434554850191,"buffered":0,"rejected":[]}
+CASE {"label":"full magazine; one-way 0ms + 0/7ms jitter","weapon":"lmg","distance":5,"accepted":60,"hits":60,"damage":1709.739078272322,"buffered":1,"rejected":["cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 30ms + 0/7ms jitter","weapon":"rifle","distance":5,"accepted":30,"hits":30,"damage":736.9581239849128,"buffered":4,"rejected":["cooldown"]}
+CASE {"label":"full magazine; one-way 30ms + 0/7ms jitter","weapon":"smg","distance":5,"accepted":35,"hits":35,"damage":612.0662262233226,"buffered":2,"rejected":["cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 30ms + 0/7ms jitter","weapon":"carbine","distance":5,"accepted":24,"hits":24,"damage":754.6454399341751,"buffered":4,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 30ms + 0/7ms jitter","weapon":"lmg","distance":5,"accepted":60,"hits":60,"damage":1709.741710077168,"buffered":3,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 60ms + 0/7ms jitter","weapon":"rifle","distance":5,"accepted":30,"hits":30,"damage":736.9573187617262,"buffered":3,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 60ms + 0/7ms jitter","weapon":"smg","distance":5,"accepted":35,"hits":35,"damage":612.0676113036035,"buffered":2,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 60ms + 0/7ms jitter","weapon":"carbine","distance":5,"accepted":24,"hits":24,"damage":754.6437298276804,"buffered":1,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 60ms + 0/7ms jitter","weapon":"lmg","distance":5,"accepted":60,"hits":60,"damage":1709.735572067723,"buffered":8,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 100ms + 0/7ms jitter","weapon":"rifle","distance":5,"accepted":30,"hits":30,"damage":736.9588268149527,"buffered":4,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 100ms + 0/7ms jitter","weapon":"smg","distance":5,"accepted":35,"hits":35,"damage":612.07003470243,"buffered":6,"rejected":["cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 100ms + 0/7ms jitter","weapon":"carbine","distance":5,"accepted":24,"hits":24,"damage":754.6450737532731,"buffered":4,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 100ms + 0/7ms jitter","weapon":"lmg","distance":5,"accepted":60,"hits":60,"damage":1709.7460240173689,"buffered":0,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 150ms + 0/7ms jitter","weapon":"rifle","distance":5,"accepted":30,"hits":30,"damage":736.9613457872724,"buffered":1,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","stale-or-future-view","cooldown"]}
+CASE {"label":"full magazine; one-way 150ms + 0/7ms jitter","weapon":"smg","distance":5,"accepted":35,"hits":35,"damage":612.0734372796561,"buffered":0,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","stale-or-future-view","stale-or-future-view","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","empty"]}
+CASE {"label":"full magazine; one-way 150ms + 0/7ms jitter","weapon":"carbine","distance":5,"accepted":24,"hits":24,"damage":754.6457804744398,"buffered":1,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 150ms + 0/7ms jitter","weapon":"lmg","distance":5,"accepted":60,"hits":60,"damage":1709.745952949068,"buffered":9,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 200ms + 0/7ms jitter","weapon":"rifle","distance":5,"accepted":30,"hits":30,"damage":736.9602148694237,"buffered":7,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 200ms + 0/7ms jitter","weapon":"smg","distance":5,"accepted":35,"hits":35,"damage":612.0716314210326,"buffered":6,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"full magazine; one-way 200ms + 0/7ms jitter","weapon":"carbine","distance":5,"accepted":24,"hits":24,"damage":754.6458693488444,"buffered":6,"rejected":[]}
+CASE {"label":"full magazine; one-way 200ms + 0/7ms jitter","weapon":"lmg","distance":5,"accepted":60,"hits":60,"damage":1709.7404232550168,"buffered":5,"rejected":["cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"moving right; one-way 0ms","weapon":"rifle","distance":10,"accepted":9,"hits":9,"damage":216.74681277361532,"buffered":2,"rejected":[]}
+CASE {"label":"moving left; one-way 0ms","weapon":"rifle","distance":10,"accepted":9,"hits":9,"damage":216.77900314891025,"buffered":0,"rejected":["cooldown"]}
+CASE {"label":"moving crouch; one-way 0ms","weapon":"rifle","distance":10,"accepted":9,"hits":9,"damage":216.89888256059646,"buffered":0,"rejected":[]}
+CASE {"label":"moving jump; one-way 0ms","weapon":"rifle","distance":10,"accepted":9,"hits":9,"damage":216.93830468283466,"buffered":0,"rejected":["cooldown"]}
+CASE {"label":"moving diagonal; one-way 0ms","weapon":"rifle","distance":10,"accepted":9,"hits":9,"damage":216.44659067181465,"buffered":0,"rejected":[]}
+CASE {"label":"moving right; one-way 100ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":240.7928996993192,"buffered":0,"rejected":["cooldown"]}
+CASE {"label":"moving left; one-way 100ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":240.79219263256357,"buffered":1,"rejected":["cooldown","cooldown"]}
+CASE {"label":"moving crouch; one-way 100ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":240.99898075798922,"buffered":2,"rejected":[]}
+CASE {"label":"moving jump; one-way 100ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":241.0394046837901,"buffered":2,"rejected":["cooldown","cooldown"]}
+CASE {"label":"moving diagonal; one-way 100ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":240.29915006113524,"buffered":0,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"moving right; one-way 200ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":240.78543857460718,"buffered":3,"rejected":["cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"moving left; one-way 200ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":240.78800785430914,"buffered":1,"rejected":["cooldown","cooldown","cooldown"]}
+CASE {"label":"moving crouch; one-way 200ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":240.99371832035774,"buffered":4,"rejected":["cooldown","cooldown"]}
+CASE {"label":"moving jump; one-way 200ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":241.04089993175245,"buffered":1,"rejected":["cooldown","cooldown","cooldown","cooldown"]}
+CASE {"label":"moving diagonal; one-way 200ms","weapon":"rifle","distance":10,"accepted":10,"hits":10,"damage":240.27975410421024,"buffered":2,"rejected":["cooldown","cooldown"]}
+PASS independent WebGL clients { scope: 'all', cases: 44, avgAckMs: 188.1125000000102, samples: 128 }
+PASS production knife rigs: five animation samples per style captured
+
+
+STRIKE_CASES=head: exit 0
+PASS independent-client headshot damage and authoritative head marker
+PASS independent WebGL clients { scope: 'head', cases: 0, avgAckMs: 17.600000000093132, samples: 1 }
+
+
+STRIKE_CASES=weapons: exit 0
+CASE {"label":"100 HP body TTK","weapon":"rifle","distance":5,"accepted":6,"hits":5,"damage":100,"buffered":0,"rejected":[]}
+CASE {"label":"100 HP body TTK","weapon":"smg","distance":5,"accepted":6,"hits":6,"damage":100,"buffered":0,"rejected":[]}
+CASE {"label":"100 HP body TTK","weapon":"carbine","distance":5,"accepted":4,"hits":4,"damage":100,"buffered":0,"rejected":[]}
+CASE {"label":"100 HP body TTK","weapon":"lmg","distance":5,"accepted":4,"hits":4,"damage":100.00000000000001,"buffered":0,"rejected":[]}
+CASE {"label":"100 HP body TTK","weapon":"pistol","distance":5,"accepted":4,"hits":4,"damage":100,"buffered":0,"rejected":[]}
+CASE {"label":"100 HP body TTK","weapon":"sniper","distance":5,"accepted":2,"hits":2,"damage":100,"buffered":0,"rejected":[]}
+CASE {"label":"100 HP body TTK","weapon":"shotgun","distance":5,"accepted":2,"hits":2,"damage":100,"buffered":0,"rejected":[]}
+CASE {"label":"100 HP body TTK","weapon":"railgun","distance":5,"accepted":1,"hits":1,"damage":100,"buffered":0,"rejected":[]}
+PASS independent WebGL clients {
+  scope: 'weapons',
+  cases: 8,
+  avgAckMs: 39.313333333299184,
+  samples: 30
+}
+
+
+Bomb regression: exit 0
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> react-example@0.0.0 test:strike:bomb:browser
+> node --import tsx tests/kapsstrike.bomb.browser.ts
+
+mode selected
+playing T · Saldırı · $800 · Zırh 0Bomba sende · A veya B bölgesine ilerleB · Satın alma menüsü
+plant-ready { active: true, locked: true, hud: true }
+PASS two independent Chromium contexts: create/join/ready/start; desktop pointer-lock buy/ESC; tablet buy; phone overflow; authoritative plant/kit-defuse/score/next round; no page errors. Test placements/timer override documented.
+browser closed

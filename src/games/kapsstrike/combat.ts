@@ -105,7 +105,7 @@ export function eye(p: PlayerState): Vec3 {
     y: pos.y + (p.movement.stance === "stand" ? C.eye : C.crouchEye),
   };
 }
-function random(index: number) {
+export function spreadRandom(index: number) {
   let x = (index ^ 0x9e3779b9) >>> 0;
   x = Math.imul(x ^ (x >>> 16), 0x21f0aaad);
   x = Math.imul(x ^ (x >>> 15), 0x735a2d97);
@@ -119,6 +119,13 @@ export function spreadFor(player:PlayerState,ads:boolean) {
   const d=WEAPONS[player.weapon.selected];
   return d.spread*(ads?d.ads:1)*(player.movement.grounded?1:2)*(Math.hypot(player.movement.velocity.x,player.movement.velocity.z)>5?1.5:1);
 }
+
+/** One deterministic direction source for prediction, authority and debug rays. */
+export function shotDirection(p:PlayerState,shotIndex:number,pellet:number,ads:boolean){
+ const spread=spreadFor(p,ads),n=shotIndex*31+pellet*7;
+ return aimDirection(p.yaw+(spreadRandom(n)-.5)*spread*2,p.pitch+(spreadRandom(n+17)-.5)*spread*2);
+}
+
 export function weaponDamage(id:WeaponId,distance:number,head:boolean,ads:boolean) {
   if(id === "knife")return ads?MELEE.heavyDamage:MELEE.damage;
   const d=WEAPONS[id],falloff=id==="shotgun"?clamp(1-distance/45,.2,1):clamp(1-distance/(d.range*3),.7,1);
@@ -143,10 +150,7 @@ export function shoot(s: TrainingState, ads: boolean) {
   w.shotIndex++;
   const spread = spreadFor(p,ads);
   for (let pellet = 0; pellet < def.pellets; pellet++) {
-    const n = w.shotIndex * 31 + pellet * 7;
-    const yaw = p.yaw + (random(n) - 0.5) * spread * 2,
-      pitch = p.pitch + (random(n + 17) - 0.5) * spread * 2,
-      dir = aimDirection(yaw, pitch);
+    const dir = shotDirection(p,w.shotIndex,pellet,ads);
     let nearest = def.range;
     for (const solid of MAPS[s.map].solids)
       if (!solid.detail)

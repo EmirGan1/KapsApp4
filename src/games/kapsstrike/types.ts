@@ -45,6 +45,10 @@ export interface MapDefinition {
 }
 export interface InputCommand {
   sequence: number;
+  /** Tick of the remote pose actually displayed; fractional interpolation is intentional. */
+  viewTick?: number;
+  /** Predicted shot index used only for acknowledgement correlation, never damage authority. */
+  shot?: number;
   tick: number;
   moveX: number;
   moveZ: number;
@@ -101,10 +105,16 @@ export interface DummyState {
   hp: number;
   respawnAt: number;
 }
+export interface ShotReceipt {
+ shotId:string;sequence:number;predictedShot?:number;weapon:WeaponId;serverTick:number;
+ accepted:boolean;outcome:'hit'|'world'|'miss'|'rejected'|'buffered';reason?:string;damage:number;head:boolean;
+ receivedAt:number;processedAt:number;queueMs:number;
+}
 export interface CombatEvent {
   id: number;
   tick: number;
   actor: string;
+  shotId?:string;
   kind: "shot" | "hit" | "reload" | "death" | "respawn" | "damage";
   weapon?: WeaponId;
   from?: Vec3;
