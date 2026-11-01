@@ -15,7 +15,7 @@ try{
  browser.on('disconnected',()=>console.log('browser closed'));
  for(const [i,p] of [a,b].entries()){
   p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')console.log('WEBGL',m.text());});
-  await p.addInitScript(()=>localStorage.setItem('kapsstrike-settings',JSON.stringify({quality:'low'})));
+  await p.addInitScript(()=>localStorage.setItem('kapsstrike-settings',JSON.stringify({quality:'low',bindings:{fire:'KeyH'}})));
   await p.goto(`http://127.0.0.1:4198/__bomb?user=${i+1}`);
   await p.getByRole('button',{name:/BOMBA KURMA/}).click();
  }
@@ -57,12 +57,14 @@ try{
  const {newMovement}=await import('../src/games/kapsstrike/physics');
  const actor=[...room.players.values()].find(p=>p.userId===1)!;
  await a.bringToFront();const resumeWalk=a.getByRole('button',{name:/Oyuna dön|Oyuna Devam Et/i});if(await resumeWalk.isVisible())await resumeWalk.click();
+ for(const p of [a,b])await p.waitForFunction(()=>(window as any).strike.renderer.remotePlayerMeshes.size>=1);
  const routeChecks=[...MAPS.district.routes!,
+ {name:'CT underpass to A Ramp',points:[{x:9.4,y:0,z:33.5},{x:25,y:0,z:33},{x:25,y:0,z:20.5},{x:47,y:0,z:20.5},{x:47,y:1.6,z:29},{x:39,y:3.2,z:30},{x:39,y:3.2,z:36},{x:34.42208,y:3.2,z:37.9984}]},
  {name:'A Short / Catwalk',points:[{x:13,y:0,z:14.3},{x:13,y:3.2,z:24},{x:13,y:3.2,z:27},{x:21,y:3.2,z:27},{x:21,y:3.2,z:36},{x:34,y:3.2,z:36}]},
  {name:'B Tunnels → B Site',points:[{x:-38,y:2.4,z:10},{x:-45,y:2.4,z:10},{x:-45,y:2.4,z:33},{x:-34,y:2.4,z:33},{x:-34,y:2.4,z:42}]},
  {name:'Upper → Lower Tunnels',points:[{x:-38,y:2.4,z:5},{x:-38,y:2.4,z:10},{x:-27.4,y:2.4,z:10},{x:-19.5,y:0,z:10},{x:-16,y:0,z:10},{x:-5.5,y:0,z:10}]},
  ];
- for(const route of (process.env.STRIKE_SCREENSHOTS_ONLY?[]:routeChecks)){
+ for(const route of ((process.env.STRIKE_SCREENSHOTS_ONLY||process.env.STRIKE_CAPTURE_ONLY&&!process.env.STRIKE_ROUTE_NAME)?[]:routeChecks.filter(r=>!process.env.STRIKE_ROUTE_NAME||r.name===process.env.STRIKE_ROUTE_NAME))){
    await a.evaluate(()=>(window as any).strike.setTouchMovement(0,0));
    actor.state.movement=newMovement(route.points[0]);actor.inputQueue=[];actor.heldInput=undefined;actor.history=[];
    await a.waitForFunction(p=>{const v=(window as any).strike.state.player.movement.position;return Math.hypot(v.x-p.x,v.z-p.z)<.4;},route.points[0]);
@@ -86,6 +88,8 @@ try{
    const end=route.points.at(-1)!;assert.ok(Math.hypot(actor.state.movement.position.x-end.x,actor.state.movement.position.z-end.z)<1,route.name);
    console.log('PASS LIVE BROWSER WALK',route.name,actor.state.movement.position);
  }
+ if(!process.env.STRIKE_ROUTES_ONLY){
+ if(!process.env.STRIKE_CAPTURE_ONLY){
  room.bomb!.phase='buy';
  // Test-only placement at a clear A lane; input/plant/defuse use live production transport.
  room.bomb!.deadline=room.tick/120;
@@ -145,12 +149,13 @@ try{
  await a.evaluate(()=>{const c=(window as any).strike;c.yaw=Math.PI/2;c.pitch=.12;(window as any).aimTimer=setInterval(()=>{c.yaw=Math.PI/2;c.pitch=.12;},16);});
  for(let i=0;i<6&&victim.state.hp>0;i++){
    const before=await a.evaluate(()=>(window as any).strike.state.player.weapon.ammo.pistol);
-   await a.mouse.down();await a.waitForFunction(n=>(window as any).strike.state.player.weapon.ammo.pistol<n,before,{timeout:10000});await a.mouse.up();await a.waitForTimeout(400);console.log('shot',i,combatants.map(p=>({hp:p.state.hp,ammo:p.state.weapon.ammo.pistol,position:p.state.movement.position,stance:p.state.movement.stance,yaw:p.state.yaw,pitch:p.state.pitch,team:p.team,protected:p.state.protectedUntil,history:p.history.at(-1)})),room.tick,room.events.filter(e=>e.kind==='shot').slice(-1));
+   await a.keyboard.down('KeyH');await a.waitForFunction(n=>(window as any).strike.state.player.weapon.ammo.pistol<n,before,{timeout:10000});await a.keyboard.up('KeyH');await a.waitForTimeout(400);
  }
  await b.waitForFunction(()=>(window as any).strike.state.player.hp<=0,{},{timeout:30000});
  await a.evaluate(()=>clearInterval((window as any).aimTimer));
  assert.equal(attacker.kills,killsBefore+1);assert.equal(room.bomb!.winner,'T');
  console.log('PASS two-browser Lower Tunnels authoritative fire/damage/death/score');
+ }
  manager.stopRoomSimulationLoop(room);
  await a.evaluate(()=>{const c=(window as any).strike;c.updateSettings({...c.settings,quality:'high',dynamicResolution:false,scale:1});});
  await a.waitForFunction(()=>(window as any).strike.renderer.scene.isReady());
@@ -161,21 +166,24 @@ try{
  const views=[
   ['a-site',{x:43,y:3.2,z:36},-.8,.05],['catwalk',{x:13,y:3.2,z:25},1.4,.05],
   ['upper-tunnels',{x:-38,y:2.4,z:5},-.6,.1],['lower-tunnels',{x:-16,y:0,z:10},1.57,0],
-  ['mid-doors',{x:-5.36,y:0,z:15.42},0,0],['b-site',{x:-33,y:2.4,z:42},-2.4,.05],
-  ['a-ramp',{x:47,y:1.143,z:26},-.9,.05],['materials',{x:34,y:3.2,z:37},-.7,.4],
+  ['mid-doors',{x:-5.36,y:0,z:11},0,0],['b-site',{x:-33,y:2.4,z:42},-2.4,.05],
+  ['a-ramp',{x:47,y:1.143,z:26},-.9,.05],['materials',{x:40,y:3.2,z:43},0,-.3],
  ] as const;
  room.bomb!.phase='active';room.bomb!.deadline=room.tick/120+105;delete room.bomb!.winner;delete room.bomb!.reason;
- for(const [name,position,yaw,pitch] of views){
+ for(const [name,position,yaw,pitch] of views.filter(v=>!process.env.STRIKE_CAPTURE_VIEWS||process.env.STRIKE_CAPTURE_VIEWS.split(',').includes(v[0]))){
    room.tick+=4;actor.state.movement=newMovement(position);actor.inputQueue=[];actor.heldInput=undefined;actor.history=[];for(const p of room.players.values())io.to(p.id).emit('strike:snapshot',room.getSnapshotForPlayer(p.id));
    await a.evaluate(({yaw,pitch})=>{const c=(window as any).strike;c.setTouchMovement(0,0);c.yaw=yaw;c.pitch=pitch;}, {yaw,pitch});
    await a.waitForFunction(p=>{const q=(window as any).strike.state.player.movement.position;return Math.hypot(q.x-p.x,q.z-p.z)<.4;},position);
    await a.screenshot({path:`/tmp/dust3d-${name}.png`});
  }
- await a.evaluate(()=>{const c=(window as any).strike;c.renderer.engine.stopRenderLoop();c.renderer.scene.fogMode=0;c.renderer.scene.getTransformNodeByName('viewmodel')?.setEnabled(false);c.renderer.camera.position.set(0,115,0);c.renderer.camera.rotation.set(Math.PI/2,0,0);c.renderer.scene.render();});
+ await a.evaluate(()=>{const c=(window as any).strike;c.renderer.engine.stopRenderLoop();c.renderer.scene.fogMode=0;c.renderer.scene.getTransformNodeByName('viewmodel')?.setEnabled(false);c.renderer.camera.position.set(0,85,0);c.renderer.camera.rotation.set(Math.PI/2,0,0);c.renderer.scene.render();});
  await a.evaluate(async()=>{const s=(window as any).strike.renderer.scene;await s.whenReadyAsync();s.render();});
+ await a.addStyleTag({content:'.ks-root > :not(canvas){visibility:hidden!important}'});
  await a.screenshot({path:'/tmp/dust3d-overview.png'});
 
  assert.equal(errors.length,0,errors.join('\n'));
- console.log('PASS two independent Chromium contexts: create/join/ready/start; desktop pointer-lock buy/ESC; tablet buy; phone overflow; authoritative plant/kit-defuse/score/next round; no page errors. Test placements/timer override documented.');
+ if(process.env.STRIKE_CAPTURE_ONLY)console.log('PASS actual High visual capture only; no combat assertions in this mode');
+ else console.log('PASS two independent Chromium contexts: create/join/ready/start; desktop pointer-lock buy/ESC; tablet buy; phone overflow; authoritative plant/kit-defuse/score/next round; no page errors. Test placements/timer override documented.');
+ }else console.log('PASS live routes with independent Chromium clients');
  await a.close();await b.close();await new Promise(r=>setTimeout(r,100));assert.equal(manager.rooms.size,0);
 }catch(error){console.log('failure-state',JSON.stringify([...manager.rooms.values()].map(r=>r.bomb)));throw error;}finally{for(const r of manager.rooms.values())manager.stopRoomSimulationLoop(r);await browser.close();await new Promise<void>(r=>io.close(()=>r()));await vite.close();}
