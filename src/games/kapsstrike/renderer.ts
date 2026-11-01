@@ -990,6 +990,31 @@ export class StrikeRenderer {
         }
       }
     }
+    this.gunRoot.setEnabled(!(ads && (p.weapon.selected === "sniper" || p.weapon.selected === "railgun")));
+    this.gunRoot.scaling.setAll(ads ? 0.85 : 1);
+    for (const [id, mesh] of this.weapons) {
+      const isSelected = id === p.weapon.selected;
+      mesh.setEnabled(isSelected);
+      if (id === "knife" && isSelected) {
+        for (const child of mesh.getChildMeshes()) {
+          child.setEnabled(child.metadata?.knifeStyle === knifeType);
+        }
+      }
+    }
+    for (const [id, target] of this.targetMeshes) {
+      if (!state.targets.some((t) => t.id === id)) target.root.setEnabled(false);
+    }
+    if (state.targets) {
+      for (const t of state.targets) {
+        const mesh = this.targetMeshes.get(t.id);
+        if (mesh) {
+          mesh.root.position.set(t.position.x, t.position.y, t.position.z);
+          mesh.root.setEnabled(t.hp > 0);
+        }
+      }
+    }
+    this.muzzle.position.z = WEAPONS[p.weapon.selected].length * 0.65 + 0.04;
+    this.muzzle.setEnabled(p.weapon.selected !== "knife" && this.gunKick > 0.045);
     for (const a of this.tracerPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
     for (const a of this.impactPool)
