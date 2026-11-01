@@ -29,6 +29,16 @@ export interface TargetDefinition {
   position: Vec3;
   moving?: boolean;
 }
+export interface MapPhotoFrame {
+  id: string;
+  image: string;
+  x: number;
+  y: number;
+  z: number;
+  width: number;
+  height: number;
+  rotationY: number;
+}
 export interface MapDefinition {
   id: MapId;
   name: string;
@@ -42,6 +52,7 @@ export interface MapDefinition {
   hazard: { x: number; z: number; r: number };
   routes?: { name: string; points: Vec3[] }[];
   landmarks?: string[];
+  photoFrames?: MapPhotoFrame[];
 }
 export interface InputCommand {
   sequence: number;
