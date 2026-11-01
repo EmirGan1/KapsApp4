@@ -209,7 +209,7 @@ export function townMap(id:MapId):MapDefinition {
   board.label=text;
   deco('neighborhood-sign-trim',x,4.18,z,15.2,.08,.24,'#d3ad5d','metal');
  };
- const neighborhoodAnchors=id==='neon'?[[-32,-46],[32,46]]:[[-39,-42],[39,42]];
+ const neighborhoodAnchors:[[number,number],[number,number]]=id==='neon'?[[-32,-46],[32,46]]:[[-39,-42],[39,42]];
  neighborhoodSign('Gazeteciler Sitesi',neighborhoodAnchors[0][0],neighborhoodAnchors[0][1],'#315c49');
  neighborhoodSign('Yeni Nesil Eyüp Sitesi',neighborhoodAnchors[1][0],neighborhoodAnchors[1][1],'#244f75');
 
