@@ -95,6 +95,11 @@ export function townMap(id:MapId):MapDefinition {
  let name='',subtitle='',sky='',floor='';let spawns:Vec3[]=[];let elevated={x:0,y:0,z:0};
  const spawn=(points:number[][])=>spawns=points.map(([x,z])=>({x,y:0,z}));
  let landmarks:string[]=[];
+ const photoAnchors:{image:string;aspect:number;x:number;y:number;z:number;wallLength:number;wallHeight:number;rotationY:number}[]=[];
+ const photo=(asset:number,x:number,y:number,z:number,wallLength:number,wallHeight:number,rotationY:number)=>{
+  const aspects:[number,number,number,number,number,number]=[.5625,.5625,4/3,16/9,.75,4/3];
+  photoAnchors.push({image:`/kapsstrike/photos/photo-${String(asset).padStart(2,'0')}.jpg`,aspect:aspects[asset-1],x,y,z,wallLength,wallHeight,rotationY});
+ };
  if(id==='dust'){
   name='Dust Town · Sarnıç Pazarı';subtitle='Pazar meydanı, kıvrılan kasaba sokakları, avlular ve bağlı çatılar';sky='#d6c3a2';floor='#c8b28c';
   // Six separate blocks shape a branching, offset network of alleys and courts.
@@ -120,7 +125,7 @@ export function townMap(id:MapId):MapDefinition {
   // Well and bench belong to a side courtyard, keeping the square's routes clear.
   b('well',-5,0,2,2.4,.8,2.4,'#ad9879','stone',false,'cylinder');deco('well-water',-5,.8,2,1.7,.03,1.7,'#71969a','water').shape='cylinder';
   b('courtyard-bench',-6,0,-3,2.7,.45,.55,'#91704e','wood');
-  sign('SARNIC PAZARI',0,4.2,9.5,7,'#785e45');sign('CAY EVI',15,2.9,-32.3,4,'#765e48');sign('FIRIN',19,2.8,19.2,4,'#765e48');
+  sign('SARNIC PAZARI',0,4.2,9.5,7,'#785e45');sign('MİR BÜFE',15,2.9,-32.3,7,'#765e48');sign('FIRIN',19,2.8,19.2,4,'#765e48');
   ramp('roof-ramp',28,-27,3.5,6.48,24,'z','#b5a083','stone');b('roof-landing',28,6.2,-13,4,.28,4,'#b5a083','stone');b('roof-link',20,6.2,-15,12,.28,3.5,'#b5a083','stone');
   steps(-7,12,2.5,11,4.78,'#b5a083');b('roof-landing',-7,4.5,24,3,.28,3,'#b5a083','stone');b('roof-link',-11,4.5,24,6,.28,3,'#b5a083','stone');
   balcony(15,3.2,-33.8,7,2.3,'#a47b54');
@@ -133,6 +138,12 @@ export function townMap(id:MapId):MapDefinition {
   route('Pazar ve kemer',[[0,-38],[0,-12],[3,0],[3,7],[3,12],[0,16],[0,33],[0,38]]);
   route('Batı avlu sokağı',[[0,-38],[-30,-38],[-34,-10],[-34,34],[0,38]]);
   route('Doğu çatıaltı sokağı',[[0,-38],[32,-40],[32,-35],[32,34],[32,39],[0,38]]);
+  photo(1,6.22,3.1,-24,16,6.2,Math.PI/2);
+  photo(2,29.79,3.5,0,17,7,-Math.PI/2);
+  photo(3,-28.79,2.5,0,15,5,Math.PI/2);
+  photo(4,-24.22,2.8,-24,16,5.6,-Math.PI/2);
+  photo(5,26.72,2.6,27,15,5.2,Math.PI/2);
+  photo(6,-28.22,2.25,25,15,4.5,-Math.PI/2);
   landmarks=['pazar','kemerli geçit','sarnıç','çay evi','bağlı çatılar'];
  }else if(id==='neon'){
   name='Neon City · Üst Hat';subtitle='Gökdelen bulvarı, çift erişimli üst geçit, kulüp çatısı ve transit meydanı';sky='#111d35';floor='#303d4c';
@@ -149,7 +160,7 @@ export function townMap(id:MapId):MapDefinition {
   steps(-34.5,10,2.5,20,8.28,'#718699');b('club-roof-link',-31,8,31.7,8,.28,3.4,'#718699','metal');
   for(const z of [-37,-31,-25,-19,-13,-7,0,28])deco('lane-marker',0,.045,z,.16,.01,2,'#61d7d0').glow=true;
   for(const x of [-9.5,9.5])for(const z of [-34,-16,3,30])lamp(x,z,true);
-  sign('KAPS / TRANSIT',-3,4.5,32.7,12,'#365b78',true);sign('NOVA LAB',24,4.2,-15.3,10,'#576489',true);sign('ORBIT CLUB',-24,3.7,14.2,10,'#9e78c7',true);sign('24 / TECH',25,3,17.7,8,'#3c7c84',true);
+  sign('KAPS / TRANSIT',-3,4.5,32.7,12,'#365b78',true);sign('Yenihayat Ekspertiz',24,4.2,-15.3,13,'#576489',true);sign('ORBIT CLUB',-24,3.7,14.2,10,'#9e78c7',true);sign('Ke1 Muhasebe',25,3,17.7,11,'#3c7c84',true);
   // Lit shop interiors, terminals and street furniture instead of random crates.
   for(const [x,z] of [[22,22],[28,22],[-20,20]]){b('shop-terminal',x,0,z,1.2,1.6,.8,'#4b5e79','metal');deco('terminal-display',x,1,z-.43,.9,.5,.03,'#61d7d0').glow=true;}
   vehicle(-8,-8,false,true);vehicle(36,29,false,true);
@@ -160,6 +171,12 @@ export function townMap(id:MapId):MapDefinition {
   route('Bulvar ve meydan',[[0,-38],[0,-8],[9,-2],[9,9],[9,29],[12,30],[12,35],[19,36],[19,40]]);
   route('Batı servis sokağı',[[0,-38],[-39,-38],[-40,0],[-40,37],[-18,39]]);
   route('Doğu teknoloji sokağı',[[0,-38],[40,-38],[40,-25],[40,36],[19,40]]);
+  photo(4,-31.78,6,-18,22,12,Math.PI/2);
+  photo(5,33.78,9,-6,18,18,-Math.PI/2);
+  photo(6,-31.28,4,22,15,8,Math.PI/2);
+  photo(1,-32.22,6,-18,22,12,-Math.PI/2);
+  photo(2,33.22,3.5,25,14,7,Math.PI/2);
+  photo(3,-15.22,7,39,12,14,-Math.PI/2);
   landmarks=['gökdelen bulvarı','üst hat köprüsü','transit platformu','Orbit kulübü','teknoloji mağazası'];
  }else{
   name='Liman Mahallesi · Kıyı Terminali';subtitle='Deniz ve iskeleler, vinçli rıhtım, yükleme sokakları ve depo içleri';sky='#aac5d2';floor='#87938f';
@@ -199,6 +216,12 @@ export function townMap(id:MapId):MapDefinition {
   route('Yükleme caddesi',[[0,-38],[10,-35],[9,-4],[10,14],[10,34],[10,39],[0,39]]);
   route('Rıhtım yolu',[[0,-38],[-20,-37],[-22.5,-37],[-22.5,-6],[-20,0],[-20,28],[-20,39],[0,39]]);
   route('Doğu servis yolu',[[0,-38],[42.5,-38],[42.5,-4],[42.5,33],[39,39],[0,39]]);
+  photo(2,-16.28,3,-18,15,6,Math.PI/2);
+  photo(5,38.78,3.5,-23,18,7,-Math.PI/2);
+  photo(6,6.78,2.5,24,10,5,-Math.PI/2);
+  photo(1,-16.72,3,-18,15,6,-Math.PI/2);
+  photo(3,35,3.5,-32.22,18,7,Math.PI);
+  photo(4,28,4,29.22,22,8,0);
   landmarks=['deniz kıyısı','üç iskele','yük vinci','gümrük ofisi','depo içleri','açık yükleme alanı'];
  }
 
@@ -265,6 +288,11 @@ export function townMap(id:MapId):MapDefinition {
  const expansion=1.35;
  for(const solid of solids){solid.x*=expansion;solid.z*=expansion;solid.w*=expansion;solid.d*=expansion;}
  for(const p of spawns){p.x*=expansion;p.z*=expansion;}
+ const photoFrames:NonNullable<MapDefinition['photoFrames']>=photoAnchors.map((frame,index)=>{
+  const wallLength=frame.wallLength*expansion;
+  const height=Math.min(frame.wallHeight*.65,wallLength*.65/frame.aspect);
+  return{id:`${id}-photo-frame-${index+1}`,image:frame.image,x:frame.x*expansion,y:frame.y,z:frame.z*expansion,width:height*frame.aspect,height,rotationY:frame.rotationY};
+ });
  for(const r of routes)for(const p of r.points){p.x*=expansion;p.z*=expansion;}
  elevated={...elevated,x:elevated.x*expansion,z:elevated.z*expansion};
  // Façade-level street detail is cosmetic and never blocks a traversal route.
@@ -273,5 +301,5 @@ export function townMap(id:MapId):MapDefinition {
   deco('street-drain',base.x, .025,base.z+1.3,.7,.02,.4,'#35424a','metal');
  }
 
- return {id,name,subtitle,bounds:48*expansion,sky,floor,solids,spawns,routes,landmarks,targets:[{id:'close',position:{x:0,y:0,z:-25*expansion}},{id:'mid',position:{x:9*expansion,y:0,z:-4*expansion}},{id:'far',position:id==='dust'?{x:32*expansion,y:0,z:34*expansion}:{x:40*expansion,y:0,z:35*expansion}},{id:'elevated',position:elevated},{id:'strafer',position:{x:0,y:0,z:-10*expansion},moving:true}],hazard:id==='dust'?{x:-4*expansion,z:43*expansion,r:1.4}:{x:45*expansion,z:-43*expansion,r:1.4}};
+ return {id,name,subtitle,bounds:48*expansion,sky,floor,solids,spawns,routes,landmarks,photoFrames,targets:[{id:'close',position:{x:0,y:0,z:-25*expansion}},{id:'mid',position:{x:9*expansion,y:0,z:-4*expansion}},{id:'far',position:id==='dust'?{x:32*expansion,y:0,z:34*expansion}:{x:40*expansion,y:0,z:35*expansion}},{id:'elevated',position:elevated},{id:'strafer',position:{x:0,y:0,z:-10*expansion},moving:true}],hazard:id==='dust'?{x:-4*expansion,z:43*expansion,r:1.4}:{x:45*expansion,z:-43*expansion,r:1.4}};
 }

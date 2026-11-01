@@ -85,5 +85,25 @@ export function dustDistrict():MapDefinition{
   board.label=text;
   box('neighborhood-sign-trim',x,4.18,0,15.2,.08,.24,'#d3ad5d',true,'metal');
  }
+ // Exterior photo frames use exposed city-block walls beside walkable alleys.
+ const photoFrames:NonNullable<MapDefinition['photoFrames']>=[];
+ const facades:{solid:Solid;x:number;z:number;rotationY:number;wallLength:number}[]=[];
+ for(const wall of solids.filter(s=>s.id.includes('city-block'))){
+  for(const side of [-1,1]){
+   const x=wall.x+side*(wall.w/2+.13),z=wall.z;
+   if(walkable(x,z))facades.push({solid:wall,x,z,rotationY:side>0?Math.PI/2:-Math.PI/2,wallLength:wall.d});
+   const fx=wall.x,fz=wall.z+side*(wall.d/2+.13);
+   if(walkable(fx,fz))facades.push({solid:wall,x:fx,z:fz,rotationY:side>0?0:Math.PI,wallLength:wall.w});
+  }
+ }
+ facades.sort((a,b)=>b.wallLength-a.wallLength);
+ const photoAspects:[number,number,number,number,number,number]=[.5625,.5625,4/3,16/9,.75,4/3],usedWalls=new Set<string>();
+ for(const facade of facades){
+  if(photoFrames.length>=6)break;
+  if(usedWalls.has(facade.solid.id)||facade.wallLength<5||facade.solid.h<5)continue;
+  const index=photoFrames.length+1,aspect=photoAspects[index-1],height=Math.min(facade.solid.h*.65,facade.wallLength*.65/aspect);
+  photoFrames.push({id:`district-photo-frame-${index}`,image:`/kapsstrike/photos/photo-${String(index).padStart(2,'0')}.jpg`,x:facade.x,y:facade.solid.h*.54,z:facade.z,width:height*aspect,height,rotationY:facade.rotationY});
+  usedWalls.add(facade.solid.id);
+ }
  return{id:'district',name:'Dust II · Reconstruction',subtitle:'Long A, Mid, Catwalk ve B Tunnels',bounds:58,sky:'#b9d8ec',floor:'#c7bba4',solids,spawns,targets:[],hazard:{x:100,z:100,r:0},routes,landmarks:Object.keys(DUST2_AREAS)};
 }

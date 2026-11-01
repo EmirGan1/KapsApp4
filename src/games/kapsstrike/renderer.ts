@@ -249,6 +249,44 @@ export class StrikeRenderer {
         batch.receiveShadows=true;batch.isPickable=false;batch.freezeWorldMatrix();
         this.shadow?.addShadowCaster(batch);
       }
+      // Large framed photos are separate from collision and are batched by their shared frame material.
+      if(map.photoFrames?.length){
+        const photoTextures=new Map<string,Texture>(),photoMaterials=new Map<string,StandardMaterial>(),frameBars:Mesh[]=[];
+        const frameMaterial=this.material('#8b6847',false,'wood');
+        for(const frame of map.photoFrames){
+          let photoMaterial=photoMaterials.get(frame.image);
+          if(!photoMaterial){
+            let texture=photoTextures.get(frame.image);
+            if(!texture){
+              texture=new Texture(frame.image,this.scene,false,true);
+              texture.gammaSpace=true;texture.anisotropicFilteringLevel=8;
+              photoTextures.set(frame.image,texture);
+            }
+            photoMaterial=new StandardMaterial('map-photo-'+frame.id,this.scene);
+            photoMaterial.diffuseTexture=texture;photoMaterial.diffuseColor=Color3.White();
+            photoMaterial.emissiveColor=new Color3(.16,.16,.16);photoMaterial.specularColor=Color3.Black();
+            photoMaterial.backFaceCulling=false;photoMaterials.set(frame.image,photoMaterial);
+          }
+          const plane=MeshBuilder.CreatePlane(frame.id,{width:frame.width,height:frame.height,sideOrientation:Mesh.DOUBLESIDE},this.scene);
+          plane.position.set(frame.x,frame.y,frame.z);plane.rotation.y=frame.rotationY;
+          plane.material=photoMaterial;plane.isPickable=false;plane.receiveShadows=false;
+          const theta=frame.rotationY,t=.18,depth=.14;
+          const addBar=(name:string,width:number,height:number,localX:number,localY:number)=>{
+            const bar=MeshBuilder.CreateBox(name,{width,height,depth},this.scene);
+            bar.position.set(frame.x+localX*Math.cos(theta),frame.y+localY,frame.z-localX*Math.sin(theta));
+            bar.rotation.y=theta;bar.material=frameMaterial;bar.isPickable=false;bar.receiveShadows=false;
+            frameBars.push(bar);
+          };
+          addBar(frame.id+'-frame-top',frame.width+2*t,t,0,frame.height/2+t/2);
+          addBar(frame.id+'-frame-bottom',frame.width+2*t,t,0,-frame.height/2-t/2);
+          addBar(frame.id+'-frame-left',t,frame.height,t/2+frame.width/2,0);
+          addBar(frame.id+'-frame-right',t,frame.height,-t/2-frame.width/2,0);
+        }
+        if(frameBars.length){
+          const frameBatch=Mesh.MergeMeshes(frameBars,true,true);
+          if(frameBatch){frameBatch.name='map-photo-frames';frameBatch.material=frameMaterial;frameBatch.isPickable=false;frameBatch.freezeWorldMatrix();}
+        }
+      }
       const hazard = MeshBuilder.CreateCylinder(
         "hazard",
         { diameter: map.hazard.r * 2, height: 0.04, tessellation: 24 },
