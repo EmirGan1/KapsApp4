@@ -17,7 +17,7 @@ export class BombEffects{
    m.setEnabled(t<3&&(i<2||!low||i<5));if(!m.isEnabled())continue;
    const mat=this.mats[i];m.position.set(this.position.x,this.position.y+.2,this.position.z);
    if(i===0){const size=1+t*23;m.scaling.set(size,1,size);mat.alpha=Math.max(0,.8*(1-t/.85));}
-   else if(i===1){m.scaling.setAll(.4+t*13);mat.alpha=Math.max(0,.8*(1-t/.4));}
+   else if(i===1){m.scaling.setAll(.4+t*13);m.position.y+=1;mat.alpha=Math.max(0,.95*(1-t/1.1));}
    else {const n=i-2,a=n*2.39996,r=(.3+t*1.8)*(1+n*.1);m.position.x+=Math.sin(a)*r;m.position.z+=Math.cos(a)*r;m.position.y+=t*(1.2+n*.15);m.scaling.setAll(.3+t*(1+n*.04));mat.alpha=Math.max(0,.6*(1-t/3));}
   }
   const d=Math.hypot(eye.x-this.position.x,eye.y-this.position.y,eye.z-this.position.z),strength=Math.max(0,1-d/65)*Math.max(0,1-t/1.3)*.024;
@@ -34,8 +34,8 @@ export class BombEffects{
   if(this.meshes.length)return;
   const smoke=this.cloudTexture(false),fire=this.cloudTexture(true);
   for(let i=0;i<12;i++){
-   const m=i===0?MeshBuilder.CreateTorus('bomb-shockwave',{diameter:2,thickness:.055,tessellation:48},this.scene):MeshBuilder.CreatePlane(i===1?'bomb-fireball':'bomb-smoke-'+i,{size:2},this.scene);
-   const mat=new StandardMaterial('bomb-fx-'+i,this.scene);mat.diffuseColor=Color3.FromHexString(i<2?'#ffac46':'#55535a');mat.emissiveColor=Color3.FromHexString(i<2?'#ff701f':'#151519');mat.specularColor=Color3.Black();mat.alpha=.6;mat.disableLighting=true;mat.backFaceCulling=false;if(i>0){m.billboardMode=Mesh.BILLBOARDMODE_ALL;const texture=i===1?fire:smoke;if(texture){mat.diffuseTexture=texture;mat.opacityTexture=texture;mat.emissiveTexture=texture;mat.emissiveColor=i===1?new Color3(1,.8,.55):new Color3(.55,.53,.50);}m.rotation.z=i*1.37;}m.material=mat;m.isPickable=false;m.checkCollisions=false;this.meshes.push(m);this.mats.push(mat);
+   const m=i===0?MeshBuilder.CreateTorus('bomb-shockwave',{diameter:2,thickness:.055,tessellation:48},this.scene):i===1?MeshBuilder.CreateSphere('bomb-fireball',{diameter:2,segments:16},this.scene):MeshBuilder.CreatePlane('bomb-smoke-'+i,{size:2},this.scene);
+   const mat=new StandardMaterial('bomb-fx-'+i,this.scene);mat.diffuseColor=Color3.FromHexString(i<2?'#ffac46':'#55535a');mat.emissiveColor=Color3.FromHexString(i<2?'#ff701f':'#151519');mat.specularColor=Color3.Black();mat.alpha=.6;mat.disableLighting=true;mat.backFaceCulling=false;if(i>0){if(i>1)m.billboardMode=Mesh.BILLBOARDMODE_ALL;const texture=i===1?fire:smoke;if(texture){mat.diffuseTexture=texture;mat.opacityTexture=texture;mat.emissiveTexture=texture;mat.emissiveColor=i===1?new Color3(1,.8,.55):new Color3(.55,.53,.50);}m.rotation.z=i*1.37;}m.material=mat;m.isPickable=false;m.checkCollisions=false;this.meshes.push(m);this.mats.push(mat);
   }
  }
  dispose(){for(const m of this.meshes)m.dispose();for(const m of this.mats)m.dispose();for(const t of this.textures)t.dispose();this.meshes=[];this.mats=[];this.textures=[];}

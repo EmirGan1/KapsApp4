@@ -75,3 +75,9 @@ test('district: standing players across elevated A/B sites have occluded sightli
  }
  assert.ok(checked>=500,`Must test substantial sample rays across sites: ${checked}`);
 });
+
+test('explosion payload reaches both teams including the dead victim during results',()=>{
+ const b=createBombMatch([{id:'t',team:'T',position:{x:0,y:0,z:0}},{id:'ct',team:'CT',position:{x:0,y:0,z:1}}],0);
+ b.phase='planted';b.position={x:0,y:0,z:0};b.deadline=1;stepBomb(b,1);
+ for(const id of ['t','ct']){const v=bombView(b,id);assert.ok(v.explosion);assert.equal(v.phase,'result');assert.equal(v.explosion!.at,1);assert.equal(v.players[id].alive,false);}
+});

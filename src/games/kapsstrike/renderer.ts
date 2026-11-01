@@ -92,6 +92,7 @@ export class StrikeRenderer {
   private smoke:Mesh[]=[];
   private bombMesh?:Mesh;
   private blast?:BombEffects;
+  private blastFlash?:Mesh;
   private heldBomb?:Mesh;
   private reloadAt = 0;
   private muzzle: Mesh;
@@ -953,9 +954,15 @@ export class StrikeRenderer {
     if(bombEquipped)this.gunRoot.setEnabled(false);
     if(state.bomb&&p.hp<=0){
       this.gunRoot.setEnabled(false);
-      if(spectator){this.camera.position.set(spectator.position.x,spectator.position.y+(spectator.stance==='stand'?C.eye:C.crouchEye),spectator.position.z);this.camera.rotation.set(spectator.pitch,spectator.yaw,0);}
+      if(spectator&&!(state.bomb.explosion&&state.tick*C.dt-state.bomb.explosion.at<.8)){this.camera.position.set(spectator.position.x,spectator.position.y+(spectator.stance==='stand'?C.eye:C.crouchEye),spectator.position.z);this.camera.rotation.set(spectator.pitch,spectator.yaw,0);}
     }
-    if(state.bomb){this.blast??=new BombEffects(this.scene);const shake=this.blast.update(state.bomb.explosion,delta,this.camera.position,this.quality()==='low');this.camera.rotation.x+=shake.x;this.camera.rotation.y+=shake.y;this.camera.rotation.z+=shake.z;}
+    if(state.bomb){
+      if(!this.blastFlash){this.blastFlash=MeshBuilder.CreatePlane('bomb-camera-flash',{size:2},this.scene);this.blastFlash.parent=this.camera;this.blastFlash.position.z=.1;this.blastFlash.isPickable=false;this.blastFlash.renderingGroupId=3;const mat=this.material('#ffcb78',true).clone('bomb-flash-material')!;mat.disableLighting=true;mat.backFaceCulling=false;mat.disableDepthWrite=true;this.blastFlash.material=mat;}
+      const explosion=state.bomb.explosion,age=explosion?state.tick*C.dt-explosion.at:10;
+      const distance=explosion?Math.hypot(p.movement.position.x-explosion.position.x,p.movement.position.y-explosion.position.y,p.movement.position.z-explosion.position.z):100;
+      const flash=Math.max(0,1-distance/30)*Math.max(0,1-Math.max(0,age)/.65)*.8;
+      this.blastFlash.setEnabled(flash>0&&age>=0);(this.blastFlash.material as StandardMaterial).alpha=flash;
+      this.blast??=new BombEffects(this.scene);const shake=this.blast.update(state.bomb.explosion,delta,this.camera.position,this.quality()==='low');this.camera.rotation.x+=shake.x;this.camera.rotation.y+=shake.y;this.camera.rotation.z+=shake.z;}
     this.scene.render();
     if(this.observer && this.settings.dynamicResolution && performance.now()-this.scaleTimer>1500){
       this.scaleTimer=performance.now();const fps=this.engine.getFps();
