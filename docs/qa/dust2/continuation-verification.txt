@@ -1,0 +1,39 @@
+2026-11-01 — continuation of PR #10; SwiftShader, not hardware performance.
+
+npm run lint: exit 0 (repeated after fixture changes)
+
+npm run build: exit 0
+
+npm run test:strike: exit 0
+ℹ tests 231
+ℹ suites 0
+ℹ pass 231
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 64086.820404
+
+STRIKE_ROUTES_ONLY=1: exit 0
+PASS LIVE BROWSER WALK T → A { x: 34.42008120974389, y: 3.2, z: 37.83725879877926 }
+PASS LIVE BROWSER WALK T → B { x: -33.50302983483291, y: 2.4, z: 42.80046957213912 }
+PASS LIVE BROWSER WALK CT → A { x: 34.38887055081082, y: 3.2, z: 37.888209471317154 }
+PASS LIVE BROWSER WALK CT → B { x: -33.52614386451571, y: 2.4, z: 42.64888141739981 }
+PASS LIVE BROWSER WALK CT underpass to A Ramp { x: 34.702876647384414, y: 3.2, z: 37.91228573502476 }
+PASS LIVE BROWSER WALK A Short / Catwalk { x: 34.02954274209282, y: 3.2, z: 36.006675860414 }
+PASS LIVE BROWSER WALK B Tunnels → B Site { x: -34.062990246856344, y: 2.4, z: 42.359080111200626 }
+PASS LIVE BROWSER WALK Upper → Lower Tunnels { x: -5.397642990639928, y: 0, z: 10.000004647841207 }
+PASS live routes with independent Chromium clients
+
+Combat run: gameplay assertions passed, command exit 1 at subsequent High readiness 30s timeout.
+PASS B SITE PLANT/DEFUSE
+PASS two-browser Lower Tunnels authoritative fire/damage/death/score
+page.waitForFunction: Timeout 30000ms exceeded.
+
+First isolated High run: PBR ready, then pose snapshot timeout; client disconnected.
+PASS bundled High PBR maps loaded at 2048px 66
+page.waitForFunction: Timeout 30000ms exceeded.
+
+Final isolated High run (fixture pingTimeout/readiness 120s): exit 0
+PASS bundled High PBR maps loaded at 2048px 66
+PASS actual High visual capture only; no combat assertions in this mode

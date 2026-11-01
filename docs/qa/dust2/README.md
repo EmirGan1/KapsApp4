@@ -1,5 +1,7 @@
 # Dust II 3D doğrulama — PR #10 devamı
 
+Güncel devam/çakışma incelemesi: [1 Kasım devam raporu](continuation-2026-11-01.md). Aşağıdaki 230-test ve ekran görüntüsü kayıtları `ca49247` revizyonuna aittir.
+
 ## Uygulanan geometri
 
 Önceki radar tabanlı yatay ayak izi korundu; bağımsız deneme rampaları kaldırıldı. Artık ortak istemci/sunucu geometrisinde:

@@ -4,7 +4,9 @@ import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
 const vite=await createServer({cacheDir:'node_modules/.vite-bomb-qa',logLevel:'error',plugins:[{name:'bomb-qa',configureServer(s){s.middlewares.use('/__bomb',async(_req,res)=>{res.setHeader('Content-Type','text/html');res.end(await s.transformIndexHtml('/__bomb','<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><div id="root"></div><script type="module" src="/tests/kapsstrike.network.fixture.tsx"></script></body></html>'));});}}],server:{host:'127.0.0.1',port:4198,strictPort:true}});
-const io=new Server(vite.httpServer!),manager=new KapsStrikeServerManager(io);
+// Software GPU shader compilation can block the browser heartbeat during High capture.
+// This timeout is exclusive to the test fixture; production transport is unchanged.
+const io=new Server(vite.httpServer!,{pingTimeout:120000}),manager=new KapsStrikeServerManager(io);
 io.on('connection',socket=>{const id=Number(socket.handshake.auth.testUser);manager.register(socket,{id,username:`Tester ${id}`,avatar:null});socket.on('disconnect',()=>manager.handleDisconnect(socket,id));});
 await vite.listen();
 const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
@@ -158,7 +160,9 @@ try{
  }
  manager.stopRoomSimulationLoop(room);
  await a.evaluate(()=>{const c=(window as any).strike;c.updateSettings({...c.settings,quality:'high',dynamicResolution:false,scale:1});});
- await a.waitForFunction(()=>(window as any).strike.renderer.scene.isReady());
+ // SwiftShader can need more than 30s to compile/upload the High PBR profile.
+ // Keep readiness and 2048px assertions; only extend the test harness deadline.
+ await a.waitForFunction(()=>(window as any).strike.renderer.scene.isReady(),{},{timeout:120000});
  const textureInfo=await a.evaluate(()=>(window as any).strike.renderer.scene.textures.filter((t:any)=>t.url?.includes('/kapsstrike/materials/')).map((t:any)=>({url:t.url,ready:t.isReady(),size:t.getSize().width})));
  assert.ok(textureInfo.length>=6);assert.ok(textureInfo.every((t:any)=>t.ready&&t.size===2048));
  console.log('PASS bundled High PBR maps loaded at 2048px',textureInfo.length);

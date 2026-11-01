@@ -40,3 +40,38 @@ test('radar reconstruction accepts planting at both shared site centers',async()
  const {BOMB_SITES}=await import('../src/games/kapsstrike/bomb');
  for(const site of BOMB_SITES){const m=createBombMatch(players().map(p=>({...p,position:{x:site.x,y:site.y,z:site.z}})),0);stepBomb(m,15);assert.ok(bombInteract(m,'0',true,16));m.players['0'].holdUntil=21;stepBomb(m,19.21);assert.equal(m.phase,'planted');assert.equal(m.site,site.id);}
 });
+test('district: standing players across elevated A/B sites have occluded sightlines',async()=>{
+ const {MAPS}=await import('../src/games/kapsstrike/maps');
+ const {raySolid,fits}=await import('../src/games/kapsstrike/physics');
+ const {BOMB_SITES}=await import('../src/games/kapsstrike/bomb');
+ const map=MAPS.district;
+ const siteA=BOMB_SITES.find(s=>s.id==='A')!;
+ const siteB=BOMB_SITES.find(s=>s.id==='B')!;
+ let checked=0;
+ for(let ax=-siteA.radius+1;ax<=siteA.radius-1;ax+=1){
+  for(let az=-siteA.radius+1;az<=siteA.radius-1;az+=1){
+   if(Math.hypot(ax,az)>siteA.radius)continue;
+   if(!fits(map,{x:siteA.x+ax,y:siteA.y,z:siteA.z+az},1.8))continue;
+   const pA={x:siteA.x+ax,y:siteA.y+1.62,z:siteA.z+az};
+   for(let bx=-siteB.radius+1;bx<=siteB.radius-1;bx+=1){
+    for(let bz=-siteB.radius+1;bz<=siteB.radius-1;bz+=1){
+     if(Math.hypot(bx,bz)>siteB.radius)continue;
+     if(!fits(map,{x:siteB.x+bx,y:siteB.y,z:siteB.z+bz},1.8))continue;
+     const pB={x:siteB.x+bx,y:siteB.y+1.62,z:siteB.z+bz};
+     checked++;
+     const dir={x:pB.x-pA.x,y:pB.y-pA.y,z:pB.z-pA.z};
+     const dist=Math.hypot(dir.x,dir.y,dir.z);
+     dir.x/=dist;dir.y/=dist;dir.z/=dist;
+     let hitDist=Infinity;
+     for(const s of map.solids){
+      if(s.detail||s.hidden)continue;
+      const hit=raySolid(pA,dir,s,dist);
+      if(hit<hitDist)hitDist=hit;
+     }
+     assert.ok(hitDist<dist-0.1,`Unblocked sightline detected from A(${pA.x},${pA.z}) to B(${pB.x},${pB.z})`);
+    }
+   }
+  }
+ }
+ assert.ok(checked>=500,`Must test substantial sample rays across sites: ${checked}`);
+});
