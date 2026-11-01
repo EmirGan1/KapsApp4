@@ -1,3 +1,4 @@
+import {tracePlayer} from '../games/kapsstrike/hitboxes';
 import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
 import { randomBytes } from "node:crypto";
@@ -30,7 +31,7 @@ import {
 import { MAPS } from "../games/kapsstrike/maps";
 import { PHYSICS as C, ownsWeapon, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "../games/kapsstrike/config";
 import { newMovement, move, fits, clamp, raySolid, rayBox } from "../games/kapsstrike/physics";
-import { aimDirection, eye, fireDelay, spreadFor, weaponDamage } from "../games/kapsstrike/combat";
+import { aimDirection, eye, fireDelay, spreadFor, weaponDamage, shotDirection } from "../games/kapsstrike/combat";
 
 export interface StrikeServerConfig {
   tickRate: number; // 60 Hz
@@ -51,6 +52,7 @@ interface HistoricalPosition {
   stance: "stand" | "crouch" | "slide";
   height: number;
   hp: number;
+  yaw:number;pitch:number;
 }
 
 export class StrikeServerPlayer {
@@ -80,6 +82,10 @@ export class StrikeServerPlayer {
   heldInput?: InputCommand;
   inputQueue: InputCommand[] = [];
   history: HistoricalPosition[] = [];
+  receivedInputs=new Map<number,{receivedAt:number;receivedTick:number}>();
+  pendingFire?:{weapon:WeaponId;index:number;until:number;command:InputCommand;received?:{receivedAt:number;receivedTick:number}};
+  activeCommand?:InputCommand;
+  activeReceive?:{receivedAt:number;receivedTick:number};
   isSpeaking = false;
   isMuted = false;
 
@@ -127,10 +133,12 @@ export class StrikeServerPlayer {
   }
 
   recordHistory(tick: number, time: number) {
+    if(this.history.at(-1)?.tick===tick)this.history.pop();
     this.history.push({
       tick,
       time,
       position: { ...this.state.movement.position },
+      yaw:this.state.yaw,pitch:this.state.pitch,
       stance: this.state.movement.stance,
       height: this.state.movement.height,
       hp: this.state.hp,
@@ -140,30 +148,18 @@ export class StrikeServerPlayer {
     }
   }
 
-  getHistoricalPosition(targetTick: number): { position: Vec3; height: number; hp: number } {
-    if (this.history.length === 0) {
-      return {
-        position: { ...this.state.movement.position },
-        height: this.state.movement.height,
-        hp: this.state.hp,
-      };
-    }
-    // Find closest historical frame or interpolate
-    for (let i = this.history.length - 1; i >= 0; i--) {
-      if (this.history[i].tick <= targetTick) {
-        return {
-          position: { ...this.history[i].position },
-          height: this.history[i].height,
-          hp: this.history[i].hp,
-        };
-      }
-    }
-    return {
-      position: { ...this.history[0].position },
-      height: this.history[0].height,
-      hp: this.history[0].hp,
-    };
+  getHistoricalPosition(targetTick:number):{position:Vec3;height:number;hp:number;yaw:number;pitch:number}{
+    const live={position:{...this.state.movement.position},height:this.state.movement.height,hp:this.state.hp,yaw:this.state.yaw,pitch:this.state.pitch};
+    if(!this.history.length)return live;
+    const frames=this.history;
+    if(targetTick<=frames[0].tick)return {...frames[0],position:{...frames[0].position}};
+    for(let i=frames.length-1;i>=0;i--){const a=frames[i],b=frames[i+1];if(a.tick<=targetTick){
+      if(!b||a.hp<=0||b.hp<=0||Math.hypot(b.position.x-a.position.x,b.position.y-a.position.y,b.position.z-a.position.z)>3)return {...a,position:{...a.position}};
+      const t=clamp((targetTick-a.tick)/(b.tick-a.tick),0,1),angle=Math.atan2(Math.sin(b.yaw-a.yaw),Math.cos(b.yaw-a.yaw));
+      return {position:{x:a.position.x+(b.position.x-a.position.x)*t,y:a.position.y+(b.position.y-a.position.y)*t,z:a.position.z+(b.position.z-a.position.z)*t},height:a.height+(b.height-a.height)*t,hp:a.hp,yaw:a.yaw+angle*t,pitch:a.pitch+(b.pitch-a.pitch)*t};
+    }}return live;
   }
+
 }
 
 export class StrikeRoom {
@@ -339,11 +335,15 @@ export class KapsStrikeServerManager {
   private userToRoom: Map<number, string> = new Map();
   private socketToRoom: Map<string, string> = new Map();
 
+  /** Local developer-only ring buffer; never included in public room/snapshot state. */
+  readonly combatDiagnostics:Record<string,unknown>[]=[];
+  private diagnostic(value:Record<string,unknown>){if(!this.combatDebug)return;this.combatDiagnostics.push(value);if(this.combatDiagnostics.length>256)this.combatDiagnostics.shift();}
   readonly profiles: StrikeProfiles;
   readonly inventory: StrikeInventory;
   constructor(
     private io: Server,
-    private dbClient?: LibsqlClient
+    private dbClient?: LibsqlClient,
+    private combatDebug=process.env.NODE_ENV!=='production'&&process.env.STRIKE_COMBAT_DEBUG==='1'
   ) { this.profiles = new StrikeProfiles(dbClient); this.inventory=new StrikeInventory(dbClient); }
 
   public getRoomsList(): StrikeRoomSummary[] {
@@ -706,7 +706,7 @@ export class KapsStrikeServerManager {
       p.lastSequence = -1;
       p.lastQueuedSequence = -1;
       p.inputQueue = [];p.heldInput=undefined;p.lastInputTick=0;
-      p.history = [];
+      p.history = [];p.pendingFire=undefined;
 
       const spawn = room.getSpawnPosition(p.team, idx++);
       p.state.movement = newMovement(spawn);
@@ -766,9 +766,12 @@ export class KapsStrikeServerManager {
     const player = room.players.get(socketId);
     if (!player) return;
 
+    const reject=(reason:string)=>{if(!command?.fire)return;const sequence=Number.isSafeInteger(command.sequence)?command.sequence:-1;const shot=Number.isSafeInteger(command.shot)&&command.shot!>0?command.shot:undefined;this.diagnostic({kind:'input-rejected',sequence,reason});if(shot)this.io.to(socketId).emit('strike:shot_ack',{shotId:`rejected:${sequence}`,sequence,predictedShot:shot,weapon:player.state.weapon.selected,serverTick:room.tick,accepted:false,outcome:'rejected',reason,damage:0,head:false,receivedAt:Date.now(),processedAt:Date.now(),queueMs:0});};
     // Security: Input validation
     if (
       !command ||
+      (command.viewTick!==undefined&&(!Number.isFinite(command.viewTick)||command.viewTick<0)) ||
+      (command.shot!==undefined&&(!Number.isSafeInteger(command.shot)||command.shot<1)) ||
       (command.interact !== undefined && typeof command.interact !== "boolean") ||
       !Number.isSafeInteger(command.sequence) ||
       command.sequence < 0 ||
@@ -781,14 +784,18 @@ export class KapsStrikeServerManager {
         (v) => typeof v !== "boolean"
       )
     ) {
-      return;
+      reject('invalid-or-duplicate-input');return;
     }
 
+    if(player.state.hp<=0){reject('dead');return;}
+    if(room.bomb&&!['active','planted'].includes(room.bomb.phase)){reject('round-frozen');return;}
     // Cap input queue to prevent packet flooding/replay abuse
-    if (player.inputQueue.length >= 24) return;
+    if (player.inputQueue.length >= 24){reject('input-queue-full');return;}
     player.lastQueuedSequence = command.sequence;
+    player.receivedInputs.set(command.sequence,{receivedAt:Date.now(),receivedTick:room.tick});
+    if(player.receivedInputs.size>64)player.receivedInputs.delete(player.receivedInputs.keys().next().value!);
     // Whitelist fields; never retain arbitrary objects supplied by clients.
-    player.inputQueue.push({ sequence:command.sequence, tick:command.tick,
+    player.inputQueue.push({ sequence:command.sequence, tick:command.tick,viewTick:command.viewTick,shot:command.shot,
       yaw:command.yaw, pitch:command.pitch, moveX:command.moveX, moveZ:command.moveZ,
       jump:command.jump, sprint:command.sprint, crouch:command.crouch,
       fire:command.fire, ads:command.ads, reload:command.reload, weapon:command.weapon, interact:command.interact });
@@ -809,7 +816,7 @@ export class KapsStrikeServerManager {
       stepBomb(b,room.tick*C.dt);
       room.teamScores={red:b.scores.T,blue:b.scores.CT};
       if(b.phase==='finished'){this.concludeMatch(room,{team:b.winner==='T'?'red':'blue',reason:b.reason||'Bomba maçı sona erdi'});return;}
-      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
+      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];p.pendingFire=undefined;room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
     }
     const now = Date.now();
 
@@ -819,7 +826,7 @@ export class KapsStrikeServerManager {
     // 1. Process player inputs & movement simulation
     room.players.forEach((player) => {
 
-      if(room.bomb&&(room.bomb.phase==='buy'||room.bomb.phase==='result')){player.inputQueue=[];player.heldInput=undefined;return;}
+      if(room.bomb&&(room.bomb.phase==='buy'||room.bomb.phase==='result')){player.inputQueue=[];player.heldInput=undefined;player.pendingFire=undefined;return;}
       // Handle respawn when dead
       if (player.state.hp <= 0) {
         if (!room.bomb && room.tick >= player.state.deadUntil) {
@@ -841,7 +848,7 @@ export class KapsStrikeServerManager {
             from: spawnPos,
           });
         }
-        player.inputQueue = [];player.heldInput=undefined;
+        player.inputQueue = [];player.heldInput=undefined;player.pendingFire=undefined;
         return;
       }
 
@@ -850,7 +857,10 @@ export class KapsStrikeServerManager {
         // One command per fixed physics step: packet volume cannot buy movement time.
         const queued = player.inputQueue.shift();
         const neutral:InputCommand={sequence:player.lastSequence,tick:room.tick,yaw:player.state.yaw,pitch:player.state.pitch,moveX:0,moveZ:0,jump:player.state.movement.jumpHeld,sprint:false,crouch:player.state.movement.stance!=="stand",fire:false,ads:false,reload:false};
-        const input:InputCommand=queued || (player.heldInput&&room.tick-player.lastInputTick<12 ? {...player.heldInput,tick:room.tick,fire:false,reload:false,interact:false,weapon:undefined} : neutral);
+        const input:InputCommand=queued || (player.heldInput&&room.tick-player.lastInputTick<Math.min(36,12+Math.ceil(player.ping/1000/C.dt)) ? {...player.heldInput,tick:room.tick,shot:undefined,fire:WEAPONS[player.state.weapon.selected].automatic&&player.heldInput.fire,reload:false,interact:false,weapon:undefined} : neutral);
+        player.activeCommand=input;
+        player.activeReceive=queued?player.receivedInputs.get(input.sequence):undefined;
+        if(queued)player.receivedInputs.delete(input.sequence);
         if(queued){player.lastSequence=input.sequence;player.lastInputTick=room.tick;player.heldInput={...input};}
 
         player.state.yaw = input.yaw;
@@ -862,6 +872,7 @@ export class KapsStrikeServerManager {
         if (input.weapon && (!room.bomb||room.bomb.players[player.id]?.weapons.includes(input.weapon)) && ownsWeapon(player.state.weapon,input.weapon) && input.weapon !== player.state.weapon.selected) {
           { // A new selection restarts the equip delay; it cannot bypass fire cooldown.
             player.state.weapon.reloadUntil = 0;
+            player.pendingFire=undefined;
             player.state.weapon.selected = input.weapon;
             player.state.weapon.switchUntil = room.tick + 24;
           }
@@ -890,9 +901,21 @@ export class KapsStrikeServerManager {
         // Apply movement physics using authored map geometry
         move(player.state.movement, { ...input, weapon:curWeapon }, mapDef, room.tick);
 
-        // Authoritative Shoot verification & Lag Compensation
-        if (input.fire && (wDef.automatic || !player.state.weapon.triggerHeld)) {
-          this.verifyAndExecuteShot(room, player, input.ads, input.tick, pendingHits);
+        // A predicted shot arriving just before the authoritative cooldown must not disappear.
+        // At most two paced shots can be owed; never allow an arbitrary client counter to buy fire rate.
+        const weaponState=player.state.weapon;
+        if(input.shot&&input.shot>weaponState.shotIndex)player.pendingFire={weapon:curWeapon,index:Math.min(input.shot,weaponState.shotIndex+2),until:room.tick+36,command:{...input},received:player.activeReceive};
+        const pending=player.pendingFire;
+        if(pending&&(pending.weapon!==curWeapon||pending.until<room.tick||pending.index<=weaponState.shotIndex))player.pendingFire=undefined;
+        const buffered=player.pendingFire;
+        if ((input.fire && (wDef.automatic || !weaponState.triggerHeld)) || buffered) {
+          const originalCommand=player.activeCommand,originalReceive=player.activeReceive,yaw=player.state.yaw,pitch=player.state.pitch;
+          // After trigger release, finish only an already requested shot with its original aim.
+          if(buffered&&!input.fire){player.activeCommand=buffered.command;player.activeReceive=buffered.received;player.state.yaw=buffered.command.yaw;player.state.pitch=clamp(buffered.command.pitch,-1.48,1.48);}
+          const shotCommand=player.activeCommand!;
+          this.verifyAndExecuteShot(room,player,shotCommand.ads,shotCommand.viewTick??shotCommand.tick,pendingHits);
+          player.activeCommand=originalCommand;player.activeReceive=originalReceive;player.state.yaw=yaw;player.state.pitch=pitch;
+          if(buffered&&weaponState.shotIndex>=buffered.index)player.pendingFire=undefined;
         }
         if (queued) player.state.weapon.triggerHeld = input.fire;
       }
@@ -965,55 +988,41 @@ export class KapsStrikeServerManager {
     const weaponId = wState.selected;
     const def = WEAPONS[weaponId];
 
-    // Verification: can shooter fire right now?
-    if (
-      pState.hp <= 0 ||
-      room.tick < wState.nextFire ||
-      room.tick < wState.switchUntil ||
-      wState.reloadUntil > 0 ||
-      wState.ammo[weaponId] <= 0
-    ) {
-      return;
-    }
-
+    const command=shooter.activeCommand,received=shooter.activeReceive,processedAt=Date.now();
+    const sequence=command?.sequence??shooter.lastSequence;
+    const reject=command?.viewTick!==undefined&&(command.viewTick<room.tick-SERVER_CONFIG.maxLagCompTicks||command.viewTick>room.tick+8)?'stale-or-future-view':pState.hp<=0?'dead':room.bomb&&!['active','planted'].includes(room.bomb.phase)?'round-frozen':room.bomb?.action?.player===shooter.id?'objective-action':room.tick<wState.nextFire?'cooldown':room.tick<wState.switchUntil?'equipping':wState.reloadUntil>0?'reloading':wState.ammo[weaponId]<=0?'empty':undefined;
+    if(reject){if(command?.shot&&(!shooter.pendingFire||command!==shooter.pendingFire.command)){const receipt={shotId:`rejected:${room.tick}:${sequence}`,sequence,predictedShot:command.shot,weapon:weaponId,serverTick:room.tick,accepted:false,outcome:reject==='cooldown'&&shooter.pendingFire?'buffered':'rejected',reason:reject==='cooldown'&&shooter.pendingFire?'cooldown-buffered':reject,damage:0,head:false,receivedAt:received?.receivedAt??processedAt,processedAt,queueMs:received?Math.max(0,processedAt-received.receivedAt):0};this.io.to(shooter.id).emit('strike:shot_ack',receipt);this.diagnostic(receipt);}return;}
+    const receipt:import('../games/kapsstrike/types').ShotReceipt={shotId:`${shooter.id}:${room.tick}:${wState.shotIndex+1}`,sequence,predictedShot:command?.shot,weapon:weaponId,serverTick:room.tick,accepted:true,outcome:'miss',damage:0,head:false,receivedAt:received?.receivedAt??processedAt,processedAt,queueMs:received?Math.max(0,processedAt-received.receivedAt):0};
     // Deduct ammo & enforce RPM fire cooldown
     if (weaponId !== "knife") wState.ammo[weaponId]--;
     wState.nextFire = Math.max(wState.nextFire,room.tick-1)+fireDelay(weaponId,ads);
     wState.shotIndex++;
 
-    const origin = eye(pState);
+    const origin = eye(pState),shotYaw=pState.yaw,shotPitch=pState.pitch;
 
     // Compute lag compensation rewind tick (bounded to maxLagCompTicks)
-    const rewindTick = Math.max(
-      room.tick - SERVER_CONFIG.maxLagCompTicks,
-      Math.min(room.tick, Number(clientShotTick) || room.tick)
-    );
-
+    const allowed=command?.viewTick===undefined?SERVER_CONFIG.maxLagCompTicks:Math.min(SERVER_CONFIG.maxLagCompTicks,Math.ceil((Math.min(shooter.ping,400)/2+150)/1000/C.dt)+4+(received?Math.min(24,room.tick-received.receivedTick):0));
+    const rewindTick=clamp(Number.isFinite(clientShotTick)?clientShotTick:room.tick,Math.max(0,room.tick-allowed),room.tick);
+    const debugTargets:unknown[]=[],debugRays:unknown[]=[],debugPellets:unknown[]=[];
+    const spreadSeed=wState.shotIndex*31;
     // Pellet spread calculations
-    const spread = spreadFor(pState,ads);
 
     const mapDef = MAPS[room.map];
 
     for (let pellet = 0; pellet < def.pellets; pellet++) {
-      const n = wState.shotIndex * 31 + pellet * 7;
-      // Deterministic spread formula
-      const r1 = this.seededRandom(n);
-      const r2 = this.seededRandom(n + 17);
-      const yaw = pState.yaw + (r1 - 0.5) * spread * 2;
-      const pitch = pState.pitch + (r2 - 0.5) * spread * 2;
-      const dir = aimDirection(yaw, pitch);
-
+      const dir=shotDirection(pState,wState.shotIndex,pellet,ads);
       // 1. Raycast against solid map cover
-      let nearest = def.range;
+      let nearest = def.range,blockedBy:string|undefined;
       for (const solid of mapDef.solids) {
         if (!solid.detail) {
-          nearest = Math.min(nearest, raySolid(origin, dir, solid, def.range));
+          const distance=raySolid(origin,dir,solid,def.range);if(distance<nearest){nearest=distance;blockedBy=solid.id;}
         }
       }
 
-      // 2. Raycast against other players rewound to client shot tick
+      if(nearest<def.range&&receipt.outcome==='miss')receipt.outcome='world';
+      // 2. Raycast against the pose actually drawn, including body yaw and head pitch.
       let hitPlayer: StrikeServerPlayer | undefined;
-      let isHeadshot = false;
+      let isHeadshot = false,bodyPart:string|undefined;
 
       room.players.forEach((target) => {
         if (target.id === shooter.id || target.state.hp <= 0) return;
@@ -1024,26 +1033,10 @@ export class KapsStrikeServerManager {
         if (room.tick < target.state.protectedUntil) return;
 
         const hist = target.getHistoricalPosition(rewindTick);
-        const pos = hist.position;
-
-        for (const region of ["body", "head"] as const) {
-          const { radius: r, min: rawLow, max: rawHigh } = TARGET_HITBOXES[region];
-          const offset = C.standing - hist.height;
-          const low = Math.max(0.08, rawLow - offset), high = rawHigh - offset;
-          const dist = rayBox(
-            origin,
-            dir,
-            { x: pos.x - r, y: pos.y + low, z: pos.z - r },
-            { x: pos.x + r, y: pos.y + high, z: pos.z + r },
-            def.range
-          );
-
-          if (dist < nearest) {
-            nearest = dist;
-            hitPlayer = target;
-            isHeadshot = region === "head";
-          }
-        }
+        if(hist.hp<=0)return;
+        if(this.combatDebug&&pellet===0)debugTargets.push({id:target.id,...hist});
+        const hit=tracePlayer(origin,dir,hist,nearest);
+        if(hit){nearest=hit.distance;hitPlayer=target;bodyPart=hit.part;isHeadshot=hit.part==='head';}
       });
 
       const impactPoint = {
@@ -1052,10 +1045,14 @@ export class KapsStrikeServerManager {
         z: origin.z + dir.z * nearest,
       };
 
+      const trace:Record<string,unknown>|undefined=this.combatDebug?{pellet,dir,to:impactPoint,obstacle:hitPlayer?undefined:blockedBy,target:hitPlayer?.id,bodyPart,rawDamage:0,absorbed:0,damage:0}:undefined;
+      if(trace)debugPellets.push(trace);
+      if(this.combatDebug)debugRays.push({from:origin,to:impactPoint});
       // Emit shot tracer event
       room.addEvent({
         actor: shooter.id,
         kind: "shot",
+        shotId:receipt.shotId,
         weapon: weaponId,
         from: origin,
         to: impactPoint,
@@ -1065,11 +1062,13 @@ export class KapsStrikeServerManager {
       if (hitPlayer) {
         const victim=hitPlayer;
         const apply=()=>{
-          if(victim.state.hp<=0)return;
+          if(victim.state.hp<=0){if(trace)trace.reason='target-already-dead';return;}
         const damagePerPellet = weaponDamage(weaponId,nearest,isHeadshot,ads);
         const armor=room.bomb?.players[victim.id];const absorbed=armor?Math.min(armor.armor,damagePerPellet*.35):0;if(armor)armor.armor-=absorbed;
         const finalDamage = Math.min(victim.state.hp, damagePerPellet-absorbed);
 
+        if(trace){trace.rawDamage=damagePerPellet;trace.absorbed=absorbed;trace.damage=finalDamage;}
+        receipt.outcome='hit';receipt.damage+=finalDamage;receipt.head ||= isHeadshot;
         victim.state.hp = Math.max(0, victim.state.hp - finalDamage);
         shooter.damage += finalDamage;
         const credit=victim.damageCredits.get(shooter.id);
@@ -1079,6 +1078,7 @@ export class KapsStrikeServerManager {
         room.addEvent({
           actor: shooter.id,
           kind: "hit",
+          shotId:receipt.shotId,
           target: victim.id,
           damage: finalDamage,
           head: isHeadshot,
@@ -1106,6 +1106,8 @@ export class KapsStrikeServerManager {
         if(pendingHits)pendingHits.push(apply);else apply();
       }
     }
+    const acknowledge=()=>{this.io.to(shooter.id).emit('strike:shot_ack',receipt);const debug={...receipt,origin,yaw:shotYaw,pitch:shotPitch,spreadSeed,rewindTick,targets:debugTargets,rays:debugRays,pellets:debugPellets};this.diagnostic(debug);if(this.combatDebug)this.io.to(shooter.id).emit('strike:combat_debug',debug);};
+    if(pendingHits)pendingHits.push(acknowledge);else acknowledge();
   }
 
   private handlePlayerKill(
@@ -1295,13 +1297,6 @@ export class KapsStrikeServerManager {
     });
 
     this.broadcastRoomsList();
-  }
-
-  private seededRandom(index: number): number {
-    let x = (index ^ 0x9e3779b9) >>> 0;
-    x = Math.imul(x ^ (x >>> 16), 0x21f0aaad);
-    x = Math.imul(x ^ (x >>> 15), 0x735a2d97);
-    return ((x ^ (x >>> 15)) >>> 0) / 4294967296;
   }
 
   /**
@@ -1558,16 +1553,10 @@ export class KapsStrikeServerManager {
       this.processPlayerInput(socket.id, input);
     });
 
-    // 11. Ping / RTT Measurement
+    const rttTimer=setInterval(()=>{const current=this.rooms.get(this.socketToRoom.get(socket.id)||'');if(current?.status!=='in_progress')return;const start=Date.now();socket.timeout(3000).emit('strike:rtt',(error:unknown)=>{if(error)return;const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const p=room?.players.get(socket.id);if(p)p.ping=clamp(Date.now()-start,0,999);});},2000);
+    rttTimer.unref?.();socket.once('disconnect',()=>clearInterval(rttTimer));
+    // 11. Client HUD RTT echo; authority uses only its own challenge timer.
     socket.on("strike:ping", (ts: number, cb?: (ts: number) => void) => {
-      const roomCode = this.socketToRoom.get(socket.id);
-      if (roomCode) {
-        const room = this.rooms.get(roomCode);
-        const p = room?.players.get(socket.id);
-        if (p && typeof ts === "number") {
-          p.ping = Math.max(1, Math.min(999, Date.now() - ts));
-        }
-      }
       if (typeof cb === "function") cb(ts);
     });
 

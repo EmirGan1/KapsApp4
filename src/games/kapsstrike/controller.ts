@@ -80,6 +80,7 @@ export interface MultiplayerOptions {
 }
 
 interface BufferedSnapshot {
+  tick:number;
   time: number;
   players: PlayerSnapshot[];
   teamScores?: { red: number; blue: number };
@@ -100,6 +101,12 @@ export class StrikeController {
   private pendingReload = false;
   private pendingWeapon?: WeaponId;
   private lastWheel = -Infinity;
+  public readonly shotReceipts:import('./types').ShotReceipt[]=[];
+  public readonly shotAckLatency:number[]=[];
+  private sentCommands=new Map<number,number>();
+  private confirmedHits=new Set<string>();
+  private lastHitShot?:string|number;
+  private viewTick?:number;
   private yaw = 0;
   private pitch = 0;
   private sequence = 0;
@@ -363,6 +370,15 @@ export class StrikeController {
     const replaced = () => this.pause("Bu hesap başka bir sekmede oyuna katıldı. Menüden tekrar katılabilirsin.");
     socket.on("strike:session_replaced",replaced);
     this.removers.push(()=>socket.off("strike:session_replaced",replaced));
+    const receipt=(r:import('./types').ShotReceipt)=>{if(!r||typeof r.shotId!=='string')return;this.shotReceipts.push(r);if(this.shotReceipts.length>128)this.shotReceipts.shift();
+      const sent=this.sentCommands.get(r.sequence);if(sent!==undefined){this.shotAckLatency.push(performance.now()-sent);if(this.shotAckLatency.length>128)this.shotAckLatency.shift();}
+      if(r.accepted&&r.damage>0&&!this.confirmedHits.has(r.shotId)){this.feedback({id:0,tick:r.serverTick,actor:this.state.player.id,kind:'hit',weapon:r.weapon,shotId:r.shotId,damage:r.damage,head:r.head});this.confirmedHits.add(r.shotId);if(this.confirmedHits.size>128)this.confirmedHits.delete(this.confirmedHits.values().next().value!);}
+    };
+    const rtt=(reply?:()=>void)=>{if(typeof reply==='function')reply();};
+    const debug=(value:any)=>{if((import.meta as any).env?.DEV)this.renderer.debugCombat(value);};
+    socket.on('strike:combat_debug',debug);
+    socket.on('strike:shot_ack',receipt);socket.on('strike:rtt',rtt);
+    this.removers.push(()=>{socket.off('strike:shot_ack',receipt);socket.off('strike:rtt',rtt);socket.off('strike:combat_debug',debug);});
     let synchronized = false;
     let lastSnapshotTick = -1;
     // 1. Authoritative Server Snapshot Handler
@@ -384,6 +400,7 @@ export class StrikeController {
 
       // Buffer snapshot for smooth remote player interpolation
       this.remoteSnapshots.push({
+        tick:snapshot.tick,
         time: performance.now(),
         players: snapshot.players,
         teamScores: snapshot.teamScores,
@@ -442,7 +459,7 @@ export class StrikeController {
           if(!respawned&&Math.hypot(dx,dy,dz)<3){this.correction.x+=dx;this.correction.y+=dy;this.correction.z+=dz;}
           else this.correction={x:0,y:0,z:0};
           this.previous={...position};
-          if(respawned){this.unacknowledgedInputs=[];this.resetView();}
+          if(respawned){this.unacknowledgedInputs=[];this.remoteSnapshots=[];this.viewTick=undefined;this.resetView();}
         } else {
           this.state.player.movement.position = { ...myServerState.position };
           this.state.player.movement.velocity = { ...myServerState.velocity };
@@ -498,6 +515,7 @@ export class StrikeController {
         const cmd: InputCommand = {
           sequence: ++this.sequence,
           tick: this.state.tick,
+          viewTick:this.viewTick,
           moveX: this.touchMoveX !== 0 ? this.touchMoveX : keyMoveX,
           moveZ: this.touchMoveZ !== 0 ? this.touchMoveZ : keyMoveZ,
           yaw: this.yaw,
@@ -524,14 +542,17 @@ export class StrikeController {
         if(owned&&cmd.weapon&&!owned.includes(cmd.weapon))cmd.weapon=undefined;
         // Client prediction uses the same round gate as the authoritative server.
         const beforeEvent=this.state.eventId;
+        const beforeShot=this.state.player.weapon.shotIndex;
         if (!frozen&&(!this.isMultiplayer || this.state.player.hp > 0)) simulate(this.state, cmd, !this.isMultiplayer);
 
         if (!frozen&&this.isMultiplayer && this.socket && this.state.player.hp>0) {
           const immediate=this.state.events.filter(e=>e.id>beforeEvent && (e.kind==="shot" || e.kind==="reload"));
           this.renderer.process(immediate,this.state.player.id,true);
           for(const e of immediate)this.feedback(e,true);
+          if(this.state.player.weapon.shotIndex>beforeShot)cmd.shot=this.state.player.weapon.shotIndex;
           this.unacknowledgedInputs.push({ ...cmd });
           if (this.unacknowledgedInputs.length > 240) this.unacknowledgedInputs.shift();
+          this.sentCommands.set(cmd.sequence,performance.now());if(this.sentCommands.size>256)this.sentCommands.delete(this.sentCommands.keys().next().value!);
           this.socket.emit("strike:input", cmd);
         }
 
@@ -630,6 +651,7 @@ export class StrikeController {
     const timeDiff = newer.time - older.time;
     const alpha = timeDiff > 0 ? clamp((renderTime - older.time) / timeDiff, 0, 1) : 1;
 
+    this.viewTick=older.tick+(newer.tick-older.tick)*alpha+clamp((renderTime-newer.time)/1000,0,.05)/C.dt;
     const interpolatedPlayers = older.players.map((p1) => {
       const p2 = newer!.players.find((p) => p.id === p1.id) || p1;
       return {
@@ -679,11 +701,14 @@ export class StrikeController {
         this.pitch = clamp(this.pitch - WEAPONS[e.weapon!].recoil, -1.48, 1.48);
     }
     if (e.kind === "hit") {
-      const sameShot = this.lastHit?.until === e.tick + 36;
+      if(e.shotId&&this.confirmedHits.has(e.shotId))return;
+      const key=e.shotId??e.tick;
+      const sameShot = this.lastHitShot===key;
+      this.lastHitShot=key;
       this.lastHit = {
         damage: (sameShot ? this.lastHit!.damage : 0) + (e.damage || 0),
         head: !!e.head || (sameShot && !!this.lastHit?.head),
-        until: e.tick + 36,
+        until: this.state.tick + 36,
       };
       if (!sameShot) this.audio.play("hit");
     }

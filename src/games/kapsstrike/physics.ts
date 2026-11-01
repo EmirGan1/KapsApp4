@@ -190,7 +190,13 @@ export function raySolid(origin: Vec3, dir: Vec3, s: Solid, range: number) {
     [0, 0, -1, -s.z + s.d / 2],
     [0, -1, 0, -s.y],
   ];
-  if (s.kind === "box") planes.push([0, 1, 0, s.y + s.h]);
+  if(s.kind==='box'&&s.shape){
+    // Match Babylon's 12-sided elliptical barrels and 8-sided cones, not their invisible bounding-box corners.
+    planes.splice(0,4);const sides=s.shape==='cone'?8:12,apothem=Math.cos(Math.PI/sides);
+    for(let i=0;i<sides;i++){const angle=(i+.5)*Math.PI*2/sides,a=Math.cos(angle)/(s.w/2),c=Math.sin(angle)/(s.d/2),b=s.shape==='cone'?apothem/s.h:0;planes.push([a,b,c,a*s.x+c*s.z+apothem+b*s.y]);}
+    planes.push([0,1,0,s.y+s.h]);
+  }
+  else if (s.kind === "box") planes.push([0, 1, 0, s.y + s.h]);
   else {
     const k = (s.reverse?-1:1)*s.h / (s.axis === "x" ? s.w : s.d),
       low = s.axis === "x" ? s.x - s.w / 2 : s.z - s.d / 2;

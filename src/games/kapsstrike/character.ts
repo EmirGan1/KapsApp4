@@ -21,6 +21,7 @@ export function createCharacter(scene:Scene,id:string,skinValue:unknown,team='no
   const m=MeshBuilder.CreateBox(`${id}-${name}`,{width:w,height:h,depth:d},scene);m.parent=root;m.position.set(x,y,z);m.material=material(color,accent);m.isPickable=false;return m;
  };
  const body=part('body',0,(H.body.min+H.body.max)/2,0,H.body.radius*2,H.body.max-H.body.min,H.body.radius*2,skin.body);
+ const neck=part('neck',0,(H.body.max+H.head.min)/2,0,.22,H.head.min-H.body.max,.22,'#d8bba4');
  const head=part('head',0,(H.head.min+H.head.max)/2,0,H.head.radius*2,H.head.radius*2,H.head.radius*2,'#d8bba4');
  const gearRoot=new TransformNode(`${id}-gear`,scene);gearRoot.parent=root;
  const gear=(name:string,x:number,y:number,z:number,w:number,h:number,d:number,color:string)=>{const m=part(name,x,y,z,w,h,d,color);m.parent=gearRoot;return m;};
@@ -45,5 +46,5 @@ export function createCharacter(scene:Scene,id:string,skinValue:unknown,team='no
   shell.material=rim;shell.isPickable=false;
  }
  const normal=body.material;
- return {root,body,head,gearRoot,skin:cleanSkin(skinValue),team,flash:(enabled:boolean)=>{body.material=enabled?material('#f9e7cf',true):normal;},dispose:()=>{root.dispose();for(const m of materials)m.dispose();}};
+ return {root,body,head,neck,gearRoot,skin:cleanSkin(skinValue),team,flash:(enabled:boolean)=>{body.material=enabled?material('#f9e7cf',true):normal;},dispose:()=>{root.dispose();for(const m of materials)m.dispose();}};
 }

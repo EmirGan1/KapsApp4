@@ -495,6 +495,8 @@ test("KapsStrikeServerManager - Dual event compatibility and payload flexibility
     on(event: string, fn: Function) {
       registeredEvents.set(event, fn);
     },
+    once(event:string,fn:Function){registeredEvents.set(event,fn);},
+    timeout(){return {emit(){}};},
     emit: (_event: string, _data: any) => {},
     to: (_r: string) => ({
       emit: (_event: string, _data: any) => {},
@@ -526,6 +528,8 @@ test("KapsStrikeServerManager - Dual event compatibility and payload flexibility
     on(event: string, fn: Function) {
       registeredEvents.set("u2_" + event, fn);
     },
+    once(event:string,fn:Function){registeredEvents.set("u2_"+event,fn);},
+    timeout(){return {emit(){}};},
     emit: (_event: string, _data: any) => {},
     to: (_r: string) => ({ emit: (_e: string, _d: any) => {} }),
   } as any;

@@ -1,0 +1,9 @@
+{
+  "results": [],
+  "ackLatencyLast128": {
+    "meanMs": 17.600000000093132,
+    "samples": 1
+  },
+  "errors": [],
+  "notes": "Empty diagnostic range; fixture-controlled initial poses/health; inbound delivery delay is one-way, not measured WAN RTT. Normal production controller/fire/raycast/damage/socket paths."
+}
