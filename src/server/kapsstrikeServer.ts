@@ -125,6 +125,7 @@ export class StrikeServerPlayer {
         shotIndex: 0,
       },
       hp: 100,
+      armor:0,
       deadUntil: 0,
       protectedUntil: C.protectionTicks,
       yaw: 0,
@@ -712,7 +713,7 @@ export class KapsStrikeServerManager {
       p.state.movement = newMovement(spawn);
       p.state.weapon.inventory=[];p.state.weapon.selected="rifle";
       p.state.yaw=0;p.state.pitch=0;
-      p.state.hp = 100;
+      p.state.hp = 100;p.state.armor=0;
       p.state.deadUntil = 0;
       p.state.protectedUntil = room.tick + C.protectionTicks;
 
@@ -835,7 +836,7 @@ export class KapsStrikeServerManager {
           player.damageCredits.clear();
           player.state.yaw=0;player.state.pitch=0;
           player.state.weapon.triggerHeld=false;player.state.weapon.nextFire=0;player.state.weapon.switchUntil=0;
-          player.state.hp = 100;
+          player.state.hp = 100;player.state.armor=0;
           player.state.protectedUntil = room.tick + C.protectionTicks;
           player.state.deadUntil = 0;
           player.state.weapon.reloadUntil = 0;
@@ -1064,12 +1065,13 @@ export class KapsStrikeServerManager {
         const apply=()=>{
           if(victim.state.hp<=0){if(trace)trace.reason='target-already-dead';return;}
         const damagePerPellet = weaponDamage(weaponId,nearest,isHeadshot,ads);
-        const armor=room.bomb?.players[victim.id];const absorbed=armor?Math.min(armor.armor,damagePerPellet*.35):0;if(armor)armor.armor-=absorbed;
-        const finalDamage = Math.min(victim.state.hp, damagePerPellet-absorbed);
+        const armor=room.bomb?.players[victim.id];const absorbed=armor?Math.min(armor.armor,damagePerPellet*.35):Math.min(victim.state.armor||0,damagePerPellet);if(armor)armor.armor-=absorbed;else victim.state.armor=(victim.state.armor||0)-absorbed;
+        const healthDamage=Math.min(victim.state.hp,damagePerPellet-absorbed);
+        const finalDamage=healthDamage+(armor?0:absorbed);
 
         if(trace){trace.rawDamage=damagePerPellet;trace.absorbed=absorbed;trace.damage=finalDamage;}
         receipt.outcome='hit';receipt.damage+=finalDamage;receipt.head ||= isHeadshot;
-        victim.state.hp = Math.max(0, victim.state.hp - finalDamage);
+        victim.state.hp = Math.max(0, victim.state.hp - healthDamage);
         shooter.damage += finalDamage;
         const credit=victim.damageCredits.get(shooter.id);
         victim.damageCredits.set(shooter.id,{amount:(credit?.amount||0)+finalDamage,tick:room.tick});

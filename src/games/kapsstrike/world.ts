@@ -21,19 +21,19 @@ function locations(map:MapDefinition){let p=candidates.get(map);if(!p){p=supplyL
 export function createWorld(map:MapDefinition,seed=Date.now()):StrikeWorld{
  const w:StrikeWorld={pickups:[],nextDrop:DROP_INTERVAL,serial:0,seed:seed>>>0};
  const pool=[...locations(map)];
- for(let i=0;i<3&&pool.length;i++){
+ for(let i=0;i<5&&pool.length;i++){
   const p=pool.splice(Math.floor(random(w)*pool.length),1)[0];
-  w.pickups.push({id:`supply-${++w.serial}`,position:{...p},weapon:SPECIAL_WEAPONS[i%2],kind:'chest',opened:false,expires:0});
+  w.pickups.push({id:`supply-${++w.serial}`,position:{...p},weapon:SPECIAL_WEAPONS[i%2],...(i===3?{consumable:'health' as const,amount:50}:i===4?{consumable:'armor' as const,amount:50}:{}),kind:'chest',opened:false,expires:0});
  }
  return w;
 }
 export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
  w.pickups=w.pickups.filter(p=>!p.expires||p.expires>tick);
  if(!w.drop&&tick>=w.nextDrop-DROP_WARNING){
-  const pool=locations(map);if(pool.length)w.drop={position:{...pool[Math.floor(random(w)*pool.length)]},warning:tick,landing:w.nextDrop};
+  const pool=locations(map).filter(p=>w.pickups.every(s=>s.opened||Math.hypot(s.position.x-p.x,s.position.z-p.z)>3.5));if(pool.length)w.drop={position:{...pool[Math.floor(random(w)*pool.length)]},warning:tick,landing:w.nextDrop};
  }
  if(w.drop&&tick>=w.drop.landing){
-  w.pickups.push({id:`drop-${++w.serial}`,position:{...w.drop.position},weapon:'railgun',kind:'airdrop',opened:false,expires:tick+DROP_INTERVAL*2});
+  w.pickups.push({id:`drop-${++w.serial}`,position:{...w.drop.position},weapon:'railgun',weapons:['railgun','carbine','lmg'],kind:'airdrop',opened:false,expires:tick+DROP_INTERVAL*2});
   w.nextDrop=tick+DROP_INTERVAL;w.drop=undefined;
  }
  // Bounded even when a match is configured for a long duration.
@@ -46,17 +46,31 @@ export function nearestSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState){
   if(d>2.8)return false;
   const dir={x:(s.position.x-eye.x)/d,y:(s.position.y+.5-eye.y)/d,z:(s.position.z-eye.z)/d};
   return !collisionSolids(map).some(solid=>raySolid(eye,dir,solid,d)<d-.1);
- }).sort((a,b)=>a.d-b.d)[0]?.s;
+ }).sort((a,b)=>Math.abs(a.d-b.d)>.05?a.d-b.d:Number(b.s.kind==='airdrop')-Number(a.s.kind==='airdrop'))[0]?.s;
 }
 export function claimSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState,tick:number){
  const s=nearestSupply(w,map,p);if(!s)return false;
- s.opened=true;s.expires=tick+Math.round(15/C.dt);
- p.weapon.inventory=Array.from(new Set([...(p.weapon.inventory||[]),s.weapon]));
- p.weapon.selected=s.weapon;p.weapon.ammo[s.weapon]=WEAPONS[s.weapon].capacity;
- p.weapon.reloadUntil=0;p.weapon.switchUntil=tick+24;p.weapon.triggerHeld=true;
+ if(s.consumable==='health'){
+  if(p.hp>=100)return false;const gain=Math.min(s.amount||50,100-p.hp);p.hp+=gain;p.lootNotice=`+${Math.ceil(gain)} Can`;
+ }else if(s.consumable==='armor'){
+  if((p.armor||0)>=100)return false;const gain=Math.min(s.amount||50,100-(p.armor||0));p.armor=(p.armor||0)+gain;p.lootNotice=`+${Math.ceil(gain)} Zırh`;
+ }else{
+  const weapons=s.weapons?.length?s.weapons:[s.weapon];
+  p.weapon.inventory=Array.from(new Set([...(p.weapon.inventory||[]),...weapons]));
+  for(const weapon of weapons)p.weapon.ammo[weapon]=WEAPONS[weapon].capacity;
+  p.weapon.selected=weapons[0];p.weapon.reloadUntil=0;p.weapon.switchUntil=tick+24;p.weapon.triggerHeld=true;
+  p.lootNotice=weapons.map(weapon=>WEAPONS[weapon].name).join(' + ');
+ }
+ s.opened=true;s.expires=tick+Math.round(15/C.dt);p.lootNoticeUntil=tick+Math.round(3/C.dt);
  return true;
 }
 export function dropInventory(w:StrikeWorld,p:PlayerState,tick:number){
  for(const weapon of p.weapon.inventory||[])if(SPECIAL_WEAPONS.includes(weapon))w.pickups.push({id:`weapon-${++w.serial}`,position:{...p.movement.position},weapon,kind:'dropped',opened:false,expires:tick+DROP_INTERVAL});
  p.weapon.inventory=[];p.weapon.selected='rifle';p.weapon.reloadUntil=0;
+}
+
+export function supplyLabel(s:StrikeWorld['pickups'][number],p?:PlayerState){
+ if(s.consumable==='health')return p&&p.hp>=100?'Can dolu':`+${s.amount||50} Can`;
+ if(s.consumable==='armor')return p&&(p.armor||0)>=100?'Zırh dolu':`+${s.amount||50} Zırh`;
+ return (s.weapons||[s.weapon]).map(weapon=>WEAPONS[weapon].name).join(' + ');
 }

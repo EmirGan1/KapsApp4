@@ -1,4 +1,4 @@
-import {nearestSupply} from './world';
+import {nearestSupply,supplyLabel} from './world';
 import { cleanBindings, held, Bindings, Action } from "./controls";
 import type { Socket } from "socket.io-client";
 import { StrikeRenderer } from "./renderer";
@@ -31,6 +31,8 @@ export interface StrikeHUD {
   yaw?: number;
   radar?: {x:number;z:number;team:StrikeTeam}[];
   supplyPrompt?: string;
+  armor?:number;
+  lootNotice?:string;
   hp: number;
   ammo: number;
   capacity: number;
@@ -749,7 +751,9 @@ export class StrikeController {
       inventory:s.bomb?.players[this.socket?.id||'']?.weapons||WEAPON_ORDER.filter(w=>ownsWeapon(p.weapon,w)),
       world:s.bomb?undefined:s.world, position:{...p.movement.position}, yaw:this.yaw,
       radar:this.remotePlayerList.filter(r=>r.hp>0&&r.id!==p.id&&this.localTeam!=="none"&&r.team===this.localTeam).map(r=>({...r.position,team:r.team})),
-      supplyPrompt:!s.bomb&&s.world?(()=>{const supply=nearestSupply(s.world,MAPS[s.map],p);return supply?`${supply.kind==="dropped"?"Al":"Aç"} · ${WEAPONS[supply.weapon].name}`:undefined;})():undefined,
+      armor:p.armor||0,
+      lootNotice:p.lootNoticeUntil&&p.lootNoticeUntil>s.tick?p.lootNotice:undefined,
+      supplyPrompt:!s.bomb&&s.world?(()=>{const supply=nearestSupply(s.world,MAPS[s.map],p);return supply?`${supply.kind==="dropped"?"Al":"Aç"} · ${supplyLabel(supply,p)}`:undefined;})():undefined,
       hp: p.hp,
       ads: this.touchAds || this.ads || this.down("ads"),
       ammo: w.ammo[w.selected],

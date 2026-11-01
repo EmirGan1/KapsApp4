@@ -11,12 +11,12 @@ for(const map of Object.values(MAPS).filter(map=>map.id!=='district')){
  test(`${map.id}: expanded map, 100 seeded supplies and reachable warning/landing cycles`,()=>{
   assert.ok(map.bounds>=64);assert.ok(supplyLocations(map).length>15);
   for(let seed=0;seed<100;seed++){
-   const world=createWorld(map,seed);assert.equal(world.pickups.length,3);assert.equal(new Set(world.pickups.map(s=>s.position.x+','+s.position.z)).size,3);
+   const world=createWorld(map,seed);assert.equal(world.pickups.length,5);assert.equal(new Set(world.pickups.map(s=>s.position.x+','+s.position.z)).size,5);
    for(const p of world.pickups)assert.ok(fits(map,p.position,C.standing));
    advanceWorld(world,map,DROP_INTERVAL-DROP_WARNING-1);assert.equal(world.drop,undefined);
-   advanceWorld(world,map,DROP_INTERVAL-DROP_WARNING);assert.ok(world.drop);assert.ok(fits(map,structuredClone(world).drop!.position,C.standing));
-   advanceWorld(world,map,DROP_INTERVAL-1);assert.equal(world.pickups.length,3);
-   advanceWorld(world,map,DROP_INTERVAL);assert.equal(world.pickups.length,4);assert.equal(world.pickups.at(-1)?.weapon,'railgun');assert.equal(world.nextDrop,DROP_INTERVAL*2);
+   advanceWorld(world,map,DROP_INTERVAL-DROP_WARNING);assert.ok(world.drop);assert.ok(world.pickups.every(p=>Math.hypot(p.position.x-world.drop!.position.x,p.position.z-world.drop!.position.z)>3.5));assert.ok(fits(map,structuredClone(world).drop!.position,C.standing));
+   advanceWorld(world,map,DROP_INTERVAL-1);assert.equal(world.pickups.length,5);
+   advanceWorld(world,map,DROP_INTERVAL);assert.equal(world.pickups.length,6);assert.equal(world.pickups.at(-1)?.weapon,'railgun');assert.equal(world.nextDrop,DROP_INTERVAL*2);
   }
  });
  test(`${map.id}: claim once, reject distant/dead/obstructed claims; death drops special weapon`,()=>{

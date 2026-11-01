@@ -31,6 +31,7 @@ export function createTraining(
       shotIndex: 0,
     },
     hp: 100,
+    armor:0,
     deadUntil: 0,
     protectedUntil: C.protectionTicks,
     yaw: 0,
@@ -73,7 +74,8 @@ export function takeDamage(s: TrainingState, amount: number, from: Vec3) {
     amount <= 0
   )
     return;
-  p.hp = Math.max(0, p.hp - amount);
+  const absorbed=Math.min(p.armor||0,amount);p.armor=(p.armor||0)-absorbed;
+  p.hp = Math.max(0, p.hp - (amount-absorbed));
   s.lastDamageTick = s.tick;
   event(s, {
     kind: "damage",

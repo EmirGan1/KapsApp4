@@ -8,7 +8,7 @@ import {touchControls,currentInputDevice} from '../../../utils/gameInput';
 import {useGameGyroscope} from '../../../hooks/useGameGyroscope';
 import StrikeSkins from "./StrikeSkins";
 import StrikeControls from "./StrikeControls";
-import { cleanBindings } from "../../../games/kapsstrike/controls";
+import { cleanBindings,label } from "../../../games/kapsstrike/controls";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import type { Socket } from "socket.io-client";
 import {
@@ -104,6 +104,7 @@ export default function KapsStrikeGame({
     if(!panel)return;
     panelOpener.current=document.activeElement as HTMLElement;
     const close=(e:KeyboardEvent)=>{
+      if(document.querySelector('[data-binding-capture="true"]'))return;
       if(e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();setPanel(null);}
       if(e.code==='Tab'){
         const dialog=document.querySelector('.ks-feature-card');
@@ -1193,6 +1194,7 @@ export default function KapsStrikeGame({
                 {Math.ceil(hud.hp)} <span>/ 100</span>
               </strong>
               <meter min={0} max={100} value={hud.hp} aria-label="Can" />
+              {!currentRoom?.mode?.includes("bomb")&&<div className="ks-shield"><small>ZIRH · {Math.ceil(hud.armor||0)} / 100</small><meter min={0} max={100} value={hud.armor||0} aria-label="Zırh"/></div>}
               <span>
                 {hud.speed.toFixed(1)} m/s ·{" "}
                 {hud.stance === "slide"
@@ -1211,7 +1213,7 @@ export default function KapsStrikeGame({
                 <span>
                   {hud.reload > 0
                     ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
-                    : "R · Yenile | F · İncele | E · Al"}
+                    : `${label(settings.bindings?.reload||'KeyR')} · Yenile | ${label(settings.bindings?.inspect||'KeyF')} · İncele | ${label(settings.bindings?.interact||'KeyE')} · Al`}
                 </span>
               </div>
             )}
@@ -1233,7 +1235,8 @@ export default function KapsStrikeGame({
           {hud.dead && currentRoom?.mode==='bomb' && <div className="ks-bomb-spectator"><b>{hud.spectating?`İzleniyor: ${hud.spectating}`:'Takımın elendi'}</b><span>Sonraki raundda yeniden doğacaksın.</span>{hud.spectating&&<button onClick={()=>game.current?.cycleSpectator()}>Sonraki takım arkadaşı</button>}</div>}
           {(!currentInputDevice().phone||currentRoom?.mode==='bomb') && <StrikeMinimap map={MAPS[currentRoom?.map||map]} hud={hud}/>}
           {hud.ads && !hud.dead && (hud.weapon==='sniper'||hud.weapon==='railgun') && <div className="ks-scope" aria-label="Dürbün açık"><div className="ks-scope-lens"><i/><b/><span>{hud.weapon==='railgun'?'5×':'3.5×'} / UFUK OPTICS</span></div></div>}
-          {hud.supplyPrompt && !hud.dead && <button className="ks-supply-prompt" onClick={()=>game.current?.interact()}>{isMobile?'Dokun':'E'} · {hud.supplyPrompt}</button>}
+          {hud.lootNotice&&!hud.dead&&<div className="ks-loot-notice" role="status">{hud.lootNotice}</div>}
+          {hud.supplyPrompt && !hud.dead && <button className="ks-supply-prompt" onClick={()=>game.current?.interact()}>{isMobile?'Dokun':label(settings.bindings?.interact||'KeyE')} · {hud.supplyPrompt}</button>}
           {hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · RX-3 Şimşek</small></div>}
           {hud.hurt && hud.hurt.until > hud.tick && <div className="ks-hurt-vignette" style={{opacity: Math.min(.85, .2 + (hud.hurt.damage || 10) / 110)}} />}
           {hud.hp > 0 && hud.hp <= 25 && <span className="ks-low-health" role="status">KRİTİK CAN</span>}
@@ -1879,7 +1882,7 @@ export default function KapsStrikeGame({
               {panel==='inventory'&&<StrikeInventory socket={socket} initialSkin={settings.selectedSkin} onSkin={skin=>setting({selectedSkin:skin})} onChange={state=>setting({cosmeticLoadout:state.equipped})}/>}
               {panel==='inventory_admin'&&<StrikeInventoryAdmin socket={socket}/>}
               {panel==='skins'&&<StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin=>setting({selectedSkin:skin})}/>}
-              {panel==='controls'&&<div className="ks-controls"><h2>Kontroller</h2><p>F · Silahı incele. E · Sandığı aç / silahı al. Dürbünlü silahta sağ tık · Nişan.</p><StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings=>setting({bindings})}/></div>}
+              {panel==='controls'&&<div className="ks-controls"><h2>Kontroller</h2><p>{label(settings.bindings?.inspect||'KeyF')} · Silahı incele. {label(settings.bindings?.interact||'KeyE')} · Sandığı aç / silahı al. {label(settings.bindings?.ads||'Mouse2')} · Nişan.</p><StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings=>setting({bindings})}/></div>}
               {panel==='settings'&&<StrikeGraphicsSettings settings={settings} onChange={setting}/>}
               {panel==='input'&&<StrikeInputSettings settings={settings} onChange={setting} gyro={gyro}/>}
             </div>

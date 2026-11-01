@@ -1,0 +1,50 @@
+[
+  {
+    "style": "karambit",
+    "skin": "knife-karambit-0",
+    "mode": "inspect",
+    "frames": 32
+  },
+  {
+    "style": "karambit",
+    "skin": "knife-karambit-0",
+    "mode": "draw",
+    "frames": 9
+  },
+  {
+    "style": "butterfly",
+    "skin": "knife-butterfly-1",
+    "mode": "inspect",
+    "frames": 32
+  },
+  {
+    "style": "butterfly",
+    "skin": "knife-butterfly-1",
+    "mode": "draw",
+    "frames": 9
+  },
+  {
+    "style": "tanto",
+    "skin": "knife-tanto-2",
+    "mode": "inspect",
+    "frames": 32
+  },
+  {
+    "style": "tanto",
+    "skin": "knife-tanto-2",
+    "mode": "draw",
+    "frames": 14
+  },
+  {
+    "style": "default",
+    "skin": "knife-default-3",
+    "mode": "inspect",
+    "frames": 32
+  },
+  {
+    "style": "default",
+    "skin": "knife-default-3",
+    "mode": "draw",
+    "frames": 14
+  }
+]

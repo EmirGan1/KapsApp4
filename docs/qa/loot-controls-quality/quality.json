@@ -1,0 +1,46 @@
+{
+  "low": {
+    "pbr": 0,
+    "shadows": false,
+    "fxaa": false,
+    "pbrTextures": 0,
+    "width": 819,
+    "details": 0,
+    "activeMeshes": 57
+  },
+  "high": {
+    "pbr": 43,
+    "shadows": true,
+    "fxaa": true,
+    "pbrTextures": [
+      {
+        "ready": true,
+        "size": 2048
+      },
+      {
+        "ready": true,
+        "size": 2048
+      },
+      {
+        "ready": true,
+        "size": 2048
+      },
+      {
+        "ready": true,
+        "size": 2048
+      },
+      {
+        "ready": true,
+        "size": 2048
+      },
+      {
+        "ready": true,
+        "size": 2048
+      }
+    ],
+    "width": 1280,
+    "details": 31,
+    "activeMeshes": 87
+  },
+  "errors": []
+}
