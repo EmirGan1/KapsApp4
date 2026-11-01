@@ -1,3 +1,4 @@
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {BOMB_SITES} from './bomb';
 import {cosmetic} from "./cosmetics";
 import { createCharacter } from "./character";
@@ -13,6 +14,7 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
@@ -40,6 +42,7 @@ export class StrikeRenderer {
   readonly scene: Scene;
   readonly camera: UniversalCamera;
   private materials = new Map<string, StandardMaterial>();
+  private terrainMaterials=new Map<string,PBRMaterial>();
   private targetMeshes = new Map<
     string,
     { root: TransformNode; body: Mesh; head: Mesh }
@@ -111,8 +114,8 @@ export class StrikeRenderer {
       this.scene = new StrikeScene(this.engine);
       this.scene.clearColor = Color4.FromHexString(map.sky + "ff");
       this.scene.fogMode = Scene.FOGMODE_LINEAR;
-      this.scene.fogStart = 68;
-      this.scene.fogEnd = 175;
+      this.scene.fogStart = map.id==='district'?95:68;
+      this.scene.fogEnd = map.id==='district'?220:175;
       this.scene.fogColor = Color3.FromHexString(map.sky);
       this.scene.skipPointerMovePicking = true;
       this.scene.autoClear = true;
@@ -121,17 +124,17 @@ export class StrikeRenderer {
         new Vector3(0.2, 1, 0.3),
         this.scene,
       );
-      hemi.intensity = map.id === "neon" ? 0.5 : 0.6;
+      hemi.intensity = map.id === "neon" ? 0.5 : map.id==='district'?.85:.6;
       const sun = new DirectionalLight(
         "sun",
         new Vector3(-0.4, -1, 0.3),
         this.scene,
       );
       sun.position.set(15, 35, -20);
-      sun.intensity = map.id === "neon" ? 0.45 : 0.65;
+      sun.intensity = map.id === "neon" ? 0.45 : map.id==='district'?1.35:.65;
       if (effectiveQuality === "high") {
         this.shadow = new ShadowGenerator(1024, sun);
-        this.shadow.usePoissonSampling = true;
+        this.shadow.usePoissonSampling = true;this.shadow.bias=.003;this.shadow.normalBias=.06;
       }
       this.camera = new UniversalCamera(
         "eyes",
@@ -148,12 +151,12 @@ export class StrikeRenderer {
         { width: 320, height: 320 },
         this.scene,
       );
-      ground.material = this.material(map.floor,false,map.id==='dust'?'plaster':'concrete');
+      ground.material = this.terrainMaterial(map.floor,false,map.id==='dust'?'plaster':'concrete');
       this.worldUV(ground);
       ground.receiveShadows = true;
       if(map.id==='district')for(const site of BOMB_SITES){
         const ring=MeshBuilder.CreateTorus('plant-zone-'+site.id,{diameter:site.radius*2,thickness:.12,tessellation:64},this.scene);
-        ring.position.set(site.x,.14,site.z);ring.material=this.material('#ffd078',true);ring.isPickable=false;
+        ring.position.set(site.x,site.y+.14,site.z);ring.material=this.material('#ffd078',true);ring.isPickable=false;
       }
       const batches = new Map<string, Mesh[]>();
       for (const s of map.solids) {
@@ -163,7 +166,7 @@ export class StrikeRenderer {
         if (s.kind === "ramp") {
           const x = s.w / 2,
             z = s.d / 2,
-            heights = s.axis === "x" ? [0, s.h, s.h, 0] : [0, 0, s.h, s.h];
+            heights = (s.axis === "x" ? [0, s.h, s.h, 0] : [0, 0, s.h, s.h]).map(h=>s.reverse?s.h-h:h);
           const positions = [
             -x,
             0,
@@ -204,12 +207,12 @@ export class StrikeRenderer {
           mesh = new Mesh(s.id, this.scene);
           data.applyToMesh(mesh);
           mesh.convertToFlatShadedMesh();
-          mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
+          mesh.material = this.terrainMaterial(s.color,!!s.glow,s.surface,s.label);
           (mesh.material as StandardMaterial).backFaceCulling=false;
         } else {
           mesh = s.shape ? MeshBuilder.CreateCylinder(s.id,{height:s.h,diameter:s.w,diameterTop:s.shape==='cone'?0:s.w,tessellation:s.shape==='cone'?8:12},this.scene) : MeshBuilder.CreateBox(s.id,{width:s.w,height:s.h,depth:s.d},this.scene);
           if(s.shape)mesh.scaling.z=s.d/s.w;
-          mesh.material = this.material(s.color,!!s.glow,s.surface,s.label);
+          mesh.material = this.terrainMaterial(s.color,!!s.glow,s.surface,s.label);
         }
         if(s.surface&&!s.label&&!s.shape)this.worldUV(mesh as Mesh);
         mesh.position.set(s.x, s.y + (s.kind === "box" ? s.h / 2 : 0), s.z);
@@ -512,13 +515,17 @@ export class StrikeRenderer {
     const q=next.quality==='auto'?detectAutoQuality():next.quality;
     if(q!==this.qualityApplied){
       this.qualityApplied=q;
+      for(const mesh of this.scene.meshes){
+        if(mesh.name!=='ground'&&!mesh.name.startsWith('district-'))continue;
+        const data=mesh.material?.metadata;if(data?.surface)mesh.material=this.terrainMaterial(data.color,data.emissive,data.surface,data.label);
+      }
       for(const m of this.materials.values())if(m.metadata){
         const {color,surface,label,emissive}=m.metadata;
         m.unfreeze();m.diffuseTexture?.dispose();const tex=surfaceTexture(this.scene,m.name,color,surface,label,this.textureSize(color));m.diffuseTexture=tex||null;if(emissive)m.emissiveTexture=tex||null;m.freeze();
       }
       for(const m of this.scene.meshes)if(m.name.startsWith('district-'))m.setEnabled(q!=='low'||!m.metadata?.detail);
       const sun=this.scene.getLightByName('sun') as DirectionalLight;
-      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(1024,sun);this.shadow.usePoissonSampling=true;for(const m of this.scene.meshes)if(m.name.startsWith('district-'))this.shadow.addShadowCaster(m);}
+      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(1024,sun);this.shadow.usePoissonSampling=true;this.shadow.bias=.003;this.shadow.normalBias=.06;for(const m of this.scene.meshes)if(m.name.startsWith('district-'))this.shadow.addShadowCaster(m);}
       if(q!=='high'&&this.shadow){this.shadow.dispose();this.shadow=undefined;}
     }
     if(!next.dynamicResolution)this.dynamicScale=1;
@@ -561,6 +568,27 @@ export class StrikeRenderer {
       uv.push((nx>.5?positions[i+2]:positions[i])/2,(ny>.5?positions[i+2]:positions[i+1])/2);
     }
     mesh.setVerticesData(VertexBuffer.UVKind,uv);
+  }
+  private terrainMaterial(color:string,emissive=false,surface?:Solid['surface'],label?:string){
+    const q=this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;
+    if(q!=='high'||emissive||label||!surface)return this.material(color,emissive,surface,label);
+    const key=color+surface;let m=this.terrainMaterials.get(key);
+    if(!m){
+      m=new PBRMaterial('terrain-pbr-'+key,this.scene);m.albedoColor=Color3.FromHexString(color);m.metallic=surface==='metal'?.65:0;m.roughness=surface==='glass'?.2:surface==='metal'?.48:.92;
+      const photographic=['stone','plaster','concrete','brick'].includes(surface)&&typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine';
+      if(photographic){
+        const set=color===this.map.floor||surface==='stone'?'stone':'wall';
+        const load=(channel:string,gamma:boolean)=>{const t=new Texture(`/kapsstrike/materials/${set}-${channel}.webp`,this.scene,false,false);t.gammaSpace=gamma;t.anisotropicFilteringLevel=8;return t;};
+        m.albedoTexture=load('albedo',true);m.albedoColor=Color3.Lerp(Color3.White(),Color3.FromHexString(color),.15);
+        m.bumpTexture=load('normal',false);m.bumpTexture.level=.4;m.invertNormalMapY=true;
+        m.metallicTexture=load('roughness',false);m.useRoughnessFromMetallicTextureGreen=true;m.useRoughnessFromMetallicTextureAlpha=false;m.useMetallnessFromMetallicTextureBlue=false;m.metallic=0;m.roughness=1;
+      }else{
+        const t=surfaceTexture(this.scene,key+'-pbr',color,surface,undefined,color===this.map.floor?2048:1024);
+        if(t){m.albedoTexture=t;m.albedoColor=Color3.White();}
+      }
+      m.metadata={color,surface,emissive,label};this.terrainMaterials.set(key,m);
+    }
+    return m;
   }
   private material(color: string, emissive = false, surface?:Solid['surface'],label?:string) {
     const key = color + emissive + (surface||'') + (label||'');

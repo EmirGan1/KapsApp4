@@ -359,8 +359,8 @@ for (const map of Object.values(MAPS))
   for (const ramp of map.solids.filter((s) => s.kind === "ramp"))
     test(`${map.id}/${ramp.id}: authored ramp is traversable from its low end`, () => {
       const pos = { x: ramp.x, y: ramp.y, z: ramp.z };
-      if (ramp.axis === "x") pos.x -= ramp.w / 2 + 0.7;
-      else pos.z -= ramp.d / 2 + 0.7;
+      if (ramp.axis === "x") pos.x -= (ramp.reverse?-1:1)*(ramp.w / 2 + 0.7);
+      else pos.z -= (ramp.reverse?-1:1)*(ramp.d / 2 + 0.7);
       const m = newMovement(pos),
         s = createTraining(map.id);
       let highest = pos.y;
@@ -372,8 +372,8 @@ for (const map of Object.values(MAPS))
         move(
           m,
           command(s, {
-            moveX: ramp.axis === "x" ? 1 : 0,
-            moveZ: ramp.axis === "z" ? 1 : 0,
+            moveX: ramp.axis === "x" ? (ramp.reverse?-1:1) : 0,
+            moveZ: ramp.axis === "z" ? (ramp.reverse?-1:1) : 0,
           }),
           map,
           t,

@@ -17,20 +17,10 @@ export function collisionSolids(map:MapDefinition):Solid[]{
 }
 export const clamp = (n: number, a: number, b: number) =>
   Math.max(a, Math.min(b, n));
-export function surface(s: Solid, x: number, z: number) {
-  return (
-    s.y +
-    (s.kind === "ramp"
-      ? s.h *
-        clamp(
-          s.axis === "x"
-            ? (x - (s.x - s.w / 2)) / s.w
-            : (z - (s.z - s.d / 2)) / s.d,
-          0,
-          1,
-        )
-      : s.h)
-  );
+export function surface(s:Solid,x:number,z:number){
+ if(s.kind!=='ramp')return s.y+s.h;
+ const t=clamp(s.axis==='x'?(x-s.x+s.w/2)/s.w:(z-s.z+s.d/2)/s.d,0,1);
+ return s.y+s.h*(s.reverse?1-t:t);
 }
 export function overlaps(s: Solid, p: Vec3, r = C.radius) {
   const dx = p.x - clamp(p.x, s.x - s.w / 2, s.x + s.w / 2),
@@ -199,10 +189,10 @@ export function raySolid(origin: Vec3, dir: Vec3, s: Solid, range: number) {
   ];
   if (s.kind === "box") planes.push([0, 1, 0, s.y + s.h]);
   else {
-    const k = s.h / (s.axis === "x" ? s.w : s.d),
+    const k = (s.reverse?-1:1)*s.h / (s.axis === "x" ? s.w : s.d),
       low = s.axis === "x" ? s.x - s.w / 2 : s.z - s.d / 2;
     planes.push(
-      s.axis === "x" ? [-k, 1, 0, s.y - k * low] : [0, 1, -k, s.y - k * low],
+      s.axis === "x" ? [-k, 1, 0, s.y+(s.reverse?s.h:0) - k * low] : [0, 1, -k, s.y+(s.reverse?s.h:0) - k * low],
     );
   }
   let enter = 0,

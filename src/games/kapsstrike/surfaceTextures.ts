@@ -194,9 +194,9 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
   let fine=3719;
   for(let i=0;i<size*size/32;i++){
    fine=(Math.imul(fine,1664525)+1013904223)>>>0;
-   const x=fine%size;
+   const x=Math.floor((fine/4294967296)*size);
    fine=(Math.imul(fine,1664525)+1013904223)>>>0;
-   const y=fine%size;
+   const y=Math.floor((fine/4294967296)*size);
    c.fillStyle=i%2?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.05)';
    c.fillRect(x,y,1,1);
   }

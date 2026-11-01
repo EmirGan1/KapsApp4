@@ -27,8 +27,8 @@ for(const map of Object.values(MAPS).filter(map=>map.id!=='district')){
   dropInventory(world,p,22);assert.equal(ownsWeapon(p.weapon,supply.weapon),false);assert.equal(p.weapon.selected,'rifle');assert.equal(world.pickups.at(-1)?.kind,'dropped');
   assert.equal(claimSupply(world,map,p,23),true);
   // A temporary solid isolates the same supplied item from the player.
-  const other=world.pickups[1];p.movement.position={...other.position,x:other.position.x-2};
-  map.solids.push({id:'supply-test-wall',kind:'box',x:other.position.x-1,y:0,z:other.position.z,w:.3,h:3,d:4,color:'#fff'});
+  const other=world.pickups[1];world.pickups=[other];p.movement.position={...other.position,x:other.position.x-2};
+  map.solids.push({id:'supply-test-wall',kind:'box',x:other.position.x-1,y:other.position.y,z:other.position.z,w:.3,h:3,d:4,color:'#fff'});
   try{assert.equal(claimSupply(world,map,p,24),false);}finally{map.solids.pop();}
  });
 }

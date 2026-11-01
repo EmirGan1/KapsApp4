@@ -1,0 +1,32 @@
+2026-11-01 — Node/Chromium (Playwright), SwiftShader software WebGL.
+Production authentication is NOT replaced; test fixture identities only.
+npm run lint: exit 0
+npm run build: exit 0
+npm run test:strike: exit 0
+
+dust3d-final-tests6.log
+ℹ tests 230
+ℹ pass 230
+ℹ fail 0
+ℹ duration_ms 41940.510262
+
+dust3d-final-routes11.log
+PASS LIVE BROWSER WALK T → A { x: 34.39122548067759, y: 3.2, z: 38.029658853787254 }
+PASS LIVE BROWSER WALK T → B { x: -33.524239376685045, y: 2.4, z: 42.453896653534386 }
+PASS LIVE BROWSER WALK CT → A { x: 34.42844967161443, y: 3.2, z: 38.147153770661824 }
+PASS LIVE BROWSER WALK CT → B { x: -33.514814172185574, y: 2.4, z: 42.32595653709386 }
+PASS LIVE BROWSER WALK A Short / Catwalk { x: 34.235737257419515, y: 3.2, z: 36.00436047437178 }
+PASS LIVE BROWSER WALK B Tunnels → B Site { x: -34.00238473046236, y: 2.4, z: 42.11510968202127 }
+PASS LIVE BROWSER WALK Upper → Lower Tunnels { x: -5.221695130951637, y: 0, z: 10.001046291072058 }
+PASS live routes with independent Chromium clients
+
+dust3d-final-scenes10.log
+PASS B SITE PLANT/DEFUSE
+PASS two-browser Lower Tunnels authoritative fire/damage/death/score
+PASS bundled High PBR maps loaded at 2048px 66
+PASS two independent Chromium contexts: create/join/ready/start; desktop pointer-lock buy/ESC; tablet buy; phone overflow; authoritative plant/kit-defuse/score/next round; no page errors. Test placements/timer override documented.
+
+dust3d-final-ctcapture12.log
+PASS LIVE BROWSER WALK CT underpass to A Ramp { x: 34.30042763472002, y: 3.2, z: 38.0349322029971 }
+PASS bundled High PBR maps loaded at 2048px 66
+PASS actual High visual capture only; no combat assertions in this mode
