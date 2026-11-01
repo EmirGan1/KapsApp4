@@ -770,7 +770,7 @@ export default function KapsStrikeGame({
       )}
 
       {/* MOBILE ERGONOMIC HUD OVERLAY */}
-      {view === "play" && isMobile && (
+      {view === "play" && isMobile && !panel && (
         <div className="ks-touch-overlay">
           {/* Virtual Joystick Zone (Bottom-Left) */}
           <div
@@ -1856,8 +1856,8 @@ export default function KapsStrikeGame({
       {view==='menu'&&<button className="ks-mode-back" onClick={()=>setCategory(null)}>Oyun modu seçimi</button>}
       {view==='menu'&&category===null&&<div className="ks-mode-gate"><h1>KapsStrike · Oyununu seç</h1><div><button onClick={()=>{setCategory('kill');setCreateMode('tdm');setCreateMap('warehouse');}}>KILL YARIŞI<small>Mevcut FFA ve takım savaşı · Haritalar, kasalar ve envanter</small></button><button onClick={()=>{setCategory('bomb');setModeTab('multiplayer');setCreateMode('bomb');setCreateMap('district');}}>BOMBA KURMA<small>Takımını seç, bomba bölgelerini savun veya bombayı kur. Raundları kazan ve zafere ulaş.</small></button></div></div>}
       {/* Pause has one clear primary action; detailed settings live in dismissible panels. */}
-      {view === "pause" && (
-        <div className="ks-overlay ks-pause-overlay" inert={!!panel}><div className="ks-menu ks-pause-card">
+      {view === "pause" && !panel && (
+        <div className="ks-overlay ks-pause-overlay"><div className="ks-menu ks-pause-card">
           <div className="ks-eyebrow">KAPSSTRIKE / MENÜ</div><h2>Kısa bir mola.</h2>
           <p>{game.current?.isMultiplayer?"Maç devam ediyor. Hazır olduğunda geri dön.":"Antrenman duraklatıldı."}</p>
           <button className="ks-primary ks-resume" onClick={()=>{setPanel(null);resume();}}>▶ Oyuna Devam Et</button>

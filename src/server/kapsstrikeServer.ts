@@ -1349,27 +1349,80 @@ export class KapsStrikeServerManager {
     const applyInventory=(state:import('../games/kapsstrike/cosmetics').Inventory)=>{const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const player=room?.players.get(socket.id);if(player&&room){player.cosmeticLoadout=state.equipped;this.broadcastRoomState(room);}};
     void this.inventory.get(userIdNum).then(applyInventory).catch(()=>{});
     let inventoryBusy=false, inventoryRequest=0;
-    const isInventoryAdmin=String(user.username||'').trim().toLocaleLowerCase('en-US')==='emirgan';
+    const verifyAdmin = async () => {
+      return this.inventory.isAuthorizedAdmin(userIdNum, user.username);
+    };
     for(const event of ['get','open','equip'] as const)socket.on('strike:inventory_'+event,async(data:any,cb:any)=>{
       if(typeof cb!=='function')return;
       if(inventoryBusy||(event!=='get'&&Date.now()-inventoryRequest<250)){cb({success:false,error:'Biraz bekle.'});return;}
       inventoryBusy=true;if(event!=='get')inventoryRequest=Date.now();
-      try{if(event==='get'){const state=isInventoryAdmin?await this.inventory.grantAll(userIdNum):await this.inventory.get(userIdNum);applyInventory(state);cb({success:true,state});}
+      try{if(event==='get'){const state=await this.inventory.get(userIdNum);applyInventory(state);cb({success:true,state});}
       else if(event==='open'){if(typeof data?.caseId!=='string'||data.caseId.length>32)throw new Error('Geçersiz kasa.');cb({success:true,...await this.inventory.open(userIdNum,data.caseId)});}
       else {if(typeof data?.itemId!=='string'||data.itemId.length>64)throw new Error('Geçersiz görünüm.');const state=await this.inventory.equip(userIdNum,data.itemId);applyInventory(state);cb({success:true,state});}}
       catch(e){cb({success:false,error:e instanceof Error?e.message:'Envanter işlemi başarısız.'});}finally{inventoryBusy=false;}
     });
-    // Privilege is derived only from the authenticated server-side account name.
-    socket.on('strike:inventory_admin_check',(cb:any)=>{if(typeof cb==='function')cb({success:true,allowed:isInventoryAdmin});});
+    // Privilege is verified server-side against authenticated database account
+    socket.on('strike:inventory_admin_check',async(cb:any)=>{
+      if(typeof cb!=='function')return;
+      const ok = await verifyAdmin();
+      cb({success:true,allowed:ok});
+    });
     socket.on('strike:inventory_admin_search',async(data:any,cb:any)=>{
-      if(typeof cb!=='function')return;if(!isInventoryAdmin){cb({success:false,error:'Yetkin yok.'});return;}
+      if(typeof cb!=='function')return;
+      if(!(await verifyAdmin())){cb({success:false,error:'Yetkisiz işlem: Bu yetki sadece emirgan hesabına aittir.'});return;}
       try{const users=await this.inventory.searchUsers(typeof data?.query==='string'?data.query:'');const results=[];for(const target of users)results.push({...target,inventory:await this.inventory.get(target.id)});cb({success:true,users:results});}
       catch{cb({success:false,error:'Kullanıcılar veya envanterleri yüklenemedi.'});}
     });
+    socket.on('strike:inventory_admin_grant_item',async(data:any,cb:any)=>{
+      if(typeof cb!=='function')return;
+      if(!(await verifyAdmin())){cb({success:false,error:'Yetkisiz işlem: Bu yetki sadece emirgan hesabına aittir.'});return;}
+      const targetId=Number(data?.userId), itemId=String(data?.itemId||'');
+      if(!Number.isSafeInteger(targetId)||targetId<=0||!itemId){cb({success:false,error:'Geçersiz parametreler.'});return;}
+      try{
+        const target=await this.inventory.getUser(targetId);
+        if(!target)throw new Error('Kullanıcı bulunamadı.');
+        const result=await this.inventory.grantItem(targetId, itemId, userIdNum, user.username);
+        cb({success:true,user:{...target,inventory:result.state},item:result.item});
+      }
+      catch(e){cb({success:false,error:e instanceof Error?e.message:'Görünüm eklenemedi.'});}
+    });
+    socket.on('strike:inventory_admin_grant_batch',async(data:any,cb:any)=>{
+      if(typeof cb!=='function')return;
+      if(!(await verifyAdmin())){cb({success:false,error:'Yetkisiz işlem: Bu yetki sadece emirgan hesabına aittir.'});return;}
+      const targetId=Number(data?.userId), itemIds=Array.isArray(data?.itemIds)?data.itemIds:[];
+      if(!Number.isSafeInteger(targetId)||targetId<=0||!itemIds.length){cb({success:false,error:'Geçersiz parametreler.'});return;}
+      try{
+        const target=await this.inventory.getUser(targetId);
+        if(!target)throw new Error('Kullanıcı bulunamadı.');
+        const result=await this.inventory.grantBatch(targetId, itemIds, userIdNum, user.username);
+        cb({success:true,user:{...target,inventory:result.state},count:result.count});
+      }
+      catch(e){cb({success:false,error:e instanceof Error?e.message:'Görünümler eklenemedi.'});}
+    });
+    socket.on('strike:inventory_admin_revoke_item',async(data:any,cb:any)=>{
+      if(typeof cb!=='function')return;
+      if(!(await verifyAdmin())){cb({success:false,error:'Yetkisiz işlem: Bu yetki sadece emirgan hesabına aittir.'});return;}
+      const targetId=Number(data?.userId), itemId=String(data?.itemId||'');
+      if(!Number.isSafeInteger(targetId)||targetId<=0||!itemId){cb({success:false,error:'Geçersiz parametreler.'});return;}
+      try{
+        const target=await this.inventory.getUser(targetId);
+        if(!target)throw new Error('Kullanıcı bulunamadı.');
+        const result=await this.inventory.revokeItem(targetId, itemId, userIdNum, user.username);
+        cb({success:true,user:{...target,inventory:result.state},item:result.item});
+      }
+      catch(e){cb({success:false,error:e instanceof Error?e.message:'Görünüm kaldırılamadı.'});}
+    });
     socket.on('strike:inventory_admin_grant_all',async(data:any,cb:any)=>{
-      if(typeof cb!=='function')return;if(!isInventoryAdmin){cb({success:false,error:'Yetkin yok.'});return;}
+      if(typeof cb!=='function')return;
+      if(!(await verifyAdmin())){cb({success:false,error:'Yetkisiz işlem: Bu yetki sadece emirgan hesabına aittir.'});return;}
       const targetId=Number(data?.userId);if(!Number.isSafeInteger(targetId)||targetId<=0){cb({success:false,error:'Geçersiz kullanıcı.'});return;}
-      try{const target=await this.inventory.getUser(targetId);if(!target)throw new Error('Kullanıcı bulunamadı.');const state=await this.inventory.grantAll(targetId);cb({success:true,user:{...target,inventory:state}});}
+      try{
+        const target=await this.inventory.getUser(targetId);
+        if(!target)throw new Error('Kullanıcı bulunamadı.');
+        const state=await this.inventory.grantAll(targetId);
+        console.info(`[StrikeAdminAudit] Full Skin Bundle granted to user #${targetId} by ${user.username}(#${userIdNum})`);
+        cb({success:true,user:{...target,inventory:state}});
+      }
       catch(e){cb({success:false,error:e instanceof Error?e.message:'Görünümler eklenemedi.'});}
     });
     let lastProfileGet = 0, lastProfileSet = 0;

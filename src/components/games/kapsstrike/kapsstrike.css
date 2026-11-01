@@ -224,8 +224,9 @@ html:not(.dark) .ks-root button:hover {
   margin: 14px 0;
 }
 .ks-feature-overlay {
-  z-index: 12;
+  z-index: 350 !important;
   background: #0b1118ed;
+  pointer-events: auto !important;
 }
 .ks-feature-card {
   max-height: 100%;
@@ -234,6 +235,15 @@ html:not(.dark) .ks-root button:hover {
   border-radius: 14px;
   background: #151e26;
   padding: clamp(16px, 3vw, 28px);
+  position: relative;
+  z-index: 360 !important;
+  pointer-events: auto !important;
+}
+.ks-feature-card button,
+.ks-feature-card input,
+.ks-feature-card select {
+  pointer-events: auto !important;
+  cursor: pointer;
 }
 .ks-feature-card > button {
   margin-top: 10px;
@@ -1071,7 +1081,7 @@ html:not(.dark) .ks-root button:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 85;
+  z-index: 120 !important;
   pointer-events: auto;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
@@ -1092,7 +1102,7 @@ html:not(.dark) .ks-root button:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  z-index: 85;
+  z-index: 120 !important;
   pointer-events: auto;
 }
 
@@ -1217,7 +1227,7 @@ html:not(.dark) .ks-root button:hover {
 .ks-root.ks-experience input[type=range]{min-height:26px;accent-color:var(--ks-accent)}
 .ks-root.ks-experience input[type=checkbox]{min-height:initial;accent-color:var(--ks-accent)}
 .ks-root.ks-experience .ks-settings h2,.ks-root.ks-experience .ks-controls h2{color:var(--ks-ink)}
-.ks-root.ks-experience .ks-feature-overlay{z-index:150;background:#07111cbb;backdrop-filter:blur(8px);padding:16px}
+.ks-root.ks-experience .ks-feature-overlay{z-index:350 !important;background:#07111cbb;backdrop-filter:blur(8px);padding:16px;pointer-events:auto !important}
 .ks-root.ks-experience .ks-feature-card{width:min(850px,100%);max-height:calc(100dvh - 32px);padding:0;display:flex;flex-direction:column;background:#142331;border:1px solid var(--ks-edge);border-radius:20px;overflow:hidden;box-shadow:0 24px 100px #0008}
 .ks-panel-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 22px;border-bottom:1px solid var(--ks-edge);flex-shrink:0}
 .ks-panel-bar>span{font-size:11px;letter-spacing:.13em;color:var(--ks-accent)}

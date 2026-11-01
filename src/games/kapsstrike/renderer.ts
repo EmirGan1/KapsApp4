@@ -33,6 +33,65 @@ import {
 import { WEAPONS, WEAPON_ORDER, PHYSICS as C, TARGET_HITBOXES, detectAutoQuality } from "./config";
 import { raySolid, clamp, collisionSolids } from "./physics";
 import { aimDirection } from "./combat";
+function createHawkbillBlade(name: string, scene: Scene): Mesh {
+  const sections = [
+    { z: 0.02, yTop: 0.030, yBot: -0.025, xOff: 0.00, wTop: 0.009, wMid: 0.007 },
+    { z: 0.06, yTop: 0.048, yBot: -0.020, xOff: 0.005, wTop: 0.009, wMid: 0.007 },
+    { z: 0.10, yTop: 0.054, yBot: -0.016, xOff: 0.010, wTop: 0.008, wMid: 0.006 },
+    { z: 0.14, yTop: 0.050, yBot: -0.022, xOff: 0.012, wTop: 0.008, wMid: 0.006 },
+    { z: 0.18, yTop: 0.038, yBot: -0.038, xOff: 0.010, wTop: 0.007, wMid: 0.005 },
+    { z: 0.22, yTop: 0.012, yBot: -0.065, xOff: 0.006, wTop: 0.006, wMid: 0.004 },
+    { z: 0.25, yTop: -0.025, yBot: -0.098, xOff: -0.002, wTop: 0.005, wMid: 0.003 },
+    { z: 0.275, yTop: -0.068, yBot: -0.125, xOff: -0.010, wTop: 0.003, wMid: 0.002 },
+    { z: 0.290, yTop: -0.110, yBot: -0.145, xOff: -0.016, wTop: 0.0005, wMid: 0.0005 },
+  ];
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let s = 0; s < sections.length; s++) {
+    const sec = sections[s];
+    const yMid = (sec.yTop + sec.yBot) * 0.55;
+    const u = s / (sections.length - 1);
+    positions.push(sec.xOff - sec.wTop, sec.yTop, sec.z);
+    uvs.push(u, 0);
+    positions.push(sec.xOff + sec.wTop, sec.yTop, sec.z);
+    uvs.push(u, 0);
+    positions.push(sec.xOff - sec.wMid, yMid, sec.z);
+    uvs.push(u, 0.4);
+    positions.push(sec.xOff + sec.wMid, yMid, sec.z);
+    uvs.push(u, 0.4);
+    positions.push(sec.xOff, sec.yBot, sec.z);
+    uvs.push(u, 1);
+  }
+
+  for (let s = 0; s < sections.length - 1; s++) {
+    const base = s * 5;
+    const next = (s + 1) * 5;
+    indices.push(base + 0, base + 1, next + 1);
+    indices.push(base + 0, next + 1, next + 0);
+    indices.push(base + 0, next + 0, next + 2);
+    indices.push(base + 0, next + 2, base + 2);
+    indices.push(base + 1, base + 3, next + 3);
+    indices.push(base + 1, next + 3, next + 1);
+    indices.push(base + 2, next + 2, next + 4);
+    indices.push(base + 2, next + 4, base + 4);
+    indices.push(base + 3, base + 4, next + 4);
+    indices.push(base + 3, next + 4, next + 3);
+  }
+
+  const normals: number[] = [];
+  VertexData.ComputeNormals(positions, indices, normals);
+  const vd = new VertexData();
+  vd.positions = positions;
+  vd.indices = indices;
+  vd.normals = normals;
+  vd.uvs = uvs;
+  const mesh = new Mesh(name, scene);
+  vd.applyToMesh(mesh);
+  return mesh;
+}
+
 /** All input belongs to StrikeController; avoid a second device/gamepad listener graph. */
 class StrikeScene extends Scene {
   override attachControl(): void {}
@@ -69,8 +128,13 @@ export class StrikeRenderer {
   private impactPool: { mesh: Mesh; until: number }[] = [];
   private poolIndex = 0;
   private gunKick = 0;
-  private inspectTime=0;
-  private qualityApplied="";
+  private inspectTime = 0;
+  private lastSelectedWeapon: WeaponId = "rifle";
+  private knifeDeployTimer = 0;
+  private knifeAttackTimer = 0;
+  private knifeAttackType: "slash" | "heavy" = "slash";
+  private knifeAttackCombo = 0;
+  private qualityApplied = "";
   private supplyMeshes=new Map<string,TransformNode>();
   private plane?:TransformNode;
   private falling?:Mesh;
@@ -304,18 +368,83 @@ export class StrikeRenderer {
           return m;
         };
         if (id === "knife") {
-          const stylePart=(style:string,name:string,x:number,y:number,z:number,w:number,h:number,d:number,color:string)=>{const m=part(name,x,y,z,w,h,d,color);m.metadata={knifeStyle:style};return m;};
-          for(const style of ['default','tanto']){
-            stylePart(style,'handle',0,-.04,-.1,.09,.12,.23,'#26313c');
-            stylePart(style,'guard',0,0,.015,.22,.035,.045,'#637b8c');
-            const blade=stylePart(style,'blade',0,.015,.21,style==='tanto'?.11:.075,.025,.35,'#d8e3e9');blade.rotation.z=.15;
+          const stylePart = (style: string, name: string, x: number, y: number, z: number, w: number, h: number, d: number, color: string, partKind: 'blade' | 'handle' = 'blade') => {
+            const m = part(name, x, y, z, w, h, d, color);
+            m.metadata = { knifeStyle: style, knifePart: partKind };
+            return m;
+          };
+
+          // --- DEFAULT COMBAT KNIFE ---
+          stylePart('default', 'handle', 0, -0.04, -0.1, 0.075, 0.10, 0.22, '#26313c', 'handle');
+          stylePart('default', 'guard', 0, 0, 0.015, 0.18, 0.03, 0.04, '#637b8c', 'handle');
+          const defBlade = stylePart('default', 'blade', 0, 0.015, 0.20, 0.014, 0.065, 0.34, '#d8e3e9', 'blade');
+          defBlade.rotation.z = 0.12;
+
+          // --- TANTO KNIFE (Angular Chisel Tip, Habaki, Tsuba, Braided Tsuka) ---
+          stylePart('tanto', 'habaki', 0, 0.012, 0.03, 0.022, 0.045, 0.035, '#d97706', 'handle');
+          stylePart('tanto', 'tsuba', 0, 0.012, 0.005, 0.09, 0.06, 0.012, '#334155', 'handle');
+          stylePart('tanto', 'tsuka', 0, 0.012, -0.12, 0.036, 0.052, 0.23, '#1e293b', 'handle');
+          stylePart('tanto', 'blade-main', 0, 0.015, 0.17, 0.014, 0.058, 0.25, '#d8e3e9', 'blade');
+          const tantoTip = stylePart('tanto', 'blade-chisel-point', 0, 0.008, 0.31, 0.008, 0.042, 0.07, '#e2e8f0', 'blade');
+          tantoTip.rotation.x = -0.32;
+
+          // --- BUTTERFLY KNIFE / BALISONG (Bite/Safe Handles, Speed Holes, Tang Pins, Latch, Clip Blade) ---
+          stylePart('butterfly', 'ricasso', 0, 0.012, 0.05, 0.014, 0.052, 0.06, '#d8e3e9', 'blade');
+          stylePart('butterfly', 'blade-body', 0, 0.012, 0.19, 0.012, 0.048, 0.22, '#d8e3e9', 'blade');
+          const bTip = stylePart('butterfly', 'blade-tip', 0, 0.006, 0.31, 0.006, 0.034, 0.08, '#d8e3e9', 'blade');
+          bTip.rotation.x = -0.12;
+          stylePart('butterfly', 'tang-pin-up', 0, 0.028, 0.028, 0.055, 0.008, 0.008, '#cbd5e1', 'blade');
+          stylePart('butterfly', 'tang-pin-dn', 0, -0.008, 0.028, 0.055, 0.008, 0.008, '#cbd5e1', 'blade');
+
+          for (const side of [-1, 1]) {
+            const handle = stylePart('butterfly', 'butterfly-handle' + side, side * 0.038, 0.01, -0.14, 0.036, 0.055, 0.28, '#1e293b', 'handle');
+            handle.metadata.side = side;
+            // Skeletonized speed holes (3 cutouts along each handle)
+            stylePart('butterfly', 'hole-1-' + side, side * 0.038, 0.01, -0.08, 0.039, 0.022, 0.022, '#0f172a', 'handle');
+            stylePart('butterfly', 'hole-2-' + side, side * 0.038, 0.01, -0.14, 0.039, 0.022, 0.022, '#0f172a', 'handle');
+            stylePart('butterfly', 'hole-3-' + side, side * 0.038, 0.01, -0.20, 0.039, 0.022, 0.022, '#0f172a', 'handle');
+            // Tang pivot pin
+            stylePart('butterfly', 'pivot-' + side, side * 0.028, 0.012, -0.002, 0.042, 0.014, 0.014, '#e2e8f0', 'handle');
           }
-          for(const side of [-1,1]){const handle=stylePart('butterfly','butterfly-handle'+side,side*.065,-.02,-.12,.045,.07,.32,'#26313c');handle.metadata.side=side;}
-          stylePart('butterfly','blade',0,.015,.21,.075,.025,.39,'#d8e3e9');
-          stylePart('karambit','handle',0,0,-.1,.08,.08,.25,'#26313c');
-          const ring=MeshBuilder.CreateTorus('knife-ring',{diameter:.12,thickness:.02,tessellation:20},this.scene);ring.parent=root;ring.position.z=-.25;ring.renderingGroupId=2;ring.metadata={knifeStyle:'karambit'};ring.material=this.material('#a7b6c6');
-          const curved=MeshBuilder.CreateTube('knife-blade-curve',{path:Array.from({length:12},(_,i)=>new Vector3(.12-Math.cos(i/11*2)*.12,0,.02+Math.sin(i/11*2)*.23)),radius:.035,tessellation:6,cap:3},this.scene);curved.parent=root;curved.renderingGroupId=2;curved.metadata={knifeStyle:'karambit'};curved.material=this.material('#d8e3e9');
-          this.weapons.set(id,root);
+          // Bite handle latch
+          stylePart('butterfly', 'latch', 0.038, 0.01, -0.295, 0.024, 0.032, 0.038, '#64748b', 'handle');
+
+          // --- REALISTIC KARAMBIT (Hawkbill Talon Blade, Finger Grooves, Jimping, Torx, Pommel Safety Ring) ---
+          const hawkbill = createHawkbillBlade('karambit-blade', this.scene);
+          hawkbill.parent = root;
+          hawkbill.renderingGroupId = 2;
+          hawkbill.isPickable = false;
+          hawkbill.material = this.material('#d8e3e9', false, 'metal');
+          hawkbill.metadata = { knifeStyle: 'karambit', knifePart: 'blade' };
+
+          // Ergonomic handle core
+          stylePart('karambit', 'handle-core', 0, 0.005, -0.09, 0.046, 0.082, 0.22, '#18222c', 'handle');
+          // 3 Ergonomic finger scallops on bottom belly
+          stylePart('karambit', 'groove-1', 0, -0.038, -0.02, 0.049, 0.025, 0.045, '#121921', 'handle');
+          stylePart('karambit', 'groove-2', 0, -0.035, -0.08, 0.049, 0.025, 0.045, '#121921', 'handle');
+          stylePart('karambit', 'groove-3', 0, -0.032, -0.14, 0.049, 0.025, 0.045, '#121921', 'handle');
+          // Textured G10 side scales
+          stylePart('karambit', 'scale-l', -0.025, 0.005, -0.09, 0.007, 0.076, 0.20, '#1c2834', 'handle');
+          stylePart('karambit', 'scale-r', 0.025, 0.005, -0.09, 0.007, 0.076, 0.20, '#1c2834', 'handle');
+          // Silver Torx screws
+          stylePart('karambit', 'torx-1', 0.027, 0.015, -0.04, 0.004, 0.012, 0.012, '#94a3b8', 'handle');
+          stylePart('karambit', 'torx-2', 0.027, 0.012, -0.10, 0.004, 0.012, 0.012, '#94a3b8', 'handle');
+          stylePart('karambit', 'torx-3', 0.027, 0.008, -0.16, 0.004, 0.012, 0.012, '#94a3b8', 'handle');
+          // Thumb ramp jimping ridges on top spine
+          stylePart('karambit', 'jimping-1', 0, 0.046, 0.01, 0.03, 0.008, 0.012, '#334155', 'handle');
+          stylePart('karambit', 'jimping-2', 0, 0.048, -0.01, 0.03, 0.008, 0.012, '#334155', 'handle');
+          // Tang connection link
+          stylePart('karambit', 'ring-tang', 0, -0.005, -0.19, 0.036, 0.05, 0.04, '#243240', 'handle');
+          // Retention safety ring at pommel
+          const ring = MeshBuilder.CreateTorus('knife-ring', { diameter: 0.125, thickness: 0.024, tessellation: 32 }, this.scene);
+          ring.parent = root;
+          ring.position.set(0, -0.005, -0.23);
+          ring.renderingGroupId = 2;
+          ring.isPickable = false;
+          ring.metadata = { knifeStyle: 'karambit', knifePart: 'ring' };
+          ring.material = this.material('#94a3b8', false, 'metal');
+
+          this.weapons.set(id, root);
           continue;
         }
         part("receiver", 0, 0, 0, 0.14, 0.17, w.length * 0.43, w.color);
@@ -502,12 +631,14 @@ export class StrikeRenderer {
       for(const mesh of root.getChildMeshes()){
         if(!mesh.metadata?.baseMaterial)mesh.metadata={...mesh.metadata,baseMaterial:mesh.material};
         if(weapon==='knife')mesh.setEnabled(mesh.metadata.knifeStyle===(finish?.knife||'default'));
-        const tinted=weapon==='knife'||/receiver|stock/.test(mesh.name);
-        mesh.material=material&&tinted?material:mesh.metadata.baseMaterial;
+        const isBlade = mesh.metadata?.knifePart === 'blade';
+        const isKnifeHandle = weapon === 'knife' && !isBlade;
+        const tinted = !isKnifeHandle && (weapon === 'knife' || /receiver|stock/.test(mesh.name));
+        mesh.material = material && tinted ? material : mesh.metadata.baseMaterial;
       }
     }
   }
-  inspect(){this.inspectTime=1.8;}
+  inspect(){this.inspectTime=2.4;}
   resetView(){this.inspectTime=0;this.gunKick=0;this.camera.rotationQuaternion=null;this.camera.rotation.set(0,0,0);this.camera.upVector.set(0,1,0);this.camera.cameraRotation.set(0,0);this.camera.cameraDirection.set(0,0,0);}
   updateSettings(next:StrikeSettings){
     this.settings=next;
@@ -627,7 +758,15 @@ export class StrikeRenderer {
       if (!predicted) this.lastEvent = e.id;
       if (e.kind === "hit" && e.target && this.remotePlayerMeshes.has(e.target)) this.flashes.set(e.target, performance.now() + 120);
       if (e.kind === "shot" && e.from && e.to) {
-        if (!localActor || e.actor === localActor) this.gunKick = 0.06;
+        if (!localActor || e.actor === localActor) {
+          this.gunKick = 0.06;
+          if (e.weapon === "knife") {
+            const isHeavy = !!e.head || (typeof e.damage === "number" && e.damage > 50);
+            this.knifeAttackType = isHeavy ? "heavy" : "slash";
+            this.knifeAttackTimer = isHeavy ? 0.48 : 0.28;
+            this.knifeAttackCombo = (this.knifeAttackCombo + 1) % 2;
+          }
+        }
         if(e.weapon==="knife")continue;
         const item = this.tracerPool[this.poolIndex % 48],
           impact = this.impactPool[this.poolIndex++ % 48];
@@ -699,48 +838,158 @@ export class StrikeRenderer {
       if (!s.detail)
         wall = Math.min(wall, raySolid(this.camera.position, dir, s, 1));
     const near = clamp(1 - wall, 0, 1);
-    this.gunRoot.position.set(
-      ads ? 0.015 : 0.27,
-      -0.26 - reload * 0.25,
-      0.52 - this.gunKick - near * 0.2,
-    );
-    this.gunRoot.rotation.set(
-      reload * 0.6 - near * 0.4,
-      0,
-      Math.sin(state.tick * 0.08) *
-        Math.hypot(m.velocity.x, m.velocity.z) *
-        0.001,
-    );
-    if(this.inspectTime>0){
-      if(ads||this.gunKick>0||p.weapon.reloadUntil||p.hp<=0)this.inspectTime=0;
-      else{this.inspectTime=Math.max(0,this.inspectTime-delta);const t=(1.8-this.inspectTime)/1.8,pose=Math.sin(Math.PI*t);this.gunRoot.rotation.z+=pose*1.15;this.gunRoot.rotation.y+=pose*.75;this.gunRoot.position.x-=pose*.15;this.gunRoot.position.y+=pose*.1;}
+    if (p.weapon.selected !== this.lastSelectedWeapon) {
+      if (p.weapon.selected === "knife") {
+        this.knifeDeployTimer = 0.65;
+        this.inspectTime = 0;
+      }
+      this.lastSelectedWeapon = p.weapon.selected;
     }
-    if(this.inspectTime>0){
-      const progress=1-this.inspectTime/1.8, wave=Math.sin(progress*Math.PI),finish=cosmetic(this.settings.cosmeticLoadout?.[p.weapon.selected]);
-      if(p.weapon.selected==='knife'){
-        this.gunRoot.rotation.z+=finish?.knife==='karambit'?Math.sin(progress*Math.PI*2)*2:finish?.knife==='butterfly'?progress*Math.PI*4:wave*.4;
-      }else{const index=WEAPON_ORDER.indexOf(p.weapon.selected);this.gunRoot.rotation.x+=wave*(.15+index*.04);this.gunRoot.position.z+=Math.sin(progress*Math.PI*2)*(.02+index*.005);}
-    }
-    for(const m of this.weapons.get('knife')?.getChildMeshes()||[])if(m.metadata?.knifeStyle==='butterfly'&&m.metadata.side)m.rotation.x=this.inspectTime>0?Math.sin((1.8-this.inspectTime)*12)*2.4*m.metadata.side:0;
-    this.gunRoot.setEnabled(!(ads&&(p.weapon.selected==='sniper'||p.weapon.selected==='railgun')));
-    this.gunRoot.scaling.setAll(ads ? 0.85 : 1);
-    for (const [id, mesh] of this.weapons)
-      mesh.setEnabled(id === p.weapon.selected);
-    for (const [id, target] of this.targetMeshes) {
-      if (!state.targets.some(t => t.id === id)) target.root.setEnabled(false);
-    }
-    if (state.targets) {
-      for (const t of state.targets) {
-        const mesh = this.targetMeshes.get(t.id);
-        if (mesh) {
-          mesh.root.position.set(t.position.x, t.position.y, t.position.z);
-          mesh.root.setEnabled(t.hp > 0);
+
+    const finish = cosmetic(this.settings.cosmeticLoadout?.[p.weapon.selected]);
+    const knifeType = finish?.knife || "default";
+
+    if (p.weapon.selected === "knife") {
+      // Base tactical knife posture
+      if (knifeType === "karambit") {
+        this.gunRoot.position.set(0.24, -0.22, 0.46);
+        this.gunRoot.rotation.set(-0.15, 0.22, -0.45);
+      } else if (knifeType === "butterfly") {
+        this.gunRoot.position.set(0.25, -0.24, 0.48);
+        this.gunRoot.rotation.set(-0.08, 0.12, -0.15);
+      } else {
+        this.gunRoot.position.set(0.25, -0.25, 0.48);
+        this.gunRoot.rotation.set(-0.05, 0.10, -0.10);
+      }
+
+      // 1. Equip / Deploy animation
+      if (this.knifeDeployTimer > 0) {
+        this.knifeDeployTimer = Math.max(0, this.knifeDeployTimer - delta);
+        const deployProg = 1 - this.knifeDeployTimer / 0.65;
+        if (knifeType === "karambit") {
+          const spin = (1 - deployProg) * Math.PI * 4;
+          this.gunRoot.rotation.z += spin;
+          this.gunRoot.position.y -= (1 - deployProg) * 0.35;
+          this.gunRoot.position.z -= (1 - deployProg) * 0.15;
+          this.gunRoot.rotation.x += Math.sin(deployProg * Math.PI) * 0.45;
+        } else if (knifeType === "butterfly") {
+          this.gunRoot.position.y -= (1 - deployProg) * 0.28;
+          this.gunRoot.rotation.z -= (1 - deployProg) * 0.7;
+          const openPhase = clamp(deployProg * 2.2, 0, 1);
+          for (const m of this.weapons.get("knife")?.getChildMeshes() || []) {
+            if (m.metadata?.knifeStyle === "butterfly" && m.metadata.side) {
+              m.rotation.x = (1 - openPhase) * Math.PI * 0.9 * m.metadata.side;
+            }
+          }
+        } else {
+          this.gunRoot.position.y -= (1 - deployProg) * 0.26;
+          this.gunRoot.rotation.z -= (1 - deployProg) * 0.55;
+        }
+      }
+
+      // 2. Attack / Slash animation
+      if (this.knifeAttackTimer > 0) {
+        this.knifeAttackTimer = Math.max(0, this.knifeAttackTimer - delta);
+        const dur = this.knifeAttackType === "heavy" ? 0.48 : 0.28;
+        const attackProg = 1 - this.knifeAttackTimer / dur;
+        const strike = Math.sin(attackProg * Math.PI);
+
+        if (this.knifeAttackType === "heavy") {
+          this.gunRoot.position.z += strike * 0.36;
+          this.gunRoot.position.y -= strike * 0.16;
+          this.gunRoot.position.x -= strike * 0.10;
+          this.gunRoot.rotation.x += strike * 0.75;
+          this.gunRoot.rotation.z -= strike * 0.45;
+          this.camera.fov -= strike * 0.025;
+        } else {
+          const dir = this.knifeAttackCombo === 0 ? 1 : -1;
+          this.gunRoot.position.x += dir * strike * 0.26;
+          this.gunRoot.position.y += Math.cos(attackProg * Math.PI) * 0.09;
+          this.gunRoot.position.z += strike * 0.20;
+          this.gunRoot.rotation.z += dir * strike * 1.45;
+          this.gunRoot.rotation.y += dir * strike * 0.55;
+          this.gunRoot.rotation.x -= strike * 0.35;
+          this.camera.fov -= strike * 0.012;
+        }
+      }
+
+      // 3. Inspect animation
+      if (this.inspectTime > 0) {
+        this.inspectTime = Math.max(0, this.inspectTime - delta);
+        const inspectProg = 1 - this.inspectTime / 2.4;
+        if (knifeType === "karambit") {
+          if (inspectProg < 0.2) {
+            const t = inspectProg / 0.2;
+            this.gunRoot.position.y += t * 0.12;
+            this.gunRoot.position.x -= t * 0.10;
+            this.gunRoot.rotation.y += t * 0.6;
+          } else if (inspectProg < 0.75) {
+            const t = (inspectProg - 0.2) / 0.55;
+            const spin = t * Math.PI * 4;
+            this.gunRoot.position.y += 0.12;
+            this.gunRoot.position.x -= 0.10;
+            this.gunRoot.rotation.z += spin;
+            this.gunRoot.rotation.x += Math.sin(t * Math.PI * 2) * 0.3;
+          } else {
+            const t = (inspectProg - 0.75) / 0.25;
+            const ease = 1 - t;
+            this.gunRoot.position.y += ease * 0.12;
+            this.gunRoot.position.x -= ease * 0.10;
+            this.gunRoot.rotation.y += ease * 0.6;
+          }
+        } else if (knifeType === "butterfly") {
+          const spin = Math.sin(inspectProg * Math.PI * 2);
+          this.gunRoot.rotation.z += spin * 1.2;
+          this.gunRoot.rotation.y += Math.sin(inspectProg * Math.PI) * 0.7;
+          this.gunRoot.position.y += Math.sin(inspectProg * Math.PI) * 0.08;
+          for (const m of this.weapons.get("knife")?.getChildMeshes() || []) {
+            if (m.metadata?.knifeStyle === "butterfly" && m.metadata.side) {
+              m.rotation.x = Math.sin(inspectProg * Math.PI * 4) * 1.8 * m.metadata.side;
+            }
+          }
+        } else {
+          const wave = Math.sin(inspectProg * Math.PI);
+          this.gunRoot.position.y += wave * 0.10;
+          this.gunRoot.position.x -= wave * 0.12;
+          this.gunRoot.rotation.y += wave * 0.85;
+          this.gunRoot.rotation.z += wave * 0.55;
+        }
+      }
+
+      if (this.knifeDeployTimer <= 0 && this.inspectTime <= 0) {
+        for (const m of this.weapons.get("knife")?.getChildMeshes() || []) {
+          if (m.metadata?.knifeStyle === "butterfly" && m.metadata.side) m.rotation.x = 0;
+        }
+      }
+    } else {
+      // Firearm viewmodel animations
+      this.gunRoot.position.set(
+        ads ? 0.015 : 0.27,
+        -0.26 - reload * 0.25,
+        0.52 - this.gunKick - near * 0.2,
+      );
+      this.gunRoot.rotation.set(
+        reload * 0.6 - near * 0.4,
+        0,
+        Math.sin(state.tick * 0.08) *
+          Math.hypot(m.velocity.x, m.velocity.z) *
+          0.001,
+      );
+      if (this.inspectTime > 0) {
+        if (ads || this.gunKick > 0 || p.weapon.reloadUntil || p.hp <= 0) this.inspectTime = 0;
+        else {
+          this.inspectTime = Math.max(0, this.inspectTime - delta);
+          const t = (1.8 - this.inspectTime) / 1.8, pose = Math.sin(Math.PI * t);
+          this.gunRoot.rotation.z += pose * 1.15;
+          this.gunRoot.rotation.y += pose * 0.75;
+          this.gunRoot.position.x -= pose * 0.15;
+          this.gunRoot.position.y += pose * 0.1;
+          const index = WEAPON_ORDER.indexOf(p.weapon.selected);
+          this.gunRoot.rotation.x += pose * (0.15 + index * 0.04);
+          this.gunRoot.position.z += Math.sin(t * Math.PI * 2) * (0.02 + index * 0.005);
         }
       }
     }
-    this.muzzle.position.z = WEAPONS[p.weapon.selected].length * 0.65 + 0.04;
-    this.muzzle.setEnabled(p.weapon.selected !== "knife" && this.gunKick > 0.045);
-    if (p.weapon.selected === "knife") this.gunRoot.rotation.z += Math.sin(this.gunKick / 0.06 * Math.PI) * 0.9;
     for (const a of this.tracerPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
     for (const a of this.impactPool)

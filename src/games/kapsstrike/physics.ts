@@ -140,8 +140,11 @@ export function move(
       const old = p[axis],
         oldY = p.y;
       p[axis] += (v[axis] * dt) / steps;
-      const floor = support(map, p, p.y + (wasGrounded ? C.step : 0));
-      if (wasGrounded && v.y <= 0 && floor > p.y) p.y = floor;
+      const stepMax = wasGrounded ? C.step : (v.y <= 0 ? 0.2 : 0);
+      const floor = support(map, p, p.y + stepMax);
+      if (v.y <= 0 && floor > p.y && fits(map, { ...p, y: floor }, m.height)) {
+        p.y = floor;
+      }
       if (!fits(map, p, m.height)) {
         p[axis] = old;
         p.y = oldY;
@@ -160,7 +163,7 @@ export function move(
       v.y = 0;
     }
   } else {
-    const floor = support(map, p, oldY + 0.03);
+    const floor = support(map, p, oldY + 0.05);
     if (nextY <= floor) {
       p.y = floor;
       v.y = 0;
