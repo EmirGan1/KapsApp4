@@ -151,6 +151,7 @@ export interface StrikeSettings {
   scale: number;
   sensitivity: number;
   mobileSensitivity?: number;
+  touchAimAssist?:boolean;
   fov: number;
   volume: number;
   effectsVolume?: number;

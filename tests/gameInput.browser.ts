@@ -25,6 +25,7 @@ try{
   const context=await browser.newContext({viewport:{width:profile.width,height:profile.height},hasTouch:true,isMobile:true,userAgent:profile.ua});
   await context.addInitScript({content:`
    const profile=${JSON.stringify(profile)};
+   localStorage.setItem('kapsstrike-settings',JSON.stringify({quality:'low'}));
    Object.defineProperty(navigator,'platform',{get:function(){return profile.platform;}});Object.defineProperty(navigator,'maxTouchPoints',{get:function(){return 5;}});
    Object.defineProperty(screen.orientation,'angle',{configurable:true,get:function(){return profile.angle;}});
    window.permissionCalls=0;window.permissionDecision='granted';
@@ -35,6 +36,7 @@ try{
   `});
   const page=await context.newPage();page.on('pageerror',e=>errors.push(profile.name+': '+e.message));
   await page.goto('http://127.0.0.1:4199/__mobile');
+  await page.getByRole('button',{name:/KILL YARIŞI/}).click();
   await page.getByRole('button',{name:'Mobil Kontroller / Jiroskop',exact:true}).click();
   assert.equal(await page.getByLabel('Kontrol düzeni',{exact:true}).inputValue(),'auto');
   if(profile.ios){await page.evaluate(()=>(window as any).permissionDecision='denied');await page.getByRole('button',{name:'Jiroskobu etkinleştir / izin ver',exact:true}).click();await page.locator('[data-gyro-status="denied"]').waitFor({timeout:3000}).catch(async e=>{console.log('GYRO DIAGNOSTIC',await page.evaluate(()=>({secure:isSecureContext,calls:(window as any).permissionCalls,decision:(window as any).permissionDecision,request:typeof (DeviceOrientationEvent as any).requestPermission,statuses:[...document.querySelectorAll('[data-gyro-status]')].map(e=>({status:e.getAttribute('data-gyro-status'),text:e.textContent})),settings:localStorage.getItem('kapsstrike-settings')})));throw e;});assert.equal(await page.getByLabel('Jiroskop modu',{exact:true}).inputValue(),'off');await page.evaluate(()=>(window as any).permissionDecision='granted');}

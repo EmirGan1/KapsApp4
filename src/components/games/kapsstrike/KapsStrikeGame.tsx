@@ -713,7 +713,7 @@ export default function KapsStrikeGame({
   });
 
   return (
-    <section className={`ks-root ks-experience ks-view-${view} ${hud?.ads&&(hud.weapon==='sniper'||hud.weapon==='railgun')?'ks-scoped':''}`} aria-label="KapsStrike 3D FPS">
+    <section className={`ks-root ks-experience ${isMobile?'ks-touch-layout':''} ks-view-${view} ${hud?.ads&&(hud.weapon==='sniper'||hud.weapon==='railgun')?'ks-scoped':''}`} aria-label="KapsStrike 3D FPS">
       <canvas
         ref={canvas}
         className="ks-canvas"
@@ -1237,7 +1237,7 @@ export default function KapsStrikeGame({
           {hud.ads && !hud.dead && (hud.weapon==='sniper'||hud.weapon==='railgun') && <div className="ks-scope" aria-label="Dürbün açık"><div className="ks-scope-lens"><i/><b/><span>{hud.weapon==='railgun'?'5×':'3.5×'} / UFUK OPTICS</span></div></div>}
           {hud.lootNotice&&!hud.dead&&<div className="ks-loot-notice" role="status">{hud.lootNotice}</div>}
           {hud.supplyPrompt && !hud.dead && <button className="ks-supply-prompt" onClick={()=>game.current?.interact()}>{isMobile?'Dokun':label(settings.bindings?.interact||'KeyE')} · {hud.supplyPrompt}</button>}
-          {hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · RX-3 Şimşek</small></div>}
+          {hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · 3 özel silahtan biri</small></div>}
           {hud.hurt && hud.hurt.until > hud.tick && <div className="ks-hurt-vignette" style={{opacity: Math.min(.85, .2 + (hud.hurt.damage || 10) / 110)}} />}
           {hud.hp > 0 && hud.hp <= 25 && <span className="ks-low-health" role="status">KRİTİK CAN</span>}
           {hud.hurt && hud.hurt.until > hud.tick && (

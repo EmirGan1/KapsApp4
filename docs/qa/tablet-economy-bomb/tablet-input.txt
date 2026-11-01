@@ -1,0 +1,4 @@
+PASS production KapsStrike tablet + gyro + permission + mode switch + cleanup iPadOS desktop UA 1366
+PASS production KapsStrike tablet + gyro + permission + mode switch + cleanup Android tablet 1600
+PASS production KapsStrike tablet + gyro + permission + mode switch + cleanup iPhone landscape
+PASS Royale iPad default touch despite old desktop preference, iOS grant, sensor-to-input angle and explicit keyboard switch

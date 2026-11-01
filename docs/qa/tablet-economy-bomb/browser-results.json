@@ -1,0 +1,9 @@
+{
+  "checks": [
+    "per-case free opening, paid debit, reload persistence, live admin balance and rejected unauthorized credit RPC",
+    "iPad desktop-UA detection, persisted aim-support toggle, portrait/landscape HUD, touch buy menu and real joystick movement",
+    "two independent clients: 18m blast death, distant survivor, T-colored result banner, movement before next round and one durable win reward"
+  ],
+  "errors": [],
+  "notes": "Headless Chromium SwiftShader; iPad UA/touch emulation, not physical iOS Safari. Blast starting positions and timer fixture-controlled."
+}

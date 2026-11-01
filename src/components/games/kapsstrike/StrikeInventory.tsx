@@ -1,3 +1,4 @@
+import {caseCost,CASE_PRICES} from '../../../games/kapsstrike/economy';
 import StrikeSkins from "./StrikeSkins";
 import type { SkinId } from "../../../games/kapsstrike/skins";
 import React, { useEffect, useRef, useState } from 'react';
@@ -376,7 +377,9 @@ export default function StrikeInventory({
         else setMessage(r?.error || 'Envanter yüklenemedi.');
       });
     }
+    const wallet=(r:{credits:number})=>{if(Number.isSafeInteger(r.credits))setState(s=>({...s,credits:r.credits}));};socket?.on('strike:wallet',wallet);
     return () => {
+      socket?.off('strike:wallet',wallet);
       alive.current = false;
       if (timer.current) clearTimeout(timer.current);
       if (ticker.current) clearInterval(ticker.current);
@@ -448,13 +451,13 @@ export default function StrikeInventory({
     });
   };
 
-  const pool = caseRewards(selected);
+  const pool = caseRewards(selected),cost=caseCost(selected,state.freeCases);
 
   return (
     <div className="ks-inventory">
       <header>
-        <h2>Envanter ve Kasalar</h2>
-        <p>Tamamen kozmetik · Hasar ve hitbox değişmez · Ücretsiz açılış</p>
+        <h2>Envanter ve Kasalar</h2><strong className="ks-wallet" aria-label="Hesap kredisi">{state.credits||0} Kredi</strong><p>Kill: +20 · Kazanılan bomba raundu: +100 · Antrenman ödül vermez</p>
+        <p>Tamamen kozmetik · Hasar ve hitbox değişmez · Her kasanın ilk açılışı ücretsiz</p>
       </header>
 
       <nav className="ks-inv-tabs">
@@ -490,7 +493,7 @@ export default function StrikeInventory({
               >
                 <span className="ks-case-icon">◇</span>
                 <b>{c.name}</b>
-                <small>%5 özel bıçak</small>
+                <small>%5 özel bıçak · {state.freeCases?.[c.id]?`${CASE_PRICES[c.id]} Kredi`:"İlk açılış ücretsiz"}</small>
               </button>
             ))}
           </div>
@@ -536,13 +539,13 @@ export default function StrikeInventory({
 
           <button
             className="ks-primary ks-open-case"
-            disabled={busy || cooling || !socket?.connected}
+            disabled={busy || cooling || !socket?.connected || (state.credits||0)<cost}
             onClick={open}
           >
-            {busy ? 'Açılıyor…' : 'Kasayı ücretsiz aç'}
+            {busy ? 'Açılıyor…' : cost===0?'Kasayı ücretsiz aç':`${cost} Kredi ile aç`}
           </button>
           <p className="ks-case-disclosure">
-            Her açılış bağımsızdır. Bıçak toplam %5; belirli bir bıçağın şansı %1,667. Tekrar çıkan görünümler
+            Her kasanın ilk açılışı bir kez ücretsizdir; sonraki açılışlar hesap kredisi kullanır. Her açılış bağımsızdır. Bıçak toplam %5; belirli bıçak şansı aşağıdaki listede gösterilir. Tekrar çıkan görünümler
             adediyle saklanır. Takas veya parasal değer yoktur.
           </p>
 

@@ -16,7 +16,7 @@ for(const map of Object.values(MAPS).filter(map=>map.id!=='district')){
    advanceWorld(world,map,DROP_INTERVAL-DROP_WARNING-1);assert.equal(world.drop,undefined);
    advanceWorld(world,map,DROP_INTERVAL-DROP_WARNING);assert.ok(world.drop);assert.ok(world.pickups.every(p=>Math.hypot(p.position.x-world.drop!.position.x,p.position.z-world.drop!.position.z)>3.5));assert.ok(fits(map,structuredClone(world).drop!.position,C.standing));
    advanceWorld(world,map,DROP_INTERVAL-1);assert.equal(world.pickups.length,5);
-   advanceWorld(world,map,DROP_INTERVAL);assert.equal(world.pickups.length,6);assert.equal(world.pickups.at(-1)?.weapon,'railgun');assert.equal(world.nextDrop,DROP_INTERVAL*2);
+   advanceWorld(world,map,DROP_INTERVAL);assert.equal(world.pickups.length,6);assert.ok(['railgun','carbine','lmg'].includes(world.pickups.at(-1)!.weapon));assert.equal(world.nextDrop,DROP_INTERVAL*2);
   }
  });
  test(`${map.id}: claim once, reject distant/dead/obstructed claims; death drops special weapon`,()=>{

@@ -1,3 +1,4 @@
+import {BombEffects} from './bombEffects';
 import {FxaaPostProcess} from '@babylonjs/core/PostProcesses/fxaaPostProcess';
 import {GRAPHICS,knifeTiming} from './presentation';
 import {CombatDebug} from './combatDebug';
@@ -90,6 +91,7 @@ export class StrikeRenderer {
   private falling?:Mesh;
   private smoke:Mesh[]=[];
   private bombMesh?:Mesh;
+  private blast?:BombEffects;
   private heldBomb?:Mesh;
   private reloadAt = 0;
   private muzzle: Mesh;
@@ -455,7 +457,7 @@ export class StrikeRenderer {
         canvas.dispatchEvent(new Event("strike-context-lost"));
       });
     } catch (error) {
-      this.observer?.disconnect();
+      this.observer?.disconnect();this.blast?.dispose();
       this.engine.dispose();
       throw error;
     }
@@ -915,6 +917,7 @@ export class StrikeRenderer {
       this.gunRoot.setEnabled(false);
       if(spectator){this.camera.position.set(spectator.position.x,spectator.position.y+(spectator.stance==='stand'?C.eye:C.crouchEye),spectator.position.z);this.camera.rotation.set(spectator.pitch,spectator.yaw,0);}
     }
+    if(state.bomb){this.blast??=new BombEffects(this.scene);const shake=this.blast.update(state.bomb.explosion,delta,this.camera.position,this.quality()==='low');this.camera.rotation.x+=shake.x;this.camera.rotation.y+=shake.y;this.camera.rotation.z+=shake.z;}
     this.scene.render();
     if(this.observer && this.settings.dynamicResolution && performance.now()-this.scaleTimer>1500){
       this.scaleTimer=performance.now();const fps=this.engine.getFps();
@@ -1057,7 +1060,7 @@ export class StrikeRenderer {
     };
   }
   dispose() {
-    this.observer?.disconnect();
+    this.observer?.disconnect();this.blast?.dispose();
     this.fxaa?.dispose(this.camera);this.combatOverlay?.dispose();
     this.shadow?.dispose();
     this.scene.dispose();

@@ -12,6 +12,8 @@ export default function StrikeInputSettings({settings,onChange,gyro}:{settings:S
    <option value="auto">Otomatik · telefon/tablette dokunmatik</option><option value="touch">Mobil · dokunmatik kontroller</option><option value="keyboard">Klavye ve fare</option>
   </select></label>
   <p>Tabletlerde joystick ve dokunmatik düğmeler varsayılan olarak açılır. Harici klavye/fare için düzeni değiştirebilirsin.</p>
+  <label><input type="checkbox" aria-label="Dokunmatik nişan desteği" checked={settings.touchAimAssist!==false} onChange={e=>onChange({touchAimAssist:e.target.checked})}/>Dokunmatik nişan desteği</label>
+  <p>Görünür rakibin yakınında kaydırma %28 yavaşlar. Yalnızca dokunmatik bakışa uygulanır; otomatik nişan veya ateş yoktur. Fare ve jiroskop hassasiyeti değişmez.</p>
   <label>Jiroskop modu<select aria-label="Jiroskop modu" value={settings.gyroMode||'off'} onChange={e=>void changeGyro(e.target.value as 'off'|'ads'|'always')}>
    <option value="off">Kapalı</option><option value="ads">Yalnız nişan alırken (ADS)</option><option value="always">Her zaman</option>
   </select></label>

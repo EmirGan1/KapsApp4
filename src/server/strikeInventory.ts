@@ -1,3 +1,4 @@
+import {caseCost,CREDIT_REWARDS,MAX_CREDITS} from '../games/kapsstrike/economy';
 import type {Client} from '@libsql/client';
 import {randomInt} from 'node:crypto';
 import {emptyInventory,rollCase,cosmetic,COSMETICS,type Inventory} from '../games/kapsstrike/cosmetics';
@@ -9,12 +10,15 @@ export class StrikeInventory {
  private locks = new Map<number, Promise<unknown>>();
 
  constructor(private db?: Client) {}
+ get persistent(){return !!this.db;}
+ private normalize(state:Inventory){state.credits=Number.isSafeInteger(state.credits)&&state.credits!>=0?Math.min(MAX_CREDITS,state.credits!):0;state.freeCases||={};return state;}
 
  private async ensure() {
   if (!this.db) throw new Error('Envanter veritabanı yapılandırılmamış.');
-  await (this.ready ||= this.db.execute(
-   'CREATE TABLE IF NOT EXISTS kapsstrike_inventory (user_id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at INTEGER NOT NULL)'
-  ).catch(e => {
+  await (this.ready ||= this.db.batch([
+   'CREATE TABLE IF NOT EXISTS kapsstrike_inventory (user_id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at INTEGER NOT NULL)',
+   'CREATE TABLE IF NOT EXISTS kapsstrike_credit_rewards (user_id INTEGER NOT NULL,event_id TEXT NOT NULL,amount INTEGER NOT NULL,PRIMARY KEY(user_id,event_id))'
+  ],'write').catch(e => {
    this.ready = undefined;
    throw e;
   }));
@@ -43,7 +47,7 @@ export class StrikeInventory {
    sql: 'SELECT data FROM kapsstrike_inventory WHERE user_id=?',
    args: [id],
   });
-  const state = r.rows.length ? JSON.parse(String(r.rows[0].data)) : emptyInventory();
+  const state = this.normalize(r.rows.length ? JSON.parse(String(r.rows[0].data)) : emptyInventory());
   this.cache.set(id, state);
   return state;
  }
@@ -155,7 +159,7 @@ export class StrikeInventory {
   return next;
  }
 
- private async mutate<T>(id: number, fn: (state: Inventory, updated: number) => T) {
+ private async mutate<T>(id: number, fn: (state: Inventory, updated: number, tx:Awaited<ReturnType<Client['transaction']>>) => T|Promise<T>) {
   await this.ensure();
   const tx = await this.db!.transaction('write');
   try {
@@ -163,8 +167,8 @@ export class StrikeInventory {
     sql: 'SELECT data,updated_at FROM kapsstrike_inventory WHERE user_id=?',
     args: [id],
    });
-   const state: Inventory = row.rows.length ? JSON.parse(String(row.rows[0].data)) : emptyInventory();
-   const result = fn(state, Number(row.rows[0]?.updated_at || 0));
+   const state: Inventory = this.normalize(row.rows.length ? JSON.parse(String(row.rows[0].data)) : emptyInventory());
+   const result = await fn(state, Number(row.rows[0]?.updated_at || 0),tx);
    await tx.execute({
     sql: 'INSERT INTO kapsstrike_inventory(user_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at',
     args: [id, JSON.stringify(state), Date.now()],
@@ -180,11 +184,32 @@ export class StrikeInventory {
   }
  }
 
+ /** Called exclusively by authoritative kill/round events, never by client RPC. */
+ reward(id:number,eventId:string,reason:keyof typeof CREDIT_REWARDS){
+  if(!Number.isSafeInteger(id)||id<=0||!eventId||eventId.length>180||!Object.hasOwn(CREDIT_REWARDS,reason))return Promise.reject(new Error('Geçersiz ödül.'));
+  return this.run(id,()=>this.mutate(id,async(state,_updated,tx)=>{
+   const amount=CREDIT_REWARDS[reason];
+   const r=await tx.execute({sql:'INSERT OR IGNORE INTO kapsstrike_credit_rewards(user_id,event_id,amount) VALUES(?,?,?)',args:[id,eventId,amount]});
+   if(r.rowsAffected)state.credits=Math.min(MAX_CREDITS,(state.credits||0)+amount);
+   return state;
+  }));
+ }
+ adjustCredits(id:number,amount:number,mode:'add'|'set',adminId:number){
+  if(!Number.isSafeInteger(amount)||Math.abs(amount)>MAX_CREDITS||!['add','set'].includes(mode))return Promise.reject(new Error('Geçersiz kredi miktarı.'));
+  return this.run(id,()=>this.mutate(id,state=>{
+   const next=mode==='set'?amount:(state.credits||0)+amount;
+   if(next<0||next>MAX_CREDITS)throw new Error('Bakiye 0–10.000.000 aralığında olmalı.');
+   console.info(`[StrikeAdminAudit] Credits user #${id}: ${state.credits} -> ${next}; admin #${adminId}`);state.credits=next;return state;
+  }));
+ }
  open(id: number, caseId: string) {
   return this.run(id, () =>
    this.mutate(id, (state, _updated) => {
     if (Date.now() - (state.lastOpenedAt || 0) < 2500) throw new Error('Yeni kasa için biraz bekle.');
+    const cost=caseCost(caseId,state.freeCases);
+    if((state.credits||0)<cost)throw new Error(`Yetersiz kredi. Bu kasa ${cost} Kredi.`);
     const item = rollCase(caseId, randomInt(0, 1000000000) / 1000000000);
+    state.credits=(state.credits||0)-cost;state.freeCases![caseId]=true;
     state.owned[item.id] = (state.owned[item.id] || 0) + 1;
     state.opened++;
     state.lastOpenedAt = Date.now();

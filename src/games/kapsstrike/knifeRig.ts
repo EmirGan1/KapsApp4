@@ -52,12 +52,12 @@ export function createKnifeRig(scene:Scene,root:TransformNode,material:(color:st
   let k=0,b=0,h=0;
   if(style==='karambit'){
    if(deploy>=0)k=(1-smooth(deploy))*Math.PI*2;
-   else if(inspect>=0){const t=smooth(Math.max(0,Math.min(1,(inspect-.12)/.76)));k=t*Math.PI*2;}
+   else if(inspect>=0){const t=Math.max(0,Math.min(1,(inspect-.05)/.90));const cycle=Math.min(2,Math.floor(t*3)),local=t*3-cycle;k=(cycle+smooth(local))*Math.PI*2;}
    else k=Math.sin(time*1.9)*.035;
   }
   if(style==='butterfly'){
    if(deploy>=0)[b,h]=keys(deploy,[[0,Math.PI,Math.PI],[.28,2.3,-.5],[.62,-.3,4.8],[.85,.12,6.5],[1,0,Math.PI*2]]);
-   else if(inspect>=0)[b,h]=keys(inspect,[[0,0,0],[.2,Math.PI,Math.PI],[.45,Math.PI*1.7,.3],[.7,Math.PI*2,Math.PI*2],[1,Math.PI*2,Math.PI*2]]);
+   else if(inspect>=0){const t=Math.max(0,Math.min(1,(inspect-.04)/.92)),cycle=Math.min(2,Math.floor(t*3));[b,h]=keys(t*3-cycle,[[0,0,0],[.2,Math.PI,Math.PI],[.45,Math.PI*1.7,.3],[.7,Math.PI*2,Math.PI*2],[1,Math.PI*2,Math.PI*2]]);b+=cycle*Math.PI*2;h+=cycle*Math.PI*2;}
   }
   settle(karambit,k,dt,style==='karambit'&&busy);if(style==='karambit'&&!busy)karambit.rotation.x=k;
   settle(blade,b,dt,style==='butterfly'&&busy);settle(bite,h,dt,style==='butterfly'&&busy);

@@ -165,6 +165,7 @@ export class StrikeServerPlayer {
 
 export class StrikeRoom {
   bomb?:BombMatch;
+  rewardMatchId=randomBytes(12).toString('hex');
   world: StrikeWorld;
   roomCode: string;
   name: string;
@@ -686,7 +687,7 @@ export class KapsStrikeServerManager {
     // Both supported event aliases must never reset an already running round.
     if (room.status === "in_progress") return { success: true };
     if(room.mode==='bomb'&&[...room.players.values()].some(p=>!p.ready))return {success:false,error:'Maç başlamadan önce bütün oyuncular hazır olmalı.'};
-    room.status = "in_progress";
+    room.status = "in_progress";room.rewardMatchId=randomBytes(12).toString('hex');
     room.timeLeft = room.timeLimit;
     room.teamScores = { red: 0, blue: 0 };
     room.killFeed = [];
@@ -789,7 +790,7 @@ export class KapsStrikeServerManager {
     }
 
     if(player.state.hp<=0){reject('dead');return;}
-    if(room.bomb&&!['active','planted'].includes(room.bomb.phase)){reject('round-frozen');return;}
+    if(room.bomb&&!['active','planted','result'].includes(room.bomb.phase)){reject('round-frozen');return;}
     // Cap input queue to prevent packet flooding/replay abuse
     if (player.inputQueue.length >= 24){reject('input-queue-full');return;}
     player.lastQueuedSequence = command.sequence;
@@ -812,9 +813,11 @@ export class KapsStrikeServerManager {
     const mapDef = MAPS[room.map];
     room.tick++;
     if(!room.bomb)advanceWorld(room.world,mapDef,room.tick);
-    if(room.bomb){const b=room.bomb,round=b.round;
+    if(room.bomb){const b=room.bomb,round=b.round,phase=b.phase,explosion=b.explosion;
       for(const p of Object.values(b.players)){const live=room.players.get(p.id);p.alive=!!live&&live.state.hp>0;if(live)p.position={...live.state.movement.position};}
       stepBomb(b,room.tick*C.dt);
+      if(b.explosion&&b.explosion!==explosion)for(const p of room.players.values())if(!b.players[p.id]?.alive&&p.state.hp>0){p.state.hp=0;p.state.deadUntil=room.tick+C.respawnTicks;p.deaths++;p.pendingFire=undefined;p.inputQueue=[];room.addEvent({actor:p.id,kind:'death'});}
+      if(b.phase==='result'&&phase!=='result')for(const p of room.players.values())if(b.players[p.id]?.team===b.winner)this.creditReward(p.userId,`${room.rewardMatchId}:round:${round}`,'round');
       room.teamScores={red:b.scores.T,blue:b.scores.CT};
       if(b.phase==='finished'){this.concludeMatch(room,{team:b.winner==='T'?'red':'blue',reason:b.reason||'Bomba maçı sona erdi'});return;}
       if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];p.pendingFire=undefined;room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
@@ -827,7 +830,7 @@ export class KapsStrikeServerManager {
     // 1. Process player inputs & movement simulation
     room.players.forEach((player) => {
 
-      if(room.bomb&&(room.bomb.phase==='buy'||room.bomb.phase==='result')){player.inputQueue=[];player.heldInput=undefined;player.pendingFire=undefined;return;}
+      if(room.bomb&&room.bomb.phase==='buy'){player.inputQueue=[];player.heldInput=undefined;player.pendingFire=undefined;return;}
       // Handle respawn when dead
       if (player.state.hp <= 0) {
         if (!room.bomb && room.tick >= player.state.deadUntil) {
@@ -859,6 +862,7 @@ export class KapsStrikeServerManager {
         const queued = player.inputQueue.shift();
         const neutral:InputCommand={sequence:player.lastSequence,tick:room.tick,yaw:player.state.yaw,pitch:player.state.pitch,moveX:0,moveZ:0,jump:player.state.movement.jumpHeld,sprint:false,crouch:player.state.movement.stance!=="stand",fire:false,ads:false,reload:false};
         const input:InputCommand=queued || (player.heldInput&&room.tick-player.lastInputTick<Math.min(36,12+Math.ceil(player.ping/1000/C.dt)) ? {...player.heldInput,tick:room.tick,shot:undefined,fire:WEAPONS[player.state.weapon.selected].automatic&&player.heldInput.fire,reload:false,interact:false,weapon:undefined} : neutral);
+        if(room.bomb?.phase==='result'){input.fire=false;input.reload=false;input.interact=false;input.shot=undefined;player.pendingFire=undefined;}
         player.activeCommand=input;
         player.activeReceive=queued?player.receivedInputs.get(input.sequence):undefined;
         if(queued)player.receivedInputs.delete(input.sequence);
@@ -1112,6 +1116,12 @@ export class KapsStrikeServerManager {
     if(pendingHits)pendingHits.push(acknowledge);else acknowledge();
   }
 
+  private rewardTasks=new Set<Promise<void>>();
+  private creditReward(userId:number,eventId:string,reason:'kill'|'round'){
+    if(!this.inventory.persistent)return;
+    const task=(async()=>{for(let attempt=0;attempt<3;attempt++)try{const state=await this.inventory.reward(userId,eventId,reason);this.io.to(`strike-wallet:${userId}`).emit('strike:wallet',{credits:state.credits,reason});return;}catch(error){if(attempt===2)console.error('[StrikeCredits] Reward failed',eventId,error);else await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));}})();
+    this.rewardTasks.add(task);void task.finally(()=>this.rewardTasks.delete(task));
+  }
   private handlePlayerKill(
     room: StrikeRoom,
     killer: StrikeServerPlayer,
@@ -1131,6 +1141,7 @@ export class KapsStrikeServerManager {
     victim.state.deadUntil = room.tick + C.respawnTicks;
 
     killer.kills++;
+    if(killer.userId!==victim.userId)this.creditReward(killer.userId,`${room.rewardMatchId}:kill:${victim.userId}:${victim.deaths}`,'kill');
     killer.score += headshot ? 150 : 100;
     if (headshot) killer.headshots++;
 
@@ -1306,6 +1317,7 @@ export class KapsStrikeServerManager {
    */
   public register(socket: Socket, user: any): void {
     const userIdNum = Number(user.id);
+    void socket.join(`strike-wallet:${userIdNum}`);
     let bombWindow=0,bombRequests=0;
     socket.on('strike:bomb_action',(data:unknown,callback?:unknown)=>{
       const reply=(success:boolean,error?:string)=>{if(typeof callback==='function')callback({success,error});};
@@ -1366,7 +1378,13 @@ export class KapsStrikeServerManager {
       catch(e){cb({success:false,error:e instanceof Error?e.message:'Envanter işlemi başarısız.'});}finally{inventoryBusy=false;}
     });
     // Privilege is verified server-side against authenticated database account
-    socket.on('strike:inventory_admin_check',async(cb:any)=>{
+    socket.on('strike:inventory_admin_credits',async(data:any,cb:any)=>{
+      if(typeof cb!=='function')return;
+      if(!(await verifyAdmin())){cb({success:false,error:'Yetkisiz işlem.'});return;}
+      try{const targetId=Number(data?.userId);if(!Number.isSafeInteger(targetId)||targetId<=0||!['set','add'].includes(data?.mode)||!Number.isSafeInteger(data?.amount))throw new Error('Geçersiz işlem.');const target=await this.inventory.getUser(targetId);if(!target)throw new Error('Kullanıcı bulunamadı.');const state=await this.inventory.adjustCredits(targetId,data.amount,data.mode,userIdNum);cb({success:true,user:{...target,inventory:state}});this.io.to(`strike-wallet:${targetId}`).emit('strike:wallet',{credits:state.credits,reason:'admin'});}
+      catch(e){cb({success:false,error:e instanceof Error?e.message:'Bakiye güncellenemedi.'});}
+    });
+    socket.on('strike:inventory_admin_check' ,async(cb:any)=>{
       if(typeof cb!=='function')return;
       const ok = await verifyAdmin();
       cb({success:true,allowed:ok});

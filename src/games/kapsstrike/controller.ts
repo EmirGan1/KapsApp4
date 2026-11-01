@@ -1,3 +1,4 @@
+import {touchAimFriction} from './aimAssist';
 import {nearestSupply,supplyLabel} from './world';
 import { cleanBindings, held, Bindings, Action } from "./controls";
 import type { Socket } from "socket.io-client";
@@ -426,7 +427,7 @@ export class StrikeController {
           this.callbacks?.onLoadingStage?.("Grafikler hazırlanıyor…");
         }
         const respawned=(this.state.player.hp<=0&&myServerState.hp>0)||(snapshot.bomb?.round!==this.state.bomb?.round);
-        const frozen=!!snapshot.bomb&&!["active","planted"].includes(snapshot.bomb.phase);
+        const frozen=!!snapshot.bomb&&!["active","planted","result"].includes(snapshot.bomb.phase);
         if(frozen)this.unacknowledgedInputs=[];
         const oldPosition={...this.state.player.movement.position};
         const oldBomb=this.state.bomb;
@@ -534,13 +535,14 @@ export class StrikeController {
           interact:this.pendingInteract,
         };
 
-        const frozen=!!this.state.bomb&&!["active","planted"].includes(this.state.bomb.phase);
+        const frozen=!!this.state.bomb&&!["active","planted","result"].includes(this.state.bomb.phase);
         if(this.menuOverlay){cmd.moveX=0;cmd.moveZ=0;cmd.fire=false;cmd.reload=false;cmd.jump=false;cmd.interact=false;cmd.weapon=undefined;}
         const owned=this.state.bomb?.players[this.socket?.id||'']?.weapons;
         // Plant/drop/death removes ownership. Do not leave an invisible bomb
         // selection suppressing the firearm after the held model disappears.
         if(cmd.weapon||this.bombEquipped&&this.state.bomb?.carrier!==this.socket?.id)this.bombEquipped=false;
         if(this.bombEquipped){cmd.fire=false;cmd.reload=false;cmd.ads=false;}
+        if(this.state.bomb?.phase==='result'){cmd.fire=false;cmd.reload=false;cmd.interact=false;}
         if(owned&&cmd.weapon&&!owned.includes(cmd.weapon))cmd.weapon=undefined;
         // Client prediction uses the same round gate as the authoritative server.
         const beforeEvent=this.state.eventId;
@@ -838,7 +840,10 @@ export class StrikeController {
   }
 
   public addTouchLook(deltaX: number, deltaY: number) {
-    const sens = (this.settings.mobileSensitivity || this.settings.sensitivity) * 0.003;
+    const p=this.state.player,m=p.movement,eye={...m.position,y:m.position.y+(m.stance==='stand'?C.eye:C.crouchEye)};
+    const targets=this.isMultiplayer?this.remotePlayerList.filter(r=>r.id!==p.id&&r.id!==this.socket?.id).map(r=>({position:r.position,hp:r.hp,friendly:this.localTeam!=='none'&&r.team===this.localTeam})):this.state.targets;
+    const friction=this.isTouchDevice&&this.settings.touchAimAssist!==false&&p.hp>0&&p.weapon.selected!=='knife'?touchAimFriction(eye,this.yaw,this.pitch,targets,MAPS[this.state.map]):1;
+    const sens = (this.settings.mobileSensitivity || this.settings.sensitivity) * 0.003*friction;
     this.yaw += deltaX * sens;
     this.pitch = clamp(
       this.pitch + deltaY * sens * (this.settings.invertY ? -1 : 1),
