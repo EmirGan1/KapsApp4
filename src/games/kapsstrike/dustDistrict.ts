@@ -75,5 +75,15 @@ export function dustDistrict():MapDefinition{
   const sign=box('site-sign',s.x,s.y+2.8,s.z+s.radius+.3,2.5,1,.1,'#a65b35',true);sign.label='BOMBSITE '+s.id;
  }
  const spawns=[-16,-8,0,8,16].map(dx=>spawn(390+dx,920)).concat([-16,-8,0,8,16].map(dx=>spawn(600+dx,210)));
+ // Matching neighborhood gateway boards at the outer map approaches.
+ for(const [text,x,color] of [
+  ['Gazeteciler Sitesi',-51,'#315c49'],
+  ['Yeni Nesil Eyüp Sitesi',51,'#244f75'],
+ ] as [string,number,string][]){
+  box('neighborhood-sign-post',x,0,0,.18,3.5,.18,'#3b4348',true,'metal');
+  const board=box('neighborhood-sign-board',x,3.45,0,15,1.35,.2,color,true,'metal');
+  board.label=text;
+  box('neighborhood-sign-trim',x,4.18,0,15.2,.08,.24,'#d3ad5d',true,'metal');
+ }
  return{id:'district',name:'Dust II · Reconstruction',subtitle:'Long A, Mid, Catwalk ve B Tunnels',bounds:58,sky:'#b9d8ec',floor:'#c7bba4',solids,spawns,targets:[],hazard:{x:100,z:100,r:0},routes,landmarks:Object.keys(DUST2_AREAS)};
 }
