@@ -2,7 +2,7 @@ import type {Vec3,WeaponId} from './types';
 export type BombSide='T'|'CT';
 export type BombPhase='buy'|'active'|'planted'|'result'|'finished';
 export const BOMB_RULES={buy:15,round:105,plant:3.2,explode:40,defuse:10,kitDefuse:5,transition:5,maxMoney:16000,startMoney:800,winReward:3250,lossReward:1400,lossStep:500,killReward:300,objectiveReward:300};
-export const BOMB_SITES=[{id:'A',x:34.42208,z:37.9984,radius:4},{id:'B',x:-33.75232,z:42.69232,radius:4}] as const;
+export const BOMB_SITES=[{id:'A',x:34.42208,y:3.2,z:37.9984,radius:4},{id:'B',x:-33.75232,y:2.4,z:42.69232,radius:4}] as const;
 export const BOMB_SHOP={pistol:200,smg:1200,rifle:2700,shotgun:1800,sniper:4500,armor:650,kit:400} as const;
 export interface BombPlayer {id:string;team:BombSide;alive:boolean;position:Vec3;money:number;armor:number;kit:boolean;weapons:WeaponId[];plants:number;defuses:number;holdUntil:number}
 export interface BombMatch {phase:BombPhase;round:number;deadline:number;scores:{T:number;CT:number};carrier?:string;position?:Vec3;site?:string;action?:{player:string;kind:'plant'|'defuse';started:number;position:Vec3};winner?:BombSide;reason?:string;target:number;half:number;swapped:boolean;loss:{T:number;CT:number};players:Record<string,BombPlayer>}
@@ -45,7 +45,7 @@ export function bombView(m:BombMatch,id:string):BombMatch {
 export function dropBomb(m:BombMatch,id:string){if(m.carrier!==id||m.phase!=='active')return false;m.position={...m.players[id].position};delete m.carrier;delete m.action;return true;}
 export function bombInteract(m:BombMatch,id:string,held:boolean,now:number){const p=m.players[id];if(!p||!p.alive)return false;p.holdUntil=held?now+.3:0;if(!held){if(m.action?.player===id)delete m.action;return true;}if(m.phase==='active'&&p.team==='T'){
  if(m.position&&!m.carrier&&near(p.position,m.position,2)){m.carrier=id;delete m.position;return true;}
- if(m.carrier===id){const site=BOMB_SITES.find(s=>near(p.position,{x:s.x,y:0,z:s.z},s.radius));if(site&&!m.action)m.action={player:id,kind:'plant',started:now,position:{...p.position}};return !!site;}
+ if(m.carrier===id){const site=BOMB_SITES.find(s=>near(p.position,{x:s.x,y:s.y,z:s.z},s.radius));if(site&&!m.action)m.action={player:id,kind:'plant',started:now,position:{...p.position}};return !!site;}
  }if(m.phase==='planted'&&p.team==='CT'&&m.position&&near(p.position,m.position,2)&&!m.action){m.action={player:id,kind:'defuse',started:now,position:{...p.position}};return true;}return false;}
 function finish(m:BombMatch,side:BombSide,reason:string,now:number){if(m.phase==='result'||m.phase==='finished')return;m.phase='result';m.winner=side;m.reason=reason;m.scores[side]++;m.deadline=now+BOMB_RULES.transition;delete m.action;const loser=side==='T'?'CT':'T';m.loss[side]=0;m.loss[loser]++;for(const p of Object.values(m.players))p.money=Math.min(BOMB_RULES.maxMoney,p.money+(p.team===side?BOMB_RULES.winReward:BOMB_RULES.lossReward+Math.min(4,m.loss[loser]-1)*BOMB_RULES.lossStep));}
 /** Absolute monotonic server time; explosion wins ties, action results are idempotent. */
@@ -53,9 +53,9 @@ export function stepBomb(m:BombMatch,now:number){
  if(m.phase==='finished')return;
  const all=Object.values(m.players);
  if(m.carrier&&!m.players[m.carrier]?.alive)dropBomb(m,m.carrier);
- if(m.action){const a=m.action,p=m.players[a.player];if(!p?.alive||p.holdUntil<now||!near(p.position,a.position,.4)||(a.kind==='plant'&&(!BOMB_SITES.some(s=>near(p.position,{x:s.x,y:0,z:s.z},s.radius))||m.carrier!==p.id))||(a.kind==='defuse'&&(!m.position||!near(p.position,m.position,2))))delete m.action;}
+ if(m.action){const a=m.action,p=m.players[a.player];if(!p?.alive||p.holdUntil<now||!near(p.position,a.position,.4)||(a.kind==='plant'&&(!BOMB_SITES.some(s=>near(p.position,{x:s.x,y:s.y,z:s.z},s.radius))||m.carrier!==p.id))||(a.kind==='defuse'&&(!m.position||!near(p.position,m.position,2))))delete m.action;}
  if(m.phase==='planted'&&now>=m.deadline){finish(m,'T','Bomba patladı',now);return;}
- if(m.action){const a=m.action,p=m.players[a.player],duration=a.kind==='plant'?BOMB_RULES.plant:p.kit?BOMB_RULES.kitDefuse:BOMB_RULES.defuse;if(now-a.started>=duration){if(a.kind==='plant'&&now<m.deadline){m.phase='planted';m.position={...p.position};m.site=BOMB_SITES.find(s=>near(p.position,{x:s.x,y:0,z:s.z},s.radius))?.id;delete m.carrier;m.deadline=now+BOMB_RULES.explode;p.plants++;p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.objectiveReward);delete m.action;}else if(a.kind==='defuse'){p.defuses++;p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.objectiveReward);finish(m,'CT','Bomba çözüldü',now);return;}}}
+ if(m.action){const a=m.action,p=m.players[a.player],duration=a.kind==='plant'?BOMB_RULES.plant:p.kit?BOMB_RULES.kitDefuse:BOMB_RULES.defuse;if(now-a.started>=duration){if(a.kind==='plant'&&now<m.deadline){m.phase='planted';m.position={...p.position};m.site=BOMB_SITES.find(s=>near(p.position,{x:s.x,y:s.y,z:s.z},s.radius))?.id;delete m.carrier;m.deadline=now+BOMB_RULES.explode;p.plants++;p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.objectiveReward);delete m.action;}else if(a.kind==='defuse'){p.defuses++;p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.objectiveReward);finish(m,'CT','Bomba çözüldü',now);return;}}}
  if(m.phase==='active'){if(!all.some(p=>p.team==='T'&&p.alive))finish(m,'CT','Saldıran takım elendi',now);else if(!all.some(p=>p.team==='CT'&&p.alive))finish(m,'T','Savunan takım elendi',now);else if(now>=m.deadline)finish(m,'CT','Raund süresi doldu',now);}
  if(m.phase==='buy'&&now>=m.deadline){m.phase='active';m.deadline=now+BOMB_RULES.round;}
  if(m.phase==='result'&&now>=m.deadline){

@@ -1,0 +1,62 @@
+[
+  {
+    "file": "wall-albedo.webp",
+    "bytes": 1592464,
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/worn_plaster_wall/worn_plaster_wall_diff_2k.jpg",
+    "source_md5": "113c336124507f4b3fc7d440f6fd8346",
+    "size": [
+      2048,
+      2048
+    ]
+  },
+  {
+    "file": "wall-normal.webp",
+    "bytes": 1203248,
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/worn_plaster_wall/worn_plaster_wall_nor_gl_2k.jpg",
+    "source_md5": "737e4eb8ec9af427c8aafe46675409d9",
+    "size": [
+      2048,
+      2048
+    ]
+  },
+  {
+    "file": "wall-roughness.webp",
+    "bytes": 155012,
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/worn_plaster_wall/worn_plaster_wall_rough_2k.jpg",
+    "source_md5": "221e1f80b2b21b7ee68636003a8edb1b",
+    "size": [
+      2048,
+      2048
+    ]
+  },
+  {
+    "file": "stone-albedo.webp",
+    "bytes": 1993084,
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/stone_floor/stone_floor_diff_2k.jpg",
+    "source_md5": "f786fb0cd3c4119fa9db9445f74cf3aa",
+    "size": [
+      2048,
+      2048
+    ]
+  },
+  {
+    "file": "stone-normal.webp",
+    "bytes": 1889956,
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/stone_floor/stone_floor_nor_gl_2k.jpg",
+    "source_md5": "571bf37fbbc581f71a607e0eaf8c0790",
+    "size": [
+      2048,
+      2048
+    ]
+  },
+  {
+    "file": "stone-roughness.webp",
+    "bytes": 926810,
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/stone_floor/stone_floor_rough_2k.jpg",
+    "source_md5": "cc0196a0f255a910575d922f55bb0f95",
+    "size": [
+      2048,
+      2048
+    ]
+  }
+]

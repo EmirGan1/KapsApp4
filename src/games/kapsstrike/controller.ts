@@ -517,7 +517,9 @@ export class StrikeController {
         const frozen=!!this.state.bomb&&!["active","planted"].includes(this.state.bomb.phase);
         if(this.menuOverlay){cmd.moveX=0;cmd.moveZ=0;cmd.fire=false;cmd.reload=false;cmd.jump=false;cmd.interact=false;cmd.weapon=undefined;}
         const owned=this.state.bomb?.players[this.socket?.id||'']?.weapons;
-        if(cmd.weapon)this.bombEquipped=false;
+        // Plant/drop/death removes ownership. Do not leave an invisible bomb
+        // selection suppressing the firearm after the held model disappears.
+        if(cmd.weapon||this.bombEquipped&&this.state.bomb?.carrier!==this.socket?.id)this.bombEquipped=false;
         if(this.bombEquipped){cmd.fire=false;cmd.reload=false;cmd.ads=false;}
         if(owned&&cmd.weapon&&!owned.includes(cmd.weapon))cmd.weapon=undefined;
         // Client prediction uses the same round gate as the authoritative server.

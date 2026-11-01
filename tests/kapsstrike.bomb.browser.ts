@@ -54,7 +54,7 @@ try{
  // Test-only placement at a clear A lane; input/plant/defuse use live production transport.
  room.bomb!.deadline=room.tick/120;
  const ps=[...room.players.values()];
- for(const [index,p] of ps.entries()){p.state.movement.position={x:index===0?34.42208:35.92208,y:0,z:37.9984};p.state.movement.velocity={x:0,y:0,z:0};p.history=[];p.inputQueue=[];p.heldInput=undefined;}
+ for(const [index,p] of ps.entries()){p.state.movement.position={x:index===0?34.42208:35.92208,y:3.2,z:37.9984};p.state.movement.velocity={x:0,y:0,z:0};p.history=[];p.inputQueue=[];p.heldInput=undefined;}
  await a.waitForFunction(()=>(window as any).strike.state.bomb.phase==='active');
  await a.bringToFront();
  const resume=a.getByRole('button',{name:/Oyuna dön|Oyuna Devam Et/i});if(await resume.isVisible())await resume.click();

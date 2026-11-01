@@ -16,6 +16,7 @@ export interface Solid {
   d: number;
   color: string;
   axis?: "x" | "z";
+  reverse?: boolean;
   detail?: boolean;
   hidden?: boolean;
   shape?: "cylinder" | "cone";
