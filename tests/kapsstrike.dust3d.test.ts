@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {MAPS} from '../src/games/kapsstrike/maps';
-import {move,newMovement,raySolid,surface,fits} from '../src/games/kapsstrike/physics';
+import {move,newMovement,raySolid,surface,fits,support} from '../src/games/kapsstrike/physics';
 const map=MAPS.district;
 function walk(start:{x:number;y:number;z:number},target:{x:number;z:number},ticks=1000){
  const m=newMovement(start);let reached=false;
@@ -51,3 +51,11 @@ test('CT underpass connects directly to A Ramp without a T-side detour',()=>{
 test('Upper room exits through B Tunnels into B Site',()=>{let m=walk({x:-38,y:2.4,z:10},{x:-45,z:10});m=walk(m.position,{x:-45,z:33});m=walk(m.position,{x:-34,z:33});m=walk(m.position,{x:-34,z:42});assert.ok(Math.abs(m.position.y-2.4)<.1);});
 
 test('Lower Tunnels exits east through its arch to Mid',()=>{const m=walk({x:-19,y:0,z:10},{x:-5.5,z:10});assert.ok(m.position.y<.1);});
+
+test('B exterior apron and window rear pocket are filled to site level',()=>{
+ const map=MAPS.district;
+ for(const x of [-26,-25,-24])for(const z of [33.5,35,36,41,42,43]){
+  const floor=map.solids.find(s=>s.id.includes('infill')&&Math.abs(x-s.x)<=s.w/2&&Math.abs(z-s.z)<=s.d/2);
+  assert.ok(floor,`filled B pocket ${x},${z}`);assert.equal(floor!.y+floor!.h,2.4);assert.equal(support(map,{x,y:2.4,z},2.41),2.4);
+ }
+});

@@ -40,6 +40,9 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
  box('a-ramp-upper-base',43,0,30,8,1.6,5);
  solids.push({id:'district-a-ramp-upper',kind:'ramp',x:43,y:1.6,z:30,w:8,d:5,h:1.6,axis:'x',reverse:true,color:'#bbac91',surface:'stone'});
  ramp('tunnel-entrance-ramp',-38,-4,7,12,2.4,'z');
+ // Close the ground-level pocket beside B Window without covering its staircase.
+ box('b-apron-infill',-25.5,0,38.7,4,2.4,12.6);
+ box('b-window-rear-infill',-23.5,0,42.5,8,2.4,5);
  ramp('b-doors-ramp',-24,30,10,4.8,2.4,'x',true);
  // Short stairs lead directly onto the Catwalk slab; no isolated test stairs remain.
  for(let i=0;i<32;i++)box('stair-tread-short',13,0,15+(i+.5)*.25,3.3,(i+1)*.1,.255);
@@ -102,5 +105,5 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
  for(const side of [-1,1])for(let k=0;k<4;k++)box('fort-merlon',-42.2+k*1.45,11,49+side*2.3,.65,.65,.55,'#cdb590',true,'stone');
  // Railings stop accidental falls along the short bridge, leaving both ends open.
  for(const side of [-1,1])box('catwalk-parapet',21+side*1.85,3.2,31.5,.3,.85,6);
- return solids.filter(s=>/raised-floor|catwalk-deck|stair-tread|a-ramp|entrance-ramp|doors-ramp/.test(s.id));
+ return solids.filter(s=>/raised-floor|catwalk-deck|stair-tread|a-ramp|entrance-ramp|doors-ramp|infill/.test(s.id));
 }
