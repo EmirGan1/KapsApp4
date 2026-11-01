@@ -202,6 +202,16 @@ export function townMap(id:MapId):MapDefinition {
   landmarks=['deniz kıyısı','üç iskele','yük vinci','gümrük ofisi','depo içleri','açık yükleme alanı'];
  }
 
+ // Neighborhood entry boards: exact place names, carried across each playable district map.
+ const neighborhoodSign=(text:string,x:number,color:string)=>{
+  deco('neighborhood-sign-post',x,0,0,.18,3.5,.18,'#3b4348','metal');
+  const board=deco('neighborhood-sign-board',x,3.45,0,15,1.35,.2,color,'metal');
+  board.label=text;
+  deco('neighborhood-sign-trim',x,4.18,0,15.2,.08,.24,'#d3ad5d','metal');
+ };
+ neighborhoodSign('Gazeteciler Sitesi',-39,'#315c49');
+ neighborhoodSign('Yeni Nesil Eyüp Sitesi',39,'#244f75');
+
  // Purposeful small combat pockets beside the through-routes, with readable cover.
  if(id==='dust'){
   for(const [x,z] of [[-8,-12],[11,36],[9,-36]]){
