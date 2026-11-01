@@ -33,7 +33,7 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
   const pool=locations(map).filter(p=>w.pickups.every(s=>s.opened||Math.hypot(s.position.x-p.x,s.position.z-p.z)>3.5));if(pool.length)w.drop={position:{...pool[Math.floor(random(w)*pool.length)]},warning:tick,landing:w.nextDrop};
  }
  if(w.drop&&tick>=w.drop.landing){
-  w.pickups.push({id:`drop-${++w.serial}`,position:{...w.drop.position},weapon:'railgun',weapons:['railgun','carbine','lmg'],kind:'airdrop',opened:false,expires:tick+DROP_INTERVAL*2});
+  w.pickups.push({id:`drop-${++w.serial}`,position:{...w.drop.position},weapon:(['railgun','carbine','lmg'] as const)[Math.floor(random(w)*3)],kind:'airdrop',opened:false,expires:tick+DROP_INTERVAL*2});
   w.nextDrop=tick+DROP_INTERVAL;w.drop=undefined;
  }
  // Bounded even when a match is configured for a long duration.

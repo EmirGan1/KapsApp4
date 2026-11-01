@@ -8,8 +8,10 @@ test('all kill-race maps contain real heal/shield crates; full, dead and duplica
   s.player.movement.position={...shield.position};s.player.hp=0;assert.equal(claimSupply(world,map,s.player,4),false);s.player.hp=90;s.player.armor=80;assert.ok(claimSupply(world,map,s.player,5));assert.equal(s.player.armor,100);
  }
 });
-test('airdrop grants three distinct weapons atomically and cannot be looted twice',()=>{
- const state=createTraining('dust'),world=state.world!;advanceWorld(world,MAPS.dust,DROP_INTERVAL);const drop=world.pickups.at(-1)!;assert.equal(drop.weapons?.length,3);state.player.movement.position={...drop.position};assert.ok(claimSupply(world,MAPS.dust,state.player,DROP_INTERVAL));assert.equal(state.player.weapon.selected,'railgun');for(const weapon of ['railgun','carbine','lmg'] as const){assert.ok(state.player.weapon.inventory?.includes(weapon));assert.equal(state.player.weapon.ammo[weapon],WEAPONS[weapon].capacity);}assert.equal(claimSupply(world,MAPS.dust,state.player,DROP_INTERVAL+1),false);
+test('each seeded airdrop grants exactly one of three weapons and cannot be claimed twice',()=>{
+ const seen=new Set<string>();for(let seed=1;seed<=60;seed++){
+ const state=createTraining('dust'),world=createWorld(MAPS.dust,seed);advanceWorld(world,MAPS.dust,DROP_INTERVAL);const drop=world.pickups.at(-1)!;assert.ok(['railgun','carbine','lmg'].includes(drop.weapon));assert.equal(drop.weapons,undefined);seen.add(drop.weapon);state.player.movement.position={...drop.position};assert.ok(claimSupply(world,MAPS.dust,state.player,DROP_INTERVAL));assert.deepEqual(state.player.weapon.inventory,[drop.weapon]);assert.equal(state.player.weapon.ammo[drop.weapon],WEAPONS[drop.weapon].capacity);assert.equal(claimSupply(world,MAPS.dust,state.player,DROP_INTERVAL+1),false);
+ }assert.equal(seen.size,3);
 });
 test('training shield takes damage before HP and is finite',()=>{const s=createTraining('dust');s.player.protectedUntil=0;s.player.armor=50;takeDamage(s,30,{x:0,y:0,z:0});assert.equal(s.player.hp,100);assert.equal(s.player.armor,20);takeDamage(s,40,{x:0,y:0,z:0});assert.equal(s.player.hp,80);assert.equal(s.player.armor,0);});
 test('server shields absorb damage, report confirmed shield hits, and reset on respawn',()=>{
@@ -17,8 +19,8 @@ test('server shields absorb damage, report confirmed shield hits, and reset on r
  try{const emitted:any[]=[];const manager=new KapsStrikeServerManager({to:()=>({emit:(event:string,data:any)=>emitted.push({event,data})}),emit(){}} as any);const room=manager.createRoom({id:1,username:'a',avatar:null},'a',{mode:'ffa',map:'dust'});manager.joinRoom(room.roomCode,{id:2,username:'b',avatar:null},'b');manager.startGame('a');manager.stopRoomSimulationLoop(room);room.tick=1000;const [a,b]=[...room.players.values()];for(const [i,p] of [a,b].entries()){p.state.movement.position={x:0,y:0,z:i*5};p.state.protectedUntil=0;p.history=[];}a.state.pitch=Math.atan2(.62,5);b.state.armor=50;(manager as any).verifyAndExecuteShot(room,a,true,room.tick);assert.equal(b.state.hp,100);assert.ok(b.state.armor!<50);assert.ok(emitted.some(e=>e.event==='strike:shot_ack'&&e.data.damage>0));b.state.hp=0;b.state.deadUntil=room.tick;manager.tickSimulation(room);assert.equal(b.state.armor,0);
  }finally{MAPS.dust.solids=solids;}
 });
-test('knife timing is 3–4 times faster, and all four shapes have unlockable skin variants without changing case rarity',()=>{
- for(const style of ['karambit','butterfly']){const t=knifeTiming(style);assert.ok(2.4/t.inspect>=3&&2.4/t.inspect<=4);assert.ok(.65/t.deploy>=3&&.65/t.deploy<=4);}
+test('knife draw is 25% slower with extended inspections, and all four shapes have unlockable skin variants without changing case rarity',()=>{
+ for(const style of ['karambit','butterfly']){const t=knifeTiming(style);assert.equal(t.inspect,2.6);assert.ok(Math.abs(.18/t.deploy-.75)<1e-8);}
  for(const style of ['karambit','butterfly','tanto','default'])assert.ok(COSMETICS.filter(c=>c.weapon==='knife'&&c.knife===style).length>=4);
  assert.deepEqual(cleanLoadout({knife:'knife-karambit-2'}),{knife:'knife-karambit-2'});const rewards=caseRewards('arsenal');assert.ok(Math.abs(rewards.filter(r=>r.item.weapon==='knife').reduce((a,r)=>a+r.chance,0)-5)<1e-6);
  assert.equal(GRAPHICS.low.surface,0);assert.equal(GRAPHICS.low.shadow,0);assert.ok(GRAPHICS.low.pixelScale<1);assert.equal(GRAPHICS.high.shadow,2048);
@@ -38,8 +40,8 @@ test('actual renderer finishes fast inspect/deploy at 60 FPS and new skins keep 
  const engine=new NullEngine(),r=new StrikeRenderer({} as HTMLCanvasElement,MAPS.dust,{...DEFAULT_SETTINGS,quality:'low'},engine),state=createTraining('dust');state.player.weapon.selected='knife';
  try{for(const style of ['karambit','butterfly','tanto','default']){
   const item=COSMETICS.find(c=>c.id===`knife-${style}-1`)!;r.updateSettings({...DEFAULT_SETTINGS,quality:'low',cosmeticLoadout:{knife:item.id}});r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.ok((r as any).knifeDeployTimer>0);
-  for(let i=0;i<18;i++)r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.equal((r as any).knifeDeployTimer,0);r.inspect();const duration=(r as any).inspectTime;assert.ok(duration<=.95);
-  for(let i=0;i<60;i++)r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.equal((r as any).inspectTime,0);
+  for(let i=0;i<18;i++)r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.equal((r as any).knifeDeployTimer,0);r.inspect();const duration=(r as any).inspectTime;assert.ok(duration<=2.6);
+  for(let i=0;i<170;i++)r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.equal((r as any).inspectTime,0);
   const meshes=r.scene.getTransformNodeByName('knife')!.getChildMeshes();assert.ok(meshes.filter(m=>m.metadata?.knifeStyle===style&&m.metadata?.knifePart==='blade').every(m=>m.isEnabled()));assert.ok(meshes.filter(m=>m.metadata?.knifeStyle&&m.metadata.knifeStyle!==style).every(m=>!m.isEnabled()));
  }}finally{r.dispose();}
 });

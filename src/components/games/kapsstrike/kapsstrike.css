@@ -1344,3 +1344,24 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
 .ks-shield{color:#70caff;margin-top:4px}.ks-shield meter{accent-color:#41b6fa;width:100%}.ks-loot-notice{position:absolute;bottom:24%;left:50%;transform:translateX(-50%);max-width:80%;padding:9px 16px;border-radius:12px;background:#112b40eb;color:#a9e7ff;pointer-events:none;text-align:center}
 
 .ks-shield meter::-webkit-meter-optimum-value{background:#42b7fa}.ks-shield meter::-moz-meter-bar{background:#42b7fa}
+
+.ks-wallet{display:block;color:#a4f1cf;font-size:22px;margin:8px 0}.ks-admin-wallet{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:14px;border:1px solid #477563;border-radius:12px;margin-bottom:18px}.ks-admin-wallet h3,.ks-admin-wallet small{flex-basis:100%}.ks-admin-wallet input{max-width:180px;min-height:44px;color:#edf7ff;background:#142735;padding:8px;border:1px solid #6a8495;border-radius:8px}
+.ks-round-banner{position:absolute;z-index:100;top:24%;left:50%;transform:translateX(-50%);width:min(420px,80%);padding:16px 24px;border:1px solid var(--round-color);border-radius:12px;background:linear-gradient(110deg,#101d2bf5,color-mix(in srgb,var(--round-color) 25%,#101d2bf5));box-shadow:0 12px 35px #0005;text-align:center;pointer-events:none;display:grid;gap:6px;color:#fff}.ks-round-banner b{font-size:24px;color:var(--round-color)}.ks-round-banner small{color:#dbe7ef}.ks-round-T{--round-color:#efb564}.ks-round-CT{--round-color:#58b8f7}
+/* Tablet layouts follow the selected input mode, including iPad desktop user agents. */
+@media(min-width:700px){
+ .ks-touch-layout .ks-health{position:absolute;top:100px;bottom:auto;left:max(16px,env(safe-area-inset-left));width:156px;padding:10px!important}
+ .ks-touch-layout .ks-health strong{font-size:30px}.ks-touch-layout .ks-health>span{display:none}
+ .ks-touch-layout .ks-minimap{left:auto;right:max(16px,env(safe-area-inset-right));top:100px;width:140px}
+ .ks-touch-layout .ks-compact-weapon-card{bottom:max(22px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);max-width:220px}
+ .ks-touch-layout .ks-pause-gear-btn{top:max(14px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));min-width:48px;min-height:48px}
+ .ks-touch-layout .ks-bottom{position:static}.ks-touch-layout button{min-height:44px}
+ .ks-touch-layout .ks-bomb-objective.is-touch{top:270px;left:16px;width:215px}
+ .ks-touch-layout .ks-panel-content{padding-bottom:max(20px,env(safe-area-inset-bottom))}
+ .ks-touch-layout .ks-feature-card{max-height:calc(100dvh - 32px);width:min(920px,calc(100vw - 32px))}
+ .ks-touch-layout .ks-supply-prompt{bottom:265px;max-width:50vw;left:50%;transform:translateX(-50%)}
+}
+@media(min-width:700px) and (orientation:portrait){.ks-touch-layout .ks-touch-joystick-zone{bottom:max(30px,env(safe-area-inset-bottom))}.ks-touch-layout .ks-round-banner{top:35%}.ks-touch-layout .ks-bomb-objective.is-touch{top:275px}}
+@media(min-width:700px){
+ .ks-root.ks-touch-layout:has(.ks-bomb-objective) .ks-health{top:100px;left:16px;width:156px;padding:10px!important}
+ .ks-root.ks-touch-layout:has(.ks-bomb-objective) .ks-compact-weapon-card{top:auto;right:auto;left:50%;bottom:max(22px,env(safe-area-inset-bottom));transform:translateX(-50%);max-width:220px}
+}

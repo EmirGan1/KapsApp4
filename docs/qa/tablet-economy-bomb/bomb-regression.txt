@@ -1,0 +1,5 @@
+mode selected
+playing T · Saldırı · $800 · Zırh 0Bomba sende · A veya B bölgesine ilerleB · Satın alma menüsü
+plant-ready { active: true, locked: true, hud: true }
+PASS two independent Chromium contexts: create/join/ready/start; desktop pointer-lock buy/ESC; tablet buy; phone overflow; authoritative plant/kit-defuse/score/next round; no page errors. Test placements/timer override documented.
+browser closed

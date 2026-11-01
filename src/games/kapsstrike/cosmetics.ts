@@ -17,6 +17,6 @@ export function caseRewards(id:string):{item:Cosmetic;chance:number}[]{
 }
 /** Roll is supplied by cryptographic server RNG, never by the client. */
 export function rollCase(id:string,roll:number){const pool=caseRewards(id);if(!pool.length||!Number.isFinite(roll)||roll<0||roll>=1)throw new Error('Geçersiz kasa.');let n=roll*100;for(const r of pool){n-=r.chance;if(n<0)return r.item;}return pool[pool.length-1].item;}
-export interface Inventory {owned:Record<string,number>;equipped:Partial<Record<WeaponId,string>>;opened:number;lastOpenedAt?:number}
-export function emptyInventory():Inventory{return {owned:{},equipped:{},opened:0};}
+export interface Inventory {owned:Record<string,number>;equipped:Partial<Record<WeaponId,string>>;opened:number;lastOpenedAt?:number;credits?:number;freeCases?:Record<string,boolean>}
+export function emptyInventory():Inventory{return {owned:{},equipped:{},opened:0,credits:0,freeCases:{}};}
 export function cleanLoadout(value:unknown):Inventory['equipped']{const out:Inventory['equipped']={};if(value&&typeof value==='object')for(const [weapon,id] of Object.entries(value)){const c=cosmetic(id);if(c&&c.weapon===weapon)out[c.weapon]=c.id;}return out;}

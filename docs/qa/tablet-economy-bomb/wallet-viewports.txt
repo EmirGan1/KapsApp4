@@ -1,0 +1,4 @@
+PASS account case / equip / reload / viewport 390 844
+PASS account case / equip / reload / viewport 844 390
+PASS account case / equip / reload / viewport 768 1024
+PASS account case / equip / reload / viewport 1440 900

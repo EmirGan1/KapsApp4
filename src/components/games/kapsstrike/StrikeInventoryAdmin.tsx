@@ -22,6 +22,7 @@ const CATEGORIES: { id: string; label: string; weapons?: WeaponId[] }[] = [
 
 export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | null }) {
   const [allowed, setAllowed] = useState(false);
+  const [creditAmount,setCreditAmount]=useState('100');
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -76,6 +77,11 @@ export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | nul
 
   const activeUser = users.find((u) => u.id === selectedId);
 
+  const changeCredits=(mode:'add'|'set')=>{
+    if(!allowed||!socket?.connected||busy||!activeUser)return;
+    const amount=Number(creditAmount);if(!creditAmount.trim()||!Number.isSafeInteger(amount)){notify('Tam sayı gir.','error');return;}setBusy(true);
+    socket.timeout(8000).emit('strike:inventory_admin_credits',{userId:activeUser.id,amount,mode},(e:any,r:any)=>{setBusy(false);if(e||!r?.success){notify(r?.error||'Bakiye güncellenemedi.','error');return;}setUsers(prev=>prev.map(u=>u.id===activeUser.id?r.user:u));notify(`@${activeUser.username}: ${r.user.inventory.credits} Kredi`,'success');});
+  };
   // Filter cosmetics for active user
   const filteredCosmetics = useMemo(() => {
     if (!activeUser) return [];
@@ -354,6 +360,7 @@ export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | nul
             </div>
           </div>
 
+          <section className="ks-admin-wallet" aria-label="Kullanıcı para yönetimi"><h3>Hesap bakiyesi: {activeUser.inventory.credits||0} Kredi</h3><label>Kredi miktarı<input aria-label="Kredi miktarı" type="number" min="-10000000" max="10000000" step="1" value={creditAmount} onChange={e=>setCreditAmount(e.target.value)}/></label><button disabled={busy} onClick={()=>changeCredits('add')}>Ekle / Çıkar</button><button disabled={busy} onClick={()=>changeCredits('set')}>Bakiyeyi ayarla</button><small>Negatif miktar mevcut bakiyeden düşer. Bakiye 0'ın altına inemez.</small></section>
           {/* Filter & Search Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4">
             <input

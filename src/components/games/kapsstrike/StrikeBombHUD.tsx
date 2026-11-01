@@ -63,6 +63,7 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
   })}</div>;
   return <>
     <header className="ks-tactical-bar">{cards('CT')}<div className="ks-bomb-score"><div><b>CT {bomb.scores.CT}</b><strong>{Math.max(0,Math.ceil(bomb.deadline-now))}<small>sn</small></strong><b>{bomb.scores.T} T</b></div><small>RAUND {bomb.round} · {phases[bomb.phase]}</small></div>{cards('T')}</header>
+    {(bomb.phase==='result'||bomb.phase==='finished')&&bomb.winner&&<div className={`ks-round-banner ks-round-${bomb.winner}`} role="status"><b>{bomb.winner==='CT'?'CT · Savunma':'T · Saldırı'} kazandı</b><span>{bomb.reason}</span><small>{bomb.phase==='finished'?'Maç tamamlandı':`Yeni raund ${Math.max(0,Math.ceil(bomb.deadline-now))} sn içinde`}</small></div>}
     <aside className={`ks-bomb-objective ${touch?'is-touch':'is-desktop'}`}>
       <span>{me?.team==='CT'?'CT · Savunma':'T · Saldırı'} · ${me?.money||0} · Zırh {Math.ceil(me?.armor||0)}</span>
       {bomb.carrier===socket?.id&&<strong>Bomba sende · A veya B bölgesine ilerle</strong>}

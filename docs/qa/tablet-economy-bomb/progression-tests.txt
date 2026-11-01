@@ -1,0 +1,20 @@
+[StrikeAdminAudit] Credits user #1: 0 -> 500; admin #9
+[StrikeAdminAudit] Credits user #1: 120 -> 200; admin #9
+[StrikeAdminAudit] Credits user #1: 0 -> 100; admin #9
+[StrikeAdminAudit] Credits user #1: 100 -> 80; admin #9
+BJS - [17:26:40]: Babylon.js v8.50.2 - Null engine
+✔ every case has its own first free opening; repeat opening charges exactly the displayed price (10.30723ms)
+✔ reward replay is idempotent across store instances; opening and debit commit atomically (4.881702ms)
+✔ legacy accounts retain owned/equipped skins and get per-case entitlements; admin balances validate bounds (1.603819ms)
+✔ blast kills both teams inside 18m in 3D, leaves distant survivors, and fires once (0.581924ms)
+✔ server persists confirmed kill and round rewards, permits survivor movement during result, blocks result firing (9.456122ms)
+✔ touch friction affects visible nearby living enemies only; never behind walls, allies, far targets or aim outside cone (0.34006ms)
+✔ blast visuals allocate once, show shockwave/fire/smoke, shake decays without changing gameplay aim, clean up (289.878157ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2623.991698

@@ -1,0 +1,1 @@
+PASS actual production blast renderer: fireball, expanding shockwave, drifting smoke, 60 frames, no page errors

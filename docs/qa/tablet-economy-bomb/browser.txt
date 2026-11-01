@@ -1,0 +1,9 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> react-example@0.0.0 test:strike:progression
+> node --import tsx tests/kapsstrike.progression.browser.ts
+
+[StrikeAdminAudit] Credits user #2: 0 -> 450; admin #1
+PASS per-case free opening, paid debit, reload persistence, live admin balance and rejected unauthorized credit RPC
+PASS iPad desktop-UA detection, persisted aim-support toggle, portrait/landscape HUD, touch buy menu and real joystick movement
+PASS two independent clients: 18m blast death, distant survivor, T-colored result banner, movement before next round and one durable win reward
