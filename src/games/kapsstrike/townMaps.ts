@@ -97,7 +97,7 @@ export function townMap(id:MapId):MapDefinition {
  let landmarks:string[]=[];
  const photoAnchors:{image:string;aspect:number;x:number;y:number;z:number;wallLength:number;wallHeight:number;rotationY:number}[]=[];
  const photo=(asset:number,x:number,y:number,z:number,wallLength:number,wallHeight:number,rotationY:number)=>{
-  const aspects=[.5625,.5625,4/3,16/9,.75,4/3];
+  const aspects:[number,number,number,number,number,number]=[.5625,.5625,4/3,16/9,.75,4/3];
   photoAnchors.push({image:`/kapsstrike/photos/photo-${String(asset).padStart(2,'0')}.jpg`,aspect:aspects[asset-1],x,y,z,wallLength,wallHeight,rotationY});
  };
  if(id==='dust'){
