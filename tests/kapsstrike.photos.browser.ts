@@ -11,6 +11,6 @@ try{for(const map of ['dust','warehouse','neon','district']){
   const textures=[];for(const m of mats){const pixels=await m.diffuseTexture.readPixels();let min=255,max=0;for(let i=0;i<pixels.length;i+=4){min=Math.min(min,pixels[i]);max=Math.max(max,pixels[i]);}textures.push({ready:m.diffuseTexture.isReady(),min,max});}
   const f=r.map.photoFrames[0];r.camera.position.set(f.x+Math.sin(f.rotationY)*8,f.y,f.z+Math.cos(f.rotationY)*8);r.camera.setTarget(r.camera.position.clone().set(f.x,f.y,f.z));r.scene.fogMode=0;r.scene.render();
   return {textures,frames:r.map.photoFrames.length};
- });assert.equal(result.textures.length,6);assert.ok(result.frames>=6);for(const t of result.textures){assert.ok(t.ready);assert.ok(t.max-t.min>100,'photo has actual color data');}
+ });assert.equal(result.textures.length,15);assert.ok(result.frames>=15);for(const t of result.textures){assert.ok(t.ready);assert.ok(t.max-t.min>100,'photo has actual color data');}
  await page.screenshot({path:`/tmp/photo-fixed-${map}.png`});assert.deepEqual(errors,[]);console.log('PASS production renderer',map,result.frames,'frames, six decoded nonblack textures');await page.close();
 }}finally{await browser.close();await vite.close();}

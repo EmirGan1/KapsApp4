@@ -615,7 +615,8 @@ export class KapsStrikeServerManager {
     this.socketToRoom.delete(socketId);
     if(this.userToRoom.get(userId)===roomCode)this.userToRoom.delete(userId);
 
-    if (room.players.size === 0) {
+    const hasHuman = [...room.players.values()].some((p) => !p.id.startsWith("bot-"));
+    if (room.players.size === 0 || !hasHuman) {
       if (room.loopInterval) {
         clearInterval(room.loopInterval);
         room.loopInterval = null;
@@ -668,7 +669,7 @@ export class KapsStrikeServerManager {
     return true;
   }
 
-  public startGame(socketId: string): { success: boolean; error?: string } {
+  public startGame(socketId: string, options?: { fillBot?: boolean }): { success: boolean; error?: string } {
     const roomCode = this.socketToRoom.get(socketId);
     if (!roomCode) return { success: false, error: "Oda bulunamadı." };
     const room = this.rooms.get(roomCode);
@@ -681,6 +682,28 @@ export class KapsStrikeServerManager {
 
     if (room.players.size < 1) {
       return { success: false, error: "Odada en az 1 oyuncu olmalıdır." };
+    }
+
+    if (options?.fillBot && room.mode === "bomb") {
+      const hasRed = [...room.players.values()].some((p) => p.team === "red");
+      const hasBlue = [...room.players.values()].some((p) => p.team === "blue");
+      if (!hasRed || !hasBlue) {
+        const botTeam: StrikeTeam = !hasBlue ? "blue" : "red";
+        const botId = `bot-${room.roomCode}`;
+        const botSpawn = room.getSpawnPosition(botTeam, 0);
+        const botPlayer = new StrikeServerPlayer(
+          botId,
+          999999,
+          botTeam === "blue" ? "KapsBot [CT]" : "KapsBot [T]",
+          null,
+          botTeam === "blue" ? "#3b82f6" : "#ef4444",
+          botTeam,
+          botSpawn,
+          false
+        );
+        botPlayer.ready = true;
+        room.players.set(botId, botPlayer);
+      }
     }
 
     if(room.mode==='bomb'&&(room.players.size<2||!['red','blue'].every(t=>[...room.players.values()].some(p=>p.team===t))))return {success:false,error:'Her takımda en az bir oyuncu gerekli.'};
@@ -1334,6 +1357,15 @@ export class KapsStrikeServerManager {
         this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(success);return;
       }
       if(request.kind==='drop'){reply(dropBomb(b,socket.id));return;}
+      if(request.kind==='fast_detonate'){
+        if(b.phase==='planted'){
+          b.deadline=Math.min(b.deadline,now+2.2);
+          reply(true);
+          return;
+        }
+        reply(false,'Önce bombayı kurmalısın.');
+        return;
+      }
       if(request.kind==='hold'&&typeof request.held==='boolean'){
         // Objective interaction cannot reach through a wall, even at close range.
         const player=room.players.get(socket.id)!;
@@ -1575,8 +1607,10 @@ export class KapsStrikeServerManager {
     });
 
     // 8. Start Game (Host only - supports strike:start_game and strike:start_match)
-    const handleStartMatch = (cb?: (res: { success: boolean; error?: string }) => void) => {
-      const res = this.startGame(socket.id);
+    const handleStartMatch = (arg1?: any, arg2?: any) => {
+      const cb = typeof arg1 === "function" ? arg1 : typeof arg2 === "function" ? arg2 : undefined;
+      const opts = arg1 && typeof arg1 === "object" ? arg1 : undefined;
+      const res = this.startGame(socket.id, opts);
       if (cb) cb(res);
     };
     socket.on("strike:start_game", handleStartMatch);

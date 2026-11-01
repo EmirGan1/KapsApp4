@@ -657,12 +657,17 @@ export default function KapsStrikeGame({
   const startMatchAsHost = () => {
     if (!socket || !currentRoom) return;
     setError("");
-    socket.emit("strike:start_game", (res?: { success: boolean; error?: string }) => {
+    const needBot = currentRoom.mode === "bomb" && currentRoom.players.length < 2;
+    const cb = (res?: { success: boolean; error?: string }) => {
       if (res && !res.success && res.error) {
         setError(res.error);
       }
-    });
-
+    };
+    if (needBot) {
+      socket.emit("strike:start_game", { fillBot: true }, cb);
+    } else {
+      socket.emit("strike:start_game", cb);
+    }
   };
 
   const returnToLobbyAsHost = () => {
@@ -1170,6 +1175,15 @@ export default function KapsStrikeGame({
                 {hud.score} skor · {Math.round(hud.dps)} DPS ·{" "}
                 {Math.round(hud.damage)} hasar
               </span>
+              {!hud.isMultiplayer && (
+                <button
+                  type="button"
+                  onClick={() => game.current?.triggerDemoBomb()}
+                  className="mt-1 px-2.5 py-1 rounded bg-red-600/80 hover:bg-red-500 text-white text-xs font-bold border border-red-400/50 shadow pointer-events-auto"
+                >
+                  💣 [7] C4 Kur & Patlat (Test)
+                </button>
+              )}
             </div>
           </div>
 

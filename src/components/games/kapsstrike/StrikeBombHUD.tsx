@@ -61,9 +61,15 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
       {!p.alive&&<b className="ks-bomb-dead" aria-label="Ölü">×</b>}<small>{name}</small>{bomb.carrier===p.id&&<i title="Bomba taşıyıcı">◆</i>}
     </div>;
   })}</div>;
+  const plantDuration=bomb.action?.kind==='plant'?BOMB_RULES.plant:(me?.kit?BOMB_RULES.kitDefuse:BOMB_RULES.defuse);
+  const actionElapsed=bomb.action?Math.max(0,Math.min(plantDuration,now-bomb.action.started)):0;
+  const actionRatio=bomb.action?Math.min(1,actionElapsed/plantDuration):0;
+  const c4Code='7355608';
+  const typedCode=bomb.action?.kind==='plant'?c4Code.slice(0,Math.max(1,Math.ceil(actionRatio*c4Code.length))).padEnd(c4Code.length,'_'):'';
+  const soloOrBotMatch=players.filter(p=>!String(p.id).startsWith('bot-')).length<=1;
   return <>
     <header className="ks-tactical-bar">{cards('CT')}<div className="ks-bomb-score"><div><b>CT {bomb.scores.CT}</b><strong>{Math.max(0,Math.ceil(bomb.deadline-now))}<small>sn</small></strong><b>{bomb.scores.T} T</b></div><small>RAUND {bomb.round} · {phases[bomb.phase]}</small></div>{cards('T')}</header>
-    {(bomb.phase==='result'||bomb.phase==='finished')&&bomb.winner&&<div className={`ks-round-banner ks-round-${bomb.winner}`} role="status"><b>{bomb.winner==='CT'?'CT · Savunma':'T · Saldırı'} kazandı</b><span>{bomb.reason}</span><small>{bomb.phase==='finished'?'Maç tamamlandı':`Yeni raund ${Math.max(0,Math.ceil(bomb.deadline-now))} sn içinde`}</small></div>}
+    {(bomb.phase==='result'||bomb.phase==='finished')&&bomb.winner&&<div className={`ks-round-banner ks-round-${bomb.winner}`} role="status"><b>{bomb.explosion?'💥 C4 PATLADI · ':''}{bomb.winner==='CT'?'CT · Savunma':'T · Saldırı'} kazandı</b><span>{bomb.reason}</span><small>{bomb.phase==='finished'?'Maç tamamlandı':`Yeni raund ${Math.max(0,Math.ceil(bomb.deadline-now))} sn içinde`}</small></div>}
     <aside className={`ks-bomb-objective ${touch?'is-touch':'is-desktop'}`}>
       <span>{me?.team==='CT'?'CT · Savunma':'T · Saldırı'} · ${me?.money||0} · Zırh {Math.ceil(me?.armor||0)}</span>
       {bomb.carrier===socket?.id&&<strong>Bomba sende · A veya B bölgesine ilerle</strong>}
@@ -73,8 +79,9 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
         {bomb.carrier===socket?.id&&<button onClick={onEquipBomb}>Bombayı ele al</button>}
         {bomb.carrier===socket?.id&&<button onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop'})}>Bombayı bırak</button>}
       </div>:<span>{label(interactKey)} basılı tut · Kur / Çöz / Al{bomb.carrier===socket?.id?' · 7: Bombayı ele al · G: Bırak':''}</span>)}
-      {bomb.action&&<label>{bomb.action.kind==='plant'?'Bomba kuruluyor':'Bomba çözülüyor'}<progress max={bomb.action.kind==='plant'?BOMB_RULES.plant:me?.kit?BOMB_RULES.kitDefuse:BOMB_RULES.defuse} value={Math.max(0,now-bomb.action.started)}/></label>}
-      {bomb.phase==='planted'&&<strong role="alert">Bomba {bomb.site} bölgesine kuruldu!</strong>}
+      {bomb.action&&<label>{bomb.action.kind==='plant'?`Bomba kuruluyor [${typedCode}]`:'Bomba çözülüyor'}<progress max={plantDuration} value={actionElapsed}/></label>}
+      {bomb.phase==='planted'&&<strong role="alert">💣 Bomba {bomb.site} bölgesine kuruldu! ({Math.max(0,Math.ceil(bomb.deadline-now))} sn)</strong>}
+      {bomb.phase==='planted'&&soloOrBotMatch&&<button type="button" onClick={()=>socket?.emit('strike:bomb_action',{kind:'fast_detonate'})} style={{marginTop:4,padding:'4px 10px',fontSize:12,background:'rgba(239,68,68,0.28)',border:'1px solid rgba(248,113,113,0.6)',borderRadius:6,color:'#fecaca',fontWeight:700}}>💥 Hızlı Patlat (Test)</button>}
       {bomb.reason&&<strong role="status">{bomb.winner} kazandı · {bomb.reason}</strong>}
       {!me?.alive&&<span>Elendin · Yeni raundda yeniden doğacaksın.</span>}
     </aside>

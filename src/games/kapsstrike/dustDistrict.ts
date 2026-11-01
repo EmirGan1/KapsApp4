@@ -85,8 +85,23 @@ export function dustDistrict():MapDefinition{
   board.label=text;
   box('neighborhood-sign-trim',x,4.18,0,15.2,.08,.24,'#d3ad5d',true,'metal');
  }
- // Exterior photo frames use exposed city-block walls beside walkable alleys.
+ // Interior & exterior photo frames across tunnels, chambers and exposed city-block walls.
  const photoFrames:NonNullable<MapDefinition['photoFrames']>=[];
+ const photoAspects:readonly number[]=[.5625,.5625,4/3,16/9,.75,4/3,.75,1.803,4/3,4/3,4/3,4/3,.75,.75,.75];
+ const interiorSlots:{x:number;y:number;z:number;rotationY:number;wallLength:number;wallHeight:number}[]=[
+  // B Tunnels interior walls
+  {x:-47.28,y:4.3,z:17.5,rotationY:Math.PI/2,wallLength:5.2,wallHeight:3.4},
+  {x:-42.72,y:4.3,z:26.5,rotationY:-Math.PI/2,wallLength:5.2,wallHeight:3.4},
+  {x:-47.28,y:4.3,z:26.5,rotationY:Math.PI/2,wallLength:5.2,wallHeight:3.4},
+  // Upper Tunnels interior walls
+  {x:-42.75,y:4.3,z:4.5,rotationY:Math.PI/2,wallLength:4.4,wallHeight:3.4},
+  {x:-28.25,y:4.3,z:5.1,rotationY:-Math.PI/2,wallLength:5.0,wallHeight:3.4},
+  // Lower Tunnels interior walls
+  {x:-17.5,y:1.85,z:11.98,rotationY:Math.PI,wallLength:4.8,wallHeight:2.6},
+  {x:-13.5,y:1.85,z:8.02,rotationY:0,wallLength:4.8,wallHeight:2.6},
+  // CT Underpass interior wall
+  {x:22,y:1.55,z:31.85,rotationY:0,wallLength:4.2,wallHeight:2.2},
+ ];
  const facades:{solid:Solid;x:number;z:number;rotationY:number;wallLength:number}[]=[];
  for(const wall of solids.filter(s=>s.id.includes('city-block'))){
   for(const side of [-1,1]){
@@ -97,13 +112,31 @@ export function dustDistrict():MapDefinition{
   }
  }
  facades.sort((a,b)=>b.wallLength-a.wallLength);
- const photoAspects:[number,number,number,number,number,number]=[.5625,.5625,4/3,16/9,.75,4/3],usedWalls=new Set<string>();
+ const exteriorSlots:{x:number;y:number;z:number;rotationY:number;wallLength:number;wallHeight:number}[]=[];
+ const usedWalls=new Set<string>();
  for(const facade of facades){
-  if(photoFrames.length>=6)break;
+  if(exteriorSlots.length>=12)break;
   if(usedWalls.has(facade.solid.id)||facade.wallLength<5||facade.solid.h<5)continue;
-  const index=photoFrames.length+1,aspect=photoAspects[index-1],height=Math.min(facade.solid.h*.65,facade.wallLength*.65/aspect);
-  photoFrames.push({id:`district-photo-frame-${index}`,image:`/kapsstrike/photos/photo-${String(index).padStart(2,'0')}.jpg`,x:facade.x,y:facade.solid.h*.54,z:facade.z,width:height*aspect,height,rotationY:facade.rotationY});
+  exteriorSlots.push({x:facade.x,y:facade.solid.h*.54,z:facade.z,rotationY:facade.rotationY,wallLength:facade.wallLength,wallHeight:facade.solid.h});
   usedWalls.add(facade.solid.id);
+ }
+ const allSlots=[... exteriorSlots.slice(0,8), ...interiorSlots, ...exteriorSlots.slice(8)];
+ const order=[1,8,3,11,5,14,2,9,6,12,4,15,7,10,13];
+ for(let i=0;i<allSlots.length;i++){
+  const slot=allSlots[i];
+  const photoNum=order[i%order.length];
+  const aspect=photoAspects[photoNum-1];
+  const height=Math.min(slot.wallHeight*.65,slot.wallLength*.65/aspect);
+  photoFrames.push({
+   id:`district-photo-frame-${i+1}`,
+   image:`/kapsstrike/photos/photo-${String(photoNum).padStart(2,'0')}.jpg`,
+   x:slot.x,
+   y:slot.y,
+   z:slot.z,
+   width:height*aspect,
+   height,
+   rotationY:slot.rotationY,
+  });
  }
  return{id:'district',name:'Dust II · Reconstruction',subtitle:'Long A, Mid, Catwalk ve B Tunnels',bounds:58,sky:'#b9d8ec',floor:'#c7bba4',solids,photoFrames,spawns,targets:[],hazard:{x:100,z:100,r:0},routes,landmarks:Object.keys(DUST2_AREAS)};
 }

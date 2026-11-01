@@ -81,3 +81,58 @@ test('explosion payload reaches both teams including the dead victim during resu
  b.phase='planted';b.position={x:0,y:0,z:0};b.deadline=1;stepBomb(b,1);
  for(const id of ['t','ct']){const v=bombView(b,id);assert.ok(v.explosion);assert.equal(v.phase,'result');assert.equal(v.explosion!.at,1);assert.equal(v.players[id].alive,false);}
 });
+
+test('all 15 photos are placed in every map across interior and exterior walls',async()=>{
+ const {MAPS}=await import('../src/games/kapsstrike/maps');
+ const expectedPhotos=Array.from({length:15},(_,i)=>`/kapsstrike/photos/photo-${String(i+1).padStart(2,'0')}.jpg`);
+ for(const map of Object.values(MAPS)){
+  assert.ok(map.photoFrames&&map.photoFrames.length>=15,`${map.id} must have at least 15 photoFrames`);
+  const present=new Set(map.photoFrames!.map(f=>f.image));
+  for(const img of expectedPhotos){
+   assert.ok(present.has(img),`${map.id} is missing ${img}`);
+  }
+ }
+});
+
+test('CS-style C4 plant animation, blinking beacon, and multi-stage explosion render in Babylon scene',async()=>{
+ const {NullEngine}=await import('@babylonjs/core/Engines/nullEngine');
+ const {StrikeRenderer}=await import('../src/games/kapsstrike/renderer');
+ const {MAPS}=await import('../src/games/kapsstrike/maps');
+ const {DEFAULT_SETTINGS}=await import('../src/games/kapsstrike/config');
+ const {createTraining}=await import('../src/games/kapsstrike/combat');
+ const engine=new NullEngine();
+ const renderer=new StrikeRenderer({} as HTMLCanvasElement,MAPS.district,{...DEFAULT_SETTINGS,quality:'high'},engine);
+ const state=createTraining('district');
+ const p=state.player;
+ // 1. Planting phase shows held-bomb with keypad/display
+ state.bomb=createBombMatch([{id:p.id,team:'T',position:{...p.movement.position}},{id:'ct',team:'CT',position:{x:0,y:0,z:0}}],0);
+ state.bomb.phase='active';
+ state.bomb.action={kind:'plant',player:p.id,started:0,position:{...p.movement.position}};
+ renderer.render(state,0,0,false,1,p.movement.position,1/60);
+ assert.equal(renderer.scene.getMeshByName('held-bomb')?.isEnabled(),true);
+ // 2. Planted phase shows tactical-bomb, bomb-indicator, and bomb-beacon-ring
+ state.bomb.action=undefined;
+ state.bomb.phase='planted';
+ state.bomb.position={x:p.movement.position.x+3,y:p.movement.position.y,z:p.movement.position.z};
+ state.bomb.deadline=25;
+ renderer.render(state,0,0,false,1,p.movement.position,1/60);
+ assert.equal(renderer.scene.getMeshByName('tactical-bomb')?.isEnabled(),true);
+ assert.equal(renderer.scene.getMeshByName('bomb-indicator')?.isEnabled(),true);
+ assert.equal(renderer.scene.getMeshByName('bomb-beacon-ring')?.isEnabled(),true);
+ // 3. Detonation triggers shockwave, fireball, smoke, debris sparks, scorch crater, blast light, and camera flash
+ state.bomb.phase='result';
+ state.bomb.explosion={at:25,radius:18,position:{...state.bomb.position}};
+ renderer.render(state,0,0,false,1,p.movement.position,0.15);
+ assert.equal(renderer.scene.getMeshByName('bomb-shockwave')?.isEnabled(),true);
+ assert.equal(renderer.scene.getMeshByName('bomb-fireball')?.isEnabled(),true);
+ assert.equal(renderer.scene.getMeshByName('bomb-camera-flash')?.isEnabled(),true);
+ assert.equal(renderer.scene.getMeshByName('bomb-scorch')?.isEnabled(),true);
+ assert.equal(renderer.scene.getMeshByName('bomb-debris-0')?.isEnabled(),true);
+ // 4. After 3.5s, blast meshes cleanly disable
+ renderer.render(state,0,0,false,1,p.movement.position,3.5);
+ (renderer as any).blast.age=3.5;
+ renderer.render(state,0,0,false,1,p.movement.position,0);
+ assert.equal(renderer.scene.getMeshByName('bomb-fireball')?.isEnabled(),false);
+ assert.equal(renderer.scene.getMeshByName('bomb-camera-flash')?.isEnabled(),false);
+ renderer.dispose();
+});

@@ -80,7 +80,11 @@ export function townMap(id:MapId):MapDefinition {
   }
   if(style==='city')for(const side of [-1,1]){const s=deco('facade-light',x+side*(w/2+.24),.6,z,.035,h-.8,.16,'#61d7d0');s.glow=true;}
   if(style==='port')for(const side of [-1,1])deco('rain-pipe',x+side*(w/2-.35),0,z-d/2-.28,.12,h,.14,'#52616a','metal');
- };
+   if(interior){
+    // Interior & exterior framed photo slots on enterable buildings
+    addBuildingPhotos(x,z,w,d,h,door);
+   }
+  };
  const backdrop=(x:number,z:number,w:number,d:number,h:number,color:string,style:'desert'|'port'|'city')=>{
   // Outside the playable boundary: continue the place into the horizon.
   building('distant-block',x,z,w,d,h,color,style,false);
@@ -95,11 +99,29 @@ export function townMap(id:MapId):MapDefinition {
  let name='',subtitle='',sky='',floor='';let spawns:Vec3[]=[];let elevated={x:0,y:0,z:0};
  const spawn=(points:number[][])=>spawns=points.map(([x,z])=>({x,y:0,z}));
  let landmarks:string[]=[];
+ const PHOTO_ASPECTS:readonly number[]=[.5625,.5625,4/3,16/9,.75,4/3,.75,1.803,4/3,4/3,4/3,4/3,.75,.75,.75];
+ const mapSeed=id==='dust'?3:id==='neon'?7:11;
+ const photoOrder=Array.from({length:15},(_,i)=>((i*4+mapSeed)%15)+1);
+ let photoCursor=0;
+ const nextPhotoAsset=()=>photoOrder[photoCursor++%photoOrder.length];
  const photoAnchors:{image:string;aspect:number;x:number;y:number;z:number;wallLength:number;wallHeight:number;rotationY:number}[]=[];
  const photo=(asset:number,x:number,y:number,z:number,wallLength:number,wallHeight:number,rotationY:number)=>{
-  const aspects:[number,number,number,number,number,number]=[.5625,.5625,4/3,16/9,.75,4/3];
-  photoAnchors.push({image:`/kapsstrike/photos/photo-${String(asset).padStart(2,'0')}.jpg`,aspect:aspects[asset-1],x,y,z,wallLength,wallHeight,rotationY});
+  const idx=((asset-1)%PHOTO_ASPECTS.length+PHOTO_ASPECTS.length)%PHOTO_ASPECTS.length;
+  photoAnchors.push({image:`/kapsstrike/photos/photo-${String(idx+1).padStart(2,'0')}.jpg`,aspect:PHOTO_ASPECTS[idx],x,y,z,wallLength,wallHeight,rotationY});
  };
+ function addBuildingPhotos(x:number,z:number,w:number,d:number,h:number,door:number){
+  const intY=Math.min(2.25,h*.46),intH=Math.min(2.9,h*.58);
+  // Interior West & East walls (offset from center counter/crates)
+  photo(nextPhotoAsset(),x-w/2+.25,intY,z-d*.2,d*.42,intH,Math.PI/2);
+  photo(nextPhotoAsset(),x+w/2-.25,intY,z+d*.2,d*.42,intH,-Math.PI/2);
+  // Interior North entry pier wall
+  const pierW=(w-door)/2;
+  if(pierW>=3.8){
+   photo(nextPhotoAsset(),x+(w+door)/4,intY,z+d/2-.25,pierW*.82,intH,Math.PI);
+   // Exterior South entry pier wall
+   photo(nextPhotoAsset(),x-(w+door)/4,Math.min(2.8,h*.5),z-d/2-.25,pierW*.82,Math.min(3.4,h*.62),Math.PI);
+  }
+ }
  if(id==='dust'){
   name='Dust Town · Sarnıç Pazarı';subtitle='Pazar meydanı, kıvrılan kasaba sokakları, avlular ve bağlı çatılar';sky='#d6c3a2';floor='#c8b28c';
   // Six separate blocks shape a branching, offset network of alleys and courts.

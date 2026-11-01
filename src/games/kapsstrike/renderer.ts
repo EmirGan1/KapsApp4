@@ -942,27 +942,99 @@ export class StrikeRenderer {
     for (const a of this.impactPool)
       if (a.until < state.tick) a.mesh.setEnabled(false);
     if(!state.bomb)this.renderSupplies(state);
-    if(state.bomb){const b=state.bomb;if(!this.bombMesh){this.bombMesh=MeshBuilder.CreateBox('tactical-bomb',{width:.5,height:.22,depth:.36},this.scene);this.bombMesh.material=this.material('#626c54',false,'metal');const light=MeshBuilder.CreateBox('bomb-indicator',{width:.09,height:.025,depth:.08},this.scene);light.parent=this.bombMesh;light.position.y=.12;light.material=this.material('#ff4d4d',true);}
-      this.bombMesh.setEnabled(!!b.position&&(b.phase==='active'||b.phase==='planted'));if(b.position)this.bombMesh.position.set(b.position.x,b.position.y+.15,b.position.z);
+    const isPlanting=!!(state.bomb?.action?.kind==='plant'&&state.bomb.action.player===p.id);
+    const showHeldBomb=(bombEquipped||isPlanting)&&p.hp>0;
+    if(state.bomb){
+      const b=state.bomb;
+      if(!this.bombMesh){
+        this.bombMesh=MeshBuilder.CreateBox('tactical-bomb',{width:.52,height:.18,depth:.38},this.scene);
+        this.bombMesh.material=this.material('#5c664e',false,'metal');
+        this.bombMesh.isPickable=false;
+        for(const side of [-0.14,0.14]){
+          const strap=MeshBuilder.CreateBox('bomb-strap',{width:.05,height:.195,depth:.40},this.scene);
+          strap.parent=this.bombMesh;strap.position.x=side;strap.material=this.material('#232924',false,'metal');strap.isPickable=false;
+        }
+        const keypad=MeshBuilder.CreateBox('bomb-keypad',{width:.18,height:.03,depth:.20},this.scene);
+        keypad.parent=this.bombMesh;keypad.position.set(-.08,.10,0);keypad.material=this.material('#2a312b',false,'metal');keypad.isPickable=false;
+        const screen=MeshBuilder.CreateBox('bomb-lcd',{width:.16,height:.032,depth:.09},this.scene);
+        screen.parent=this.bombMesh;screen.position.set(.11,.10,-.05);screen.material=this.material('#73c69b',true);screen.isPickable=false;
+        const wire=MeshBuilder.CreateBox('bomb-wire',{width:.22,height:.025,depth:.03},this.scene);
+        wire.parent=this.bombMesh;wire.position.set(.02,.10,.08);wire.material=this.material('#d9463e',true);wire.isPickable=false;
+        const light=MeshBuilder.CreateSphere('bomb-indicator',{diameter:.095,segments:10},this.scene);
+        light.parent=this.bombMesh;light.position.set(.12,.12,.06);
+        const lmat=this.material('#ff2a2a',true).clone('bomb-indicator-mat')!;
+        lmat.disableLighting=true;light.material=lmat;light.isPickable=false;
+        const ring=MeshBuilder.CreateTorus('bomb-beacon-ring',{diameter:.9,thickness:.035,tessellation:32},this.scene);
+        ring.parent=this.bombMesh;ring.position.y=-.06;ring.isPickable=false;
+        const rmat=this.material('#ff3838',true).clone('bomb-beacon-mat')!;
+        rmat.disableLighting=true;rmat.alpha=.55;ring.material=rmat;
+      }
+      const visible=!!b.position&&(b.phase==='active'||b.phase==='planted');
+      this.bombMesh.setEnabled(visible);
+      if(visible&&b.position){
+        this.bombMesh.position.set(b.position.x,b.position.y+.15,b.position.z);
+        const indicator=this.scene.getMeshByName('bomb-indicator');
+        const beaconRing=this.scene.getMeshByName('bomb-beacon-ring');
+        if(b.phase==='planted'){
+          const left=Math.max(0,b.deadline-state.tick*C.dt);
+          const freq=left>20?1.3:left>10?2.4:left>5?4.8:left>2?9.5:18;
+          const phase=Math.sin(performance.now()*0.001*freq*Math.PI*2);
+          const pulse=phase>0?1:0.15;
+          if(indicator){
+            indicator.scaling.setAll(0.85+pulse*0.65);
+            const mat=indicator.material as StandardMaterial;
+            mat.emissiveColor=pulse>0.5?new Color3(1,.22,.18):new Color3(.35,.04,.04);
+          }
+          if(beaconRing){
+            beaconRing.setEnabled(true);
+            const cycle=(performance.now()*0.001*freq)%1;
+            beaconRing.scaling.set(0.6+cycle*2.2,1,0.6+cycle*2.2);
+            (beaconRing.material as StandardMaterial).alpha=Math.max(0,(1-cycle)*0.65);
+          }
+        }else{
+          indicator?.scaling.setAll(0.8);
+          beaconRing?.setEnabled(false);
+        }
+      }
     }else this.bombMesh?.setEnabled(false);
-    if(bombEquipped&&!this.heldBomb){
-      this.heldBomb=MeshBuilder.CreateBox('held-bomb',{width:.36,height:.22,depth:.25},this.scene);
-      this.heldBomb.parent=this.camera;this.heldBomb.position.set(.18,-.25,.55);this.heldBomb.material=this.material('#596253',false,'metal');
-      const screen=MeshBuilder.CreateBox('held-bomb-display',{width:.16,height:.025,depth:.10},this.scene);screen.parent=this.heldBomb;screen.position.y=.12;screen.material=this.material('#73c69b',true);
+    if(showHeldBomb&&!this.heldBomb){
+      this.heldBomb=MeshBuilder.CreateBox('held-bomb',{width:.36,height:.20,depth:.25},this.scene);
+      this.heldBomb.parent=this.camera;this.heldBomb.position.set(.18,-.25,.55);this.heldBomb.material=this.material('#596253',false,'metal');this.heldBomb.isPickable=false;
+      const screen=MeshBuilder.CreateBox('held-bomb-display',{width:.16,height:.028,depth:.10},this.scene);
+      screen.parent=this.heldBomb;screen.position.set(.06,.11,-.03);screen.material=this.material('#73c69b',true);screen.isPickable=false;
+      const pad=MeshBuilder.CreateBox('held-bomb-keypad',{width:.13,height:.025,depth:.14},this.scene);
+      pad.parent=this.heldBomb;pad.position.set(-.08,.11,.01);pad.material=this.material('#232b24',false,'metal');pad.isPickable=false;
+      const led=MeshBuilder.CreateSphere('held-bomb-led',{diameter:.055,segments:8},this.scene);
+      led.parent=this.heldBomb;led.position.set(.11,.12,.06);led.material=this.material('#ff3b3b',true);led.isPickable=false;
     }
-    this.heldBomb?.setEnabled(bombEquipped&&p.hp>0);
-    if(bombEquipped)this.gunRoot.setEnabled(false);
+    this.heldBomb?.setEnabled(showHeldBomb);
+    if(showHeldBomb&&this.heldBomb){
+      this.gunRoot.setEnabled(false);
+      if(isPlanting&&state.bomb?.action){
+        const pProg=clamp((state.tick*C.dt-state.bomb.action.started)/3.2,0,1);
+        const tap=Math.sin(pProg*Math.PI*16)*0.018;
+        this.heldBomb.position.set(0.03+Math.sin(pProg*Math.PI*8)*0.01,-0.16+tap,0.44);
+        this.heldBomb.rotation.set(-0.45+tap*2.2,-0.12,Math.sin(pProg*Math.PI*8)*0.06);
+      }else{
+        const bob=Math.sin(state.tick*0.08)*0.008;
+        this.heldBomb.position.set(.18,-.25+bob,.55);
+        this.heldBomb.rotation.set(-0.18,-0.22,0);
+      }
+    }
     if(state.bomb&&p.hp<=0){
       this.gunRoot.setEnabled(false);
-      if(spectator&&!(state.bomb.explosion&&state.tick*C.dt-state.bomb.explosion.at<.8)){this.camera.position.set(spectator.position.x,spectator.position.y+(spectator.stance==='stand'?C.eye:C.crouchEye),spectator.position.z);this.camera.rotation.set(spectator.pitch,spectator.yaw,0);}
+      if(spectator&&!(state.bomb.explosion&&(this.blast?this.blast.age<2.6:state.tick*C.dt-state.bomb.explosion.at<2.6))){this.camera.position.set(spectator.position.x,spectator.position.y+(spectator.stance==='stand'?C.eye:C.crouchEye),spectator.position.z);this.camera.rotation.set(spectator.pitch,spectator.yaw,0);}
     }
     if(state.bomb){
       if(!this.blastFlash){this.blastFlash=MeshBuilder.CreatePlane('bomb-camera-flash',{size:2},this.scene);this.blastFlash.parent=this.camera;this.blastFlash.position.z=.1;this.blastFlash.isPickable=false;this.blastFlash.renderingGroupId=3;const mat=this.material('#ffcb78',true).clone('bomb-flash-material')!;mat.disableLighting=true;mat.backFaceCulling=false;mat.disableDepthWrite=true;this.blastFlash.material=mat;}
-      const explosion=state.bomb.explosion,age=explosion?state.tick*C.dt-explosion.at:10;
+      this.blast??=new BombEffects(this.scene);
+      const shake=this.blast.update(state.bomb.explosion,delta,this.camera.position,this.quality()==='low');
+      const explosion=state.bomb.explosion,age=explosion?this.blast.age:10;
       const distance=explosion?Math.hypot(p.movement.position.x-explosion.position.x,p.movement.position.y-explosion.position.y,p.movement.position.z-explosion.position.z):100;
-      const flash=Math.max(0,1-distance/30)*Math.max(0,1-Math.max(0,age)/.65)*.8;
-      this.blastFlash.setEnabled(flash>0&&age>=0);(this.blastFlash.material as StandardMaterial).alpha=flash;
-      this.blast??=new BombEffects(this.scene);const shake=this.blast.update(state.bomb.explosion,delta,this.camera.position,this.quality()==='low');this.camera.rotation.x+=shake.x;this.camera.rotation.y+=shake.y;this.camera.rotation.z+=shake.z;}
+      const flash=Math.max(0,1-distance/42)*Math.max(0,1-Math.max(0,age)/.72)*.85;
+      this.blastFlash.setEnabled(flash>0&&age>=0&&age<.72);(this.blastFlash.material as StandardMaterial).alpha=flash;
+      this.camera.rotation.x+=shake.x;this.camera.rotation.y+=shake.y;this.camera.rotation.z+=shake.z;
+    }
     this.scene.render();
     if(this.observer && this.settings.dynamicResolution && performance.now()-this.scaleTimer>1500){
       this.scaleTimer=performance.now();const fps=this.engine.getFps();

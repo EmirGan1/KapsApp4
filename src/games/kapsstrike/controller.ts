@@ -128,6 +128,7 @@ export class StrikeController {
   private correction={x:0,y:0,z:0};
   private pendingInteract=false;
   private nextBombBeep=0;
+  private lastExplosionKey="";
   private bombEquipped=false;
   equipBomb(){this.bombEquipped=!this.bombEquipped;this.clearInput();}
   private previous = { x: 0, y: 0, z: 0 };
@@ -246,6 +247,11 @@ export class StrikeController {
         return;
 
       if (e.code === "Escape") { e.preventDefault(); this.pause(); return; }
+      if (!this.isMultiplayer && e.code === "Digit7" && !e.repeat) {
+        e.preventDefault();
+        this.triggerDemoBomb();
+        return;
+      }
       this.keys.add(e.code);
       if (this.handleActions(e.repeat)) e.preventDefault();
     }) as EventListener);
@@ -586,10 +592,43 @@ export class StrikeController {
         this.updateAndRenderRemotePlayers();
       }
 
+      if (!this.isMultiplayer && this.state.bomb) {
+        const b = this.state.bomb;
+        const nowSec = this.state.tick * C.dt;
+        if (b.phase === "active" && b.action?.kind === "plant" && nowSec >= b.action.started + 1.4) {
+          b.action = undefined;
+          b.phase = "planted";
+          b.carrier = undefined;
+          b.deadline = nowSec + 4.5;
+          this.bombEquipped = false;
+          this.audio.play("bombPlant");
+          this.audio.announce("Bomba kuruldu");
+        } else if (b.phase === "planted" && nowSec >= b.deadline) {
+          b.phase = "result";
+          b.winner = "T";
+          b.reason = "Bomba patladı";
+          b.explosion = { at: nowSec, radius: 18, position: { ...(b.position || this.state.player.movement.position) } };
+          b.deadline = nowSec + 3.4;
+          this.audio.play("bombExplode");
+          this.audio.announce("Bomba patladı");
+        } else if (b.phase === "result" && nowSec >= b.deadline) {
+          this.state.bomb = undefined;
+        }
+      }
+
       const bomb=this.state.bomb;
+      if(bomb?.explosion){
+        const expKey=`${bomb.explosion.at}:${bomb.explosion.position.x}:${bomb.explosion.position.z}`;
+        if(expKey!==this.lastExplosionKey){
+          this.lastExplosionKey=expKey;
+          this.audio.play("bombExplode");
+        }
+      }
       if(bomb?.phase==='planted'&&now>=this.nextBombBeep){
-        const left=bomb.deadline-this.state.tick*C.dt;
-        this.audio.play('bombTick');this.nextBombBeep=now+(left>20?1000:left>10?600:left>5?300:150);
+        const left=Math.max(0,bomb.deadline-this.state.tick*C.dt);
+        const urgency=clamp(1-left/40,0,1);
+        this.audio.play('bombTick',urgency);
+        this.nextBombBeep=now+(left>20?950:left>10?540:left>5?280:left>2?140:75);
       }
       const decay=Math.exp(-elapsed*16);
       for(const axis of ["x","y","z"] as const)this.correction[axis]*=decay;
@@ -603,7 +642,7 @@ export class StrikeController {
         elapsed,
         this.correction,
         this.spectator,
-        this.bombEquipped&&this.state.bomb?.carrier===this.socket?.id
+        this.bombEquipped&&(this.state.bomb?.carrier===this.socket?.id||(!this.isMultiplayer&&this.state.bomb?.carrier===this.state.player.id))
       );
 
       if(this.receivedInitialState && !this.notifiedReady && this.renderer.scene.isReady()){
@@ -875,6 +914,54 @@ export class StrikeController {
   public setTouchSprint(sprint: boolean) { this.touchSprint = sprint; }
   public triggerReload() { this.pendingReload = true; }
   public selectWeapon(w: WeaponId) { this.pendingWeapon = w; }
+  public triggerDemoBomb() {
+    if (this.isMultiplayer) {
+      this.socket?.emit("strike:bomb_action", { kind: "fast_detonate" });
+      return;
+    }
+    const p = this.state.player;
+    const nowSec = this.state.tick * C.dt;
+    const fx = p.movement.position.x + Math.sin(this.yaw) * 3.2;
+    const fz = p.movement.position.z + Math.cos(this.yaw) * 3.2;
+    const bombPos = { x: fx, y: p.movement.position.y, z: fz };
+    this.state.bomb = {
+      round: 1,
+      target: 7,
+      half: 6,
+      swapped: false,
+      phase: "active",
+      deadline: nowSec + 60,
+      scores: { T: 0, CT: 0 },
+      loss: { T: 0, CT: 0 },
+      carrier: p.id,
+      position: bombPos,
+      site: "A",
+      action: {
+        kind: "plant",
+        player: p.id,
+        started: nowSec,
+        position: bombPos,
+      },
+      players: {
+        [p.id]: {
+          id: p.id,
+          team: "T",
+          alive: true,
+          money: 800,
+          kit: false,
+          armor: 0,
+          weapons: ["rifle", "pistol", "knife"],
+          plants: 0,
+          defuses: 0,
+          holdUntil: 0,
+          position: { ...p.movement.position },
+        },
+      },
+    };
+    this.bombEquipped = true;
+    this.nextBombBeep = 0;
+    this.audio.play("bombPlant");
+  }
 
   setMenuOverlay(open:boolean){
     this.menuOverlay=open;this.clearInput();
