@@ -1,11 +1,12 @@
 import type {WeaponId} from './types';
 export type Rarity='uncommon'|'rare'|'epic'|'legendary'|'knife';
 export const RARITIES:Record<Rarity,{name:string;color:string}>={uncommon:{name:'Sıra dışı',color:'#4ade80'},rare:{name:'Nadir',color:'#60a5fa'},epic:{name:'Destansı',color:'#c084fc'},legendary:{name:'Efsanevi',color:'#fb7185'},knife:{name:'Özel bıçak',color:'#fbbf24'}};
-export interface Cosmetic {id:string;name:string;weapon:WeaponId;rarity:Rarity;color:string;accent:string;pattern:number;knife?:'butterfly'|'karambit'|'tanto'}
+export interface Cosmetic {id:string;name:string;weapon:WeaponId;rarity:Rarity;color:string;accent:string;pattern:number;knife?:'butterfly'|'karambit'|'tanto'|'default'}
 const guns:WeaponId[]=['rifle','smg','sniper','shotgun','pistol','carbine','lmg','railgun'];
 const finishes=[{name:'Orman Kamuflajı',rarity:'uncommon',color:'#316850',accent:'#a3cf7b'},{name:'Buzul Akımı',rarity:'rare',color:'#225d9c',accent:'#8ee9ff'},{name:'Mor Yıldırım',rarity:'epic',color:'#592e92',accent:'#f0abfc'},{name:'Kızıl Süpernova',rarity:'legendary',color:'#a52542',accent:'#ffcb76'}] as const;
 export const COSMETICS:Cosmetic[]=guns.flatMap(weapon=>finishes.map((f,i)=>({...f,id:weapon+'-'+i,weapon,pattern:i})));
 COSMETICS.push({id:'knife-butterfly',name:'Kelebek · Aurora',weapon:'knife',rarity:'knife',color:'#6c40bf',accent:'#83faff',pattern:3,knife:'butterfly'},{id:'knife-karambit',name:'Karambit · Kor',weapon:'knife',rarity:'knife',color:'#d24c2c',accent:'#ffe07c',pattern:3,knife:'karambit'},{id:'knife-tanto',name:'Tanto · Hayalet',weapon:'knife',rarity:'knife',color:'#c2d9e9',accent:'#7cffe1',pattern:2,knife:'tanto'});
+for(const [style,name] of [['butterfly','Kelebek'],['karambit','Karambit'],['tanto','Tanto'],['default','Savaş Bıçağı']] as const)for(const [pattern,finish] of finishes.entries())COSMETICS.push({id:`knife-${style}-${pattern}`,name:`${name} · ${finish.name}`,weapon:'knife',rarity:'knife',knife:style,color:finish.color,accent:finish.accent,pattern});
 export const CASES=[{id:'frontline',name:'Cephe Kasası',color:'#4ade80',weapon:'rifle'},{id:'velocity',name:'Hız Kasası',color:'#60a5fa',weapon:'smg'},{id:'horizon',name:'Ufuk Kasası',color:'#c084fc',weapon:'sniper'},{id:'breach',name:'Kuşatma Kasası',color:'#fb7185',weapon:'shotgun'},{id:'sidearm',name:'Düello Kasası',color:'#fbbf24',weapon:'pistol'},{id:'arsenal',name:'Arsenal Kasası',color:'#67e8f9',weapon:null}] as const;
 export function cosmetic(id:unknown){return typeof id==='string'?COSMETICS.find(c=>c.id===id):undefined;}
 export function caseRewards(id:string):{item:Cosmetic;chance:number}[]{

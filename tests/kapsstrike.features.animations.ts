@@ -1,0 +1,9 @@
+import {createServer} from 'vite';import {chromium} from 'playwright';import {mkdir,writeFile} from 'node:fs/promises';import assert from 'node:assert/strict';
+const output='/tmp/strike-fast-knives';await mkdir(output,{recursive:true});const vite=await createServer({cacheDir:'node_modules/.vite-fast-knives',logLevel:'error',plugins:[{name:'fast-knives',configureServer(s){s.middlewares.use('/__fast',async(_req,res)=>{res.setHeader('Content-Type','text/html');res.end(await s.transformIndexHtml('/__fast','<html><body><script type="module" src="/tests/kapsstrike.hitreg.fixture.ts"></script></body></html>'));});}}],server:{host:'127.0.0.1',port:4193,strictPort:true,hmr:false}});await vite.listen();const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});const errors:string[]=[];
+try{const p=await browser.newPage({viewport:{width:960,height:600}});p.on('pageerror',e=>errors.push(e.message));await p.goto('http://127.0.0.1:4193/__fast?knife=1');await p.waitForFunction(()=>(window as any).knife);const data=[];
+ for(const [index,style] of ['karambit','butterfly','tanto','default'].entries()){
+  const skin=`knife-${style}-${index}`;
+  for(const mode of ['inspect','draw']){const frames=mode==='inspect'?32:style==='karambit'||style==='butterfly'?9:14;for(let i=0;i<frames;i++){await p.evaluate(({style,skin,mode,t})=>(window as any)[mode==='inspect'?'knife':'draw'](style,t,skin),{style,skin,mode,t:i/frames});await p.screenshot({path:`${output}/${style}-${mode}-${i}.png`});}data.push({style,skin,mode,frames});}
+ }
+ assert.deepEqual(errors,[]);await writeFile(output+'/captures.json',JSON.stringify(data,null,2));console.log('PASS actual game renderer: four knife shapes, four new finishes, fast inspect and spinning deploy; no page errors');
+}finally{await browser.close();await vite.close();}

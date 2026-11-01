@@ -8,7 +8,7 @@ export default function StrikeControls({value,onChange}:{value:Bindings;onChange
     const receive=(event:Event)=>{
       const modifier = event instanceof KeyboardEvent && /^(Control|Shift|Alt|Meta)(Left|Right)$/.test(event.code);
       if (event.type === "keyup" && !modifier) return;
-      event.preventDefault();event.stopPropagation();
+      event.preventDefault();event.stopImmediatePropagation();
       if (event.type === "keydown" && modifier) return;
       if (event instanceof KeyboardEvent && event.code === "Escape") {setCapture(null);return;}
       if (event instanceof WheelEvent && event.deltaY === 0) return;
@@ -22,7 +22,7 @@ export default function StrikeControls({value,onChange}:{value:Bindings;onChange
     for(const name of ["keydown","keyup","mousedown","wheel"]) window.addEventListener(name,receive,{capture:true,passive:false});
     return ()=>{for(const name of ["keydown","keyup","mousedown","wheel"]) window.removeEventListener(name,receive,true);};
   },[capture,value,onChange]);
-  return <div className="ks-binding-editor">
+  return <div className="ks-binding-editor" data-binding-capture={capture?"true":undefined} onContextMenu={e=>e.preventDefault()}>
     <p>Fiziksel tuş kodları kaydedilir. ESC her zaman menüyü açar; atama sırasında iptal eder. Koşarken çömelme/kayma momentum ile kaydırır.</p>
     {capture && <p role="status">{ACTIONS[capture]}: Yeni tuşa, fare düğmesine veya tekerleğe bas…</p>}
     {collision && <div role="alert"><p>Bu giriş şu kontrollerle çakışıyor: {collision.others.map(a=>ACTIONS[a]).join(", ")}</p>

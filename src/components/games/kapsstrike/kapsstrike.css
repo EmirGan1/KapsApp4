@@ -1340,3 +1340,7 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
 }
 @media(pointer:coarse){.ks-root:has(.ks-bomb-objective) .ks-bottom{position:static}}
 @media(pointer:coarse){.ks-root:has(.ks-bomb-objective) .ks-health strong{white-space:nowrap}.ks-root:has(.ks-bomb-objective) .ks-health strong span{font-size:12px}.ks-root:has(.ks-bomb-objective) .ks-health meter{width:100%}}
+
+.ks-shield{color:#70caff;margin-top:4px}.ks-shield meter{accent-color:#41b6fa;width:100%}.ks-loot-notice{position:absolute;bottom:24%;left:50%;transform:translateX(-50%);max-width:80%;padding:9px 16px;border-radius:12px;background:#112b40eb;color:#a9e7ff;pointer-events:none;text-align:center}
+
+.ks-shield meter::-webkit-meter-optimum-value{background:#42b7fa}.ks-shield meter::-moz-meter-bar{background:#42b7fa}

@@ -4,6 +4,7 @@ import type {Solid} from './types';
 
 /** High-fidelity procedural surface textures; organic stucco, stone flagstones, masonry bricks, and weathered materials without crude lines. */
 export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid['surface'],label?:string,resolution=128){
+ if(resolution===0&&!label)return undefined;
  if(typeof document==='undefined'||scene.getEngine().getClassName()==='NullEngine'||(!surface&&!label))return undefined;
  const size=label?256:resolution;
  const texture=new DynamicTexture(key,{width:size,height:label?64:size},scene,true);

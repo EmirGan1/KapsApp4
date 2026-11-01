@@ -1,0 +1,2 @@
+PASS independent clients: heal crate, shield crate, shield-before-HP damage and 3-weapon authoritative airdrop
+PASS independent WebGL clients { scope: 'loot', cases: 0, avgAckMs: 27.566666666418314, samples: 3 }

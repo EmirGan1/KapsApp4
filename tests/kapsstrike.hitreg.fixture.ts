@@ -1,3 +1,4 @@
+import {knifeTiming} from '../src/games/kapsstrike/presentation';
 import {io} from 'socket.io-client';
 import {StrikeController} from '../src/games/kapsstrike/controller';
 import {StrikeRenderer} from '../src/games/kapsstrike/renderer';
@@ -10,11 +11,12 @@ MAPS.district.solids=[];MAPS.district.targets=[];
 const canvas=document.createElement('canvas');canvas.style.cssText='width:100vw;height:100vh;display:block';document.body.style.margin='0';document.body.append(canvas);
 if(new URLSearchParams(location.search).has('knife')){
  const r=new StrikeRenderer(canvas,MAPS.district,{...DEFAULT_SETTINGS,quality:'low',volume:0});const state=createTraining('district');state.player.weapon.selected='knife';state.player.protectedUntil=0;w.renderer=r;w.knifeState=state;
- w.knife=async(style:string,t:number)=>{
-  r.updateSettings({...DEFAULT_SETTINGS,quality:'low',volume:0,cosmeticLoadout:{knife:'knife-'+style}});
-  (r as any).lastSelectedWeapon='knife';(r as any).knifeDeployTimer=0;(r as any).inspectTime=2.4*(1-t);state.tick=Math.round(t*288);
-  r.render(state,0,0,false,1,state.player.movement.position,.001);await r.scene.whenReadyAsync();r.scene.render();
+ const pose=async(mode:'inspect'|'deploy',style:string,t:number,skin?:string)=>{
+  r.updateSettings({...DEFAULT_SETTINGS,quality:'low',volume:0,cosmeticLoadout:{knife:skin||'knife-'+style}});
+  const timing=knifeTiming(style);(r as any).lastSelectedWeapon='knife';(r as any).lastKnifeStyle=style;(r as any).knifeAttackTimer=0;(r as any).knifeDeployTimer=mode==='deploy'?timing.deploy*(1-t):0;(r as any).inspectTime=mode==='inspect'?timing.inspect*(1-t):0;state.tick=Math.round(t*timing[mode==='inspect'?'inspect':'deploy']*120);
+  r.render(state,0,0,false,1,state.player.movement.position,.0001);await r.scene.whenReadyAsync();r.scene.render();
  };
+ w.knife=(style:string,t:number,skin?:string)=>pose('inspect',style,t,skin);w.draw=(style:string,t:number,skin?:string)=>pose('deploy',style,t,skin);
 
 }else{
  const id=Number(new URLSearchParams(location.search).get('user')||1);const socket=io({auth:{testUser:id},transports:['websocket'],forceNew:true});w.socket=socket;
