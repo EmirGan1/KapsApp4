@@ -97,7 +97,7 @@ export function dustDistrict():MapDefinition{
   }
  }
  facades.sort((a,b)=>b.wallLength-a.wallLength);
- const photoAspects=[.5625,.5625,4/3,16/9,.75,4/3],usedWalls=new Set<string>();
+ const photoAspects:[number,number,number,number,number,number]=[.5625,.5625,4/3,16/9,.75,4/3],usedWalls=new Set<string>();
  for(const facade of facades){
   if(photoFrames.length>=6)break;
   if(usedWalls.has(facade.solid.id)||facade.wallLength<5||facade.solid.h<5)continue;
