@@ -258,13 +258,13 @@ export class StrikeRenderer {
           if(!photoMaterial){
             let texture=photoTextures.get(frame.image);
             if(!texture){
-              texture=new Texture(frame.image,this.scene,false,true);
+              texture=new Texture(frame.image+'?v=complete-2',this.scene,false,true);
               texture.gammaSpace=true;texture.anisotropicFilteringLevel=8;
               photoTextures.set(frame.image,texture);
             }
             photoMaterial=new StandardMaterial('map-photo-'+frame.id,this.scene);
-            photoMaterial.diffuseTexture=texture;photoMaterial.diffuseColor=Color3.White();
-            photoMaterial.emissiveColor=new Color3(.16,.16,.16);photoMaterial.specularColor=Color3.Black();
+            photoMaterial.diffuseTexture=texture;photoMaterial.emissiveTexture=texture;photoMaterial.disableLighting=true;photoMaterial.diffuseColor=Color3.White();
+            photoMaterial.emissiveColor=Color3.White();photoMaterial.specularColor=Color3.Black();
             photoMaterial.backFaceCulling=false;photoMaterials.set(frame.image,photoMaterial);
           }
           const plane=MeshBuilder.CreatePlane(frame.id,{width:frame.width,height:frame.height,sideOrientation:Mesh.DOUBLESIDE},this.scene);

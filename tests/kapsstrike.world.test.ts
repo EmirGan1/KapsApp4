@@ -55,3 +55,28 @@ test('authoritative supply ownership, malformed interact, snapshots and respawn 
  assert.equal(player.heldInput,undefined);assert.equal(player.lastInputTick,0);
  manager.leaveRoom(player.id,1);
 });
+
+for(const map of Object.values(MAPS).filter(m=>m.id!=='district')){
+ test(`${map.id}: weapon, health and armor replenish once after ten seconds at different reachable route points`,()=>{
+  const state=createTraining(map.id),world=createWorld(map,145),p=state.player;
+  for(let cycle=0;cycle<20;cycle++){
+   const active=world.pickups.filter(s=>!s.opened);
+   const collected=active.map(s=>({id:s.id,position:{...s.position}}));
+   const tick=cycle*1000;
+   for(const s of active){p.movement.position={...s.position};p.hp=25;p.armor=0;assert.equal(claimSupply(world,map,p,tick),true);assert.equal(claimSupply(world,map,p,tick),false);}
+   const queued=world.respawns!.length;assert.equal(queued,active.length);
+   advanceWorld(world,map,tick+Math.round(10/C.dt)-1);
+   assert.equal(world.respawns!.length,queued);
+   const previous=world.respawns!.map(job=>({...job.pickup.position})),serial=world.serial;
+   advanceWorld(world,map,tick+Math.round(10/C.dt));
+   assert.equal(world.respawns!.length,0);
+   const replacements=world.pickups.filter(s=>s.id.startsWith('supply-')&&Number(s.id.split('-')[1])>serial);
+   assert.equal(replacements.length,previous.length);
+   replacements.forEach((s,i)=>assert.ok(Math.hypot(s.position.x-previous[i].x,s.position.z-previous[i].z)>4));
+   const fresh=world.pickups.filter(s=>!s.opened&&s.id.startsWith('supply-'));
+   for(const s of fresh){assert.ok(fits(map,s.position,C.standing));assert.ok(supplyLocations(map).some(q=>Math.hypot(q.x-s.position.x,q.z-s.position.z)<.01));}
+   assert.ok(collected.every(old=>!fresh.some(s=>s.id===old.id)));
+   advanceWorld(world,map,tick+Math.round(10/C.dt));assert.equal(world.respawns!.length,0);
+  }
+ });
+}

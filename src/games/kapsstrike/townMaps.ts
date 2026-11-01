@@ -125,7 +125,7 @@ export function townMap(id:MapId):MapDefinition {
   // Well and bench belong to a side courtyard, keeping the square's routes clear.
   b('well',-5,0,2,2.4,.8,2.4,'#ad9879','stone',false,'cylinder');deco('well-water',-5,.8,2,1.7,.03,1.7,'#71969a','water').shape='cylinder';
   b('courtyard-bench',-6,0,-3,2.7,.45,.55,'#91704e','wood');
-  sign('SARNIC PAZARI',0,4.2,9.5,7,'#785e45');sign('MİR BÜFE',15,2.9,-32.3,7,'#765e48');sign('FIRIN',19,2.8,19.2,4,'#765e48');
+  sign('SARNIC PAZARI',0,4.2,9.5,7,'#785e45');sign('FIRIN',19,2.8,19.2,4,'#765e48');
   ramp('roof-ramp',28,-27,3.5,6.48,24,'z','#b5a083','stone');b('roof-landing',28,6.2,-13,4,.28,4,'#b5a083','stone');b('roof-link',20,6.2,-15,12,.28,3.5,'#b5a083','stone');
   steps(-7,12,2.5,11,4.78,'#b5a083');b('roof-landing',-7,4.5,24,3,.28,3,'#b5a083','stone');b('roof-link',-11,4.5,24,6,.28,3,'#b5a083','stone');
   balcony(15,3.2,-33.8,7,2.3,'#a47b54');
@@ -160,7 +160,7 @@ export function townMap(id:MapId):MapDefinition {
   steps(-34.5,10,2.5,20,8.28,'#718699');b('club-roof-link',-31,8,31.7,8,.28,3.4,'#718699','metal');
   for(const z of [-37,-31,-25,-19,-13,-7,0,28])deco('lane-marker',0,.045,z,.16,.01,2,'#61d7d0').glow=true;
   for(const x of [-9.5,9.5])for(const z of [-34,-16,3,30])lamp(x,z,true);
-  sign('KAPS / TRANSIT',-3,4.5,32.7,12,'#365b78',true);sign('Yenihayat Ekspertiz',24,4.2,-15.3,13,'#576489',true);sign('ORBIT CLUB',-24,3.7,14.2,10,'#9e78c7',true);sign('Ke1 Muhasebe',25,3,17.7,11,'#3c7c84',true);
+  sign('Yenihayat Ekspertiz',24,4.2,-15.3,13,'#576489',true);sign('Ke1 Muhasebe',25,3,17.7,11,'#3c7c84',true);
   // Lit shop interiors, terminals and street furniture instead of random crates.
   for(const [x,z] of [[22,22],[28,22],[-20,20]]){b('shop-terminal',x,0,z,1.2,1.6,.8,'#4b5e79','metal');deco('terminal-display',x,1,z-.43,.9,.5,.03,'#61d7d0').glow=true;}
   vehicle(-8,-8,false,true);vehicle(36,29,false,true);
@@ -171,8 +171,8 @@ export function townMap(id:MapId):MapDefinition {
   route('Bulvar ve meydan',[[0,-38],[0,-8],[9,-2],[9,9],[9,29],[12,30],[12,35],[19,36],[19,40]]);
   route('Batı servis sokağı',[[0,-38],[-39,-38],[-40,0],[-40,37],[-18,39]]);
   route('Doğu teknoloji sokağı',[[0,-38],[40,-38],[40,-25],[40,36],[19,40]]);
-  photo(4,-31.78,6,-18,22,12,Math.PI/2);
-  photo(5,33.78,9,-6,18,18,-Math.PI/2);
+  photo(4,-31.78,8.3,-18,22,6,Math.PI/2);
+  photo(5,33.78,11,-6,18,12,-Math.PI/2);
   photo(6,-31.28,4,22,15,8,Math.PI/2);
   photo(1,-32.22,6,-18,22,12,-Math.PI/2);
   photo(2,33.22,3.5,25,14,7,Math.PI/2);
@@ -195,7 +195,7 @@ export function townMap(id:MapId):MapDefinition {
   }
   road(10,0,10,88);road(9,-7,64,9);road(18,32,60,7);road(-19,0,6,82);
   building('west-depot',-9,-18,15,15,6,'#a09e90','port');building('east-warehouse',29,-23,20,18,7,'#ad9381','port');building('cargo-terminal',28,20,22,18,8,'#a09e90','port');building('port-office',1,24,12,10,5,'#bcc2b4','port');
-  sign('KIYI TERMINALI / 04',29,4.4,-32.3,13,'#48636f');sign('GUMRUK',1,3.1,18.7,6,'#48636f');sign('DEPO 07',-9,3.8,-25.8,7,'#48636f');
+  sign('KIYI TERMINALI / 04',29,4.4,-32.3,13,'#48636f');
   ramp('depot-roof-ramp',-20,-20,3.2,6.28,24,'z','#7b8b90','metal');b('depot-roof-landing',-20,6,-6,4,.28,4,'#7b8b90','metal');b('depot-roof-link',-13,6,-9,10,.28,4,'#7b8b90','metal');
   steps(-8,16,2.5,11,5.28,'#7b8b90');b('office-roof-link',-5,5,28,8,.28,3,'#7b8b90','metal');
   // Gantry crane, its four supports, trolley and cable form a recognizable port landmark.
@@ -223,6 +223,20 @@ export function townMap(id:MapId):MapDefinition {
   photo(3,35,3.5,-32.22,18,7,Math.PI);
   photo(4,28,4,29.22,22,8,0);
   landmarks=['deniz kıyısı','üç iskele','yük vinci','gümrük ofisi','depo içleri','açık yükleme alanı'];
+ }
+
+ // Distinct street-facing shop fronts on existing enterable buildings.
+ const shops=id==='dust'?[[15,-32.45,7,'MİR BÜFE'],[-15,-32.45,9,'YENİHAYAT SİGORTA']]:id==='neon'?[[-24,14.05,9,'MİR BÜFE'],[-3,32.55,13,'YENİHAYAT SİGORTA']]:[[-9,-25.95,8,'MİR BÜFE'],[1,18.55,9,'YENİHAYAT SİGORTA']];
+ for(const [x,z,w,text] of shops as [number,number,number,string][]){
+  const board=deco('shop-front-sign',x,3.55,z,w,1.15,.14,'#24566b');board.label=text;board.glow=id==='neon';
+  deco('shop-awning',x,3.3,z-.65,w+.4,.12,1.6,'#af7353','fabric');
+  for(const dx of [-w/2,w/2])deco('shop-front-trim',x+dx,0,z,.14,3.55,.16,'#bd9b65','metal');
+ }
+ if(id==='neon'){
+  // Large upper-storey portraits face the boulevard and outer streets.
+  photo(3,34.4,13,-6,18,9,Math.PI/2);
+  photo(4,-32.4,8.5,-18,22,9,-Math.PI/2);
+  photo(6,-3,10,45.45,24,10,0);
  }
 
  // Neighborhood entry boards: exact place names, carried across each playable district map.

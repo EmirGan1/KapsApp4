@@ -88,7 +88,7 @@ export interface WorldPickup {
   id: string; position: Vec3; weapon: WeaponId; weapons?:WeaponId[]; consumable?:"health"|"armor"; amount?:number; kind: "chest" | "dropped" | "airdrop"; opened: boolean; expires: number;
 }
 export interface StrikeWorld {
-  pickups: WorldPickup[]; nextDrop: number; drop?: {position: Vec3; warning: number; landing: number}; serial: number; seed: number;
+  respawns?: {at:number;pickup:WorldPickup}[]; pickups: WorldPickup[]; nextDrop: number; drop?: {position: Vec3; warning: number; landing: number}; serial: number; seed: number;
 }
 export interface WeaponState {
   inventory?: WeaponId[];

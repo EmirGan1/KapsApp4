@@ -105,5 +105,5 @@ export function dustDistrict():MapDefinition{
   photoFrames.push({id:`district-photo-frame-${index}`,image:`/kapsstrike/photos/photo-${String(index).padStart(2,'0')}.jpg`,x:facade.x,y:facade.solid.h*.54,z:facade.z,width:height*aspect,height,rotationY:facade.rotationY});
   usedWalls.add(facade.solid.id);
  }
- return{id:'district',name:'Dust II · Reconstruction',subtitle:'Long A, Mid, Catwalk ve B Tunnels',bounds:58,sky:'#b9d8ec',floor:'#c7bba4',solids,spawns,targets:[],hazard:{x:100,z:100,r:0},routes,landmarks:Object.keys(DUST2_AREAS)};
+ return{id:'district',name:'Dust II · Reconstruction',subtitle:'Long A, Mid, Catwalk ve B Tunnels',bounds:58,sky:'#b9d8ec',floor:'#c7bba4',solids,photoFrames,spawns,targets:[],hazard:{x:100,z:100,r:0},routes,landmarks:Object.keys(DUST2_AREAS)};
 }
