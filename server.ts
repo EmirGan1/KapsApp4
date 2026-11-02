@@ -483,6 +483,121 @@ async function initDb() {
   )`);
   try { await client.execute("ALTER TABLE agenda_events ADD COLUMN target_roles TEXT"); } catch(e){}
 
+  // Seed default 1. Yarıyıl 1. Sınav Kuşağı (12 G IB) exams into agenda_events if not present
+  try {
+    const existingExams = await client.execute("SELECT COUNT(*) as cnt FROM agenda_events WHERE event_date >= '2026-11-01' AND event_date <= '2026-11-15'");
+    const cnt = Number(existingExams.rows[0]?.cnt || 0);
+    if (cnt === 0) {
+      const novExamsSeed = [
+        {
+          title: "Sınav: Türk Dili ve Edebiyatı (Yazılı)",
+          event_date: "2026-11-05",
+          event_time: "09:00 - 09:40",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Türk Dili ve Edebiyatı Yazılı Sınavı (2. Ders: 09:00 - 09:40). Yerine: Kimya / DigSoc / Psikoloji",
+          target_roles: JSON.stringify(["all", "turkish_sl", "turkish_hl", "turkish", "edebiyat"])
+        },
+        {
+          title: "Sınav: Türk Dili ve Edebiyatı (Uygulama)",
+          event_date: "2026-11-05",
+          event_time: "11:30 - 12:10",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Türk Dili ve Edebiyatı Uygulama Sınavı (5. Ders: 11:30 - 12:10). Yerine: 20. Yy Türkiye",
+          target_roles: JSON.stringify(["all", "turkish_sl", "turkish_hl", "turkish", "edebiyat"])
+        },
+        {
+          title: "Sınav: T.C. İnkılap Tarihi ve Atatürkçülük",
+          event_date: "2026-11-05",
+          event_time: "14:50 - 15:30",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) T.C. İnkılap Tarihi ve Atatürkçülük (8. Ders: 14:50 - 15:30). Yerine: Din Kültürü",
+          target_roles: JSON.stringify(["all", "titc"])
+        },
+        {
+          title: "Sınav: Seçmeli Matematik",
+          event_date: "2026-11-06",
+          event_time: "09:00 - 09:40",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Seçmeli Matematik Sınavı (2. Ders: 09:00 - 09:40). Yerine: Edebiyat",
+          target_roles: JSON.stringify(["all", "math_sl", "math_hl", "math", "matematik"])
+        },
+        {
+          title: "Sınav: S. Kimya / DigSoc / Psikoloji",
+          event_date: "2026-11-06",
+          event_time: "10:40 - 11:20",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) S. Kimya / Küresel Toplumda İletişim Teknolojileri (Digital Society) / Psikoloji (4. Ders: 10:40 - 11:20). Yerine: Yabancı Dil",
+          target_roles: JSON.stringify(["all", "chemistry_sl", "chemistry_hl", "digital_society_sl", "digital_society_hl", "psychology_sl", "psychology_hl"])
+        },
+        {
+          title: "Sınav: S. Biyoloji / S. Fizik",
+          event_date: "2026-11-09",
+          event_time: "09:00 - 09:40",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Seçmeli Biyoloji / Seçmeli Fizik (2. Ders: 09:00 - 09:40). Yerine: Fizik / Biyoloji",
+          target_roles: JSON.stringify(["all", "biology_sl", "biology_hl", "physics_sl", "physics_hl"])
+        },
+        {
+          title: "Sınav: 1. Yabancı Dil (İngilizce) - Uygulama",
+          event_date: "2026-11-09",
+          event_time: "11:30 - 12:10",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) 1. Yabancı Dil (İngilizce) Uygulama Sınavı (5. Ders: 11:30 - 12:10). Yerine: Matematik",
+          target_roles: JSON.stringify(["all", "eng_b_hl", "english", "foreign_language"])
+        },
+        {
+          title: "Sınav: 1. Yabancı Dil (İngilizce) - Yazılı",
+          event_date: "2026-11-09",
+          event_time: "14:50 - 15:30",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) 1. Yabancı Dil (İngilizce) Yazılı Sınavı (8. Ders: 14:50 - 15:30). Yerine: Din Kültürü",
+          target_roles: JSON.stringify(["all", "eng_b_hl", "english", "foreign_language"])
+        },
+        {
+          title: "Sınav: Yabancı Diller Edebiyatı / S. Coğrafya",
+          event_date: "2026-11-10",
+          event_time: "13:10 - 13:50",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Yabancı Diller Edebiyatı / S. Coğrafya (6. Ders: 13:10 - 13:50). Yerine: Fizik / Biyoloji",
+          target_roles: JSON.stringify(["all", "foreign_language", "english", "eng_b_hl"])
+        },
+        {
+          title: "Sınav: Din Kültürü ve Ahlak Bilgisi",
+          event_date: "2026-11-10",
+          event_time: "14:50 - 15:30",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Din Kültürü ve Ahlak Bilgisi (8. Ders: 14:50 - 15:30). Yerine: Matematik",
+          target_roles: JSON.stringify(["all", "religion"])
+        },
+        {
+          title: "Sınav: Klasik Ahlak Metinleri",
+          event_date: "2026-11-11",
+          event_time: "08:50 - 09:30",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Klasik Ahlak Metinleri Sınavı (2. Ders: 08:50 - 09:30, Çarşamba Özel Saati). Yerine: 20. Yy Türkiye",
+          target_roles: JSON.stringify(["all"])
+        },
+        {
+          title: "Sınav: 20. Yüzyılda Türkiye",
+          event_date: "2026-11-11",
+          event_time: "10:30 - 11:10",
+          event_type: "exam",
+          description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) 20. Yüzyılda Türkiye Sınavı (4. Ders: 10:30 - 11:10, Çarşamba Özel Saati). Yerine: Matematik",
+          target_roles: JSON.stringify(["all", "history_20th"])
+        }
+      ];
+
+      for (const ev of novExamsSeed) {
+        await client.execute({
+          sql: "INSERT INTO agenda_events (title, event_date, event_time, event_type, description, target_roles, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 'emirgan', ?)",
+          args: [ev.title, ev.event_date, ev.event_time, ev.event_type, ev.description, ev.target_roles, new Date().toISOString()]
+        });
+      }
+    }
+  } catch (err) {
+    console.error("12G IB exams seed error:", err);
+  }
+
   // Roles & Custom Roles Table with Discord-style hierarchy
   await client.execute(`CREATE TABLE IF NOT EXISTS roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

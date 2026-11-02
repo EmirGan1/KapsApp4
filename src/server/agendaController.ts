@@ -239,8 +239,8 @@ export function registerAgendaController(app: Express, client: any) {
         success: true,
         period: {
           startDate: "2026-10-12",
-          endDate: "2026-10-26",
-          title: "IB DP 2027 Pre-Mock 3 Deneme Sınav Takvimi"
+          endDate: "2026-11-13",
+          title: "IB DP 2027 Pre-Mock 3 ve 1. Yarıyıl 1. Sınav Kuşağı Takvimi"
         },
         exams: examsToReturn
       });

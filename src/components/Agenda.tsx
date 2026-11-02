@@ -112,30 +112,57 @@ export default function Agenda({
   // Hover Tooltip state (Desktop)
   const [hoveredEvent, setHoveredEvent] = useState<{ event: AgendaEvent; x: number; y: number } | null>(null);
 
-  // Live Countdown to Pre-Mock 3 (First Exam: 12 October 2026 08:50)
-  const [countdown, setCountdown] = useState<{ days: number; hours: number; minutes: number; seconds: number; isPassed: boolean }>({
+  // Live Countdown to Upcoming Exam:
+  // Targets 1. Yarıyıl 1. Sınav Kuşağı (First Exam: 05 Kasım 2026 09:00 - Türk Dili ve Edebiyatı)
+  const [countdown, setCountdown] = useState<{
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+    isPassed: boolean;
+    title: string;
+    subtitle: string;
+  }>({
     days: 0,
     hours: 0,
     minutes: 0,
     seconds: 0,
-    isPassed: false
+    isPassed: false,
+    title: "1. Yarıyıl 1. Sınav Kuşağı (12 G IB)",
+    subtitle: "İlk Sınav: 05 Kasım 2026 Perşembe 09:00 • Türk Dili ve Edebiyatı"
   });
 
   useEffect(() => {
-    const targetDate = new Date("2026-10-12T08:50:00+03:00").getTime();
+    const targetDate = new Date("2026-11-05T09:00:00+03:00").getTime();
 
     const updateCountdown = () => {
       const now = Date.now();
       const diff = targetDate - now;
 
       if (diff <= 0) {
-        setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0, isPassed: true });
+        setCountdown({
+          days: 0,
+          hours: 0,
+          minutes: 0,
+          seconds: 0,
+          isPassed: true,
+          title: "1. Yarıyıl 1. Sınav Kuşağı (12 G IB)",
+          subtitle: "Sınav Kuşağı Başladı! (03 - 13 Kasım 2026)"
+        });
       } else {
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
         const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
         const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-        setCountdown({ days, hours, minutes, seconds, isPassed: false });
+        setCountdown({
+          days,
+          hours,
+          minutes,
+          seconds,
+          isPassed: false,
+          title: "1. Yarıyıl 1. Sınav Kuşağı (12 G IB)",
+          subtitle: "İlk Sınav: 05 Kasım 2026 Perşembe 09:00 • Türk Dili ve Edebiyatı"
+        });
       }
     };
 
@@ -570,14 +597,14 @@ export default function Agenda({
             <div>
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/30 text-rose-300 border border-rose-500/40">
-                  IB DP 2027 Pre-Mock 3
+                  {countdown.title}
                 </span>
                 <span className="text-xs text-slate-300 font-medium hidden md:inline">
-                  Resmi Deneme Sınavları (12 - 23 Ekim 2026)
+                  Resmi Sınav Kuşağı (03 - 13 Kasım 2026)
                 </span>
               </div>
               <p className="text-xs font-bold text-white mt-0.5 flex items-center gap-1.5">
-                <span>İlk Sınav: 12 Ekim 2026 Pazartesi 08:50</span>
+                <span>{countdown.subtitle}</span>
               </p>
             </div>
           </div>

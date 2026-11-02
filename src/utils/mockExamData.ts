@@ -80,8 +80,12 @@ export interface ScheduleEntry {
 export const MOCK_EXAM_START_DATE = "2026-10-12";
 export const MOCK_EXAM_END_DATE = "2026-10-27";
 
+export const FIRST_TERM_EXAM_START_DATE = "2026-11-03";
+export const FIRST_TERM_EXAM_END_DATE = "2026-11-13";
+
 /**
- * Returns true if the provided date is within the official two-week mock exam window
+ * Returns true if the provided date is within the official mock exam window (October)
+ * or the 1. Yarıyıl 1. Sınav Kuşağı window (03 - 13 Kasım 2026).
  */
 export function isMockExamPeriod(date: string | Date = new Date()): boolean {
   try {
@@ -94,7 +98,9 @@ export function isMockExamPeriod(date: string | Date = new Date()): boolean {
       const day = String(date.getDate()).padStart(2, "0");
       dateStr = `${year}-${month}-${day}`;
     }
-    return dateStr >= MOCK_EXAM_START_DATE && dateStr <= MOCK_EXAM_END_DATE;
+    const isOctoberMock = dateStr >= MOCK_EXAM_START_DATE && dateStr <= MOCK_EXAM_END_DATE;
+    const isNovemberExam = dateStr >= FIRST_TERM_EXAM_START_DATE && dateStr <= FIRST_TERM_EXAM_END_DATE;
+    return isOctoberMock || isNovemberExam;
   } catch {
     return false;
   }
@@ -799,6 +805,282 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     durationMin: 60,
     description: "IB DP Pre-Mock 3 • TITC Paper 1 SL (60 dk bitiş: 09:50)",
     affectedCourseIds: ["literature"]
+  },
+
+  // ==========================================
+  // 1. YARIYIL 1. SINAV KUŞAĞI (12 G IB)
+  // 03 - 13 KASIM 2026
+  // ==========================================
+
+  // 05.11.2026 Perşembe
+  // 2. Ders: 09:00 - 09:40 -> Türk Dili ve Edebiyatı (Yazılı)
+  {
+    id: "exam_20261105_turkish_written",
+    title: "Türk Dili ve Edebiyatı (Yazılı)",
+    subject: "Türk Dili ve Edebiyatı",
+    level: "SL/HL",
+    date: "2026-11-05",
+    startTime: "09:00",
+    endTime: "09:40",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "09:40",
+    hlEndTime: "09:40",
+    targetRoles: ["all", "turkish_sl", "turkish_hl", "turkish", "edebiyat"],
+    targetCourses: ["Türk Dili ve Edebiyatı", "Turkish A"],
+    room: "12 G (IB) Dersliği",
+    paper: "2. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Türk Dili ve Edebiyatı Yazılı Sınavı (2. Ders: 09:00 - 09:40)",
+    affectedCourseIds: ["chemistry_digsoc_psychology"]
+  },
+  // 5. Ders: 11:30 - 12:10 -> Türk Dili ve Edebiyatı (Uygulama)
+  {
+    id: "exam_20261105_turkish_practice",
+    title: "Türk Dili ve Edebiyatı (Uygulama)",
+    subject: "Türk Dili ve Edebiyatı",
+    level: "SL/HL",
+    date: "2026-11-05",
+    startTime: "11:30",
+    endTime: "12:10",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "12:10",
+    hlEndTime: "12:10",
+    targetRoles: ["all", "turkish_sl", "turkish_hl", "turkish", "edebiyat"],
+    targetCourses: ["Türk Dili ve Edebiyatı", "Turkish A"],
+    room: "12 G (IB) Dersliği",
+    paper: "5. Ders Uygulama Sınavı",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Türk Dili ve Edebiyatı Uygulama Sınavı (5. Ders: 11:30 - 12:10)",
+    affectedCourseIds: ["history_20th"]
+  },
+  // 8. Ders: 14:50 - 15:30 -> T.C. İnkılap Tarihi ve Atatürkçülük
+  {
+    id: "exam_20261105_titc",
+    title: "T.C. İnkılap Tarihi ve Atatürkçülük",
+    subject: "T.C. İnkılap Tarihi ve Atatürkçülük",
+    level: "SL/HL",
+    date: "2026-11-05",
+    startTime: "14:50",
+    endTime: "15:30",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "15:30",
+    hlEndTime: "15:30",
+    targetRoles: ["all", "titc"],
+    targetCourses: ["TITC", "T.C. İnkılap Tarihi ve Atatürkçülük"],
+    room: "12 G (IB) Dersliği",
+    paper: "8. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) T.C. İnkılap Tarihi ve Atatürkçülük (8. Ders: 14:50 - 15:30)",
+    affectedCourseIds: ["religion"]
+  },
+
+  // 06.11.2026 Cuma
+  // 2. Ders: 09:00 - 09:40 -> Seçmeli Matematik
+  {
+    id: "exam_20261106_math",
+    title: "Seçmeli Matematik",
+    subject: "Matematik",
+    level: "SL/HL",
+    date: "2026-11-06",
+    startTime: "09:00",
+    endTime: "09:40",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "09:40",
+    hlEndTime: "09:40",
+    targetRoles: ["all", "math_sl", "math_hl", "math", "matematik"],
+    targetCourses: ["Mathematics", "Matematik"],
+    room: "12 G (IB) Dersliği",
+    paper: "2. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Seçmeli Matematik Sınavı (2. Ders: 09:00 - 09:40)",
+    affectedCourseIds: ["literature"]
+  },
+  // 4. Ders: 10:40 - 11:20 -> S. Kimya / Küresel Toplumda İletişim Teknolojileri (Digital Society) / Psikoloji
+  {
+    id: "exam_20261106_chem_digsoc_psych",
+    title: "S. Kimya / Küresel Toplumda İletişim Teknolojileri / Psikoloji",
+    subject: "Kimya / DigSoc / Psikoloji",
+    level: "SL/HL",
+    date: "2026-11-06",
+    startTime: "10:40",
+    endTime: "11:20",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "11:20",
+    hlEndTime: "11:20",
+    targetRoles: [
+      "all",
+      "chemistry_sl", "chemistry_hl", "chemistry", "kimya",
+      "digital_society_sl", "digital_society_hl", "digital_society", "digsoc",
+      "psychology_sl", "psychology_hl", "psychology", "psikoloji"
+    ],
+    targetCourses: ["Chemistry", "Digital Society", "Psychology"],
+    room: "12 G (IB) Dersliği / Laboratuvar",
+    paper: "4. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) S. Kimya / Dijital Toplum (Digital Society) / Psikoloji (4. Ders: 10:40 - 11:20)",
+    affectedCourseIds: ["foreign_language"]
+  },
+
+  // 09.11.2026 Pazartesi
+  // 2. Ders: 09:00 - 09:40 -> S. Biyoloji / S. Fizik
+  {
+    id: "exam_20261109_bio_physics",
+    title: "S. Biyoloji / S. Fizik",
+    subject: "Biyoloji / Fizik",
+    level: "SL/HL",
+    date: "2026-11-09",
+    startTime: "09:00",
+    endTime: "09:40",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "09:40",
+    hlEndTime: "09:40",
+    targetRoles: [
+      "all",
+      "biology_sl", "biology_hl", "biology", "biyoloji",
+      "physics_sl", "physics_hl", "physics", "fizik"
+    ],
+    targetCourses: ["Biology", "Physics"],
+    room: "12 G (IB) Dersliği / Laboratuvar",
+    paper: "2. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Seçmeli Biyoloji / Seçmeli Fizik (2. Ders: 09:00 - 09:40)",
+    affectedCourseIds: ["physics_biology"]
+  },
+  // 5. Ders: 11:30 - 12:10 -> 1. Yabancı Dil (İngilizce) - Uygulama Sınavı
+  {
+    id: "exam_20261109_eng_practice",
+    title: "1. Yabancı Dil (İngilizce) - Uygulama",
+    subject: "İngilizce",
+    level: "SL/HL",
+    date: "2026-11-09",
+    startTime: "11:30",
+    endTime: "12:10",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "12:10",
+    hlEndTime: "12:10",
+    targetRoles: ["all", "eng_b_hl", "english", "foreign_language"],
+    targetCourses: ["English", "English B"],
+    room: "12 G (IB) Dersliği",
+    paper: "5. Ders Uygulama Sınavı",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) 1. Yabancı Dil (İngilizce) Uygulama Sınavı (5. Ders: 11:30 - 12:10)",
+    affectedCourseIds: ["math"]
+  },
+  // 8. Ders: 14:50 - 15:30 -> 1. Yabancı Dil (İngilizce) - Yazılı Sınavı
+  {
+    id: "exam_20261109_eng_written",
+    title: "1. Yabancı Dil (İngilizce) - Yazılı",
+    subject: "İngilizce",
+    level: "SL/HL",
+    date: "2026-11-09",
+    startTime: "14:50",
+    endTime: "15:30",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "15:30",
+    hlEndTime: "15:30",
+    targetRoles: ["all", "eng_b_hl", "english", "foreign_language"],
+    targetCourses: ["English", "English B"],
+    room: "12 G (IB) Dersliği",
+    paper: "8. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) 1. Yabancı Dil (İngilizce) Yazılı Sınavı (8. Ders: 14:50 - 15:30)",
+    affectedCourseIds: ["religion"]
+  },
+
+  // 10.11.2026 Salı
+  // 6. Ders: 13:10 - 13:50 -> Yabancı Diller Edebiyatı / S. Coğrafya
+  {
+    id: "exam_20261110_foreign_lit_geography",
+    title: "Yabancı Diller Edebiyatı / S. Coğrafya",
+    subject: "Yabancı Diller Edebiyatı / Coğrafya",
+    level: "SL/HL",
+    date: "2026-11-10",
+    startTime: "13:10",
+    endTime: "13:50",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "13:50",
+    hlEndTime: "13:50",
+    targetRoles: ["all", "foreign_language", "english", "eng_b_hl"],
+    targetCourses: ["English", "Literature", "Geography"],
+    room: "12 G (IB) Dersliği",
+    paper: "6. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Yabancı Diller Edebiyatı / S. Coğrafya (6. Ders: 13:10 - 13:50)",
+    affectedCourseIds: ["physics_biology"]
+  },
+  // 8. Ders: 14:50 - 15:30 -> Din Kültürü ve Ahlak Bilgisi
+  {
+    id: "exam_20261110_religion",
+    title: "Din Kültürü ve Ahlak Bilgisi",
+    subject: "Din Kültürü ve Ahlak Bilgisi",
+    level: "SL/HL",
+    date: "2026-11-10",
+    startTime: "14:50",
+    endTime: "15:30",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "15:30",
+    hlEndTime: "15:30",
+    targetRoles: ["all", "religion"],
+    targetCourses: ["Din Kültürü"],
+    room: "12 G (IB) Dersliği",
+    paper: "8. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Din Kültürü ve Ahlak Bilgisi (8. Ders: 14:50 - 15:30)",
+    affectedCourseIds: ["math"]
+  },
+
+  // 11.11.2026 Çarşamba (Çarşamba Özel Ders Saatleri)
+  // 2. Ders: 08:50 - 09:30 -> Klasik Ahlak Metinleri
+  {
+    id: "exam_20261111_moral_texts",
+    title: "Klasik Ahlak Metinleri",
+    subject: "Klasik Ahlak Metinleri",
+    level: "SL/HL",
+    date: "2026-11-11",
+    startTime: "08:50",
+    endTime: "09:30",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "09:30",
+    hlEndTime: "09:30",
+    targetRoles: ["all"],
+    targetCourses: ["Klasik Ahlak Metinleri"],
+    room: "12 G (IB) Dersliği",
+    paper: "2. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Klasik Ahlak Metinleri Sınavı (2. Ders: 08:50 - 09:30)",
+    affectedCourseIds: ["history_20th"]
+  },
+  // 4. Ders: 10:30 - 11:10 -> 20. Yüzyılda Türkiye
+  {
+    id: "exam_20261111_history_20th",
+    title: "20. Yüzyılda Türkiye",
+    subject: "20. Yüzyılda Türkiye",
+    level: "SL/HL",
+    date: "2026-11-11",
+    startTime: "10:30",
+    endTime: "11:10",
+    slDurationMinutes: 40,
+    hlDurationMinutes: 40,
+    slEndTime: "11:10",
+    hlEndTime: "11:10",
+    targetRoles: ["all", "history_20th"],
+    targetCourses: ["20. Yy Türkiye", "Tarih"],
+    room: "12 G (IB) Dersliği",
+    paper: "4. Ders Yazılı Sınav",
+    durationMin: 40,
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) 20. Yüzyılda Türkiye Sınavı (4. Ders: 10:30 - 11:10)",
+    affectedCourseIds: ["math"]
   }
 ];
 
@@ -828,9 +1110,11 @@ export function getCourseFolderTarget(subject: string): string {
   if (norm.includes("chem") || norm.includes("kimya")) return "Chemistry";
   if (norm.includes("bio") || norm.includes("biyoloji")) return "Biology";
   if (norm.includes("turkish") || norm.includes("edebiyat") || norm.includes("turk")) return "Turkish";
-  if (norm.includes("english") || norm.includes("ingiliz")) return "English";
-  if (norm.includes("titc") || norm.includes("inkılap") || norm.includes("tarih")) return "TITC";
-  if (norm.includes("digsoc") || norm.includes("digital society") || norm.includes("psycholog")) return "Digital Society";
+  if (norm.includes("english") || norm.includes("ingiliz") || norm.includes("yabancı")) return "English";
+  if (norm.includes("titc") || norm.includes("inkılap") || norm.includes("tarih") || norm.includes("türkiye") || norm.includes("20.")) return "TITC";
+  if (norm.includes("ahlak") || norm.includes("din")) return "TITC";
+  if (norm.includes("coğraf") || norm.includes("geography")) return "TITC";
+  if (norm.includes("digsoc") || norm.includes("digital society") || norm.includes("psycholog") || norm.includes("psikoloji")) return "Digital Society";
   return "Mathematics";
 }
 

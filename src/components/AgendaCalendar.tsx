@@ -57,9 +57,24 @@ export default function AgendaCalendar({
   onOpenScheduleModal,
   className = ""
 }: AgendaCalendarProps) {
-  // Calendar month view (defaults to October 2026 for the Mock Exam Period)
-  const [viewDate, setViewDate] = useState(() => new Date("2026-10-12T00:00:00"));
-  const [selectedDateStr, setSelectedDateStr] = useState<string>("2026-10-12");
+  // Calendar month view (defaults to current month or November 2026 if active)
+  const [viewDate, setViewDate] = useState(() => {
+    const now = new Date();
+    if (now.getFullYear() === 2026 && now.getMonth() >= 10) {
+      return new Date(2026, 10, 1);
+    }
+    if (now.getFullYear() === 2026 && now.getMonth() === 9) {
+      return new Date("2026-10-12T00:00:00");
+    }
+    return new Date(2026, 10, 1);
+  });
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(() => {
+    const now = new Date();
+    if (now.getFullYear() === 2026 && now.getMonth() >= 10) {
+      return "2026-11-05";
+    }
+    return "2026-10-12";
+  });
   const [onlyMyExams, setOnlyMyExams] = useState<boolean>(false);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState<boolean>(false);
   const [selectedExamDetail, setSelectedExamDetail] = useState<{
@@ -203,6 +218,13 @@ export default function AgendaCalendar({
     setSelectedDateStr("2026-10-12");
   };
 
+  const handleJumpToNovemberExams = () => {
+    setViewDate(new Date(2026, 10, 1));
+    setSelectedDateStr("2026-11-05");
+  };
+
+  const isViewingNovember = month === 10 && year === 2026;
+
   const handleDaySelect = (dateStr: string) => {
     setSelectedDateStr(dateStr);
     // Mobilde alt çekmeceyi otomatik aç
@@ -223,7 +245,7 @@ export default function AgendaCalendar({
   return (
     <div className={`flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden overflow-x-hidden w-full max-w-full ${className}`}>
       
-      {/* 1. MOCK EXAM PERIOD INFORMATION BANNER */}
+      {/* 1. MOCK / FIRST TERM EXAM PERIOD INFORMATION BANNER */}
       <div className="bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-indigo-500/15 border-b border-amber-500/30 p-3.5 sm:p-4 lg:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center font-black text-base sm:text-lg shadow-sm shrink-0">
@@ -232,14 +254,16 @@ export default function AgendaCalendar({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400/30 text-amber-900 dark:text-amber-200 border border-amber-400/40 shrink-0">
-                Mock Sınav Düzeni
+                {isViewingNovember ? "1. Yarıyıl 1. Sınav Kuşağı (12 G IB)" : "Mock Sınav Düzeni"}
               </span>
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                12 - 26 Ekim 2026
+                {isViewingNovember ? "03 - 13 Kasım 2026" : "12 - 26 Ekim 2026"}
               </span>
             </div>
             <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
-              Normal ders saatleri sınav saatleriyle ikame edilmiştir. SL/HL seviyelerine göre sınavlar listelenir.
+              {isViewingNovember
+                ? "Sınavlar günün belirtilen ders saatinde yapılır. Çarşamba özel saatleri uygulanır. Giden dersler kartta 'Yerine: [Ders]' olarak gösterilir."
+                : "Normal ders saatleri sınav saatleriyle ikame edilmiştir. SL/HL seviyelerine göre sınavlar listelenir."}
             </p>
           </div>
         </div>
@@ -260,14 +284,27 @@ export default function AgendaCalendar({
             <span>Sınavlarımı Göster</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleJumpToMock}
-            className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-          >
-            <span>Mock Haftası</span>
-            <ArrowRight size={13} />
-          </button>
+          {isViewingNovember ? (
+            <button
+              type="button"
+              onClick={handleJumpToMock}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+              title="Ekim 2026 Pre-Mock sınav takvimine git"
+            >
+              <span>Ekim Pre-Mock</span>
+              <ArrowRight size={13} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleJumpToNovemberExams}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-colors cursor-pointer flex items-center gap-1 shrink-0 shadow-sm"
+              title="Kasım 2026 1. Sınav Kuşağı takvimine git"
+            >
+              <span>1. Sınav Kuşağı</span>
+              <ArrowRight size={13} />
+            </button>
+          )}
         </div>
       </div>
 
