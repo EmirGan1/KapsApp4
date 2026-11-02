@@ -833,7 +833,7 @@ export default function KapsStrikeGame({
       )}
 
       {/* MOBILE ERGONOMIC HUD OVERLAY (PUBG STİLİ DİNAMİK TUŞ DÜZENİ) */}
-      {view === "play" && isMobile && !panel && (
+      {view === "play" && isMobile && !panel && !(hud?.dead&&currentRoom?.mode==='bomb') && (
         <div className="ks-touch-overlay">
           {/* Virtual Joystick Zone */}
           <div
@@ -1369,7 +1369,14 @@ export default function KapsStrikeGame({
             </div>
           )}
 
-          {hud.dead && currentRoom?.mode==='bomb' && <div className="ks-bomb-spectator"><b>{hud.spectating?`İzleniyor: ${hud.spectating}`:'Takımın elendi'}</b><span>Sonraki raundda yeniden doğacaksın.</span>{hud.spectating&&<button onClick={()=>game.current?.cycleSpectator()}>Sonraki takım arkadaşı</button>}</div>}
+          {hud.dead && currentRoom?.mode==='bomb' && <div className="ks-bomb-spectator" role="group" aria-label="Takım arkadaşını izle">
+            <b role="status">{hud.spectating?`İzleniyor: ${hud.spectating} (${hud.spectatorNumber}/${hud.spectatorCount})`:'İzlenebilecek yaşayan takım arkadaşın yok.'}</b>
+            <span>Yalnızca kendi takımını izleyebilirsin. Yeni turda yeniden doğacaksın.</span>
+            {!!hud.spectating&&<><div className="ks-spectator-buttons">
+              <button disabled={(hud.spectatorCount||0)<2} onClick={()=>game.current?.cycleSpectator(-1)}>Önceki takım arkadaşı</button>
+              <button disabled={(hud.spectatorCount||0)<2} onClick={()=>game.current?.cycleSpectator(1)}>Sonraki takım arkadaşı</button>
+            </div>{!isMobile&&<span>← / → · Sol / sağ tık · Fare tekerleği</span>}</>}
+          </div>}
           {(!currentInputDevice().phone||currentRoom?.mode==='bomb') && <StrikeMinimap map={MAPS[currentRoom?.map||map]} hud={hud}/>}
           {hud.ads && !hud.dead && (hud.weapon==='sniper'||hud.weapon==='railgun') && <div className="ks-scope" aria-label="Dürbün açık"><div className="ks-scope-lens"><i/><b/><span>{hud.weapon==='railgun'?'5×':'3.5×'} / UFUK OPTICS</span></div></div>}
           {hud.lootNotice&&!hud.dead&&<div className="ks-loot-notice" role="status">{hud.lootNotice}</div>}

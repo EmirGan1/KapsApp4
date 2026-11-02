@@ -211,6 +211,7 @@ export interface NetworkPlayer {
 }
 
 export interface PlayerSnapshot {
+  connected?: boolean;
   assists?: number;
   damage?: number;
   headshots?: number;

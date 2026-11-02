@@ -1,4 +1,5 @@
 import {touchAimFriction} from './aimAssist';
+import {TeamSpectator} from './spectator';
 import {nearestSupply,supplyLabel} from './world';
 import { cleanBindings, held, Bindings, Action } from "./controls";
 import type { Socket } from "socket.io-client";
@@ -26,6 +27,8 @@ import { clamp, fits } from "./physics";
 export interface StrikeHUD {
   bombEquipped?:boolean;
   spectating?:string;
+  spectatorCount?:number;
+  spectatorNumber?:number;
   inventory?:WeaponId[];
   world?: StrikeWorld;
   position?: Vec3;
@@ -116,8 +119,17 @@ export class StrikeController {
   private active = false;
   private menuOverlay=false;
   private spectator?:{id:string;username:string;position:Vec3;yaw:number;pitch:number;stance:string};
-  private spectatorIndex=0;
-  cycleSpectator(){this.spectatorIndex++;}
+  private teamSpectator=new TeamSpectator();
+  private get watchingTeam(){return !!this.state.bomb&&this.state.bomb.phase!=='finished'&&this.state.player.hp<=0;}
+  cycleSpectator(direction=1){
+    if(!this.watchingTeam)return;
+    this.refreshSpectator();this.teamSpectator.cycle(direction);this.refreshSpectator();this.pushHUD();
+  }
+  private refreshSpectator(rendered?:{id:string;position:Vec3;yaw:number;pitch:number;stance:string}[]){
+    const target=this.teamSpectator.update(this.state.bomb,this.socket?.id||this.state.player.id,this.localTeam,this.state.player.hp,this.remotePlayerList);
+    const pose=target&&rendered?.find(p=>p.id===target.id);
+    this.spectator=target?{...target,...(pose||{})}:undefined;
+  }
   private disposed = false;
   private last = 0;
   private accumulator = 0;
@@ -247,6 +259,9 @@ export class StrikeController {
         return;
 
       if (e.code === "Escape") { e.preventDefault(); this.pause(); return; }
+      if(this.watchingTeam&&(e.code==='ArrowLeft'||e.code==='ArrowRight')){
+        e.preventDefault();if(!e.repeat)this.cycleSpectator(e.code==='ArrowLeft'?-1:1);return;
+      }
       if (!this.isMultiplayer && e.code === "Digit7" && !e.repeat) {
         e.preventDefault();
         this.triggerDemoBomb();
@@ -281,8 +296,9 @@ export class StrikeController {
     }) as EventListener);
 
     listen(canvas, "mousedown", ((e: MouseEvent) => {
-      if (!this.active || (!this.isTouchDevice && this.usesPointerLock && document.pointerLockElement !== canvas)) return;
+      if (!this.active || this.menuOverlay || (!this.isTouchDevice && this.usesPointerLock && document.pointerLockElement !== canvas)) return;
       e.preventDefault();
+      if(this.watchingTeam&&(e.button===0||e.button===2)){this.cycleSpectator(e.button===0?1:-1);return;}
       this.keys.add(`Mouse${e.button}`);
       this.handleActions(false);
     }) as EventListener);
@@ -303,6 +319,7 @@ export class StrikeController {
         e.preventDefault();
         if (e.deltaY === 0 || performance.now() - this.lastWheel < 140) return;
         this.lastWheel = performance.now();
+        if(this.watchingTeam){this.cycleSpectator(e.deltaY>0?1:-1);return;}
         const code = e.deltaY > 0 ? "WheelDown" : "WheelUp";
         this.keys.add(code);
         this.handleActions(false);
@@ -356,6 +373,10 @@ export class StrikeController {
   private handleActions(repeat: boolean): boolean {
     this.updateHeldActions();
     if (this.down("menu")) { this.pause(); return true; }
+    if(this.watchingTeam){
+      if(!repeat&&(this.down('next')||this.down('previous')))this.cycleSpectator(this.down('next')?1:-1);
+      return true;
+    }
     if (!repeat) {
       if(this.down("inspect"))this.renderer.inspect();
       if(this.down("interact"))this.pendingInteract=true;
@@ -433,6 +454,8 @@ export class StrikeController {
           this.callbacks?.onLoadingStage?.("Grafikler hazırlanıyor…");
         }
         const respawned=(this.state.player.hp<=0&&myServerState.hp>0)||(snapshot.bomb?.round!==this.state.bomb?.round);
+        const died=this.state.player.hp>0&&myServerState.hp<=0;
+        if(died){this.clearInput();this.unacknowledgedInputs=[];}
         const frozen=!!snapshot.bomb&&!["active","planted","result"].includes(snapshot.bomb.phase);
         if(frozen)this.unacknowledgedInputs=[];
         const oldPosition={...this.state.player.movement.position};
@@ -475,6 +498,7 @@ export class StrikeController {
         }
 
       }
+      this.refreshSpectator();
 
       // Process Combat Events from Server (Remote shots, hits, etc.)
       if (Array.isArray(snapshot.events)) {
@@ -665,6 +689,7 @@ export class StrikeController {
    * Smooth snapshot interpolation for remote players (~70ms interpolation delay)
    */
   private updateAndRenderRemotePlayers() {
+    this.refreshSpectator();
     if (this.remoteSnapshots.length === 0) return;
 
     const myId = this.socket?.id;
@@ -707,7 +732,7 @@ export class StrikeController {
         hp: p2.hp,
         stance: p2.stance,
         selectedWeapon: p2.selectedWeapon,
-        yaw: p1.yaw + (p2.yaw - p1.yaw) * alpha,
+        yaw: p1.yaw + Math.atan2(Math.sin(p2.yaw-p1.yaw),Math.cos(p2.yaw-p1.yaw)) * alpha,
         pitch: p1.pitch + (p2.pitch - p1.pitch) * alpha,
         position: (()=>{
           const base={x:p1.position.x+(p2.position.x-p1.position.x)*alpha,y:p1.position.y+(p2.position.y-p1.position.y)*alpha,z:p1.position.z+(p2.position.z-p1.position.z)*alpha};
@@ -719,8 +744,7 @@ export class StrikeController {
       };
     });
 
-    const teammates=interpolatedPlayers.filter(p=>p.id!==myId&&p.team===this.localTeam&&p.hp>0);
-    this.spectator=this.state.bomb&&this.state.player.hp<=0&&teammates.length?teammates[this.spectatorIndex%teammates.length]:undefined;
+    this.refreshSpectator(interpolatedPlayers);
     this.renderer.renderRemotePlayers(interpolatedPlayers.filter(p=>p.id!==this.spectator?.id), myId, this.localTeam);
   }
 
@@ -771,6 +795,7 @@ export class StrikeController {
   }
 
   private resetView(){
+    this.teamSpectator.reset();this.spectator=undefined;
     this.bombEquipped=false;
     this.yaw=this.state.bomb&&this.localTeam==='blue'?Math.PI:0;this.pitch=0;this.correction={x:0,y:0,z:0};
     this.state.player.yaw=this.yaw;this.state.player.pitch=0;
@@ -789,8 +814,10 @@ export class StrikeController {
     this.onHUD({
       bombEquipped:this.bombEquipped&&s.bomb?.carrier===this.socket?.id,
       spectating:this.spectator?.username,
+      spectatorCount:this.teamSpectator.count,
+      spectatorNumber:this.teamSpectator.index+1,
       inventory:s.bomb?.players[this.socket?.id||'']?.weapons||WEAPON_ORDER.filter(w=>ownsWeapon(p.weapon,w)),
-      world:s.bomb?undefined:s.world, position:{...p.movement.position}, yaw:this.yaw,
+      world:s.bomb?undefined:s.world, position:{...(this.spectator?.position||p.movement.position)}, yaw:this.spectator?.yaw??this.yaw,
       radar:this.remotePlayerList.filter(r=>r.hp>0&&r.id!==p.id&&this.localTeam!=="none"&&r.team===this.localTeam).map(r=>({...r.position,team:r.team})),
       armor:p.armor||0,
       lootNotice:p.lootNoticeUntil&&p.lootNoticeUntil>s.tick?p.lootNotice:undefined,
