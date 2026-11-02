@@ -974,6 +974,78 @@ html:not(.dark) .ks-root button:hover {
   background: #dc2626;
 }
 
+.ks-touch-btn-custom {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  color: #f8fafc;
+  font-weight: 800;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  touch-action: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease;
+  z-index: 85;
+}
+
+.ks-touch-btn-custom:active {
+  transform: translate(-50%, -50%) scale(0.92) !important;
+  background: rgba(236, 193, 123, 0.45);
+  border-color: #ecc17b;
+}
+
+.ks-touch-fire-btn {
+  width: 78px;
+  height: 78px;
+  background: rgba(239, 68, 68, 0.88);
+  border: 2.5px solid #f87171;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.6);
+}
+
+.ks-touch-fire-btn:active {
+  background: #dc2626 !important;
+  border-color: #fca5a5 !important;
+}
+
+.ks-touch-inspect-btn {
+  border-color: rgba(56, 189, 248, 0.6);
+  background: rgba(15, 23, 42, 0.92);
+}
+
+.ks-touch-inspect-btn:active {
+  background: rgba(56, 189, 248, 0.4) !important;
+  border-color: #38bdf8 !important;
+}
+
+.ks-touch-ads-btn {
+  border-color: rgba(236, 193, 123, 0.5);
+}
+
+.ks-touch-reload-btn {
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.ks-touch-jump-btn {
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.ks-touch-crouch-btn {
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
 .ks-touch-arc-btn {
   position: absolute;
   width: 52px;

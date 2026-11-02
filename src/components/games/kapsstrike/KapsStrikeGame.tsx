@@ -4,6 +4,8 @@ import StrikeInventoryAdmin from "./StrikeInventoryAdmin";
 import StrikeMinimap from './StrikeMinimap';
 import StrikeGraphicsSettings from './StrikeGraphicsSettings';
 import StrikeInputSettings from './StrikeInputSettings';
+import StrikeTouchCustomizer from './StrikeTouchCustomizer';
+import { loadTouchLayout, TouchLayout } from "../../../games/kapsstrike/touchLayout";
 import {touchControls,currentInputDevice} from '../../../utils/gameInput';
 import {useGameGyroscope} from '../../../hooks/useGameGyroscope';
 import StrikeSkins from "./StrikeSkins";
@@ -77,7 +79,8 @@ export default function KapsStrikeGame({
     }
   });
   const [view, setView] = useState<"menu" | "lobby" | "loading" | "play" | "pause" | "match_end">("menu");
-  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "inventory" | "inventory_admin" | "input" | "create_room" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "inventory" | "inventory_admin" | "input" | "create_room" | "touch_layout" | null>(null);
+  const [touchLayout, setTouchLayout] = useState<TouchLayout>(() => loadTouchLayout());
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
   const [returnFire, setReturnFire] = useState(false);
@@ -829,12 +832,19 @@ export default function KapsStrikeGame({
         </div>
       )}
 
-      {/* MOBILE ERGONOMIC HUD OVERLAY */}
+      {/* MOBILE ERGONOMIC HUD OVERLAY (PUBG STİLİ DİNAMİK TUŞ DÜZENİ) */}
       {view === "play" && isMobile && !panel && (
         <div className="ks-touch-overlay">
-          {/* Virtual Joystick Zone (Bottom-Left) */}
+          {/* Virtual Joystick Zone */}
           <div
             className="ks-touch-joystick-zone"
+            style={{
+              position: "absolute",
+              left: `${touchLayout.joystick.x}%`,
+              top: `${touchLayout.joystick.y}%`,
+              transform: `translate(-50%, -50%) scale(${touchLayout.joystick.size})`,
+              opacity: touchLayout.joystick.opacity,
+            }}
             onTouchStart={(e) => {
               const touch = e.changedTouches[0];
               joystickTouchId.current = touch.identifier;
@@ -920,109 +930,161 @@ export default function KapsStrikeGame({
             }}
           />
 
-          {/* Ergonomic Arc Action Buttons Around Main Fire Button */}
-          <div className="ks-touch-arc-container">
-            {/* Main Fire Button */}
-            <button
-              type="button"
-              className="ks-touch-btn-fire-main"
-              onTouchStart={(e) => {
-                e.preventDefault();
-                game.current?.setTouchFire(true);
-              }}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                game.current?.setTouchFire(false);
-              }}
-              onTouchCancel={() => game.current?.setTouchFire(false)}
-            >
-              ATEŞ
-            </button>
+          {/* Main Fire Button */}
+          <button
+            type="button"
+            className="ks-touch-btn-custom ks-touch-fire-btn"
+            style={{
+              left: `${touchLayout.fire.x}%`,
+              top: `${touchLayout.fire.y}%`,
+              transform: `translate(-50%, -50%) scale(${touchLayout.fire.size})`,
+              opacity: touchLayout.fire.opacity,
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              game.current?.setTouchFire(true);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              game.current?.setTouchFire(false);
+            }}
+            onTouchCancel={() => game.current?.setTouchFire(false)}
+          >
+            <span className="text-base leading-none">💥</span>
+            <span>ATEŞ</span>
+          </button>
 
-            {/* Arc Action Button: ADS / Dürbün */}
-            <button
-              type="button"
-              className="ks-touch-arc-btn"
-              style={{
-                bottom: "105px",
-                right: "15px",
-                background: touchAdsActive ? "rgba(236, 193, 123, 0.45)" : undefined,
-                borderColor: touchAdsActive ? "#ecc17b" : undefined,
-              }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                const next = hud?.weapon === "knife" ? true : !touchAdsActive;
-                setTouchAdsActive(next);
-                game.current?.setTouchAds(next);
-              }}
-              onTouchEnd={() => {
-                if (hud?.weapon === "knife") {
-                  setTouchAdsActive(false);
-                  game.current?.setTouchAds(false);
-                }
-              }}
-              onTouchCancel={() => {
+          {/* ADS / Dürbün Button */}
+          <button
+            type="button"
+            className="ks-touch-btn-custom ks-touch-ads-btn"
+            style={{
+              left: `${touchLayout.ads.x}%`,
+              top: `${touchLayout.ads.y}%`,
+              transform: `translate(-50%, -50%) scale(${touchLayout.ads.size})`,
+              opacity: touchLayout.ads.opacity,
+              background: touchAdsActive ? "rgba(236, 193, 123, 0.45)" : undefined,
+              borderColor: touchAdsActive ? "#ecc17b" : undefined,
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              const next = hud?.weapon === "knife" ? true : !touchAdsActive;
+              setTouchAdsActive(next);
+              game.current?.setTouchAds(next);
+            }}
+            onTouchEnd={() => {
+              if (hud?.weapon === "knife") {
                 setTouchAdsActive(false);
                 game.current?.setTouchAds(false);
-              }}
-            >
-              {hud?.weapon === "knife" ? "GÜÇLÜ" : "ADS"}
-            </button>
+              }
+            }}
+            onTouchCancel={() => {
+              setTouchAdsActive(false);
+              game.current?.setTouchAds(false);
+            }}
+          >
+            <span className="text-base leading-none">🎯</span>
+            <span>{hud?.weapon === "knife" ? "GÜÇLÜ" : "DÜRBÜN"}</span>
+          </button>
 
-            {/* Arc Action Button: Şarjör (Reload) */}
-            <button
-              type="button"
-              className="ks-touch-arc-btn"
-              style={{ bottom: "88px", right: "75px" }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                game.current?.triggerReload();
-              }}
-            >
-              R
-            </button>
+          {/* Şarjör Değiştir (Reload) Button */}
+          <button
+            type="button"
+            className="ks-touch-btn-custom ks-touch-reload-btn"
+            style={{
+              left: `${touchLayout.reload.x}%`,
+              top: `${touchLayout.reload.y}%`,
+              transform: `translate(-50%, -50%) scale(${touchLayout.reload.size})`,
+              opacity: touchLayout.reload.opacity,
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              game.current?.triggerReload();
+            }}
+          >
+            <span className="text-base leading-none">🔄</span>
+            <span>YENİLE</span>
+          </button>
 
-            {/* Arc Action Button: Çömel / Kay */}
-            <button
-              type="button"
-              className="ks-touch-arc-btn"
-              style={{ bottom: "45px", right: "98px" }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                game.current?.setTouchCrouch(true);
-              }}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                game.current?.setTouchCrouch(false);
-              }}
-              onTouchCancel={() => game.current?.setTouchCrouch(false)}
-            >
-              KAY
-            </button>
+          {/* Zıpla (Jump) Button */}
+          <button
+            type="button"
+            className="ks-touch-btn-custom ks-touch-jump-btn"
+            style={{
+              left: `${touchLayout.jump.x}%`,
+              top: `${touchLayout.jump.y}%`,
+              transform: `translate(-50%, -50%) scale(${touchLayout.jump.size})`,
+              opacity: touchLayout.jump.opacity,
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              game.current?.setTouchJump(true);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              game.current?.setTouchJump(false);
+            }}
+            onTouchCancel={() => game.current?.setTouchJump(false)}
+          >
+            <span className="text-base leading-none">🦘</span>
+            <span>ZIPLA</span>
+          </button>
 
-            {/* Arc Action Button: Zıpla */}
-            <button
-              type="button"
-              className="ks-touch-arc-btn"
-              style={{ bottom: "-8px", right: "88px" }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                game.current?.setTouchJump(true);
-              }}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                game.current?.setTouchJump(false);
-              }}
-              onTouchCancel={() => game.current?.setTouchJump(false)}
-            >
-              ZIPLA
-            </button>
-          </div>
+          {/* Çömel / Kay (Crouch) Button */}
+          <button
+            type="button"
+            className="ks-touch-btn-custom ks-touch-crouch-btn"
+            style={{
+              left: `${touchLayout.crouch.x}%`,
+              top: `${touchLayout.crouch.y}%`,
+              transform: `translate(-50%, -50%) scale(${touchLayout.crouch.size})`,
+              opacity: touchLayout.crouch.opacity,
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              game.current?.setTouchCrouch(true);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              game.current?.setTouchCrouch(false);
+            }}
+            onTouchCancel={() => game.current?.setTouchCrouch(false)}
+          >
+            <span className="text-base leading-none">🔻</span>
+            <span>KAY</span>
+          </button>
+
+          {/* Silahı İncele (Inspect) Button - Requested by user */}
+          <button
+            type="button"
+            className="ks-touch-btn-custom ks-touch-inspect-btn"
+            style={{
+              left: `${touchLayout.inspect.x}%`,
+              top: `${touchLayout.inspect.y}%`,
+              transform: `translate(-50%, -50%) scale(${touchLayout.inspect.size})`,
+              opacity: touchLayout.inspect.opacity,
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              game.current?.triggerInspect();
+            }}
+          >
+            <span className="text-base leading-none">👁️</span>
+            <span>İNCELE</span>
+          </button>
 
           {/* Quick Weapon Selector Wheel Popup Menu */}
           {weaponMenuOpen && (
-            <div className="ks-weapon-wheel">
-              {(hud?.inventory||WEAPON_ORDER.slice(0,6)).map((wId) => (
+            <div
+              className="ks-weapon-wheel"
+              style={{
+                position: "absolute",
+                left: `${touchLayout.weapon.x}%`,
+                top: `calc(${touchLayout.weapon.y}% - 85px)`,
+                transform: `translateX(-50%) scale(${touchLayout.weapon.size})`,
+              }}
+            >
+              {(hud?.inventory || WEAPON_ORDER.slice(0, 6)).map((wId) => (
                 <button
                   key={wId}
                   type="button"
@@ -1044,6 +1106,13 @@ export default function KapsStrikeGame({
           {/* Single Compact Active Weapon Card */}
           <div
             className="ks-compact-weapon-card"
+            style={{
+              position: "absolute",
+              left: `${touchLayout.weapon.x}%`,
+              top: `${touchLayout.weapon.y}%`,
+              transform: `translate(-50%, -50%) scale(${touchLayout.weapon.size})`,
+              opacity: touchLayout.weapon.opacity,
+            }}
             onClick={() => setWeaponMenuOpen((prev) => !prev)}
             title="Silah Değiştir"
           >
@@ -1403,6 +1472,7 @@ export default function KapsStrikeGame({
 
               <div className="ks-feature-shortcuts ks-lobby-shortcuts" aria-label="Oyun ayarları">
                 <button type="button" onClick={() => setPanel("input")}>Mobil Kontroller / Jiroskop</button>
+                <button type="button" onClick={() => setPanel("touch_layout")}>🎮 Tuş Düzeni (PUBG)</button>
                 <button type="button" onClick={() => setPanel("inventory")}>Envanter / Kasalar</button><button type="button" onClick={() => setPanel("skins")}>Karakter / Skin</button>
                 <button type="button" onClick={() => setPanel("controls")}>Kontroller</button>
               </div>
@@ -1584,6 +1654,7 @@ export default function KapsStrikeGame({
                 <button type="button" onClick={() => setPanel("inventory")}>Envanter / Kasalar</button><button type="button" onClick={() => setPanel("skins")}>Karakterini seç</button>
                 <button type="button" onClick={() => setPanel("controls")}>Kontrolleri düzenle</button>
                 <button type="button" onClick={() => setPanel("input")}>Mobil Kontroller / Jiroskop</button>
+                <button type="button" onClick={() => setPanel("touch_layout")}>🎮 Tuş Düzeni (PUBG)</button>
               </div>
               <p className="ks-visibility-note">Rakiplerde ince kırmızı hat; özgün karakter görünümleri korunur.</p>
             </header>
@@ -1882,6 +1953,7 @@ export default function KapsStrikeGame({
 
             <footer>
               {inventoryAdmin&&<button onClick={()=>setPanel('inventory_admin')}>KapsStrike yönetimi</button>}
+              <button onClick={() => setPanel("touch_layout")}>🎮 Tuş Düzeni</button>
               <button onClick={() => setPanel(panel === "skins" ? null : "skins")}>Karakter / Skin</button>
               <button
                 onClick={() =>
@@ -1936,13 +2008,14 @@ export default function KapsStrikeGame({
             <button aria-label="Görüntü ve ses" onClick={()=>setPanel('settings')}>Görüntü ve ses<small>Kalite, FOV, ses düzeyleri</small></button>
             <button aria-label="Kontroller" onClick={()=>setPanel('controls')}>Kontroller<small>Tuş atamaları ve silah inceleme</small></button>
             <button onClick={()=>setPanel('input')}>Mobil Kontroller / Jiroskop<small>Dokunma, hassasiyet ve sensör</small></button>
+            <button onClick={()=>setPanel('touch_layout')}>🎮 PUBG Tuş Düzeni<small>Tuşları ekranda serbestçe taşı & boyutlandır</small></button>
             <button onClick={()=>setPanel('inventory')}>Envanter / Kasalar<small>Kaplamalarını seç</small></button><button aria-label="Karakter" onClick={()=>setPanel('skins')}>Karakter<small>Görünümünü seç</small></button>
           </nav>
           <button className="ks-mic-toggle" onClick={toggleVoice}>{isVoiceMuted?'Mikrofonu aç':'Mikrofonu sustur'}</button>
           <button className="ks-leave" onClick={()=>{setPanel(null);exit();}}>Menüye / Lobiye Dön</button>
         </div></div>
       )}
-      {panel && panel !== 'create_room' && ['menu','lobby','pause'].includes(view) && (
+      {panel && panel !== 'create_room' && panel !== 'touch_layout' && ['menu','lobby','pause'].includes(view) && (
         <div className="ks-overlay ks-feature-overlay" onClick={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
           <div className="ks-menu ks-feature-card" role="dialog" aria-modal="true" aria-label={{inventory_admin:'Yönetici envanteri',inventory:'Envanter ve kasalar',skins:'Karakter seçimi',controls:'Kontroller',settings:'Görüntü ve ses',input:'Mobil kontroller'}[panel]}>
             <div className="ks-panel-bar"><span>KAPSSTRIKE / {{inventory_admin:'YÖNETİM',inventory:'ENVANTER',skins:'KARAKTER',controls:'KONTROLLER',settings:'AYARLAR',input:'MOBİL KONTROLLER'}[panel]}</span><button autoFocus onClick={()=>setPanel(null)} aria-label="Paneli kapat">Geri dön <span aria-hidden="true">×</span></button></div>
@@ -1952,11 +2025,22 @@ export default function KapsStrikeGame({
               {panel==='skins'&&<StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin=>setting({selectedSkin:skin})}/>}
               {panel==='controls'&&<div className="ks-controls"><h2>Kontroller</h2><p>{label(settings.bindings?.inspect||'KeyF')} · Silahı incele. {label(settings.bindings?.interact||'KeyE')} · Sandığı aç / silahı al. {label(settings.bindings?.ads||'Mouse2')} · Nişan.</p><StrikeControls value={cleanBindings(settings.bindings)} onChange={bindings=>setting({bindings})}/></div>}
               {panel==='settings'&&<StrikeGraphicsSettings settings={settings} onChange={setting}/>}
-              {panel==='input'&&<StrikeInputSettings settings={settings} onChange={setting} gyro={gyro}/>}
+              {panel==='input'&&<StrikeInputSettings settings={settings} onChange={setting} gyro={gyro} onOpenTouchCustomizer={()=>setPanel('touch_layout')}/>}
             </div>
             <button className="ks-primary ks-panel-done" onClick={()=>setPanel(null)}>Kaydet ve Dön</button>
           </div>
         </div>
+      )}
+
+      {/* PUBG-STYLE TOUCH CONTROLS CUSTOMIZER MODAL */}
+      {panel === "touch_layout" && (
+        <StrikeTouchCustomizer
+          onClose={() => setPanel(null)}
+          onSave={(newLayout) => {
+            setTouchLayout(newLayout);
+            setPanel(null);
+          }}
+        />
       )}
 
     </section>

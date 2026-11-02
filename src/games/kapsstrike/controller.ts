@@ -913,6 +913,7 @@ export class StrikeController {
   public setTouchCrouch(crouch: boolean) { this.touchCrouch = crouch; }
   public setTouchSprint(sprint: boolean) { this.touchSprint = sprint; }
   public triggerReload() { this.pendingReload = true; }
+  public triggerInspect() { this.renderer.inspect(); }
   public selectWeapon(w: WeaponId) { this.pendingWeapon = w; }
   public triggerDemoBomb() {
     if (this.isMultiplayer) {

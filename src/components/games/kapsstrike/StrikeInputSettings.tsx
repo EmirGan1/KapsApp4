@@ -1,13 +1,34 @@
 import type {StrikeSettings} from '../../../games/kapsstrike/types';
 import {GYRO_STATUS} from '../../../utils/gameGyroscope';
 import type {GameGyroscope} from '../../../hooks/useGameGyroscope';
-export default function StrikeInputSettings({settings,onChange,gyro}:{settings:StrikeSettings;onChange:(s:Partial<StrikeSettings>)=>void;gyro:GameGyroscope}){
+export default function StrikeInputSettings({settings,onChange,gyro,onOpenTouchCustomizer}:{settings:StrikeSettings;onChange:(s:Partial<StrikeSettings>)=>void;gyro:GameGyroscope;onOpenTouchCustomizer?:()=>void}){
  const changeGyro=async(mode:'off'|'ads'|'always')=>{
   if(mode==='off'){onChange({gyroMode:mode});return;}
   if(gyro.permissionGranted||await gyro.request())onChange({gyroMode:mode});
  };
  return <div className="ks-input-settings">
   <h3>Mobil Kontroller ve Jiroskop</h3>
+  
+  {onOpenTouchCustomizer && (
+    <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between gap-3">
+      <div>
+        <div className="text-xs font-black text-amber-300 uppercase tracking-wide">
+          🎮 PUBG Stili Mobil Tuş Düzeni
+        </div>
+        <div className="text-[11px] text-slate-300 mt-0.5">
+          Ateş, Dürbün, Zıplama, İnceleme ve Çömelme tuşlarının yerini ve büyüklüğünü ayarla
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onOpenTouchCustomizer}
+        className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 text-xs font-black shrink-0 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+      >
+        Düzeni Özelleştir
+      </button>
+    </div>
+  )}
+
   <label>Kontrol düzeni<select aria-label="Kontrol düzeni" value={settings.controlMode||'auto'} onChange={e=>onChange({controlMode:e.target.value as StrikeSettings['controlMode']})}>
    <option value="auto">Otomatik · telefon/tablette dokunmatik</option><option value="touch">Mobil · dokunmatik kontroller</option><option value="keyboard">Klavye ve fare</option>
   </select></label>
