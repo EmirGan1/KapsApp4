@@ -3,6 +3,8 @@ import {Server} from 'socket.io';
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
+// Keep the objective flow affordable on software WebGL; full visual QA stays the default.
+const compact=process.env.STRIKE_QA_COMPACT==='1';
 const vite=await createServer({cacheDir:'node_modules/.vite-bomb-qa',logLevel:'error',plugins:[{name:'bomb-qa',configureServer(s){s.middlewares.use('/__bomb',async(_req,res)=>{res.setHeader('Content-Type','text/html');res.end(await s.transformIndexHtml('/__bomb','<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><div id="root"></div><script type="module" src="/tests/kapsstrike.network.fixture.tsx"></script></body></html>'));});}}],server:{host:'127.0.0.1',port:4197,strictPort:true}});
 const io=new Server(vite.httpServer!,{pingTimeout:120000}),manager=new KapsStrikeServerManager(io);
 io.on('connection',socket=>{const id=Number(socket.handshake.auth.testUser);manager.register(socket,{id,username:`Tester ${id}`,avatar:null});socket.on('disconnect',()=>manager.handleDisconnect(socket,id));});
@@ -10,7 +12,7 @@ await vite.listen();
 const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
 const errors:string[]=[];
 try{
- const desktop=await browser.newContext({viewport:{width:1440,height:900}}),touch=await browser.newContext({viewport:{width:768,height:1024},isMobile:true,hasTouch:true});
+ const desktop=await browser.newContext({viewport:compact?{width:960,height:600}:{width:1440,height:900}}),touch=await browser.newContext({viewport:compact?{width:390,height:844}:{width:768,height:1024},isMobile:true,hasTouch:true});
  const a=await desktop.newPage(),b=await touch.newPage();
  browser.on('disconnected',()=>console.log('browser closed'));
  for(const [i,p] of [a,b].entries()){
@@ -81,11 +83,15 @@ try{
  await a.waitForFunction(()=>(window as any).strike.state.bomb.round===2,{},{timeout:60000});
  assert.equal(room.teamScores.blue,1);assert.equal(room.bomb!.players[ps[1].id].money,3950);
  assert.equal(errors.length,0,errors.join('\n'));
+ if(!compact){
  await b.evaluate(()=>(window as any).strike.renderer.engine.stopRenderLoop());
  await a.setViewportSize({width:640,height:400});
  await a.evaluate(()=>{const c=(window as any).strike;c.updateSettings({...c.settings,quality:'high'});});
  await a.waitForFunction(()=>(window as any).strike.renderer.scene.isReady(),{},{timeout:120000});
  await a.screenshot({path:'/tmp/strike-district-high.png'});
+ }
  console.log('PASS two independent Chromium contexts: create/join/ready/start; desktop pointer-lock buy/ESC; tablet buy; phone overflow; authoritative plant/kit-defuse/score/next round; no page errors. Test placements/timer override documented.');
- await a.close();await b.close();await new Promise(r=>setTimeout(r,100));assert.equal(manager.rooms.size,0);
+ // Explicitly leave: a plain network loss intentionally reserves the slot for 90 seconds.
+ for(const p of [a,b])await p.evaluate(()=>new Promise<void>(resolve=>(window as any).socket.emit('strike:leave_room',()=>resolve())));
+ await a.close();await b.close();assert.equal(manager.rooms.size,0);
 }catch(error){console.log('failure-state',JSON.stringify([...manager.rooms.values()].map(r=>r.bomb)));throw error;}finally{for(const r of manager.rooms.values())manager.stopRoomSimulationLoop(r);await browser.close();await new Promise<void>(r=>io.close(()=>r()));await vite.close();}

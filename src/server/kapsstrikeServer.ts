@@ -287,6 +287,7 @@ export class StrikeRoom {
     const ackSequence = targetPlayer ? targetPlayer.lastSequence : 0;
 
     const playerSnapshots: PlayerSnapshot[] = Array.from(this.players.values()).map((p) => ({
+      connected: !p.isDisconnected,
       id: p.id,
       userId: p.userId,
       username: p.username,
@@ -556,7 +557,9 @@ export class KapsStrikeServerManager {
         p.inputQueue=[];p.heldInput=undefined;p.lastInputTick=room.tick;p.history=[];p.state.weapon.triggerHeld=false;
         // Guarantee player returns to their exact original team
         if (p.originalTeam) {
-          p.team = p.originalTeam;
+          const side=room.bomb?.players[sId]?.team;
+          p.team = side ? (side==='T'?'red':'blue') : p.originalTeam;
+          p.originalTeam=p.team;
           p.color = p.team === "red" ? "#ef4444" : p.team === "blue" ? "#3b82f6" : "#10b981";
         }
         if(room.bomb?.players[sId]){
@@ -755,6 +758,7 @@ export class KapsStrikeServerManager {
     if(team!=='red'&&team!=='blue')return false;
     if(room.mode==='bomb'&&[...room.players.values()].filter(p=>p.team===team&&p.id!==socketId).length>=5)return false;
     player.team = team;
+    player.originalTeam = team;
     player.color = team === "red" ? "#ef4444" : "#3b82f6";
     this.broadcastRoomState(room);
     return true;
@@ -934,7 +938,7 @@ export class KapsStrikeServerManager {
       if(b.phase==='result'&&phase!=='result')for(const p of room.players.values())if(b.players[p.id]?.team===b.winner)this.creditReward(p.userId,`${room.rewardMatchId}:round:${round}`,'round');
       room.teamScores={red:b.scores.T,blue:b.scores.CT};
       if(b.phase==='finished'){this.concludeMatch(room,{team:b.winner==='T'?'red':'blue',reason:b.reason||'Bomba maçı sona erdi'});return;}
-      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];p.pendingFire=undefined;room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
+      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.originalTeam=p.team;p.color=p.team==='red'?'#ef4444':'#3b82f6';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];p.pendingFire=undefined;room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
     }
     const now = Date.now();
 
@@ -1796,15 +1800,18 @@ export class KapsStrikeServerManager {
   }
 
   public handleDisconnect(socket: Socket, userId: number): void {
-    const roomCode = this.socketToRoom.get(socket.id) || this.userToRoom.get(userId);
+    // A replaced socket has no membership: its late disconnect must not remove
+    // the current socket for the same user from either the lobby or the match.
+    const roomCode = this.socketToRoom.get(socket.id);
     if (!roomCode) return;
     const room = this.rooms.get(roomCode);
     if (!room) {
-      this.leaveRoom(socket.id, userId);
+      this.socketToRoom.delete(socket.id);
       return;
     }
 
     const player = room.players.get(socket.id);
+    if(!player||player.userId!==userId)return;
     if (room.status === "in_progress" && player) {
       // Save disconnected session for seamless reconnect to same team
       this.disconnectedSessions.set(userId, {
@@ -1827,11 +1834,18 @@ export class KapsStrikeServerManager {
 
       player.isDisconnected = true;
       player.disconnectedAt = Date.now();
+      const disconnectedAt=player.disconnectedAt;
+      player.inputQueue=[];player.heldInput=undefined;player.pendingFire=undefined;
+      if(player.isHost){
+        const successor=[...room.players.values()].find(p=>p.id!==player.id&&!p.isDisconnected&&!p.id.startsWith('bot-'));
+        if(successor){player.isHost=false;successor.isHost=true;successor.ready=true;room.hostId=successor.userId;}
+      }
       if (room.bomb) {
         dropBomb(room.bomb, socket.id);
         if (room.bomb.action?.player === socket.id) delete room.bomb.action;
       }
       this.socketToRoom.delete(socket.id);
+      this.broadcastRoomState(room);
       this.io.to(`strike:${roomCode}`).emit("strike:player_disconnected", {
         userId,
         username: player.username,
@@ -1842,11 +1856,11 @@ export class KapsStrikeServerManager {
       setTimeout(() => {
         const curRoom = this.rooms.get(roomCode);
         if (!curRoom) return;
-        const p = curRoom.players.get(socket.id) || Array.from(curRoom.players.values()).find(pl => pl.userId === userId);
-        if (p && p.isDisconnected && p.userId === userId) {
+        const p = curRoom.players.get(socket.id);
+        if (p && p.isDisconnected && p.userId === userId && p.disconnectedAt===disconnectedAt) {
           this.leaveRoom(socket.id, userId, true);
         }
-      }, 90000);
+      }, 90000).unref();
       return;
     }
 

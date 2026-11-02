@@ -49,7 +49,10 @@ for (const count of [8,10]) test(`${count} actual socket clients: latency/jitter
    const s=starts.get(p.id)!;const distance=Math.hypot(p.state.movement.position.x-s.x,p.state.movement.position.z-s.z);
    assert.ok(distance<=13*2.7,'input flood cannot teleport');if(distance>.1)moved++;
   }assert.ok(moved>=count-2);
-  host.close();await wait(80);assert.notEqual(room.hostId,1);assert.equal(room.players.size,count-1);
+  const hostSocketId=host.id!;
+  host.close();await wait(80);assert.notEqual(room.hostId,1);assert.equal(room.players.size,count);
+  assert.equal(room.players.get(hostSocketId)?.isDisconnected,true,'reserve the disconnected slot during the reconnect grace period');
+  assert.equal(room.getSnapshotForPlayer(replacement.id!).players.find(p=>p.id===hostSocketId)?.connected,false);
   const reconnect=await open(1);assert.ok((await ack(reconnect,'strike:join_room',{roomCode:code})).success);assert.equal(room.players.size,count);
   let result:any;reconnect.once('strike:game_over',r=>result=r);room.timeLeft=1;
   for(let i=0;i<25&&!result;i++)await wait(60);
