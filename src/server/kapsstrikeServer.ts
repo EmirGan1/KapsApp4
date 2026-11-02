@@ -64,8 +64,11 @@ export class StrikeServerPlayer {
   avatar: string | null;
   color: string;
   team: StrikeTeam;
+  originalTeam: StrikeTeam = "none";
   isHost: boolean;
   ready: boolean;
+  isDisconnected = false;
+  disconnectedAt?: number;
   state: PlayerState;
   damageCredits = new Map<string,{amount:number;tick:number}>();
   kills = 0;
@@ -105,6 +108,7 @@ export class StrikeServerPlayer {
     this.avatar = avatar;
     this.color = color;
     this.team = team;
+    this.originalTeam = team;
     this.isHost = isHost;
     this.ready = isHost; // Host starts ready
 
@@ -336,6 +340,23 @@ export class KapsStrikeServerManager {
   readonly rooms: Map<string, StrikeRoom> = new Map();
   private userToRoom: Map<number, string> = new Map();
   private socketToRoom: Map<string, string> = new Map();
+  private disconnectedSessions: Map<number, {
+    roomCode: string;
+    userId: number;
+    username: string;
+    avatar: string | null;
+    color: string;
+    team: StrikeTeam;
+    originalTeam: StrikeTeam;
+    score: number;
+    kills: number;
+    deaths: number;
+    assists: number;
+    damage: number;
+    headshots: number;
+    bombPlayer?: any;
+    disconnectedAt: number;
+  }> = new Map();
 
   /** Local developer-only ring buffer; never included in public room/snapshot state. */
   readonly combatDiagnostics:Record<string,unknown>[]=[];
@@ -373,10 +394,15 @@ export class KapsStrikeServerManager {
     const list: any[] = [];
     this.rooms.forEach((r) => {
       const host = Array.from(r.players.values()).find((p) => p.userId === r.hostId);
+      const minutes = Math.floor(Math.max(0, r.timeLeft) / 60);
+      const seconds = Math.floor(Math.max(0, r.timeLeft) % 60);
+      const timeLeftFormatted = `${minutes}:${String(seconds).padStart(2, "0")}`;
+      const modeLabel = r.mode === "bomb" ? "BOMBA KURMA" : r.mode === "tdm" ? "TAKIM SAVAŞI (TDM)" : "HERKES TEK (FFA)";
+      const mapLabel = MAPS[r.map]?.name || r.map;
       list.push({
         id: r.roomCode,
         gameType: "strike",
-        title: r.name || `KapsStrike ${r.roomCode}`,
+        title: r.name || `KapsStrike · ${r.roomCode}`,
         hostId: r.hostId,
         hostName: host ? host.username : "Masa Yöneticisi",
         hostAvatar: host ? host.avatar : null,
@@ -387,7 +413,11 @@ export class KapsStrikeServerManager {
         minBet: 0,
         maxBet: 0,
         isPrivate: !!r.password,
-        gameMode: `${r.mode.toUpperCase()} · ${MAPS[r.map]?.name || r.map}`,
+        gameMode: modeLabel,
+        mapName: mapLabel,
+        timeLeftStr: timeLeftFormatted,
+        timeLeft: r.timeLeft,
+        strikeMode: r.mode,
         createdAt: "Bugün",
         updatedAt: r.createdAt,
       });
@@ -514,26 +544,58 @@ export class KapsStrikeServerManager {
     }
 
     // A reconnect replaces the previous controller even when the room is full.
+    const savedSession = this.disconnectedSessions.get(user.id);
     for (const [sId, p] of room.players.entries()) {
       if (p.userId === user.id) {
         if(sId === socketId) return {success:true,room};
         this.socketToRoom.delete(sId);
         const previous=this.io.sockets?.sockets?.get(sId);
         previous?.emit("strike:session_replaced");previous?.leave(`strike:${roomCode}`);
-        p.id = socketId;p.state.id=socketId;p.lastSequence=-1;p.lastQueuedSequence=-1;
+        p.id = socketId;p.state.id=socketId;p.isDisconnected=false;delete p.disconnectedAt;
+        p.lastSequence=-1;p.lastQueuedSequence=-1;
         p.inputQueue=[];p.heldInput=undefined;p.lastInputTick=room.tick;p.history=[];p.state.weapon.triggerHeld=false;
-        if(room.bomb?.players[sId]){const bp=room.bomb.players[sId];delete room.bomb.players[sId];bp.id=socketId;room.bomb.players[socketId]=bp;if(room.bomb.carrier===sId)room.bomb.carrier=socketId;if(room.bomb.action?.player===sId)delete room.bomb.action;}
+        // Guarantee player returns to their exact original team
+        if (p.originalTeam) {
+          p.team = p.originalTeam;
+          p.color = p.team === "red" ? "#ef4444" : p.team === "blue" ? "#3b82f6" : "#10b981";
+        }
+        if(room.bomb?.players[sId]){
+          const bp=room.bomb.players[sId];
+          delete room.bomb.players[sId];
+          bp.id=socketId;
+          room.bomb.players[socketId]=bp;
+          if(room.bomb.carrier===sId)room.bomb.carrier=socketId;
+          if(room.bomb.action?.player===sId)delete room.bomb.action;
+        } else if (room.bomb && savedSession?.bombPlayer) {
+          room.bomb.players[socketId] = { ...savedSession.bombPlayer, id: socketId };
+        }
         room.players.delete(sId);room.players.set(socketId,p);
         this.socketToRoom.set(socketId,roomCode);this.userToRoom.set(user.id,roomCode);
-        this.broadcastRoomState(room);return {success:true,room};
+        this.disconnectedSessions.delete(user.id);
+        const newSock = this.io.sockets?.sockets?.get(socketId);
+        newSock?.join(`strike:${roomCode}`);
+        this.broadcastRoomState(room);
+        this.io.to(`strike:${room.roomCode}`).emit("strike:player_reconnected", {
+          userId: user.id,
+          username: p.username,
+          team: p.team
+        });
+        return {success:true,room};
       }
     }
-    if(room.mode==='bomb'&&room.status==='in_progress'&&!room.players.has(socketId))return {success:false,error:'Aktif bomba maçına yeni oyuncu alınmıyor.'};
-    if (room.players.size >= room.maxPlayers) return {success:false,error:"Oda dolu."};
+
+    const isReconnecting = savedSession?.roomCode === room.roomCode;
+    if(room.mode==='bomb'&&room.status==='in_progress'&&!isReconnecting) {
+      return {success:false,error:'Aktif bomba maçına yeni oyuncu alınmıyor.'};
+    }
+    if (room.players.size >= room.maxPlayers && !isReconnecting) return {success:false,error:"Oda dolu."};
     this.removePreviousMembership(user.id,socketId);
 
     let team: StrikeTeam = "none";
-    if (room.mode !== "ffa") {
+    if (isReconnecting && savedSession) {
+      // Reconnect to exact prior team (Red/Blue in TDM or T/CT in Bomb)
+      team = savedSession.team;
+    } else if (room.mode !== "ffa") {
       let redCount = 0;
       let blueCount = 0;
       room.players.forEach((p) => {
@@ -555,13 +617,37 @@ export class KapsStrikeServerManager {
       false
     );
 
+    if (isReconnecting && savedSession) {
+      player.kills = savedSession.kills;
+      player.deaths = savedSession.deaths;
+      player.assists = savedSession.assists;
+      player.score = savedSession.score;
+      player.damage = savedSession.damage;
+      player.headshots = savedSession.headshots;
+      player.originalTeam = savedSession.originalTeam || savedSession.team;
+      if (room.bomb && savedSession.bombPlayer) {
+        room.bomb.players[socketId] = { ...savedSession.bombPlayer, id: socketId };
+      }
+      this.disconnectedSessions.delete(user.id);
+    }
+
     player.skin = this.profiles.cache.get(user.id) || "classic";
     player.cosmeticLoadout=this.inventory.cache.get(user.id)?.equipped||{};
     room.players.set(socketId, player);
     this.userToRoom.set(user.id, roomCode);
     this.socketToRoom.set(socketId, roomCode);
 
+    const newSock = this.io.sockets?.sockets?.get(socketId);
+    newSock?.join(`strike:${roomCode}`);
+
     this.broadcastRoomState(room);
+    if (isReconnecting) {
+      this.io.to(`strike:${room.roomCode}`).emit("strike:player_reconnected", {
+        userId: user.id,
+        username: player.username,
+        team: player.team
+      });
+    }
     return { success: true, room };
   }
 
@@ -599,23 +685,28 @@ export class KapsStrikeServerManager {
     }
   }
 
-  public leaveRoom(socketId: string, userId: number): void {
-    const roomCode = this.socketToRoom.get(socketId);
+  public leaveRoom(socketId: string, userId: number, force = false): void {
+    const roomCode = this.socketToRoom.get(socketId) || this.userToRoom.get(userId);
     if (!roomCode) return;
     const room = this.rooms.get(roomCode);
-    if (!room || room.players.get(socketId)?.userId !== userId) return;
+    if (!room) return;
+    const player = room.players.get(socketId) || Array.from(room.players.values()).find(p => p.userId === userId);
+    if (!player || player.userId !== userId) return;
 
-    const wasHost = room.players.get(socketId)?.isHost;
+    const actualSocketId = player.id;
+    const wasHost = player.isHost;
+
     if(room.bomb){
-      dropBomb(room.bomb,socketId);
-      if(room.bomb.action?.player===socketId)delete room.bomb.action;
-      delete room.bomb.players[socketId];
+      dropBomb(room.bomb,actualSocketId);
+      if(room.bomb.action?.player===actualSocketId)delete room.bomb.action;
+      delete room.bomb.players[actualSocketId];
     }
-    room.players.delete(socketId);
-    this.socketToRoom.delete(socketId);
+    room.players.delete(actualSocketId);
+    this.socketToRoom.delete(actualSocketId);
     if(this.userToRoom.get(userId)===roomCode)this.userToRoom.delete(userId);
+    this.disconnectedSessions.delete(userId);
 
-    const hasHuman = [...room.players.values()].some((p) => !p.id.startsWith("bot-"));
+    const hasHuman = [...room.players.values()].some((p) => !p.id.startsWith("bot-") && !p.isDisconnected);
     if (room.players.size === 0 || !hasHuman) {
       if (room.loopInterval) {
         clearInterval(room.loopInterval);
@@ -627,7 +718,7 @@ export class KapsStrikeServerManager {
     }
 
     if (wasHost) {
-      const nextHost = Array.from(room.players.values())[0];
+      const nextHost = Array.from(room.players.values()).find(p => !p.id.startsWith("bot-") && !p.isDisconnected) || Array.from(room.players.values())[0];
       if (nextHost) {
         nextHost.isHost = true;
         nextHost.ready = true;
@@ -1705,6 +1796,60 @@ export class KapsStrikeServerManager {
   }
 
   public handleDisconnect(socket: Socket, userId: number): void {
+    const roomCode = this.socketToRoom.get(socket.id) || this.userToRoom.get(userId);
+    if (!roomCode) return;
+    const room = this.rooms.get(roomCode);
+    if (!room) {
+      this.leaveRoom(socket.id, userId);
+      return;
+    }
+
+    const player = room.players.get(socket.id);
+    if (room.status === "in_progress" && player) {
+      // Save disconnected session for seamless reconnect to same team
+      this.disconnectedSessions.set(userId, {
+        roomCode,
+        userId,
+        username: player.username,
+        avatar: player.avatar,
+        color: player.color,
+        team: player.team,
+        originalTeam: player.originalTeam || player.team,
+        score: player.score,
+        kills: player.kills,
+        deaths: player.deaths,
+        assists: player.assists,
+        damage: player.damage,
+        headshots: player.headshots,
+        bombPlayer: room.bomb?.players[socket.id] ? { ...room.bomb.players[socket.id] } : undefined,
+        disconnectedAt: Date.now()
+      });
+
+      player.isDisconnected = true;
+      player.disconnectedAt = Date.now();
+      if (room.bomb) {
+        dropBomb(room.bomb, socket.id);
+        if (room.bomb.action?.player === socket.id) delete room.bomb.action;
+      }
+      this.socketToRoom.delete(socket.id);
+      this.io.to(`strike:${roomCode}`).emit("strike:player_disconnected", {
+        userId,
+        username: player.username,
+        team: player.team
+      });
+
+      // 90 seconds reconnect grace period
+      setTimeout(() => {
+        const curRoom = this.rooms.get(roomCode);
+        if (!curRoom) return;
+        const p = curRoom.players.get(socket.id) || Array.from(curRoom.players.values()).find(pl => pl.userId === userId);
+        if (p && p.isDisconnected && p.userId === userId) {
+          this.leaveRoom(socket.id, userId, true);
+        }
+      }, 90000);
+      return;
+    }
+
     this.leaveRoom(socket.id, userId);
   }
 }

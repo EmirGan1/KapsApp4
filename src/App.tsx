@@ -236,6 +236,42 @@ export default function App() {
     };
   }, []);
 
+  // Ctrl + W Accident Prevention & Warning Toast State
+  const [ctrlWWarn, setCtrlWWarn] = useState(false);
+
+  useEffect(() => {
+    let warnTimer: NodeJS.Timeout | null = null;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      const isW = e.key === "w" || e.key === "W" || e.code === "KeyW" || e.keyCode === 87;
+      if (isCtrlOrCmd && isW) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        setCtrlWWarn(true);
+        if (warnTimer) clearTimeout(warnTimer);
+        warnTimer = setTimeout(() => {
+          setCtrlWWarn(false);
+        }, 4000);
+      }
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Sayfayı veya aktif oyununuzu kapatmak istediğinize emin misiniz?";
+      return e.returnValue;
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      if (warnTimer) clearTimeout(warnTimer);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
+
   // Active Screen Time Tracking Heartbeat (Every 60s, only while tab is visible)
   useEffect(() => {
     if (!token) return;
@@ -1359,6 +1395,40 @@ export default function App() {
 
       {/* Remote Custom Popup Overlay (Text, Image, Video Pop-up from Emirgan) */}
       <RemotePopupOverlay socket={socket} currentUserId={currentUserId} />
+
+      {/* Ctrl + W Accident Prevention Warning Toast */}
+      {ctrlWWarn && (
+        <div 
+          role="alert" 
+          aria-live="assertive"
+          className="fixed top-5 left-1/2 -translate-x-1/2 z-[999999] animate-bounce max-w-md w-full px-4 pointer-events-auto"
+        >
+          <div className="bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white rounded-2xl shadow-2xl border-2 border-amber-300 p-4 flex items-center justify-between gap-3 backdrop-blur-md">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/20 flex items-center justify-center text-xl shrink-0">
+                ⚠️
+              </div>
+              <div className="min-w-0">
+                <div className="font-black text-sm uppercase tracking-wider text-amber-200 flex items-center gap-2">
+                  <span>ctrl + w</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/40 border border-amber-300/40 text-white">Engellendi</span>
+                </div>
+                <div className="text-xs font-semibold text-white/95 mt-0.5">
+                  Sayfayı ve oyununuzu yanlışlıkla kapatmanızı önlemek için kısayol engellendi!
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCtrlWWarn(false)}
+              className="p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-white/10 transition-colors shrink-0 cursor-pointer font-bold text-xs"
+              title="Kapat"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
     </CallProvider>
   );

@@ -9,7 +9,7 @@ import { getApiUrl } from "../utils/api";
 
 export interface UnifiedGameTable {
   id: string | number;
-  gameType: "billiards" | "batak" | "okey" | "okey101" | "uno" | "blackjack" | "drawguess" | "party" | string;
+  gameType: "billiards" | "batak" | "okey" | "okey101" | "uno" | "blackjack" | "drawguess" | "party" | "strike" | "kapsstrike" | string;
   title: string;
   hostId: number;
   hostName: string;
@@ -21,6 +21,10 @@ export interface UnifiedGameTable {
   minBet?: number;
   isPrivate?: boolean;
   gameMode?: string;
+  mapName?: string;
+  timeLeftStr?: string;
+  timeLeft?: number;
+  strikeMode?: string;
   targetScore?: number;
 }
 
@@ -91,11 +95,15 @@ export default function OpenLobbiesWidget({
   // Filter open lobbies (waiting for players or all active)
   const filteredTables = tables.filter((t) => {
     if (filterType === "all") return true;
+    if (filterType === "strike") return t.gameType === "strike" || t.gameType === "kapsstrike";
     return t.gameType === filterType;
   });
 
   const getGameBadge = (type: string) => {
     switch (type) {
+      case "strike":
+      case "kapsstrike":
+        return { label: "KS:GO 🎯", color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30" };
       case "billiards":
         return { label: "KapsPool 🎱", color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" };
       case "okey101":
@@ -139,7 +147,7 @@ export default function OpenLobbiesWidget({
                 )}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                101 Okey, Bilardo, Batak ve Party modunda oyuncu bekleyen masalar
+                KS:GO 3D, 101 Okey, Bilardo, Batak ve Party modunda oyuncu bekleyen masalar
               </p>
             </div>
           </div>
@@ -148,7 +156,7 @@ export default function OpenLobbiesWidget({
             <button
               onClick={fetchTables}
               title="Yenile"
-              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:bg-slate-800 transition-colors"
             >
               <RefreshCw size={15} className={isLoading ? "animate-spin text-emerald-500" : ""} />
             </button>
@@ -167,6 +175,7 @@ export default function OpenLobbiesWidget({
         <div className="flex items-center gap-1.5 py-3 overflow-x-auto no-scrollbar">
           {[
             { id: "all", label: "Tümü" },
+            { id: "strike", label: "KS:GO 🎯" },
             { id: "billiards", label: "Bilardo 🎱" },
             { id: "okey101", label: "101 Okey 🀄" },
             { id: "okey", label: "Klasik Okey" },
@@ -214,13 +223,33 @@ export default function OpenLobbiesWidget({
             </div>
           ) : (
             filteredTables.map((table) => {
+              const isStrike = table.gameType === "strike" || table.gameType === "kapsstrike";
               const badge = getGameBadge(table.gameType);
               const isWaiting = table.status === "Lobi Bekliyor" || table.playerCount < table.maxPlayers;
+
+              const handleJoinDirect = () => {
+                if (isStrike) {
+                  const roomCode = String(table.id);
+                  sessionStorage.setItem("pending_join_strike", roomCode);
+                  window.dispatchEvent(
+                    new CustomEvent("kaps:join_game", {
+                      detail: { game: "kapsstrike", roomId: roomCode }
+                    })
+                  );
+                  onNavigateGames?.("kapsstrike");
+                } else {
+                  onNavigateGames?.();
+                }
+              };
 
               return (
                 <div
                   key={`${table.gameType}-${table.id}`}
-                  className="flex items-center justify-between p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 hover:border-emerald-200 dark:hover:border-emerald-800/60 transition-all group"
+                  className={`flex items-center justify-between p-3 rounded-2xl border transition-all group ${
+                    isStrike
+                      ? "border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50"
+                      : "border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 hover:border-emerald-200 dark:hover:border-emerald-800/60"
+                  }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="relative shrink-0">
@@ -234,8 +263,10 @@ export default function OpenLobbiesWidget({
                           }}
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-extrabold text-sm shadow-sm">
-                          {String(table.hostName || "O").substring(0, 2).toUpperCase()}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold text-sm shadow-sm ${
+                          isStrike ? "bg-amber-500 text-slate-950 font-black" : "bg-emerald-600"
+                        }`}>
+                          {isStrike ? "KS" : String(table.hostName || "O").substring(0, 2).toUpperCase()}
                         </div>
                       )}
                       {table.isPrivate && (
@@ -254,30 +285,57 @@ export default function OpenLobbiesWidget({
                           {badge.label}
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        <span className="truncate">Kurucu: <strong className="text-slate-700 dark:text-slate-300 font-semibold">{table.hostName}</strong></span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-300">
-                          <Users size={12} className="text-emerald-500" />
-                          {table.playerCount}/{table.maxPlayers}
-                        </span>
-                      </div>
+
+                      {/* Rich details for KS:GO (Map, Game Mode, Remaining Time) */}
+                      {isStrike ? (
+                        <div className="flex items-center flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300 mt-1">
+                          <span className="inline-flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                            ⚔️ {table.gameMode || "BOMBA KURMA"}
+                          </span>
+                          <span className="inline-flex items-center gap-1 font-medium text-slate-600 dark:text-slate-400">
+                            🗺️ {table.mapName || "Dust II"}
+                          </span>
+                          {table.timeLeftStr && (
+                            <span className="inline-flex items-center gap-1 font-mono font-bold text-rose-500 dark:text-rose-400">
+                              ⏱️ Süre: {table.timeLeftStr}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-300">
+                            <Users size={12} className="text-amber-500" />
+                            {table.playerCount}/{table.maxPlayers}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          <span className="truncate">Kurucu: <strong className="text-slate-700 dark:text-slate-300 font-semibold">{table.hostName}</strong></span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-300">
+                            <Users size={12} className="text-emerald-500" />
+                            {table.playerCount}/{table.maxPlayers}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${
                       isWaiting 
-                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" 
+                        ? (isStrike ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20" : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400")
                         : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
                     }`}>
                       {table.status || (isWaiting ? "Bekliyor" : "Oyunda")}
                     </span>
 
                     <Link
-                      to="/oyunlar"
-                      onClick={() => onNavigateGames?.()}
-                      className="p-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm shadow-emerald-600/30 flex items-center gap-1 text-xs font-bold"
+                      to={isStrike ? `/oyunlar?oyun=kapsstrike&room=${table.id}` : "/oyunlar"}
+                      onClick={handleJoinDirect}
+                      className={`p-2 rounded-xl transition-all shadow-sm flex items-center gap-1 text-xs font-bold cursor-pointer ${
+                        isStrike
+                          ? "bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-amber-500/30"
+                          : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-600/30"
+                      }`}
+                      title={isStrike ? "KS:GO Maçına Doğrudan Katıl" : "Masaya Katıl"}
                     >
                       <Play size={13} />
                       <span className="hidden sm:inline">Katıl</span>

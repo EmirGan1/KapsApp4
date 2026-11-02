@@ -76,9 +76,38 @@ export default function Games({
   const [blackjackRoomCount, setBlackjackRoomCount] = useState<number>(0);
   const [batakRoomCount, setBatakRoomCount] = useState<number>(0);
 
-  // Active open tables list (Only real user tables, no fake bot tables)
   const [activeTables, setActiveTables] = useState<CardTableInfo[]>([]);
-  const [selectedGameTableId, setSelectedGameTableId] = useState<string | null>(null);
+  const [selectedGameTableId, setSelectedGameTableId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('room') || params.get('roomId') || params.get('tableId') || sessionStorage.getItem('pending_join_strike') || null;
+  });
+
+  useEffect(() => {
+    const checkParams = () => {
+      const params = new URLSearchParams(window.location.search);
+      const oyun = params.get('oyun');
+      const room = params.get('room') || params.get('roomId') || params.get('tableId') || sessionStorage.getItem('pending_join_strike');
+      if (oyun === 'kapsstrike' || sessionStorage.getItem('pending_join_strike')) {
+        setSelectedGame('kapsstrike');
+        if (room) {
+          setSelectedGameTableId(room);
+        }
+        sessionStorage.removeItem('pending_join_strike');
+      }
+    };
+    checkParams();
+
+    const onJoinGame = (e: any) => {
+      if (e.detail?.game === 'kapsstrike') {
+        setSelectedGame('kapsstrike');
+        if (e.detail?.roomId) {
+          setSelectedGameTableId(String(e.detail.roomId));
+        }
+      }
+    };
+    window.addEventListener('kaps:join_game', onJoinGame);
+    return () => window.removeEventListener('kaps:join_game', onJoinGame);
+  }, []);
 
   // Modal for creating/browsing card tables
   const [lobbyModalGame, setLobbyModalGame] = useState<'blackjack' | 'batak' | 'poker' | null>(null);
@@ -450,6 +479,56 @@ export default function Games({
   // Games definition list
   const allGames = [
     {
+      id: 'kapsstrike',
+      title: 'KapsStrike 3D FPS',
+      subtitle: '2-10 Kişilik Çok Oyunculu • Düşük Gecikme, 60 FPS, Bomba Kurma & Taktiksel Şehir',
+      category: ['arcade'],
+      badge: 'YENİ',
+      badgeColor: 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black shadow-md ring-1 ring-amber-300',
+      gradient: 'from-amber-500 via-yellow-600 to-amber-700',
+      icon: '🎯',
+      capacity: '2-10 Oyuncu & Sesli Sohbet',
+      activeRooms: activeTables.filter(t => (t.gameType as any) === 'strike' || (t.gameType as any) === 'kapsstrike').length,
+      features: [
+        'Taktiksel Bomba Kurma (C4), TDM Takım Savaşı ve FFA Modları',
+        'Dust II Şehir Mahallesi Haritası, Özel Bıçaklar ve Kaplamalar',
+        'Sunucu Otoriteli 60Hz Simülasyon, Lag Telafisi & Bağlantı Kopma Koruması',
+        'Entegre WebRTC Sesli Sohbet (Bas-Konuş V & Oyuncu Ses Ayarları)'
+      ],
+      preview: (
+        <div className="flex flex-col sm:flex-row items-center justify-between py-2 px-3 w-full gap-2">
+          <div className="flex items-center gap-3">
+            <div className="flex justify-center items-center h-8">
+              <img
+                src="/assets/aistudio/KS_GO_Tactical_Soldier_Logo_206d63af.png"
+                alt="KapsStrike 3D"
+                className="h-8 max-w-full object-contain dark:hidden opacity-90"
+              />
+              <img
+                src="/assets/aistudio/ChatGPT_Image_Oct_29__2026__06_27_13_PM_065d4212.png"
+                alt="KapsStrike 3D"
+                className="h-8 max-w-full object-contain hidden dark:block filter drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]"
+              />
+            </div>
+            <span className="text-base font-black tracking-wider uppercase">
+              <span className="text-slate-900 dark:text-slate-100">KAPS</span>
+              <span className="text-amber-500 dark:text-amber-400">STRIKE</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/30">💣 C4 Bomba</span>
+            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-mono font-bold border border-blue-500/30">⚔️ TDM / FFA</span>
+            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/30">⚡ 60 FPS</span>
+          </div>
+        </div>
+      ),
+      actionPrimary: 'KapsStrike 3D Oyna',
+      onClick: () => {
+        setSelectedGameTableId(null);
+        setSelectedGame('kapsstrike');
+      }
+    },
+    {
       id: 'dungeon', title: 'Zindan Kuşatması', subtitle: '2–4 Kişilik · Çevrim İçi Co-Op Roguelite',
       category: ['strategy', 'arcade'], badge: 'YENİ CO-OP', badgeColor: 'bg-amber-200 text-slate-950',
       gradient: 'from-slate-800 via-stone-800 to-slate-900', icon: '⚔️', capacity: '2–4 Gerçek Oyuncu', activeRooms: 0,
@@ -766,49 +845,6 @@ export default function Games({
         setSelectedGameTableId(null);
         setSelectedGame('kapstorial');
       }
-    },
-    {
-      id: 'kapsstrike',
-      title: 'KapsStrike 3D FPS',
-      subtitle: '2-10 Kişilik Çok Oyunculu • Düşük Gecikme, 60 FPS & Takım Savaşı',
-      category: ['arcade'],
-      badge: '🔥 3D MULTIPLAYER',
-      badgeColor: 'bg-gradient-to-r from-amber-500 to-yellow-600 text-slate-950 font-black animate-pulse',
-      gradient: 'from-amber-600 via-stone-800 to-slate-900',
-      icon: '🎯',
-      capacity: '2-10 Oyuncu & Sesli Sohbet',
-      activeRooms: activeTables.filter(t => (t.gameType as any) === 'strike' || (t.gameType as any) === 'kapsstrike').length,
-      features: [
-        'Sunucu Otoriteli 60Hz Simülasyon & Lag Telafisi (Geri Sarma)',
-        'Takım Savaşı (TDM Red vs Blue) ve Herkes Tek (FFA) Modları',
-        '5 Silah (AK-47, M4A1, AWP, Pompalı, Deagle) & Kafa Vuruşu Çarpanı',
-        'Entegre WebRTC Sesli Sohbet (Bas-Konuş V & Oyuncu Ses Ayarları)'
-      ],
-      preview: (
-        <div className="flex flex-col items-center justify-center py-1.5 h-14 w-full gap-0.5">
-          <div className="flex justify-center items-center h-6">
-            <img
-              src="/assets/aistudio/KS_GO_Tactical_Soldier_Logo_206d63af.png"
-              alt="KapsStrike 3D"
-              className="h-6 max-w-full object-contain dark:hidden opacity-90"
-            />
-            <img
-              src="/assets/aistudio/ChatGPT_Image_Oct_29__2026__06_27_13_PM_065d4212.png"
-              alt="KapsStrike 3D"
-              className="h-6 max-w-full object-contain hidden dark:block filter drop-shadow-[0_0_6px_rgba(234,179,8,0.4)]"
-            />
-          </div>
-          <span className="text-xs font-black tracking-wider uppercase">
-            <span className="text-slate-900 dark:text-slate-100">KAPS</span>
-            <span className="text-amber-500 dark:text-amber-400">STRIKE</span>
-          </span>
-        </div>
-      ),
-      actionPrimary: 'KapsStrike 3D Oyna',
-      onClick: () => {
-        setSelectedGameTableId(null);
-        setSelectedGame('kapsstrike');
-      }
     }
   ];
 
@@ -977,7 +1013,11 @@ export default function Games({
           {filteredGames.map((game) => (
             <div
               key={game.id}
-              className="group relative rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500 shadow-md hover:shadow-2xl hover:shadow-emerald-500/10 transition-all duration-300 flex flex-col justify-between overflow-hidden transform hover:-translate-y-1 active:scale-[0.99]"
+              className={`group relative rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500 shadow-md hover:shadow-2xl hover:shadow-emerald-500/10 transition-all duration-300 flex flex-col justify-between overflow-hidden transform hover:-translate-y-1 active:scale-[0.99] ${
+                game.id === 'kapsstrike'
+                  ? 'col-span-1 sm:col-span-2 lg:col-span-2 ring-2 ring-amber-500/40 bg-gradient-to-br from-amber-500/5 via-slate-900/10 to-transparent'
+                  : ''
+              }`}
             >
               {/* Top Accent Gradient */}
               <div className={`h-2.5 bg-gradient-to-r ${game.gradient}`} />
@@ -991,16 +1031,24 @@ export default function Games({
                       {game.icon}
                     </div>
                     <div>
-                      <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                        {game.title}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 group-hover:text-amber-500 dark:group-hover:text-amber-400 transition-colors">
+                          {game.title}
+                        </h3>
+                        {game.id === 'kapsstrike' && (
+                          <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500/20 text-amber-500 border border-amber-500/30">
+                            ÖNE ÇIKAN OYUN
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                         {game.subtitle}
                       </p>
                     </div>
                   </div>
 
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${game.badgeColor} shadow-sm shrink-0`}>
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${game.badgeColor} shadow-sm shrink-0 flex items-center gap-1`}>
+                    {game.badge === 'YENİ' && <Flame size={12} className="text-red-500 fill-current" />}
                     {game.badge}
                   </span>
                 </div>

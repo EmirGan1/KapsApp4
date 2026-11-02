@@ -123,6 +123,9 @@ export default function KapsStrikeGame({
   const updateCurrentRoom = useCallback((r: StrikeRoomState | null) => {
     currentRoomRef.current = r;
     setCurrentRoom(r);
+    if (r?.roomCode) {
+      try { sessionStorage.setItem("kapsstrike_active_room", r.roomCode); } catch {}
+    }
   }, []);
   const [roomFilter, setRoomFilter] = useState("");
   const [roomModeFilter, setRoomModeFilter] = useState<"all" | "ffa" | "tdm" | "bomb">("all");
@@ -319,6 +322,44 @@ export default function KapsStrikeGame({
       setError(data.message || data.error || "Ağ hatası oluştu.");
     };
 
+    const onPlayerDisconnected = (data: { userId: number; username: string; team: StrikeTeam }) => {
+      setKillFeed((prev) => [
+        {
+          id: `disc-${Date.now()}-${Math.random()}`,
+          tick: Date.now(),
+          killerId: `u-${data.userId}`,
+          killerName: data.username,
+          killerTeam: (data.team as StrikeTeam) || "none",
+          victimId: "disconnect",
+          victimName: "Bağlantı koptu (yeniden bağlanması bekleniyor)",
+          victimTeam: (data.team as StrikeTeam) || "none",
+          weapon: "pistol",
+          headshot: false,
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 15),
+      ]);
+    };
+
+    const onPlayerReconnected = (data: { userId: number; username: string; team: StrikeTeam }) => {
+      setKillFeed((prev) => [
+        {
+          id: `recon-${Date.now()}-${Math.random()}`,
+          tick: Date.now(),
+          killerId: `u-${data.userId}`,
+          killerName: data.username,
+          killerTeam: (data.team as StrikeTeam) || "none",
+          victimId: "reconnect",
+          victimName: "Maça başarıyla yeniden bağlandı!",
+          victimTeam: (data.team as StrikeTeam) || "none",
+          weapon: "knife",
+          headshot: false,
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 15),
+      ]);
+    };
+
     socket.on("strike:snapshot",onScores);
     socket.on("strike:rooms_list", onRoomsList);
     socket.on("strike:room_list", onRoomsList);
@@ -329,18 +370,25 @@ export default function KapsStrikeGame({
     socket.on("strike:kill_feed", onKill);
     socket.on("strike:match_ended", onMatchEnded);
     socket.on("strike:game_over", onMatchEnded);
+    socket.on("strike:player_disconnected", onPlayerDisconnected);
+    socket.on("strike:player_reconnected", onPlayerReconnected);
     socket.on("strike:error", onError);
 
-    // Direct room join via targetRoomId prop
-    if (targetRoomId) {
-      socket.emit("strike:join_room", { roomCode: targetRoomId, roomId: targetRoomId, code: targetRoomId }, (res: any) => {
+    // Direct room join or seamless session reconnect
+    const savedRoom = sessionStorage.getItem("kapsstrike_active_room");
+    const roomToJoin = targetRoomId || savedRoom;
+    if (roomToJoin) {
+      socket.emit("strike:join_room", { roomCode: roomToJoin, roomId: roomToJoin, code: roomToJoin }, (res: any) => {
         if (res?.success && res.room) {
           updateCurrentRoom(res.room);
+          try { sessionStorage.setItem("kapsstrike_active_room", res.room.roomCode); } catch {}
           if (res.room.status === "in_progress") {
             startMultiplayerGame(res.room);
           } else {
             setView("lobby");
           }
+        } else if (res?.error && savedRoom && !targetRoomId) {
+          sessionStorage.removeItem("kapsstrike_active_room");
         }
       });
     }
@@ -357,6 +405,8 @@ export default function KapsStrikeGame({
       socket.off("strike:kill_feed", onKill);
       socket.off("strike:match_ended", onMatchEnded);
       socket.off("strike:game_over", onMatchEnded);
+      socket.off("strike:player_disconnected", onPlayerDisconnected);
+      socket.off("strike:player_reconnected", onPlayerReconnected);
       socket.off("strike:error", onError);
     };
   }, [socket, currentUserId, targetRoomId, refreshRooms]);
@@ -488,6 +538,10 @@ export default function KapsStrikeGame({
   };
 
   const exit = () => {
+    try {
+      sessionStorage.removeItem("kapsstrike_active_room");
+      sessionStorage.removeItem("pending_join_strike");
+    } catch {}
     activeRoom.current = null;
     clearTimeout(loadTimer.current);
     game.current?.dispose();
