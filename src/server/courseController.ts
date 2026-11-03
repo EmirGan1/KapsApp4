@@ -100,21 +100,10 @@ export async function getAuthUserFromRequest(req: Request, client: any) {
         : ((req.query.token as string) || (req.body?.token as string) || "")
     ).trim();
 
-    const xUsername = (
-      (req.headers["x-username"] as string) ||
-      (req.headers["username"] as string) ||
-      (req.query.username as string) ||
-      (req.query.u as string) ||
-      (req.body?.username as string) ||
-      ""
-    ).trim();
-
-    const rawUserId = req.query.userId || req.query.user_id || req.body?.userId;
-
     // 1. Check by token in users table
     if (token) {
       const userRes = await client.execute({
-        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE token = ?",
+        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE token = ? AND COALESCE(is_banned,0)=0 AND COALESCE(isBanned,0)=0 AND COALESCE(status,'approved')='approved'",
         args: [token]
       });
       if (userRes.rows.length > 0) return userRes.rows[0];
@@ -125,44 +114,11 @@ export async function getAuthUserFromRequest(req: Request, client: any) {
           sql: `SELECT u.id, u.username, u.name, u.avatar, u.color, u.is_admin, u.role 
                 FROM user_sessions s 
                 JOIN users u ON s.user_id = u.id 
-                WHERE s.token = ?`,
-          args: [token]
+                WHERE s.token = ? AND s.expires_at > ? AND COALESCE(u.is_banned,0)=0 AND COALESCE(u.isBanned,0)=0 AND COALESCE(u.status,'approved')='approved'`,
+          args: [token, new Date().toISOString()]
         });
         if (sessRes.rows.length > 0) return sessRes.rows[0];
       } catch (sessErr) {}
-    }
-
-    // 2. Check by username
-    if (xUsername) {
-      const userRes = await client.execute({
-        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE LOWER(username) = LOWER(?)",
-        args: [xUsername]
-      });
-      if (userRes.rows.length > 0) return userRes.rows[0];
-    }
-
-    // 3. Check by numeric userId
-    if (rawUserId && !isNaN(Number(rawUserId))) {
-      const userRes = await client.execute({
-        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE id = ?",
-        args: [Number(rawUserId)]
-      });
-      if (userRes.rows.length > 0) return userRes.rows[0];
-    }
-
-    // 4. Fallback: check by client IP address
-    const clientIp = (
-      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
-      req.socket.remoteAddress ||
-      ""
-    ).replace(/^::ffff:/, "").trim();
-
-    if (clientIp && clientIp !== "127.0.0.1" && clientIp !== "localhost") {
-      const ipRes = await client.execute({
-        sql: "SELECT id, username, name, avatar, color, is_admin, role FROM users WHERE last_ip = ? OR signup_ip = ? ORDER BY id DESC LIMIT 1",
-        args: [clientIp, clientIp]
-      });
-      if (ipRes.rows.length > 0) return ipRes.rows[0];
     }
 
     return null;
@@ -669,24 +625,7 @@ export function registerCourseRoutes(
         return res.status(400).json({ error: err.message || "Dosya yüklenemedi." });
       }
       try {
-        const token = req.headers.authorization?.replace("Bearer ", "");
-        const xUsername = (req.headers["x-username"] as string)?.trim() || (req.headers["username"] as string)?.trim();
-
-        let authUser: any = null;
-        if (token) {
-          const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE token = ?", args: [token] });
-          if (userRes.rows.length > 0) authUser = userRes.rows[0];
-        }
-
-        if (!authUser && xUsername) {
-          const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE LOWER(username) = LOWER(?)", args: [xUsername] });
-          if (userRes.rows.length > 0) authUser = userRes.rows[0];
-        }
-
-        if (!authUser) {
-          const fallbackRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users ORDER BY id ASC LIMIT 1" });
-          if (fallbackRes.rows.length > 0) authUser = fallbackRes.rows[0];
-        }
+        const authUser = await getAuthUserFromRequest(req, client);
 
         if (!authUser) return res.status(401).json({ error: "Giriş yapmalısınız." });
 
@@ -795,24 +734,7 @@ export function registerCourseRoutes(
   // DELETE: Delete course file
   app.delete(["/api/courses/files/:fileId", "/api/subjects/files/:fileId"], async (req: Request, res: Response) => {
     try {
-      const token = req.headers.authorization?.replace("Bearer ", "");
-      const xUsername = (req.headers["x-username"] as string)?.trim() || (req.headers["username"] as string)?.trim();
-
-      let authUser: any = null;
-      if (token) {
-        const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE token = ?", args: [token] });
-        if (userRes.rows.length > 0) authUser = userRes.rows[0];
-      }
-
-      if (!authUser && xUsername) {
-        const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE LOWER(username) = LOWER(?)", args: [xUsername] });
-        if (userRes.rows.length > 0) authUser = userRes.rows[0];
-      }
-
-      if (!authUser) {
-        const fallbackRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users ORDER BY id ASC LIMIT 1" });
-        if (fallbackRes.rows.length > 0) authUser = fallbackRes.rows[0];
-      }
+      const authUser = await getAuthUserFromRequest(req, client);
 
       if (!authUser) return res.status(401).json({ error: "Giriş yapmalısınız." });
 

@@ -921,7 +921,7 @@ async function startServer() {
       ) {
         return callback(null, true);
       }
-      return callback(null, true);
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -1521,7 +1521,8 @@ async function startServer() {
     }
   });
 
-  app.post("/api/upload", (req, res) => {
+  app.post("/api/upload", async (req, res) => {
+    if (!await authenticateToken(req)) return res.status(401).json({ error: "Oturum gerekli." });
     (upload.single("file") as any)(req, res, async (err: any) => {
       if (err) {
         console.error("Upload single error:", err);
@@ -1575,7 +1576,8 @@ async function startServer() {
   });
 
   // Multiple Media Upload Endpoint (Supports up to 50 files / photos / videos)
-  app.post("/api/upload-multiple", (req, res) => {
+  app.post("/api/upload-multiple", async (req, res) => {
+    if (!await authenticateToken(req)) return res.status(401).json({ error: "Oturum gerekli." });
     (upload.array("files", 50) as any)(req, res, async (err: any) => {
       if (err) {
         console.error("Upload multiple error:", err);
@@ -1643,7 +1645,11 @@ async function startServer() {
   // REST Message Pagination Route (beforeId, limit)
   app.get(["/api/messages/:roomId", "/api/chat/messages/:roomId"], async (req, res) => {
     try {
+      const authUser = await authenticateToken(req);
+      if (!authUser) return res.status(401).json({ error: "Oturum gerekli." });
       const { roomId } = req.params;
+      const match = /^dm_(\d+)_(\d+)$/.exec(roomId);
+      if (!match || !match.slice(1).some(id => Number(id) === Number(authUser.id))) return res.status(403).json({ error: "Bu konuşmaya erişiminiz yok." });
       const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
       const beforeId = req.query.before ? Number(req.query.before) : null;
 
@@ -1665,7 +1671,7 @@ async function startServer() {
         const sUser = await getUser(r.sender as number);
         let replyMsg = null;
         if (r.reply_to) {
-          const refRes = await client.execute({ sql: "SELECT id, sender, type, content, file_name, file_size FROM messages WHERE id = ?", args: [r.reply_to] });
+          const refRes = await client.execute({ sql: "SELECT id, sender, type, content, file_name, file_size FROM messages WHERE id = ? AND (sender = ? OR receiver = ?)", args: [r.reply_to, authUser.id, authUser.id] });
           if (refRes.rows.length > 0) {
             const refUser = await getUser(refRes.rows[0].sender as number);
             replyMsg = { ...refRes.rows[0], sender_name: refUser?.username };
@@ -2246,9 +2252,11 @@ async function startServer() {
   });
 
   // Headless 101 Stress Test Endpoint
-  app.get("/api/okey101/stress-test", (req, res) => {
+  app.get("/api/okey101/stress-test", async (req, res) => {
+    if (process.env.ENABLE_GAME_TEST_ENDPOINTS !== "true") return res.sendStatus(404);
+    if (!await passwordReset.authorizeAdmin(req)) return res.sendStatus(403);
     const iters = parseInt(String(req.query.iterations || 2000), 10) || 2000;
-    const report = run101StressTest(iters);
+    const report = run101StressTest(Math.min(2000, Math.max(1, iters)));
     res.json(report);
   });
 
@@ -2276,7 +2284,7 @@ async function startServer() {
       const authHeader = req.headers.authorization || req.headers["authorization"] || "";
       const token = authHeader.replace(/^Bearer\s+/i, "") || req.query?.token || req.body?.token;
       if (!token) return null;
-      const userRes = await client.execute({ sql: "SELECT id, username, is_admin, chips FROM users WHERE token = ?", args: [token] });
+      const userRes = await client.execute({ sql: "SELECT u.id, u.username, u.is_admin, u.chips FROM users u WHERE COALESCE(u.is_banned,0)=0 AND COALESCE(u.isBanned,0)=0 AND COALESCE(u.status,'approved')='approved' AND (u.token = ? OR EXISTS (SELECT 1 FROM user_sessions s WHERE s.user_id=u.id AND s.token=? AND s.expires_at > ?))", args: [token, token, new Date().toISOString()] });
       if (userRes.rows.length === 0) return null;
       return userRes.rows[0];
     } catch {
@@ -3332,6 +3340,7 @@ async function startServer() {
         sql: "UPDATE users SET password = ?, token = NULL WHERE id = ?",
         args: [hashedPassword, targetId]
       });
+      await client.execute({ sql: "DELETE FROM user_sessions WHERE user_id = ?", args: [targetId] });
       invalidateUserCache(targetId);
 
       // Disconnect all sockets of this user to force re-login with new password
@@ -3372,6 +3381,7 @@ async function startServer() {
         sql: "UPDATE users SET password = ?, token = NULL WHERE id = ?",
         args: [hashedPassword, targetId]
       });
+      await client.execute({ sql: "DELETE FROM user_sessions WHERE user_id = ?", args: [targetId] });
       invalidateUserCache(targetId);
 
       // Disconnect sockets to force re-login
@@ -8550,7 +8560,7 @@ async function startServer() {
         const populated = await Promise.all(rows.map(async (r: any) => {
           let replyMsg = null;
           if (r.reply_to) {
-            const refRes = await client.execute({ sql: "SELECT id, sender, type, content, file_name, file_size FROM messages WHERE id = ?", args: [r.reply_to] });
+            const refRes = await client.execute({ sql: "SELECT id, sender, type, content, file_name, file_size FROM messages WHERE id = ? AND (sender = ? OR receiver = ?)", args: [r.reply_to, user.id, user.id] });
             if (refRes.rows.length > 0) {
               const refUser = await getUser(refRes.rows[0].sender as number);
               replyMsg = { ...refRes.rows[0], sender_name: refUser?.username };
@@ -8607,7 +8617,7 @@ async function startServer() {
           replyMsg = { id: refCached.id, sender: refCached.sender, type: refCached.type, content: refCached.content, sender_name: refCached.sender_name };
         } else {
           try {
-            const refRes = await client.execute({ sql: "SELECT id, sender, type, content, file_name, file_size FROM messages WHERE id = ?", args: [reply_to] });
+            const refRes = await client.execute({ sql: "SELECT id, sender, type, content, file_name, file_size FROM messages WHERE id = ? AND (sender = ? OR receiver = ?)", args: [reply_to, user.id, user.id] });
             if (refRes.rows.length > 0) {
               const refUser = await getUser(refRes.rows[0].sender as number);
               replyMsg = { ...refRes.rows[0], sender_name: refUser?.username };
@@ -8814,6 +8824,8 @@ async function startServer() {
         return;
       }
 
+      const membership = await client.execute({ sql: "SELECT members FROM groups WHERE id = ?", args: [groupId] });
+      if (!membership.rows.length || !JSON.parse(String(membership.rows[0].members || "[]")).some((id: any) => Number(id) === Number(user.id))) { if (typeof callback === "function") callback([]); return; }
       const roomKey = `group_${groupId}`;
       if (!beforeId) {
         const cached = messageRamCache.get(roomKey);
@@ -8850,6 +8862,8 @@ async function startServer() {
 
     socket.on("send_group_message", async (data) => {
       let { group_id, type, content, reply_to, file_name, file_size } = data;
+      const membership = await client.execute({ sql: "SELECT members FROM groups WHERE id = ?", args: [group_id] });
+      if (!membership.rows.length || !JSON.parse(String(membership.rows[0].members || "[]")).some((id: any) => Number(id) === Number(user.id))) return;
       if (type === "text") {
         if (!content || typeof content !== "string" || !content.trim()) return;
         content = content.trim();
@@ -10610,6 +10624,7 @@ async function startServer() {
     socket.on("direct_call_signal_offer", (data: { callId: string; offer: any }) => {
       const session = directCalls.get(data?.callId);
       if (!session) return;
+      if (session.callerId !== userIdNum && session.receiverId !== userIdNum) return;
 
       const targetId = session.callerId === userIdNum ? session.receiverId : session.callerId;
       const targetSocketId = onlineUsers.get(targetId);
@@ -10626,6 +10641,7 @@ async function startServer() {
     socket.on("direct_call_signal_answer", (data: { callId: string; answer: any }) => {
       const session = directCalls.get(data?.callId);
       if (!session) return;
+      if (session.callerId !== userIdNum && session.receiverId !== userIdNum) return;
 
       const targetId = session.callerId === userIdNum ? session.receiverId : session.callerId;
       const targetSocketId = onlineUsers.get(targetId);
@@ -10642,6 +10658,7 @@ async function startServer() {
     socket.on("direct_call_signal_ice", (data: { callId: string; candidate: any }) => {
       const session = directCalls.get(data?.callId);
       if (!session) return;
+      if (session.callerId !== userIdNum && session.receiverId !== userIdNum) return;
 
       const targetId = session.callerId === userIdNum ? session.receiverId : session.callerId;
       const targetSocketId = onlineUsers.get(targetId);

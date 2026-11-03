@@ -1,3 +1,4 @@
+import { formatMessageDate } from "../utils/messageDate";
 import React, { useState, useEffect, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { Send, Image as ImageIcon, Mic, Reply, Smile, Paperclip, FileText, Download, Maximize2, Trash2, Globe, Loader2 } from "lucide-react";
@@ -792,10 +793,7 @@ export default function GlobalChat({
                         isMine ? "text-blue-200" : "text-slate-400"
                       }`}
                     >
-                      {new Date(msg.created_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatMessageDate(msg.created_at)}
                     </div>
                   </div>
                 </div>
