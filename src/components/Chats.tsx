@@ -1,3 +1,4 @@
+import { formatMessageDate } from "../utils/messageDate";
 import { useState, useEffect, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { Friend, Message, MediaModalData } from "../types";
@@ -1097,7 +1098,7 @@ export default function Chats({
                         </div>
 
                         <div className={`text-[10px] mt-1 flex items-center justify-end gap-1 ${isMine ? 'text-green-800/80 dark:text-green-200/80' : 'text-slate-400 dark:text-slate-500'}`}>
-                          <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>{formatMessageDate(msg.created_at)}</span>
                           {isMine && activeTab === "friends" && (() => {
                             const partnerId = (activeChat as Friend)?.id;
                             const isRead = 
