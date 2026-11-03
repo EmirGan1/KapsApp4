@@ -126,6 +126,16 @@ export default function CafeteriaMenuWidget({
               items,
               totalCalories: total
             });
+          } else if (targetDateInfo.dateStr >= "2026-11-16" && targetDateInfo.dateStr <= "2026-11-20") {
+            setMenuData({
+              title: "🌴 1. Dönem Ara Tatili",
+              dateStr: targetDateInfo.formattedLabel,
+              meal: "Yemek Servisi Yapılmamaktadır",
+              items: [
+                { title: "1. Dönem Ara Tatili dolayısıyla okul ve yemekhane kapalıdır.", category: "Tatil", calories: 0, icon: "🌴" }
+              ],
+              totalCalories: 0
+            });
           } else {
             // Fallback
             const fallback = isWeekend ? DEFAULT_MENU_DAYS.monday : DEFAULT_MENU_DAYS.weekday;

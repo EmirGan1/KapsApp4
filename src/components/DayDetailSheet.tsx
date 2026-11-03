@@ -81,6 +81,20 @@ export default function DayDetailSheet({
 
         {/* Kaydırılabilir Etkinlik Listesi */}
         <div className="flex-1 overflow-y-auto py-3 space-y-2.5 min-h-0 overscroll-y-contain">
+          {selectedDate && selectedDate >= "2026-11-16" && selectedDate <= "2026-11-20" && (
+            <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-start gap-3 shadow-2xs">
+              <span className="text-2xl shrink-0">🌴</span>
+              <div>
+                <h4 className="font-bold text-amber-800 dark:text-amber-300 text-sm">
+                  1. Dönem Ara Tatili
+                </h4>
+                <p className="text-xs text-amber-700/90 dark:text-amber-400/90 mt-0.5 leading-relaxed">
+                  16 - 20 Kasım 2026 tarihleri arasında okulumuz ara tatildedir. Bu dönemde ders veya sınav yapılmamaktadır.
+                </p>
+              </div>
+            </div>
+          )}
+
           {items.length === 0 ? (
             <div className="py-8 text-center text-sm text-slate-400">
               Bu tarihte planlanmış ders veya sınav bulunmuyor.

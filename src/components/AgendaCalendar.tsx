@@ -409,6 +409,7 @@ export default function AgendaCalendar({
               const isSelected = selectedDateStr === day.dateStr;
               const hasEnrolledExam = dayExams.some((e) => isUserEnrolledInExam(e, currentUserRoles));
               const isWeekday = new Date(day.dateStr).getDay() !== 0 && new Date(day.dateStr).getDay() !== 6;
+              const isAraTatil = day.dateStr >= "2026-11-16" && day.dateStr <= "2026-11-20";
 
               return (
                 <button
@@ -418,6 +419,8 @@ export default function AgendaCalendar({
                   className={`w-full aspect-square min-h-[42px] sm:min-h-[48px] lg:min-h-[76px] lg:aspect-auto p-1 sm:p-1.5 rounded-xl lg:rounded-2xl flex flex-col justify-between transition-all cursor-pointer relative text-left border overflow-hidden ${
                     isSelected
                       ? "border-sky-500 ring-2 ring-sky-500 bg-sky-500/10 dark:bg-sky-500/15 font-bold"
+                      : isAraTatil
+                      ? "border-amber-400/50 bg-amber-500/10 dark:bg-amber-500/15 hover:bg-amber-500/20"
                       : day.isInMockPeriod
                       ? "border-amber-400/40 bg-amber-50/40 dark:bg-amber-950/20 hover:border-amber-400"
                       : !day.isCurrentMonth
@@ -430,6 +433,8 @@ export default function AgendaCalendar({
                     <span className={`text-[11px] sm:text-xs font-bold ${
                       isSelected
                         ? "text-sky-600 dark:text-sky-400 font-black"
+                        : isAraTatil
+                        ? "text-amber-700 dark:text-amber-300 font-black"
                         : day.isCurrentMonth
                         ? "text-slate-800 dark:text-slate-200"
                         : "text-slate-400"
@@ -445,8 +450,14 @@ export default function AgendaCalendar({
 
                   {/* MOBİL İÇİN RENKLİ DURUM NOKTALARI (DOTS / INDICATORS) (< md) */}
                   <div className="flex lg:hidden items-center justify-center gap-0.5 sm:gap-1 mt-auto pb-0.5 w-full">
+                    {/* Ara Tatil Göstergesi */}
+                    {isAraTatil && (
+                      <span className="text-[8px] font-black text-amber-600 dark:text-amber-400" title="Ara Tatil">
+                        🌴 Tatil
+                      </span>
+                    )}
                     {/* Sınav Noktası (Sarı/Amber) */}
-                    {dayExams.length > 0 && (
+                    {!isAraTatil && dayExams.length > 0 && (
                       <span 
                         className={`w-1.5 h-1.5 rounded-full ${
                           hasEnrolledExam ? "bg-amber-400 ring-1 ring-amber-400/60 animate-pulse" : "bg-amber-400"
@@ -455,17 +466,24 @@ export default function AgendaCalendar({
                       />
                     )}
                     {/* Normal Ders Noktası (Mavi/Sky) */}
-                    {day.isCurrentMonth && isWeekday && (
+                    {!isAraTatil && day.isCurrentMonth && isWeekday && (
                       <span className="w-1.5 h-1.5 rounded-full bg-sky-500" title="Ders Programı" />
                     )}
                     {/* Mock Dönemi Noktası */}
-                    {day.isInMockPeriod && dayExams.length === 0 && (
+                    {!isAraTatil && day.isInMockPeriod && dayExams.length === 0 && (
                       <span className="w-1.5 h-1.5 rounded-full bg-purple-500" title="Mock Dönemi" />
                     )}
                   </div>
 
                   {/* MASAÜSTÜ İÇİN DETAYLI ETİKETLER (>= md) */}
-                  {dayExams.length > 0 && (
+                  {isAraTatil ? (
+                    <div className="hidden lg:block w-full mt-1">
+                      <div className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/30 truncate flex items-center gap-1">
+                        <span>🌴</span>
+                        <span className="truncate">Ara Tatil</span>
+                      </div>
+                    </div>
+                  ) : dayExams.length > 0 ? (
                     <div className="hidden lg:block space-y-0.5 mt-1 w-full">
                       {dayExams.slice(0, 2).map((ex) => {
                         const isEnrolled = isUserEnrolledInExam(ex, currentUserRoles);
@@ -494,7 +512,7 @@ export default function AgendaCalendar({
                         </div>
                       )}
                     </div>
-                  )}
+                  ) : null}
                 </button>
               );
             })}
@@ -520,11 +538,25 @@ export default function AgendaCalendar({
                   Mock Günü
                 </span>
               )}
+
+              {selectedDateStr >= "2026-11-16" && selectedDateStr <= "2026-11-20" && (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1 shadow-2xs shrink-0">
+                  🌴 Ara Tatil
+                </span>
+              )}
             </div>
 
             {/* List of Periods, Overlaid Exam Cards & Gap Fillers for Desktop */}
             <div className="space-y-2.5 overflow-y-auto max-h-[520px] pr-1 overscroll-y-contain">
-              {selectedDayEntriesWithGaps.length === 0 ? (
+              {selectedDateStr >= "2026-11-16" && selectedDateStr <= "2026-11-20" ? (
+                <div className="p-8 text-center bg-amber-500/10 dark:bg-amber-500/15 rounded-2xl border border-amber-500/30 space-y-2">
+                  <div className="text-3xl">🌴</div>
+                  <h4 className="font-bold text-amber-800 dark:text-amber-200 text-sm">1. Dönem Ara Tatili</h4>
+                  <p className="text-xs text-amber-700/90 dark:text-amber-300/90 leading-relaxed">
+                    16 - 20 Kasım 2026 tarihleri arasında okulumuz ara tatildedir. Bu dönemde ders veya sınav yapılmamaktadır.
+                  </p>
+                </div>
+              ) : selectedDayEntriesWithGaps.length === 0 ? (
                 <div className="p-8 text-center bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-800">
                   <p className="text-xs text-slate-400">Bu gün için planlanan ders veya sınav bulunmuyor.</p>
                 </div>

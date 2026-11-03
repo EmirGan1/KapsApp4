@@ -827,6 +827,7 @@ export default function Agenda({
             {calendarDays.map((dayItem) => {
               const dayEvents = eventsByDate[dayItem.dateStr] || [];
               const isWeekend = new Date(dayItem.dateStr).getDay() === 0 || new Date(dayItem.dateStr).getDay() === 6;
+              const isAraTatil = dayItem.dateStr >= "2026-11-16" && dayItem.dateStr <= "2026-11-20";
 
               return (
                 <div
@@ -835,6 +836,8 @@ export default function Agenda({
                   className={`min-h-[52px] sm:min-h-[120px] md:min-h-[135px] p-1 sm:p-2.5 flex flex-col justify-between transition-colors duration-150 cursor-pointer group relative ${
                     !dayItem.isCurrentMonth
                       ? "bg-slate-50/50 dark:bg-slate-950/40 text-slate-300 dark:text-slate-600 opacity-60"
+                      : isAraTatil
+                      ? "bg-amber-50/70 dark:bg-amber-950/25 border-amber-300/60 dark:border-amber-700/40 hover:bg-amber-100/50 dark:hover:bg-amber-950/40"
                       : isWeekend
                       ? "bg-slate-50/30 dark:bg-slate-900/40"
                       : "bg-white dark:bg-slate-900 hover:bg-blue-50/30 dark:hover:bg-blue-950/20"
@@ -846,6 +849,8 @@ export default function Agenda({
                       className={`text-xs sm:text-sm font-bold w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-all ${
                         dayItem.isToday
                           ? "bg-blue-600 text-white shadow-xs"
+                          : isAraTatil
+                          ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 font-black"
                           : dayItem.isCurrentMonth
                           ? isWeekend
                             ? "text-rose-500 dark:text-rose-400"
@@ -876,11 +881,27 @@ export default function Agenda({
                   <div className={`hidden sm:flex flex-col gap-1 overflow-hidden my-auto ${dayItem.dateStr < new Date().toISOString().split("T")[0] ? "opacity-40 grayscale-[40%] hover:opacity-100 transition-opacity" : ""}`}>
                     {(() => {
                       const foodEvent = dayEvents.find((e) => e.event_type === "food");
-                      const otherEvents = dayEvents.filter((e) => e.event_type !== "food");
+                      const otherEvents = dayEvents.filter((e) => e.event_type !== "food" && !e.title?.toLowerCase().includes("ara tatil"));
                       const isPast = dayItem.dateStr < new Date().toISOString().split("T")[0];
 
                       return (
                         <>
+                          {/* Ara Tatil Kutucuk Göstergesi (Yemekten bağımsız) */}
+                          {isAraTatil && (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDayDate(dayItem.dateStr);
+                                setIsDayDrawerOpen(true);
+                              }}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-black bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/40 cursor-pointer shadow-2xs hover:bg-amber-500/30 transition-all truncate"
+                              title="1. Dönem Ara Tatili"
+                            >
+                              <span>🌴</span>
+                              <span className="truncate">Ara Tatil</span>
+                            </div>
+                          )}
+
                           {foodEvent && (
                             <div 
                               onClick={(e) => { 
@@ -899,7 +920,7 @@ export default function Agenda({
                             </div>
                           )}
 
-                          {otherEvents.slice(0, foodEvent ? 2 : 3).map((ev) => {
+                          {otherEvents.slice(0, (foodEvent || isAraTatil) ? 2 : 3).map((ev) => {
                             const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
                             const st = getEventTypeStyles(ev.event_type, isMyExam);
 
@@ -937,9 +958,9 @@ export default function Agenda({
                             );
                           })}
 
-                          {otherEvents.length > (foodEvent ? 2 : 3) && (
+                          {otherEvents.length > ((foodEvent || isAraTatil) ? 2 : 3) && (
                             <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 pl-1">
-                              +{otherEvents.length - (foodEvent ? 2 : 3)} daha...
+                              +{otherEvents.length - ((foodEvent || isAraTatil) ? 2 : 3)} daha...
                             </span>
                           )}
                         </>
@@ -947,14 +968,28 @@ export default function Agenda({
                     })()}
                   </div>
 
-                  {/* Mobile Compact Indicators (Food Icon & Dots) */}
+                  {/* Mobile Compact Indicators (Ara Tatil, Food Icon & Dots) */}
                   <div className="sm:hidden flex items-center justify-center gap-1 mt-auto flex-wrap">
                     {(() => {
                       const foodEvent = dayEvents.find((e) => e.event_type === "food");
-                      const otherEvents = dayEvents.filter((e) => e.event_type !== "food");
+                      const otherEvents = dayEvents.filter((e) => e.event_type !== "food" && !e.title?.toLowerCase().includes("ara tatil"));
 
                       return (
                         <>
+                          {isAraTatil && (
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDayDate(dayItem.dateStr);
+                                setIsDayDrawerOpen(true);
+                              }}
+                              className="text-[9px] px-1 py-0.5 rounded font-black bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/40 whitespace-nowrap cursor-pointer flex items-center gap-0.5"
+                              title="Ara Tatil"
+                            >
+                              <span>🌴</span>
+                              <span className="scale-90 origin-left">Tatil</span>
+                            </span>
+                          )}
                           {foodEvent && (
                             <span 
                               onClick={(e) => {
@@ -967,7 +1002,7 @@ export default function Agenda({
                               🍽️
                             </span>
                           )}
-                          {otherEvents.slice(0, foodEvent ? 3 : 4).map((ev) => {
+                          {otherEvents.slice(0, (foodEvent || isAraTatil) ? 2 : 3).map((ev) => {
                             const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
                             const st = getEventTypeStyles(ev.event_type, isMyExam);
                             return (
@@ -977,9 +1012,9 @@ export default function Agenda({
                               />
                             );
                           })}
-                          {otherEvents.length > (foodEvent ? 3 : 4) && (
+                          {otherEvents.length > ((foodEvent || isAraTatil) ? 2 : 3) && (
                             <span className="text-[8px] font-bold text-blue-600 dark:text-blue-400 leading-none">
-                              +{otherEvents.length - (foodEvent ? 3 : 4)}
+                              +{otherEvents.length - ((foodEvent || isAraTatil) ? 2 : 3)}
                             </span>
                           )}
                         </>
@@ -1423,6 +1458,20 @@ export default function Agenda({
               className="flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-3.5 min-h-0"
               style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
             >
+              {selectedDayDate && selectedDayDate >= "2026-11-16" && selectedDayDate <= "2026-11-20" && (
+                <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-start gap-3 shadow-2xs">
+                  <span className="text-2xl shrink-0">🌴</span>
+                  <div>
+                    <h4 className="font-bold text-amber-800 dark:text-amber-300 text-sm">
+                      1. Dönem Ara Tatili
+                    </h4>
+                    <p className="text-xs text-amber-700/90 dark:text-amber-400/90 mt-0.5 leading-relaxed">
+                      16 - 20 Kasım 2026 tarihleri arasında okulumuz ara tatildedir. Bu tarihlerde ders ve yemek servisi yapılmamaktadır.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {selectedDayEvents.length === 0 ? (
                 <div className="py-12 text-center">
                   <CalendarDays size={40} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />

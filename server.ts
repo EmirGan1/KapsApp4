@@ -485,7 +485,7 @@ async function initDb() {
 
   // Seed default 1. Yarıyıl 1. Sınav Kuşağı (12 G IB) exams into agenda_events if not present
   try {
-    const existingExams = await client.execute("SELECT COUNT(*) as cnt FROM agenda_events WHERE event_date >= '2026-11-01' AND event_date <= '2026-11-15'");
+    const existingExams = await client.execute("SELECT COUNT(*) as cnt FROM agenda_events WHERE event_type = 'exam' AND event_date >= '2026-11-01' AND event_date <= '2026-11-15'");
     const cnt = Number(existingExams.rows[0]?.cnt || 0);
     if (cnt === 0) {
       const novExamsSeed = [
@@ -596,6 +596,153 @@ async function initDb() {
     }
   } catch (err) {
     console.error("12G IB exams seed error:", err);
+  }
+
+  // Seed November 2026 Cafeteria Lunch Menu (FMV Özel Işık Liseleri Lise Öğle Yemeği Menüsü - Kasım 2026)
+  try {
+    const existingFood = await client.execute("SELECT COUNT(*) as cnt FROM agenda_events WHERE event_type = 'food' AND event_date >= '2026-11-01' AND event_date <= '2026-11-30'");
+    const foodCnt = Number(existingFood.rows[0]?.cnt || 0);
+    if (foodCnt === 0) {
+      const novFoodSeed = [
+        // Hafta 1 (02 - 06 Kasım 2026)
+        {
+          title: "Öğle Yemeği: Pideli İskender",
+          event_date: "2026-11-02",
+          event_time: "12:10 - 13:10",
+          description: "• Ezogelin Çorbası\n• Pideli İskender / Yoğurt ve Sos\n• Blanjer Patates\n• Makarna: Napoliten Sos\n• Salata: Pırasa Kavurma\n• Mevsim Meyvesi (Armut)\n• Ayran"
+        },
+        {
+          title: "Öğle Yemeği: Kıymalı Kabak Sandal Sefası",
+          event_date: "2026-11-03",
+          event_time: "12:10 - 13:10",
+          description: "• Taneli Sebze Çorbası\n• Kıymalı Kabak Sandal Sefası\n• Yeşil Mercimek Köftesi / Bolonez Sos\n• Tel Şehriyeli Bulgur Pilavı\n• Makarna: Peynir Sos\n• Salata: Ton Balığı\n• Supangle\n• Yoğurt"
+        },
+        {
+          title: "Öğle Yemeği: Pilav Üzeri Hindi Tiftik",
+          event_date: "2026-11-04",
+          event_time: "12:00 - 12:45",
+          description: "• Süzme Mercimek Çorbası\n• Pilav Üzeri Hindi Tiftik\n• Sebze Buketi\n• Makarna: Bolonez Sos\n• Salata: Yoğurtlu Amerikan Salata\n• Mevsim Meyvesi (Elma)\n• Ayran"
+        },
+        {
+          title: "Öğle Yemeği: Etli Nohut & Patates Musakka",
+          event_date: "2026-11-05",
+          event_time: "12:10 - 13:10",
+          description: "• Naneli Yoğurt Çorbası\n• Etli Nohut\n• Patates Musakka\n• Pirinç Pilavı\n• Makarna: Sebze Sos\n• Salata: Portakallı Kereviz\n• Mevsim Meyvesi (Mandalina)\n• Cacık"
+        },
+        {
+          title: "Öğle Yemeği: Salçalı Biftek & Püre",
+          event_date: "2026-11-06",
+          event_time: "12:10 - 13:10",
+          description: "• Tel Şehriye Çorbası\n• Salçalı Biftek / Püre\n• Bulgur Pilavı\n• Makarna: Bolonez Sos\n• Salata Büfesi\n• Osmanlı Tulumba\n• Yoğurt"
+        },
+
+        // Hafta 2 (09 - 13 Kasım 2026)
+        {
+          title: "Öğle Yemeği: Bolonez Soslu Sebzeli Makarna",
+          event_date: "2026-11-09",
+          event_time: "12:10 - 13:10",
+          description: "• Düğün Çorbası\n• Bolonez Soslu Sebzeli Makarna\n• Kıymalı Karnabahar\n• Sebze Kavurma\n• Makarna: Napoliten Soslu\n• Salata: Ton Balığı\n• Mevsim Meyvesi (Elma)\n• Komposto (Vişne)"
+        },
+        {
+          title: "Öğle Yemeği: Atatürk'ün En Sevdiği Yemekler (10 Kasım)",
+          event_date: "2026-11-10",
+          event_time: "12:10 - 13:10",
+          description: "• Tarhana Çorbası\n• Etli Kuru Fasulye\n• Karnıyarık\n• Pirinç Pilavı\n• Makarna: Pesto Soslu\n• Salata: Turşu Kavurma\n• İrmik Helvası\n• Cacık"
+        },
+        {
+          title: "Öğle Yemeği: Et Fajita & Lavaş",
+          event_date: "2026-11-11",
+          event_time: "12:00 - 12:45",
+          description: "• Tavuksuyu Çorbası\n• Et Fajita / Lavaş\n• Tel Şehriyeli Bulgur Pilavı\n• Makarna: Domates Sos\n• Salata: Patates Salatası\n• Mevsim Meyvesi (Mandalina)\n• Ayran"
+        },
+        {
+          title: "Öğle Yemeği: Kabak Dolma & Peynirli Gül Börek",
+          event_date: "2026-11-12",
+          event_time: "12:10 - 13:10",
+          description: "• Tel Şehriye Çorbası\n• Kabak Dolma / Yoğurt\n• Kıymalı Pırasa Yemeği\n• Peynirli Gül Börek\n• Makarna: Sebzeli Sos\n• Salata: Havuç Tarator\n• Mevsim Meyvesi (Armut)\n• Komposto (Elma)"
+        },
+        {
+          title: "Öğle Yemeği: Güneydoğu Mutfağı Günü (Adana Kebap)",
+          event_date: "2026-11-13",
+          event_time: "12:10 - 13:10",
+          description: "• Lebeniye Çorbası\n• Adana Kebap / Lavaş\n• Sebzeli Bulgur Pilavı\n• Makarna: Arabiatta Sos\n• Salata: Acılı Ezme, Etsiz Çiğ Köfte, Yoğurtlu Semizotu, Nohut Salatası\n• Kadayıf\n• Ayran"
+        },
+
+        // Hafta 4 (23 - 27 Kasım 2026) - (Hafta 3 Ara Tatil)
+        {
+          title: "Öğle Yemeği: Islama Köfte",
+          event_date: "2026-11-23",
+          event_time: "12:10 - 13:10",
+          description: "• Ezogelin Çorbası\n• Islama Köfte / Soslu Dilim Ekmekli\n• Blanjer Patates\n• Makarna: Napoliten Sos\n• Salata: Coleslaw Salata\n• Mevsim Meyvesi (Elma)\n• Ayran"
+        },
+        {
+          title: "Öğle Yemeği: Etli Nohut & Karnabahar Graten",
+          event_date: "2026-11-24",
+          event_time: "12:10 - 13:10",
+          description: "• Yoğurt Çorbası\n• Etli Nohut\n• Karnabahar Graten\n• Arpa Şehriyeli Pirinç Pilavı\n• Makarna: Pesto Sos\n• Salata: Ton Balığı\n• Mevsim Meyvesi (Armut)\n• Yoğurt"
+        },
+        {
+          title: "Öğle Yemeği: Piliç Haşlama / Izgara Köfte",
+          event_date: "2026-11-25",
+          event_time: "12:00 - 12:45",
+          description: "• Şafak Çorbası\n• Piliç Haşlama (Kuşbaşı Bonfile Göğüs)\n• Izgara Köfte / Patates Fırın\n• Tel Şehriyeli Bulgur Pilavı\n• Makarna: Arabiatta Sos\n• Salata: Kırmızı Pancar Salatası\n• Mevsim Meyvesi (Mandalina)\n• Yoğurt"
+        },
+        {
+          title: "Öğle Yemeği: Tavuklu Pilav & Patates Kavurma",
+          event_date: "2026-11-26",
+          event_time: "12:10 - 13:10",
+          description: "• Balkabaklı Mercimek Çorbası\n• Tavuklu Pilav / Anaokulu İçin Hindili Pilav\n• Patates Kavurma\n• Makarna: Sebze Sos\n• Salata: Kabak Tarator\n• Mevsim Meyvesi (Armut)\n• Ayran"
+        },
+        {
+          title: "Öğle Yemeği: Çıtır Hindi / İsveç Köfte",
+          event_date: "2026-11-27",
+          event_time: "12:10 - 13:10",
+          description: "• Alaca Çorbası\n• Çıtır Hindi / Sebze Sote\n• İsveç Köfte / Sebze Sote\n• Patatesli Rulo Börek\n• Makarna: Peynir Sos\n• Salata: Portakallı Kereviz\n• Supangle\n• Komposto (Kuru Üzüm)"
+        },
+
+        // Hafta 5 (30 Kasım 2026)
+        {
+          title: "Öğle Yemeği: Soslu Hamburger & Elma Dilim Patates",
+          event_date: "2026-11-30",
+          event_time: "12:10 - 13:10",
+          description: "• Süzme Mercimek Çorbası\n• Soslu Hamburger / Elma Dilim Patates\n• Havuçlu Fırın Brokoli\n• Makarna: Peynir Soslu\n• Salata: Yoğurtlu Amerikan Salata\n• Mozaik Pasta\n• Ayran"
+        }
+      ];
+
+      for (const f of novFoodSeed) {
+        await client.execute({
+          sql: "INSERT INTO agenda_events (title, event_date, event_time, event_type, description, target_roles, created_by, created_at) VALUES (?, ?, ?, 'food', ?, ?, 'emirgan', ?)",
+          args: [f.title, f.event_date, f.event_time, f.description, JSON.stringify(["all"]), new Date().toISOString()]
+        });
+      }
+    }
+
+    // Seed November 2026 1. Dönem Ara Tatili (16 - 20 Kasım 2026)
+    const existingBreak = await client.execute("SELECT COUNT(*) as cnt FROM agenda_events WHERE title LIKE '%Ara Tatil%' AND event_date >= '2026-11-16' AND event_date <= '2026-11-20'");
+    const breakCnt = Number(existingBreak.rows[0]?.cnt || 0);
+    if (breakCnt === 0) {
+      const breakDays = [
+        { date: "2026-11-16", day: "Pazartesi" },
+        { date: "2026-11-17", day: "Salı" },
+        { date: "2026-11-18", day: "Çarşamba" },
+        { date: "2026-11-19", day: "Perşembe" },
+        { date: "2026-11-20", day: "Cuma" }
+      ];
+      for (const b of breakDays) {
+        await client.execute({
+          sql: "INSERT INTO agenda_events (title, event_date, event_time, event_type, description, target_roles, created_by, created_at) VALUES (?, ?, 'Tüm Gün', 'event', ?, ?, 'emirgan', ?)",
+          args: [
+            "🌴 Ara Tatil",
+            b.date,
+            `1. Yarıyıl Ara Tatili (${b.day}) • Okul kapalıdır. Ders ve yemek servisi bulunmamaktadır.`,
+            JSON.stringify(["all"]),
+            new Date().toISOString()
+          ]
+        });
+      }
+    }
+  } catch (foodSeedErr) {
+    console.error("November food and break seed error:", foodSeedErr);
   }
 
   // Roles & Custom Roles Table with Discord-style hierarchy
