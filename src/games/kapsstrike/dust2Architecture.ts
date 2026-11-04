@@ -35,6 +35,8 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
    const x=(ix+w/2-64)*cell,z=(64-iz-d/2)*cell,h=Math.abs(v),bridge=v<0;
    box(bridge?'catwalk-deck':'raised-floor',x,bridge?h-.28:0,z,w*cell+.006,bridge?.28:h,d*cell+.006);
  }
+ // Continuous support under the upper A platform, independent of radar cells.
+ box('a-site-infill',39.5,0,39.5,25,3.2,13);
  ramp('a-ramp-long',47,24.5,8,7,1.6,'z');
  box('a-ramp-corner',47,0,29,3,1.6,2);box('a-ramp-landing',38.5,0,31.5,3,3.2,5);
  box('a-ramp-upper-base',43,0,30,8,1.6,5);
