@@ -1,3 +1,4 @@
+import {finishAppearance,finishTextureUrl} from "./finishAppearance";
 import {BombEffects} from './bombEffects';
 import {FxaaPostProcess} from '@babylonjs/core/PostProcesses/fxaaPostProcess';
 import {GRAPHICS,knifeTiming} from './presentation';
@@ -503,78 +504,39 @@ export class StrikeRenderer {
   }
   private quality(){return this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;}
   private textureSize(color?:string){return this.quality()==='high'?(color===this.map.floor?512:256):GRAPHICS[this.quality()].surface;}
+  private finishMaterial(finish: import('./cosmetics').Cosmetic): StandardMaterial {
+        const key='finish-'+finish.id;
+        let material=this.materials.get(key);
+        if(!material){
+          const appearance=finishAppearance(finish);
+          material=new StandardMaterial(key,this.scene);
+          material.diffuseColor=Color3.FromHexString(appearance.base);
+          material.specularColor=Color3.Lerp(Color3.White(),Color3.FromHexString(appearance.accent),.25);
+          material.specularPower=96;
+          // A small self-lit coat preserves the finish in dark maps without washing
+          // the whole weapon into a flat emissive silhouette.
+          material.emissiveColor=Color3.White().scale(appearance.glow);
+          if(typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine'){
+            const texture=new Texture(finishTextureUrl(finish),this.scene,false,false,Texture.TRILINEAR_SAMPLINGMODE);
+            texture.name=key+'-shared-paint';texture.gammaSpace=true;texture.anisotropicFilteringLevel=4;
+            material.diffuseTexture=texture;material.emissiveTexture=texture;
+            material.diffuseColor=Color3.White();
+          }
+          material.freeze();this.materials.set(key,material);
+        }
+        return material;
+  }
   private applyCosmetics(){
     for(const [weapon,root] of this.weapons){
       const finish=cosmetic(this.settings.cosmeticLoadout?.[weapon]);
       let material:StandardMaterial|undefined;
-      if(finish){
-        const key='finish-'+finish.id;
-        material=this.materials.get(key);
-        if(!material){
-          material=new StandardMaterial(key,this.scene);material.diffuseColor=Color3.FromHexString(finish.color);material.specularColor=Color3.FromHexString(finish.accent).scale(.6);material.specularPower=64;
-          material.emissiveColor=Color3.FromHexString(finish.accent).scale(finish.rarity==='knife'?.3:finish.rarity==='legendary'?.24:finish.rarity==='epic'?.12:.015);
-          if(typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine'){
-            const t=new DynamicTexture(key,{width:256,height:256},this.scene,true);
-            const c=t.getContext() as unknown as CanvasRenderingContext2D;
-            c.fillStyle=finish.color;c.fillRect(0,0,256,256);
-            if(finish.pattern===0){
-              // Tactical woodland / disruptive camouflage blobs
-              c.fillStyle=finish.accent;
-              for(let i=0;i<18;i++){
-                const bx=((i*71)%240)+8,by=((i*113)%240)+8,br=16+((i*37)%28);
-                c.beginPath();c.arc(bx,by,br,0,Math.PI*2);c.fill();
-                c.beginPath();c.arc(bx+br*0.6,by+br*0.3,br*0.7,0,Math.PI*2);c.fill();
-              }
-              c.fillStyle='rgba(15,25,20,0.35)';
-              for(let i=0;i<12;i++){
-                const bx=((i*97+40)%240)+8,by=((i*67+30)%240)+8;
-                c.beginPath();c.ellipse(bx,by,22,12,i*0.4,0,Math.PI*2);c.fill();
-              }
-            }else if(finish.pattern===1){
-              // Glacial geometric crystal shards & frost gradients
-              for(let i=0;i<16;i++){
-                const gx=((i*61)%220)+10,gy=((i*89)%220)+10;
-                c.fillStyle=i%2===0?finish.accent:'rgba(255,255,255,0.22)';
-                c.beginPath();c.moveTo(gx,gy);c.lineTo(gx+35,gy-12);c.lineTo(gx+25,gy+40);c.lineTo(gx-10,gy+28);c.closePath();c.fill();
-              }
-            }else if(finish.pattern===2){
-              // Branching electric lightning discharge
-              c.strokeStyle=finish.accent;c.lineWidth=3;c.shadowColor=finish.accent;c.shadowBlur=8;
-              for(let bolt=0;bolt<4;bolt++){
-                let lx=bolt*64+16,ly=0;
-                c.beginPath();c.moveTo(lx,ly);
-                while(ly<256){
-                  lx+=(Math.sin(ly*0.1+bolt)*18);
-                  ly+=18+((bolt*7)%12);
-                  c.lineTo(lx,ly);
-                }
-                c.stroke();
-              }
-              c.shadowBlur=0;
-            }else{
-              // Celestial cosmic supernova nebula swirl
-              const g=c.createRadialGradient(128,128,10,128,128,140);
-              g.addColorStop(0,finish.accent);
-              g.addColorStop(0.5,finish.color);
-              g.addColorStop(1,'rgba(10,5,15,0.9)');
-              c.fillStyle=g;c.fillRect(0,0,256,256);
-              c.fillStyle='#ffffff';
-              for(let i=0;i<45;i++){
-                const sx=((i*83+17)%250)+3,sy=((i*127+29)%250)+3,sr=i%5===0?2.2:1.1;
-                c.beginPath();c.arc(sx,sy,sr,0,Math.PI*2);c.fill();
-              }
-            }
-            t.update();material.diffuseTexture=t;material.diffuseColor=Color3.White();
-          }
-          material.freeze();this.materials.set(key,material);
-        }
-      }
+      if(finish) material=this.finishMaterial(finish);
       for(const mesh of root.getChildMeshes()){
         if(!mesh.metadata?.baseMaterial)mesh.metadata={...mesh.metadata,baseMaterial:mesh.material};
         if(weapon==='knife')mesh.setEnabled(mesh.metadata.knifeStyle===(finish?.knife||'default'));
         const isBlade = mesh.metadata?.knifePart === 'blade';
         const isKnifeHandle = weapon === 'knife' && !isBlade;
-        const tinted = !isKnifeHandle && (weapon === 'knife' || /receiver|stock/.test(mesh.name));
+        const tinted = !isKnifeHandle && (weapon === 'knife' || /receiver|stock|barrel|magazine|pump/.test(mesh.name));
         mesh.material = material && tinted ? material : mesh.metadata.baseMaterial;
       }
     }
@@ -1144,7 +1106,7 @@ export class StrikeRenderer {
         if (item.gun) {
           item.gun.scaling.set(p.selectedWeapon === "knife" ? 0.5 : 1, p.selectedWeapon === "knife" ? 0.22 : 1, 1);
           const finish=cosmetic(p.weaponSkin);
-          item.gun.material = this.material(finish?.color||(p.selectedWeapon === "knife" ? "#d8e3e9" : "#1e293b"),finish?.rarity==='knife'||finish?.rarity==='legendary');
+          item.gun.material = finish ? this.finishMaterial(finish) : this.material(p.selectedWeapon === "knife" ? "#d8e3e9" : "#1e293b");
         }
 
         const isCrouch = p.stance === "crouch" || p.stance === "slide";
