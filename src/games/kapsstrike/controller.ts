@@ -103,7 +103,7 @@ export class StrikeController {
   private previousWeapon: WeaponId = "rifle";
   private mouseFire = false;
   private ads = false;
-  private ignoreInitialMouseMove = false;
+  private pointerLockIgnoreUntil = 0;
   private pendingReload = false;
   private pendingWeapon?: WeaponId;
   private lastWheel = -Infinity;
@@ -227,7 +227,7 @@ export class StrikeController {
 
     listen(document, "pointerlockchange", () => {
       if (document.pointerLockElement === canvas)
-        this.ignoreInitialMouseMove = true;
+        this.pointerLockIgnoreUntil = performance.now() + 150;
       else if (this.active && !this.menuOverlay && !this.isTouchDevice && this.usesPointerLock) this.pause();
     });
 
@@ -278,15 +278,15 @@ export class StrikeController {
 
     listen(window, "mousemove", ((e: MouseEvent) => {
       if (!this.active || (document.pointerLockElement !== canvas && !(!this.usesPointerLock&&e.target===canvas&&e.buttons>0))) return;
-      if (this.ignoreInitialMouseMove) {
-        this.ignoreInitialMouseMove = false;
-        return;
-      }
-      this.yaw +=
-        clamp(e.movementX, -200, 200) * 0.002 * this.settings.sensitivity;
+      if (performance.now() < this.pointerLockIgnoreUntil) return;
+      // Discard synthetic cursor-wrap/centering spikes from browser pointerlock
+      if (Math.abs(e.movementX) > 100 || Math.abs(e.movementY) > 100) return;
+      const dx = clamp(e.movementX, -35, 35);
+      const dy = clamp(e.movementY, -35, 35);
+      this.yaw += dx * 0.002 * this.settings.sensitivity;
       this.pitch = clamp(
         this.pitch +
-          clamp(e.movementY, -200, 200) *
+          dy *
             0.002 *
             this.settings.sensitivity *
             (this.settings.invertY ? -1 : 1),
@@ -879,7 +879,7 @@ export class StrikeController {
       this.onPause("Sunucu bağlantısı yok. Menüden odaya yeniden katıl.");
       return;
     }
-    this.ignoreInitialMouseMove = true;
+    this.pointerLockIgnoreUntil = performance.now() + 250;
     if(this.canvas.tabIndex<0)this.canvas.tabIndex=0;
     this.canvas.focus();
     this.audio.unlock();
@@ -906,13 +906,18 @@ export class StrikeController {
   }
 
   public addTouchLook(deltaX: number, deltaY: number) {
+    if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+    // Discard multitouch jumps or coordinate teleporting
+    if (Math.hypot(deltaX, deltaY) > 75) return;
+    const clampedX = clamp(deltaX, -30, 30);
+    const clampedY = clamp(deltaY, -30, 30);
     const p=this.state.player,m=p.movement,eye={...m.position,y:m.position.y+(m.stance==='stand'?C.eye:C.crouchEye)};
     const targets=this.isMultiplayer?this.remotePlayerList.filter(r=>r.id!==p.id&&r.id!==this.socket?.id).map(r=>({position:r.position,hp:r.hp,friendly:this.localTeam!=='none'&&r.team===this.localTeam})):this.state.targets;
     const friction=this.isTouchDevice&&this.settings.touchAimAssist!==false&&p.hp>0&&p.weapon.selected!=='knife'?touchAimFriction(eye,this.yaw,this.pitch,targets,MAPS[this.state.map]):1;
     const sens = (this.settings.mobileSensitivity || this.settings.sensitivity) * 0.003*friction;
-    this.yaw += deltaX * sens;
+    this.yaw += clampedX * sens;
     this.pitch = clamp(
-      this.pitch + deltaY * sens * (this.settings.invertY ? -1 : 1),
+      this.pitch + clampedY * sens * (this.settings.invertY ? -1 : 1),
       -1.48,
       1.48
     );
@@ -924,11 +929,11 @@ export class StrikeController {
     if (mode === "off") return;
     if (mode === "ads" && !this.touchAds && !this.ads) return;
 
-    // Deltas are radians from the shared sensor tracker. Apply user sensitivity once.
+    // Deltas are radians from the shared sensor tracker. Clamp safely against orientation jumps.
     const sens = this.settings.gyroSensitivity ?? 1.0;
-    this.yaw += clamp(deltaYaw,-.35,.35) * sens;
+    this.yaw += clamp(deltaYaw, -0.15, 0.15) * sens;
     this.pitch = clamp(
-      this.pitch + clamp(deltaPitch,-.35,.35) * sens * (this.settings.invertY ? -1 : 1),
+      this.pitch + clamp(deltaPitch, -0.15, 0.15) * sens * (this.settings.invertY ? -1 : 1),
       -1.48,
       1.48
     );

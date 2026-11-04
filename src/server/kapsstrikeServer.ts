@@ -433,10 +433,12 @@ export class KapsStrikeServerManager {
     this.io.emit("active_tables_updated", this.getUnifiedTables());
   }
 
-  private broadcastRoomState(room: StrikeRoom) {
+  private broadcastRoomState(room: StrikeRoom, syncRoomsList: boolean = true) {
     const state = room.getPublicRoomState();
     this.io.to(`strike:${room.roomCode}`).emit("strike:room_state", state);
-    this.broadcastRoomsList();
+    if (syncRoomsList) {
+      this.broadcastRoomsList();
+    }
   }
 
   public findRoomByCode(rawCode: string): StrikeRoom | undefined {
@@ -742,7 +744,7 @@ export class KapsStrikeServerManager {
     if (!player) return false;
 
     player.ready = ready;
-    this.broadcastRoomState(room);
+    this.broadcastRoomState(room, false);
     return true;
   }
 
@@ -760,7 +762,7 @@ export class KapsStrikeServerManager {
     player.team = team;
     player.originalTeam = team;
     player.color = team === "red" ? "#ef4444" : "#3b82f6";
-    this.broadcastRoomState(room);
+    this.broadcastRoomState(room, false);
     return true;
   }
 

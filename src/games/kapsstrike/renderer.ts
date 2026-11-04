@@ -502,7 +502,7 @@ export class StrikeRenderer {
     }
   }
   private quality(){return this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;}
-  private textureSize(color?:string){return this.quality()==='high'?(color===this.map.floor?2048:1024):GRAPHICS[this.quality()].surface;}
+  private textureSize(color?:string){return this.quality()==='high'?(color===this.map.floor?512:256):GRAPHICS[this.quality()].surface;}
   private applyCosmetics(){
     for(const [weapon,root] of this.weapons){
       const finish=cosmetic(this.settings.cosmeticLoadout?.[weapon]);
@@ -619,8 +619,8 @@ export class StrikeRenderer {
       let node=this.supplyMeshes.get(p.id);
       if(!node){
         node=new TransformNode(p.id,this.scene);
-        const box=MeshBuilder.CreateBox(p.id+'-case',{width:p.kind==='dropped'?.65:1.1,height:p.kind==='dropped'?.14:.65,depth:.7},this.scene);box.parent=node;box.position.y=.4;box.material=this.material(p.consumable==='health'?'#32835b':p.consumable==='armor'?'#2868a1':p.kind==='airdrop'?'#a64d55':'#556d63',false,'metal');
-        const lid=MeshBuilder.CreateBox(p.id+'-lid',{width:1.12,height:.09,depth:.72},this.scene);lid.parent=node;lid.position.y=.77;lid.material=this.material(p.consumable==='health'?'#9fffbc':p.consumable==='armor'?'#72d5ff':WEAPONS[p.weapon].color,true);lid.setEnabled(p.kind!=='dropped');
+        const box=MeshBuilder.CreateBox(p.id+'-case',{width:p.kind==='dropped'?.65:1.1,height:p.kind==='dropped'?.14:.65,depth:.7},this.scene);box.parent=node;box.position.y=.4;box.material=this.material(p.consumable==='health'?'#16a34a':p.consumable==='armor'?'#2563eb':p.kind==='airdrop'?'#dc2626':'#78716c',false,'metal');
+        const lid=MeshBuilder.CreateBox(p.id+'-lid',{width:1.12,height:.09,depth:.72},this.scene);lid.parent=node;lid.position.y=.77;lid.material=this.material(p.consumable==='health'?'#4ade80':p.consumable==='armor'?'#60a5fa':p.kind==='airdrop'?'#f87171':(WEAPONS[p.weapon]?.color||'#d6d3d1'),true);lid.setEnabled(p.kind!=='dropped');
         if(p.consumable==='health'){for(const [w,h] of [[.13,.42],[.42,.13]]){const m=MeshBuilder.CreateBox(p.id+'-cross',{width:w,height:h,depth:.04},this.scene);m.parent=node;m.position.set(0,.5,-.37);m.material=this.material('#d9ffe3',true);}}
         if(p.consumable==='armor'){const m=MeshBuilder.CreateCylinder(p.id+'-shield',{diameter:.42,height:.04,tessellation:5},this.scene);m.parent=node;m.rotation.x=Math.PI/2;m.position.set(0,.5,-.37);m.material=this.material('#9ee5ff',true);}
         if(p.weapons)for(let i=0;i<p.weapons.length;i++){const m=MeshBuilder.CreateBox(p.id+'-weapon-'+i,{width:.12,height:.05,depth:.5},this.scene);m.parent=node;m.position.set(-.3+i*.3,.85,0);m.material=this.material(WEAPONS[p.weapons[i]].color);}
@@ -666,7 +666,7 @@ export class StrikeRenderer {
         m.bumpTexture=load('normal',false);m.bumpTexture.level=.4;m.invertNormalMapY=true;
         m.metallicTexture=load('roughness',false);m.useRoughnessFromMetallicTextureGreen=true;m.useRoughnessFromMetallicTextureAlpha=false;m.useMetallnessFromMetallicTextureBlue=false;m.metallic=0;m.roughness=1;
       }else{
-        const t=surfaceTexture(this.scene,key+'-pbr',color,surface,undefined,color===this.map.floor?2048:1024);
+        const t=surfaceTexture(this.scene,key+'-pbr',color,surface,undefined,color===this.map.floor?512:256);
         if(t){m.albedoTexture=t;m.albedoColor=Color3.White();}
       }
       m.metadata={color,surface,emissive,label};this.terrainMaterials.set(key,m);

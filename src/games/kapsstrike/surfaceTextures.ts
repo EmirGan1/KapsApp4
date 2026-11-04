@@ -2,11 +2,23 @@ import {DynamicTexture} from '@babylonjs/core/Materials/Textures/dynamicTexture'
 import type {Scene} from '@babylonjs/core/scene';
 import type {Solid} from './types';
 
+const sceneTextureCaches = new WeakMap<Scene, Map<string, DynamicTexture>>();
+
 /** High-fidelity procedural surface textures; organic stucco, stone flagstones, masonry bricks, and weathered materials without crude lines. */
 export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid['surface'],label?:string,resolution=128){
  if(resolution===0&&!label)return undefined;
  if(typeof document==='undefined'||scene.getEngine().getClassName()==='NullEngine'||(!surface&&!label))return undefined;
- const size=label?256:resolution;
+
+ let cache = sceneTextureCaches.get(scene);
+ if(!cache){
+  cache = new Map<string, DynamicTexture>();
+  sceneTextureCaches.set(scene, cache);
+ }
+ const cacheKey = `${key}:${color}:${surface||''}:${label||''}:${resolution}`;
+ const cached = cache.get(cacheKey);
+ if(cached && !(cached as any)._isDisposed) return cached;
+
+ const size=label?256:Math.min(512, Math.max(64, resolution));
  const texture=new DynamicTexture(key,{width:size,height:label?64:size},scene,true);
  const c=texture.getContext() as unknown as CanvasRenderingContext2D;
  c.fillStyle=color;c.fillRect(0,0,size,label?64:size);
@@ -219,5 +231,6 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
 
  texture.update();
  texture.anisotropicFilteringLevel=resolution>=512?8:2;
+ cache.set(cacheKey, texture);
  return texture;
 }

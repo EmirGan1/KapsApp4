@@ -1,4 +1,4 @@
-import type {MapDefinition,PlayerState,StrikeWorld,Vec3} from './types';
+import type {MapDefinition,PlayerState,StrikeWorld,Vec3,WeaponId} from './types';
 import {PHYSICS as C,SPECIAL_WEAPONS,WEAPONS} from './config';
 import {collisionSolids,fits,raySolid,support} from './physics';
 export const SUPPLY_RESPAWN = Math.round(10/C.dt);
@@ -22,9 +22,29 @@ function locations(map:MapDefinition){let p=candidates.get(map);if(!p){p=supplyL
 export function createWorld(map:MapDefinition,seed=Date.now()):StrikeWorld{
  const w:StrikeWorld={pickups:[],nextDrop:DROP_INTERVAL,serial:0,seed:seed>>>0};
  const pool=[...locations(map)];
- for(let i=0;i<5&&pool.length;i++){
+ // 8 pickups: 3 Health boxes, 2 Armor boxes, 3 Special Weapons (carbine, lmg, railgun)
+ const pickupTypes: Array<{ consumable?: "health" | "armor"; amount?: number; weapon?: WeaponId }> = [
+  { consumable: 'health', amount: 50 },
+  { consumable: 'health', amount: 50 },
+  { consumable: 'health', amount: 50 },
+  { consumable: 'armor', amount: 50 },
+  { consumable: 'armor', amount: 50 },
+  { weapon: 'carbine' },
+  { weapon: 'lmg' },
+  { weapon: 'railgun' },
+ ];
+ for(let i=0;i<pickupTypes.length&&pool.length;i++){
   const p=pool.splice(Math.floor(random(w)*pool.length),1)[0];
-  w.pickups.push({id:`supply-${++w.serial}`,position:{...p},weapon:SPECIAL_WEAPONS[i%2],...(i===3?{consumable:'health' as const,amount:50}:i===4?{consumable:'armor' as const,amount:50}:{}),kind:'chest',opened:false,expires:0});
+  const type=pickupTypes[i];
+  w.pickups.push({
+   id:`supply-${++w.serial}`,
+   position:{...p},
+   weapon:type.weapon || 'carbine',
+   ...(type.consumable ? { consumable: type.consumable, amount: type.amount } : {}),
+   kind:'chest',
+   opened:false,
+   expires:0
+  });
  }
  return w;
 }
@@ -72,7 +92,8 @@ export function claimSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState,tick:n
   p.weapon.selected=weapons[0];p.weapon.reloadUntil=0;p.weapon.switchUntil=tick+24;p.weapon.triggerHeld=true;
   p.lootNotice=weapons.map(weapon=>WEAPONS[weapon].name).join(' + ');
  }
- if(s.kind!=='dropped')(w.respawns??=[]).push({at:tick+SUPPLY_RESPAWN,pickup:{...s,position:{...s.position}}});
+ // ONLY standard chests respawn! Airplane airdrops and dropped weapons never respawn in-place!
+ if(s.kind==='chest')(w.respawns??=[]).push({at:tick+SUPPLY_RESPAWN,pickup:{...s,position:{...s.position}}});
  s.opened=true;s.expires=tick+Math.round(15/C.dt);p.lootNoticeUntil=tick+Math.round(3/C.dt);
  return true;
 }

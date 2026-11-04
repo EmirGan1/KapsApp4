@@ -95,7 +95,7 @@ export default function KapsStrikeGame({
   const joystickTouchId = useRef<number | null>(null);
   const joystickCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lookTouchId = useRef<number | null>(null);
-  const lookLastPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lookLastPos = useRef<{ x: number; y: number } | null>(null);
   const [touchAdsActive, setTouchAdsActive] = useState(false);
   const [weaponMenuOpen, setWeaponMenuOpen] = useState(false);
   const gyro = useGameGyroscope(settings.gyroMode !== undefined && settings.gyroMode !== 'off', delta => {
@@ -136,6 +136,14 @@ export default function KapsStrikeGame({
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordModalRoomId, setPasswordModalRoomId] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [isStartingMatch, setIsStartingMatch] = useState(false);
+  const viewRef = useRef(view);
+  useEffect(() => {
+    viewRef.current = view;
+    if (view !== "lobby") {
+      setIsStartingMatch(false);
+    }
+  }, [view]);
 
   // Create Room Form
   const [createName, setCreateName] = useState(`${username}'in Odası`);
@@ -182,7 +190,6 @@ export default function KapsStrikeGame({
     const c = document.createElement("canvas");
     const probe = c.getContext("webgl2") || c.getContext("webgl");
     setSupported(!!probe);
-    probe?.getExtension("WEBGL_lose_context")?.loseContext();
 
     return () => {
       clearTimeout(loadTimer.current);
@@ -224,7 +231,11 @@ export default function KapsStrikeGame({
     if (!socket) return;
 
     refreshRooms();
-    const interval = setInterval(refreshRooms, 3000);
+    const interval = setInterval(() => {
+      if (viewRef.current === "menu") {
+        refreshRooms();
+      }
+    }, 3500);
 
     let lastScoresAt=0;
     const onScores=(snapshot:StrikeSnapshot)=>{
@@ -703,21 +714,38 @@ export default function KapsStrikeGame({
   const toggleReady = () => {
     if (!socket || !currentRoom) return;
     const me = currentRoom.players.find((p) => p.userId === currentUserId);
-    socket.emit("strike:set_ready", { ready: !me?.ready });
+    const nextReady = !me?.ready;
+    // Optimistic UI update
+    updateCurrentRoom({
+      ...currentRoom,
+      players: currentRoom.players.map((p) =>
+        p.userId === currentUserId ? { ...p, ready: nextReady } : p
+      ),
+    });
+    socket.emit("strike:set_ready", { ready: nextReady });
   };
 
   const switchTeam = (team: StrikeTeam) => {
     if (!socket || !currentRoom) return;
+    // Optimistic UI update
+    updateCurrentRoom({
+      ...currentRoom,
+      players: currentRoom.players.map((p) =>
+        p.userId === currentUserId ? { ...p, team } : p
+      ),
+    });
     socket.emit("strike:switch_team", { team });
   };
 
   const startMatchAsHost = () => {
-    if (!socket || !currentRoom) return;
+    if (!socket || !currentRoom || isStartingMatch) return;
     setError("");
+    setIsStartingMatch(true);
     const needBot = currentRoom.mode === "bomb" && currentRoom.players.length < 2;
     const cb = (res?: { success: boolean; error?: string }) => {
-      if (res && !res.success && res.error) {
-        setError(res.error);
+      if (res && !res.success) {
+        setIsStartingMatch(false);
+        if (res.error) setError(res.error);
       }
     };
     if (needBot) {
@@ -901,6 +929,7 @@ export default function KapsStrikeGame({
           <div
             className="ks-touch-look-zone"
             onTouchStart={(e) => {
+              if (lookTouchId.current !== null) return; // Keep current looking finger active
               const touch = e.changedTouches[0];
               lookTouchId.current = touch.identifier;
               lookLastPos.current = { x: touch.clientX, y: touch.clientY };
@@ -909,6 +938,10 @@ export default function KapsStrikeGame({
               for (let i = 0; i < e.changedTouches.length; i++) {
                 const touch = e.changedTouches[i];
                 if (touch.identifier === lookTouchId.current) {
+                  if (!lookLastPos.current) {
+                    lookLastPos.current = { x: touch.clientX, y: touch.clientY };
+                    break;
+                  }
                   const deltaX = touch.clientX - lookLastPos.current.x;
                   const deltaY = touch.clientY - lookLastPos.current.y;
                   lookLastPos.current = { x: touch.clientX, y: touch.clientY };
@@ -921,12 +954,14 @@ export default function KapsStrikeGame({
               for (let i = 0; i < e.changedTouches.length; i++) {
                 if (e.changedTouches[i].identifier === lookTouchId.current) {
                   lookTouchId.current = null;
+                  lookLastPos.current = null;
                   break;
                 }
               }
             }}
             onTouchCancel={() => {
               lookTouchId.current = null;
+              lookLastPos.current = null;
             }}
           />
 
@@ -1596,9 +1631,9 @@ export default function KapsStrikeGame({
                   <button
                     className="ks-btn-quick"
                     onClick={startMatchAsHost}
-                    disabled={currentRoom.players.length < 1}
+                    disabled={currentRoom.players.length < 1 || isStartingMatch}
                   >
-                    ⚡ MAÇI BAŞLAT
+                    {isStartingMatch ? "⏳ BAŞLATILIYOR…" : "⚡ MAÇI BAŞLAT"}
                   </button>
                 )}
               </div>
