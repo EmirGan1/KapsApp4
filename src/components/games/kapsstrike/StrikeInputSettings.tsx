@@ -7,7 +7,7 @@ export default function StrikeInputSettings({settings,onChange,gyro,onOpenTouchC
   if(gyro.permissionGranted||await gyro.request())onChange({gyroMode:mode});
  };
  return <div className="ks-input-settings">
-  <h3>Mobil Kontroller ve Jiroskop</h3>
+  <label className="ks-check"><input type="checkbox" checked={!!settings.trackpadLook} onChange={e=>onChange({trackpadLook:e.target.checked})}/>MacBook / trackpad: iki parmakla kamerayı kaydır (silah değiştirme yerine)</label><h3>Mobil Kontroller ve Jiroskop</h3>
   
   {onOpenTouchCustomizer && (
     <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between gap-3">

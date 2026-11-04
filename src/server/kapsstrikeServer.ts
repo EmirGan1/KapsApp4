@@ -950,7 +950,16 @@ export class KapsStrikeServerManager {
     // 1. Process player inputs & movement simulation
     room.players.forEach((player) => {
 
-      if(room.bomb&&room.bomb.phase==='buy'){player.inputQueue=[];player.heldInput=undefined;player.pendingFire=undefined;return;}
+      if(room.bomb&&room.bomb.phase==='buy'){
+        const owned=room.bomb.players[player.id]?.weapons||['pistol','knife'];
+        player.state.weapon.inventory=[...owned];
+        for(const command of player.inputQueue){
+          player.state.yaw=command.yaw;player.state.pitch=clamp(command.pitch,-1.48,1.48);
+          if(command.weapon&&owned.includes(command.weapon))player.state.weapon.selected=command.weapon;
+          player.lastSequence=command.sequence;player.receivedInputs.delete(command.sequence);
+        }
+        player.inputQueue=[];player.heldInput=undefined;player.pendingFire=undefined;return;
+      }
       // Handle respawn when dead
       if (player.state.hp <= 0) {
         if (!room.bomb && room.tick >= player.state.deadUntil) {
@@ -1451,6 +1460,13 @@ export class KapsStrikeServerManager {
         const error=bombPurchaseError(b,socket.id,request.item,now);
         if(error){reply(false,error);return;}
         const success=buyBombEquipment(b,socket.id,request.item,now);
+        if(success){const player=room.players.get(socket.id)!;
+          player.state.weapon.inventory=[...b.players[socket.id].weapons];
+          if(Object.hasOwn(WEAPONS,request.item)){
+            const weapon=request.item as WeaponId;player.state.weapon.selected=weapon;
+            player.state.weapon.ammo[weapon]=WEAPONS[weapon].capacity;player.state.weapon.reloadUntil=0;
+          }
+        }
         this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(success);return;
       }
       if(request.kind==='drop'){reply(dropBomb(b,socket.id));return;}
