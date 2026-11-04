@@ -128,6 +128,10 @@ export class StrikeInventory {
   );
  }
 
+ async setHiddenWeapons(id:number, value:unknown) {
+  if(!Array.isArray(value)||value.length>8||value.some(w=>!['rifle','smg','sniper','shotgun','pistol','carbine','lmg','railgun'].includes(w))) throw new Error('Geçersiz silah tercihi.');
+  return this.run(id,()=>this.mutate(id,state=>{state.hiddenWeapons=[...new Set(value)];return state;}));
+ }
  async searchUsers(query: string) {
   await this.ensure();
   const q = query.trim().slice(0, 40);
