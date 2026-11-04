@@ -96,3 +96,28 @@ test('cosmetic knife models switch safely, preserve gameplay and dispose owned m
  }
  renderer.dispose();assert.ok(engine.isDisposed);
 });
+
+test('quality switches preserve map materials and reuse GPU resources', () => {
+ for (const map of Object.values(MAPS)) {
+  const engine=new NullEngine();
+  const renderer=new StrikeRenderer({} as HTMLCanvasElement,map,{...DEFAULT_SETTINGS,quality:'high'},engine);
+  const world=renderer.scene.meshes.filter(m=>m.name==='ground'||m.name.startsWith('district-'));
+  const original=world.map(m=>m.material);
+  const state=createTraining(map.id);
+  let warmedMaterials=0;
+  for(let cycle=0;cycle<3;cycle++) {
+   for(const quality of ['low','medium','high'] as const) {
+    renderer.updateSettings({...DEFAULT_SETTINGS,quality});
+    for(const mesh of world) {
+     assert.ok(renderer.scene.meshes.includes(mesh),'world geometry retained');
+     assert.ok(mesh.material && renderer.scene.materials.includes(mesh.material),'world has a live material');
+    }
+    renderer.render(state,0,0,false,1,state.player.movement.position,1/60);
+   }
+   world.forEach((mesh,i)=>assert.equal(mesh.material,original[i],'high materials reused'));
+   if(!cycle)warmedMaterials=renderer.scene.materials.length;
+   else assert.equal(renderer.scene.materials.length,warmedMaterials,'no material leak after warmup');
+  }
+  renderer.dispose();
+ }
+});
