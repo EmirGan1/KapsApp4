@@ -136,3 +136,22 @@ test('CS-style C4 plant animation, blinking beacon, and multi-stage explosion re
  assert.equal(renderer.scene.getMeshByName('bomb-camera-flash')?.isEnabled(),false);
  renderer.dispose();
 });
+
+test('buy phase accepts owned weapon selection but freezes movement and fire',()=>{
+ const io:any={to:()=>({emit(){}}),emit(){}};const server=new KapsStrikeServerManager(io);
+ const room=server.createRoom({id:1,username:'a',avatar:null},'a',{mode:'bomb'});
+ server.joinRoom(room.roomCode,{id:2,username:'b',avatar:null},'b');server.setReady('b',true);server.startGame('a');server.stopRoomSimulationLoop(room);server.tickSimulation(room);
+ const p=room.players.get('a')!,bp=room.bomb!.players.a;bp.money=16000;
+ assert.ok(buyBombEquipment(room.bomb!,'a','sniper',room.tick/120));
+ const before={...p.state.movement.position};const ammo=p.state.weapon.ammo.pistol;
+ p.inputQueue.push({sequence:1,tick:room.tick,yaw:.4,pitch:.1,moveX:1,moveZ:1,jump:true,sprint:true,crouch:false,fire:true,ads:false,reload:true,weapon:'sniper'});
+ server.tickSimulation(room);
+ assert.equal(p.state.weapon.selected,'sniper');assert.ok(p.state.weapon.inventory?.includes('sniper'));
+ assert.deepEqual(p.state.movement.position,before);assert.equal(p.state.weapon.ammo.pistol,ammo);
+ p.inputQueue.push({sequence:2,tick:room.tick,yaw:0,pitch:0,moveX:0,moveZ:0,jump:false,sprint:false,crouch:false,fire:false,ads:false,reload:false,weapon:'railgun'});
+ server.tickSimulation(room);assert.equal(p.state.weapon.selected,'sniper');
+});
+test('A platform has continuous collision support throughout the site',async()=>{
+ const {MAPS}=await import('../src/games/kapsstrike/maps');const {support}=await import('../src/games/kapsstrike/physics');
+ for(let x=28;x<=51;x+=.5)for(let z=34;z<=45;z+=.5)assert.ok(support(MAPS.district,{x,y:3.2,z},3.25)>=3.19,`unsupported A floor ${x},${z}`);
+});
