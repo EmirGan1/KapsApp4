@@ -121,3 +121,18 @@ test('quality switches preserve map materials and reuse GPU resources', () => {
   renderer.dispose();
  }
 });
+
+test('every cosmetic coats its visible weapon parts and shares finish with remote players', async()=>{
+ const {COSMETICS}=await import('../src/games/kapsstrike/cosmetics');
+ const {finishAppearance}=await import('../src/games/kapsstrike/finishAppearance');
+ const renderer=new StrikeRenderer({} as HTMLCanvasElement,MAPS.neon,{...DEFAULT_SETTINGS,quality:'low'},new NullEngine());
+ try{for(const item of COSMETICS){
+  renderer.updateSettings({...DEFAULT_SETTINGS,quality:'low',cosmeticLoadout:{[item.weapon]:item.id}});
+  const root=renderer.scene.getTransformNodeByName(item.weapon)!;
+  const parts=root.getChildMeshes().filter(m=>item.weapon==='knife'?m.metadata?.knifePart==='blade':/receiver|stock|barrel|magazine|pump/.test(m.name));
+  assert.ok(parts.length>0,item.id);
+  for(const mesh of parts)assert.equal(mesh.material?.name,'finish-'+item.id,item.id+' '+mesh.name);
+  const material=renderer.scene.getMaterialByName('finish-'+item.id) as any;
+  assert.ok(material.emissiveColor.r>=finishAppearance(item).glow-.001);
+ }}finally{renderer.dispose();}
+});
