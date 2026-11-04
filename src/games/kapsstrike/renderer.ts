@@ -583,33 +583,34 @@ export class StrikeRenderer {
   inspect(){this.inspectTime=this.lastSelectedWeapon==='knife'?knifeTiming(cosmetic(this.settings.cosmeticLoadout?.knife)?.knife||'default').inspect:1.8;}
   resetView(){this.inspectTime=0;this.gunKick=0;this.camera.rotationQuaternion=null;this.camera.rotation.set(0,0,0);this.camera.upVector.set(0,1,0);this.camera.cameraRotation.set(0,0);this.camera.cameraDirection.set(0,0,0);}
   updateSettings(next:StrikeSettings){
+    const previousScale = this.settings.scale;
+    const previousDynamicScale = this.dynamicScale;
+    const previousQuality = this.qualityApplied;
+    const cosmeticsChanged = JSON.stringify(this.settings.cosmeticLoadout) !== JSON.stringify(next.cosmeticLoadout);
     this.settings=next;
-    this.applyCosmetics();
+    if (cosmeticsChanged) this.applyCosmetics();
     const q=next.quality==='auto'?detectAutoQuality():next.quality;
     if(q!==this.qualityApplied){
       this.qualityApplied=q;this.dynamicScale=1;this.slowSamples=0;this.fastSamples=0;
       for(const mesh of this.scene.meshes){
         if(mesh.name!=='ground'&&!mesh.name.startsWith('district-'))continue;
-        const data=mesh.material?.metadata;if(data?.surface)mesh.material=this.terrainMaterial(data.color,data.emissive,data.surface,data.label);
-      }
-      for(const m of this.materials.values())if(m.metadata){
-        const {color,surface,label,emissive}=m.metadata;
-        m.unfreeze();m.diffuseTexture?.dispose();const tex=surfaceTexture(this.scene,m.name,color,surface,label,this.textureSize(color));m.diffuseTexture=tex||null;m.diffuseColor=tex?Color3.White():Color3.FromHexString(color);if(emissive)m.emissiveTexture=tex||null;m.freeze();
+        const data=mesh.material?.metadata;if(data?.surface){const material=this.terrainMaterial(data.color,data.emissive,data.surface,data.label);material.backFaceCulling=mesh.material!.backFaceCulling;mesh.material=material;}
       }
       for(const m of this.scene.meshes)if(m.name.startsWith('district-'))m.setEnabled(q!=='low'||!m.metadata?.detail);
       const sun=this.scene.getLightByName('sun') as DirectionalLight;
       sun.intensity=this.map.id==='district'?(q==='high'?1.35:.65):this.map.id==='neon'?.45:.65;
       this.scene.getLightByName('sky')!.intensity=this.map.id==='district'?(q==='high'?.85:.65):this.map.id==='neon'?.5:.6;
-      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(2048,sun);this.shadow.usePoissonSampling=true;this.shadow.bias=.003;this.shadow.normalBias=.06;for(const m of this.scene.meshes)if(m.name.startsWith('district-'))this.shadow.addShadowCaster(m);}
+      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(2048,sun);this.shadow.usePoissonSampling=true;this.shadow.bias=.003;this.shadow.normalBias=.06;for(const m of this.scene.meshes)if(m.receiveShadows && m.name !== 'ground')this.shadow.addShadowCaster(m);}
       if(q!=='high'&&this.shadow){this.shadow.dispose();this.shadow=undefined;}
-      if(q!=='high'){for(const m of this.terrainMaterials.values())m.dispose(false,true);this.terrainMaterials.clear();this.photographicTextures.clear();}
+      // Retain shared PBR textures until scene disposal. Several batches reference
+      // each texture, and high quality reuses them without network/GPU reuploads.
       this.scene.shadowsEnabled=q==='high';
       if(q==='high'&&!this.fxaa&&this.engine.getClassName()!=='NullEngine')this.fxaa=new FxaaPostProcess('high-fxaa',1,this.camera);
       if(q!=='high'&&this.fxaa){this.fxaa.dispose(this.camera);this.fxaa=undefined;}
       for(let i=GRAPHICS[q].tracers;i<this.tracerPool.length;i++){this.tracerPool[i].mesh.setEnabled(false);this.impactPool[i].mesh.setEnabled(false);}
     }
     if(!next.dynamicResolution)this.dynamicScale=1;
-    this.resize();
+    if (previousQuality !== q || previousScale !== next.scale || previousDynamicScale !== this.dynamicScale) this.resize();
   }
   private renderSupplies(state:TrainingState){
     const world=state.world;if(!world)return;
@@ -674,7 +675,7 @@ export class StrikeRenderer {
     return m;
   }
   private material(color: string, emissive = false, surface?:Solid['surface'],label?:string) {
-    const key = color + emissive + (surface||'') + (label||'');
+    const key = color + emissive + (surface||'') + (label||'') + (surface ? ':' + this.quality() : '');
     let m = this.materials.get(key);
     if (!m) {
       m = new StandardMaterial(key, this.scene);
