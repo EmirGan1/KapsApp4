@@ -1,3 +1,4 @@
+import {finishTextureUrl} from "../../../games/kapsstrike/finishAppearance";
 import {caseCost,CASE_PRICES} from '../../../games/kapsstrike/economy';
 import StrikeSkins from "./StrikeSkins";
 import type { SkinId } from "../../../games/kapsstrike/skins";
@@ -7,7 +8,7 @@ import { CASES, COSMETICS, RARITIES, caseRewards, emptyInventory, type Cosmetic,
 import { WEAPONS } from '../../../games/kapsstrike/config';
 
 export function WeaponArt({ item }: { item: Cosmetic }) {
-  const gradientId = 'finish-' + item.id;
+  const gradientId = React.useId().replace(/:/g,'') + '-finish';
   const finishFill = `url(#${gradientId})`;
 
   const renderWeaponSilhouette = () => {
@@ -314,11 +315,9 @@ export function WeaponArt({ item }: { item: Cosmetic }) {
   return (
     <svg viewBox="0 0 240 100" role="img" aria-label={item.name} className="w-full h-auto drop-shadow-md">
       <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={item.color} />
-          <stop offset="50%" stopColor={item.accent} />
-          <stop offset="100%" stopColor={item.color} />
-        </linearGradient>
+        <pattern id={gradientId} patternUnits="userSpaceOnUse" width="240" height="100">
+          <image href={finishTextureUrl(item)} width="240" height="100" preserveAspectRatio="none" />
+        </pattern>
       </defs>
       {renderWeaponSilhouette()}
     </svg>
