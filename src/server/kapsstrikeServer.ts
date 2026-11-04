@@ -1495,13 +1495,14 @@ export class KapsStrikeServerManager {
     const verifyAdmin = async () => {
       return this.inventory.isAuthorizedAdmin(userIdNum, user.username);
     };
-    for(const event of ['get','open','equip'] as const)socket.on('strike:inventory_'+event,async(data:any,cb:any)=>{
+    for(const event of ['get','open','equip','preferences'] as const)socket.on('strike:inventory_'+event,async(data:any,cb:any)=>{
       if(typeof cb!=='function')return;
       if(inventoryBusy||(event!=='get'&&Date.now()-inventoryRequest<250)){cb({success:false,error:'Biraz bekle.'});return;}
       inventoryBusy=true;if(event!=='get')inventoryRequest=Date.now();
       try{if(event==='get'){
         if(isEmirgan) await this.inventory.grantAll(userIdNum);
         const state=await this.inventory.get(userIdNum);applyInventory(state);cb({success:true,state});}
+      else if(event==='preferences'){const state=await this.inventory.setHiddenWeapons(userIdNum,data?.hiddenWeapons);cb({success:true,state});}
       else if(event==='open'){if(typeof data?.caseId!=='string'||data.caseId.length>32)throw new Error('Geçersiz kasa.');cb({success:true,...await this.inventory.open(userIdNum,data.caseId)});}
       else {if(typeof data?.itemId!=='string'||data.itemId.length>64)throw new Error('Geçersiz görünüm.');const state=await this.inventory.equip(userIdNum,data.itemId);applyInventory(state);cb({success:true,state});}}
       catch(e){cb({success:false,error:e instanceof Error?e.message:'Envanter işlemi başarısız.'});}finally{inventoryBusy=false;}
