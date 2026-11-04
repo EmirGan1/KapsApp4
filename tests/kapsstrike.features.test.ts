@@ -26,12 +26,12 @@ test('knife draw is 25% slower with extended inspections, and all four shapes ha
  assert.equal(GRAPHICS.low.surface,0);assert.equal(GRAPHICS.low.shadow,0);assert.ok(GRAPHICS.low.pixelScale<1);assert.equal(GRAPHICS.high.shadow,2048);
 });
 
-test('Low/High profiles change real render work while preserving map physics and release High materials on return to Low',async()=>{
+test('Low/High profiles change real render work while preserving map physics and retain reusable High materials on return to Low',async()=>{
  const {NullEngine}=await import('@babylonjs/core/Engines/nullEngine');const {StrikeRenderer}=await import('../src/games/kapsstrike/renderer');const {DEFAULT_SETTINGS}=await import('../src/games/kapsstrike/config');const engine=new NullEngine();const r=new StrikeRenderer({} as HTMLCanvasElement,MAPS.district,{...DEFAULT_SETTINGS,quality:'low'},engine);const solids=MAPS.district.solids.length;
  try{
   assert.equal(r.scene.shadowsEnabled,false);assert.equal((r as any).terrainMaterials.size,0);assert.ok(r.scene.meshes.filter(m=>m.metadata?.detail).every(m=>!m.isEnabled()));
   r.updateSettings({...DEFAULT_SETTINGS,quality:'high'});assert.ok((r as any).terrainMaterials.size>0);assert.equal((r as any).shadow.getShadowMap().getSize().width,2048);assert.equal(r.scene.shadowsEnabled,true);assert.ok(r.scene.meshes.some(m=>m.metadata?.detail&&m.isEnabled()));
-  r.updateSettings({...DEFAULT_SETTINGS,quality:'low'});assert.equal((r as any).terrainMaterials.size,0);assert.equal((r as any).shadow,undefined);assert.equal(r.scene.shadowsEnabled,false);assert.equal(MAPS.district.solids.length,solids);
+  r.updateSettings({...DEFAULT_SETTINGS,quality:'low'});assert.ok((r as any).terrainMaterials.size>0);assert.equal((r as any).shadow,undefined);assert.equal(r.scene.shadowsEnabled,false);assert.equal(MAPS.district.solids.length,solids);
  }finally{r.dispose();}
 });
 
