@@ -280,9 +280,9 @@ export class StrikeController {
       if (!this.active || (document.pointerLockElement !== canvas && !(!this.usesPointerLock&&e.target===canvas&&e.buttons>0))) return;
       if (performance.now() < this.pointerLockIgnoreUntil) return;
       // Discard synthetic cursor-wrap/centering spikes from browser pointerlock
-      if (Math.abs(e.movementX) > 100 || Math.abs(e.movementY) > 100) return;
-      const dx = clamp(e.movementX, -35, 35);
-      const dy = clamp(e.movementY, -35, 35);
+      if(!Number.isFinite(e.movementX)||!Number.isFinite(e.movementY))return;
+      const motionScale=Math.min(1,240/Math.max(1,Math.hypot(e.movementX,e.movementY)));
+      const dx=e.movementX*motionScale,dy=e.movementY*motionScale;
       this.yaw += dx * 0.002 * this.settings.sensitivity;
       this.pitch = clamp(
         this.pitch +
@@ -317,6 +317,12 @@ export class StrikeController {
       ((e: WheelEvent) => {
         if (!this.active || (!this.isTouchDevice && this.usesPointerLock && document.pointerLockElement !== canvas)) return;
         e.preventDefault();
+        if(this.settings.trackpadLook&&!this.menuOverlay){
+          if(!Number.isFinite(e.deltaX)||!Number.isFinite(e.deltaY)||e.ctrlKey)return;
+          const unit=e.deltaMode===1?16:e.deltaMode===2?120:1;
+          this.yaw+=clamp(e.deltaX*unit,-120,120)*.002*this.settings.sensitivity;
+          this.pitch=clamp(this.pitch+clamp(e.deltaY*unit,-120,120)*.002*this.settings.sensitivity*(this.settings.invertY?-1:1),-1.48,1.48);return;
+        }
         if (e.deltaY === 0 || performance.now() - this.lastWheel < 140) return;
         this.lastWheel = performance.now();
         if(this.watchingTeam){this.cycleSpectator(e.deltaY>0?1:-1);return;}
@@ -382,7 +388,8 @@ export class StrikeController {
       if(this.down("inspect"))this.renderer.inspect();
       if(this.down("interact"))this.pendingInteract=true;
       if (this.down("reload")) this.pendingReload = true;
-      const available=WEAPON_ORDER.filter(w=>ownsWeapon(this.state.player.weapon,w)&&(!!this.state.bomb||!this.settings.hiddenWeapons?.includes(w)));
+      const bombWeapons=this.state.bomb?.players[this.socket?.id||'']?.weapons;
+      const available=WEAPON_ORDER.filter(w=>bombWeapons?bombWeapons.includes(w):ownsWeapon(this.state.player.weapon,w)&&!this.settings.hiddenWeapons?.includes(w));
       const current = this.pendingWeapon || this.state.player.weapon.selected;
       let weapon: WeaponId | undefined = available.find(w => w in this.bindings && this.down(w as Action));
       if (this.down("next") || this.down("previous")) {
@@ -480,6 +487,7 @@ export class StrikeController {
         // Restore all authoritative timers/stance/weapon state, then replay only
         // unacknowledged commands. Replaying with the old lastSequence rejects every input.
         if (snapshot.localState) {
+          if(this.state.player.weapon.selected!==snapshot.localState.weapon.selected)this.bombEquipped=false;
           this.state.player = structuredClone(snapshot.localState);
           this.state.tick = snapshot.tick;
           this.state.lastSequence = ackSeq;
@@ -575,6 +583,11 @@ export class StrikeController {
         if(this.bombEquipped){cmd.fire=false;cmd.reload=false;cmd.ads=false;}
         if(this.state.bomb?.phase==='result'){cmd.fire=false;cmd.reload=false;cmd.interact=false;}
         if(owned&&cmd.weapon&&!owned.includes(cmd.weapon))cmd.weapon=undefined;
+        if(frozen&&this.state.bomb?.phase==='buy'){
+          cmd.moveX=0;cmd.moveZ=0;cmd.fire=false;cmd.reload=false;cmd.jump=false;cmd.interact=false;
+          if(cmd.weapon&&owned?.includes(cmd.weapon))this.state.player.weapon.selected=cmd.weapon;
+          if(this.isMultiplayer&&this.socket&&this.state.player.hp>0)this.socket.emit('strike:input',cmd);
+        }
         // Client prediction uses the same round gate as the authoritative server.
         const beforeEvent=this.state.eventId;
         const beforeShot=this.state.player.weapon.shotIndex;
