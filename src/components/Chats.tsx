@@ -146,6 +146,11 @@ export default function Chats({
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [selectedFriends, setSelectedFriends] = useState<number[]>([]);
+  const [createGroupSearch, setCreateGroupSearch] = useState("");
+
+  const [showManageGroup, setShowManageGroup] = useState(false);
+  const [manageGroupMembers, setManageGroupMembers] = useState<number[]>([]);
+  const [manageGroupSearch, setManageGroupSearch] = useState("");
 
   const [replyTo, setReplyTo] = useState<any>(null);
   const [typingUsers, setTypingUsers] = useState<number[]>([]);
@@ -200,14 +205,32 @@ export default function Chats({
       });
     };
 
+    const onGroupUpdated = (updatedGroup: Group) => {
+      setGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+      if (activeChatRef.current?.id === updatedGroup.id && activeTabRef.current === "groups") {
+        setActiveChat(updatedGroup);
+      }
+    };
+
+    const onGroupDeleted = (data: { groupId: number }) => {
+      setGroups(prev => prev.filter(g => g.id !== data.groupId));
+      if (activeChatRef.current?.id === data.groupId && activeTabRef.current === "groups") {
+        setActiveChat(null);
+      }
+    };
+
     socket.on("new_message", onGlobalDMMessage);
     socket.on("friends_updated", loadFriends);
     socket.on("groups_updated", loadGroups);
+    socket.on("group_updated", onGroupUpdated);
+    socket.on("group_deleted", onGroupDeleted);
     
     return () => { 
       socket.off("new_message", onGlobalDMMessage);
       socket.off("friends_updated", loadFriends); 
       socket.off("groups_updated", loadGroups);
+      socket.off("group_updated", onGroupUpdated);
+      socket.off("group_deleted", onGroupDeleted);
     };
   }, [socket, currentUserId]);
 
@@ -923,6 +946,40 @@ export default function Chats({
                   )}
                 </div>
               )}
+
+              {/* Group Management Button in Group Chat */}
+              {activeTab === "groups" && activeChat && (
+                <div className="ml-auto flex items-center gap-2">
+                  {((activeChat as Group).creator === currentUserId || currentUsername?.trim().toLowerCase() === "emirgan") ? (
+                    <button
+                      onClick={() => {
+                        setManageGroupMembers([...((activeChat as Group).members || [])]);
+                        setManageGroupSearch("");
+                        setShowManageGroup(true);
+                        if (socket) socket.emit("get_all_users", (allUsers: any[]) => setUsers(allUsers));
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
+                      title="Grup üyelerini ve yetkileri yönet"
+                    >
+                      <Users size={15} />
+                      <span className="hidden sm:inline">Üyeleri Yönet</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setManageGroupMembers([...((activeChat as Group).members || [])]);
+                        setManageGroupSearch("");
+                        setShowManageGroup(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs rounded-xl transition-all cursor-pointer shrink-0"
+                      title="Grup üyelerini görüntüle"
+                    >
+                      <Users size={15} />
+                      <span className="hidden sm:inline">Grup Bilgisi</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Messages */}
@@ -1234,7 +1291,7 @@ export default function Chats({
       {/* Create Group Modal */}
       {showCreateGroup && (
         <div className="mobile-window fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden flex flex-col max-h-[80vh] shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden flex flex-col max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100">Yeni Grup Oluştur</h3>
               <button onClick={() => setShowCreateGroup(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
@@ -1242,7 +1299,7 @@ export default function Chats({
               </button>
             </div>
             
-            <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
               <input 
                 type="text" 
                 placeholder="Grup Adı" 
@@ -1250,30 +1307,42 @@ export default function Chats({
                 onChange={e => setNewGroupName(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500 text-sm"
               />
+              <input 
+                type="text" 
+                placeholder="Kullanıcı Ara (Tüm Kullanıcılar)..." 
+                value={createGroupSearch}
+                onChange={e => setCreateGroupSearch(e.target.value)}
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500"
+              />
             </div>
             
             <div className="p-4 flex-1 overflow-y-auto">
-              <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wider">Üye Seçimi</h4>
+              <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wider">Üye Seçimi (Tüm Kullanıcılar)</h4>
               <div className="space-y-2">
-                {friends.length === 0 ? (
-                  <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">Grup kuracak arkadaşınız yok.</p>
-                ) : (
-                  friends.map(f => (
-                    <label key={f.id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
+                {(() => {
+                  const availableUsers = users.filter(u => 
+                    u.id !== currentUserId && 
+                    (u.username || "").toLowerCase().includes(createGroupSearch.toLowerCase().trim())
+                  );
+                  if (availableUsers.length === 0) {
+                    return <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">Kullanıcı bulunamadı.</p>;
+                  }
+                  return availableUsers.map(u => (
+                    <label key={u.id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
                       <input 
                         type="checkbox" 
-                        checked={selectedFriends.includes(f.id)}
+                        checked={selectedFriends.includes(u.id)}
                         onChange={(e) => {
-                          if (e.target.checked) setSelectedFriends([...selectedFriends, f.id]);
-                          else setSelectedFriends(selectedFriends.filter(id => id !== f.id));
+                          if (e.target.checked) setSelectedFriends([...selectedFriends, u.id]);
+                          else setSelectedFriends(selectedFriends.filter(id => id !== u.id));
                         }}
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
                       />
-                      <Avatar url={f.avatar} name={f.username} color={f.color} size={8} />
-                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{f.username}</span>
+                      <Avatar url={u.avatar} name={u.username} color={u.color} size={8} />
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{u.username}</span>
                     </label>
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             </div>
             
@@ -1285,6 +1354,150 @@ export default function Chats({
               >
                 Grubu Oluştur ({selectedFriends.length} Kişi)
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Group Members Modal */}
+      {showManageGroup && activeChat && "creator" in activeChat && (
+        <div className="mobile-window fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 leading-tight">
+                  {(activeChat as Group).creator === currentUserId || currentUsername?.trim().toLowerCase() === "emirgan" 
+                    ? "Grup Üyelerini Yönet" 
+                    : "Grup Bilgisi & Üyeler"}
+                </h3>
+                <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold">{(activeChat as Group).name}</p>
+              </div>
+              <button onClick={() => setShowManageGroup(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-4 flex-1 overflow-y-auto space-y-4">
+              {/* Current Members */}
+              <div>
+                <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+                  Mevcut Üyeler ({manageGroupMembers.length})
+                </h4>
+                <div className="space-y-2">
+                  {manageGroupMembers.map(mId => {
+                    const u = users.find(user => user.id === mId) || { id: mId, username: `Kullanıcı #${mId}`, avatar: null, color: "#3b82f6" };
+                    const isCreatorOfGroup = mId === (activeChat as Group).creator;
+                    const canManage = (activeChat as Group).creator === currentUserId || currentUsername?.trim().toLowerCase() === "emirgan";
+                    return (
+                      <div key={mId} className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Avatar url={u.avatar} name={u.username} color={u.color} size={8} />
+                          <div className="truncate">
+                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate block">{u.username}</span>
+                            {isCreatorOfGroup ? (
+                              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 rounded-md">Kurucu</span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">Üye</span>
+                            )}
+                          </div>
+                        </div>
+                        {canManage && !isCreatorOfGroup && (
+                          <button
+                            type="button"
+                            onClick={() => setManageGroupMembers(prev => prev.filter(id => id !== mId))}
+                            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                            title="Üyeyi gruptan çıkar"
+                          >
+                            Çıkar
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Add New Members (Only if Owner / Admin) */}
+              {((activeChat as Group).creator === currentUserId || currentUsername?.trim().toLowerCase() === "emirgan") && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+                    Yeni Üye Ekle
+                  </h4>
+                  <input 
+                    type="text" 
+                    placeholder="Kullanıcı Ara (Tüm Kullanıcılar)..." 
+                    value={manageGroupSearch}
+                    onChange={e => setManageGroupSearch(e.target.value)}
+                    className="w-full px-3.5 py-2 mb-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400"
+                  />
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {users
+                      .filter(u => !manageGroupMembers.includes(u.id) && (u.username || "").toLowerCase().includes(manageGroupSearch.toLowerCase().trim()))
+                      .slice(0, 20)
+                      .map(u => (
+                        <div key={u.id} className="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 rounded-xl transition-colors">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Avatar url={u.avatar} name={u.username} color={u.color} size={7} />
+                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{u.username}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setManageGroupMembers(prev => [...prev, u.id])}
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0"
+                          >
+                            + Ekle
+                          </button>
+                        </div>
+                      ))}
+                    {users.filter(u => !manageGroupMembers.includes(u.id) && (u.username || "").toLowerCase().includes(manageGroupSearch.toLowerCase().trim())).length === 0 && (
+                      <p className="text-xs text-slate-400 text-center py-2">Eklenecek kullanıcı bulunamadı.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-2">
+              {((activeChat as Group).creator === currentUserId || currentUsername?.trim().toLowerCase() === "emirgan") && (
+                <>
+                  <button 
+                    onClick={() => {
+                      if (!socket) return;
+                      socket.emit("update_group_members", { groupId: activeChat.id, members: manageGroupMembers }, (res: any) => {
+                        if (res?.success && res?.group) {
+                          setGroups(prev => prev.map(g => g.id === res.group.id ? res.group : g));
+                          setActiveChat(res.group);
+                          setShowManageGroup(false);
+                        } else if (res?.error) {
+                          alert(res.error);
+                        }
+                      });
+                    }}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md active:scale-98 cursor-pointer"
+                  >
+                    Değişiklikleri Kaydet
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (!socket) return;
+                      if (confirm(`"${(activeChat as Group).name}" grubunu silmek istediğinize emin misiniz? Tüm mesajlar silinecektir.`)) {
+                        socket.emit("delete_group", { groupId: activeChat.id }, (res: any) => {
+                          if (res?.success) {
+                            setGroups(prev => prev.filter(g => g.id !== activeChat.id));
+                            setActiveChat(null);
+                            setShowManageGroup(false);
+                          } else if (res?.error) {
+                            alert(res.error);
+                          }
+                        });
+                      }
+                    }}
+                    className="w-full py-2 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 rounded-xl font-semibold text-xs transition-all cursor-pointer"
+                  >
+                    Grubu Sil
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

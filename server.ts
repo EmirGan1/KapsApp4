@@ -8950,6 +8950,108 @@ async function startServer() {
       if(cb) cb(newGroup);
     });
 
+    socket.on("update_group_members", async (data, cb) => {
+      try {
+        const { groupId, members } = data || {};
+        const gId = Number(groupId);
+        if (!gId || !Array.isArray(members)) {
+          if (cb) cb({ error: "Geçersiz grup verisi." });
+          return;
+        }
+
+        const groupRes = await client.execute({ sql: "SELECT id, name, creator, members, created_at FROM groups WHERE id = ?", args: [gId] });
+        if (groupRes.rows.length === 0) {
+          if (cb) cb({ error: "Grup bulunamadı." });
+          return;
+        }
+
+        const group = groupRes.rows[0];
+        const isCreator = Number(group.creator) === Number(user.id);
+        const isEmirgan = user.username && user.username.trim().toLowerCase() === "emirgan";
+
+        if (!isCreator && !isEmirgan) {
+          if (cb) cb({ error: "Sadece grubu oluşturan kişi grup üyelerini yönetebilir." });
+          return;
+        }
+
+        // Guarantee creator is always in the member list
+        const cleanMembers = Array.from(new Set([Number(group.creator), ...members.map((m: any) => Number(m))].filter(Boolean)));
+        
+        await client.execute({
+          sql: "UPDATE groups SET members = ? WHERE id = ?",
+          args: [JSON.stringify(cleanMembers), gId]
+        });
+
+        const updatedGroup = {
+          id: gId,
+          name: group.name as string,
+          creator: Number(group.creator),
+          members: cleanMembers,
+          created_at: group.created_at as string
+        };
+
+        // Notify all current and former members
+        const oldMembers: number[] = JSON.parse(group.members as string || "[]");
+        const allInvolved = Array.from(new Set([...oldMembers, ...cleanMembers]));
+
+        allInvolved.forEach((mId: number) => {
+          const targetSocket = onlineUsers.get(mId);
+          if (targetSocket) {
+            io.to(targetSocket).emit("groups_updated");
+            io.to(targetSocket).emit("group_updated", updatedGroup);
+          }
+        });
+
+        if (cb) cb({ success: true, group: updatedGroup });
+      } catch (err: any) {
+        console.error("update_group_members error:", err);
+        if (cb) cb({ error: err.message || "Grup üyeleri güncellenemedi." });
+      }
+    });
+
+    socket.on("delete_group", async (data, cb) => {
+      try {
+        const gId = Number(typeof data === 'object' ? data?.groupId : data);
+        if (!gId) {
+          if (cb) cb({ error: "Geçersiz grup ID." });
+          return;
+        }
+
+        const groupRes = await client.execute({ sql: "SELECT id, name, creator, members FROM groups WHERE id = ?", args: [gId] });
+        if (groupRes.rows.length === 0) {
+          if (cb) cb({ error: "Grup bulunamadı." });
+          return;
+        }
+
+        const group = groupRes.rows[0];
+        const isCreator = Number(group.creator) === Number(user.id);
+        const isEmirgan = user.username && user.username.trim().toLowerCase() === "emirgan";
+
+        if (!isCreator && !isEmirgan) {
+          if (cb) cb({ error: "Sadece grubu oluşturan kişi grubu silebilir." });
+          return;
+        }
+
+        const members: number[] = JSON.parse(group.members as string || "[]");
+
+        await client.execute({ sql: "DELETE FROM groups WHERE id = ?", args: [gId] });
+        await client.execute({ sql: "DELETE FROM group_messages WHERE group_id = ?", args: [gId] });
+
+        members.forEach((mId: number) => {
+          const targetSocket = onlineUsers.get(mId);
+          if (targetSocket) {
+            io.to(targetSocket).emit("groups_updated");
+            io.to(targetSocket).emit("group_deleted", { groupId: gId });
+          }
+        });
+
+        if (cb) cb({ success: true, groupId: gId });
+      } catch (err: any) {
+        console.error("delete_group error:", err);
+        if (cb) cb({ error: err.message || "Grup silinemedi." });
+      }
+    });
+
     socket.on("get_group_messages", async (dataOrGroupId, cb) => {
       let groupId: number = 0;
       let beforeId: number | null = null;
