@@ -155,6 +155,7 @@ export interface TrainingState {
   lastSequence: number;
 }
 export interface StrikeSettings {
+  hiddenWeapons?: WeaponId[];
   cosmeticLoadout?: import("./cosmetics").Inventory["equipped"];
   bindings?: import("./controls").Bindings;
   selectedSkin?: import("./skins").SkinId;
