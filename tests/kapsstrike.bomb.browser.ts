@@ -42,6 +42,12 @@ try{
  assert.equal(await a.locator('.ks-bomb-player').count(),2);
  await a.getByRole('button',{name:/Balistik zırh/}).click();await a.getByRole('status').filter({hasText:'Balistik zırh alındı'}).waitFor();
  assert.equal(room.bomb!.players[(await a.evaluate(()=>(window as any).socket.id))].money,150);
+ const buyerId=await a.evaluate(()=>(window as any).socket.id);
+ room.bomb!.players[buyerId].money=10000;io.to(buyerId).emit('strike:snapshot',room.getSnapshotForPlayer(buyerId));
+ await a.getByRole('button',{name:/AR-30/}).click();await a.getByRole('status').filter({hasText:'AR-30'}).waitFor();
+ assert.equal(room.players.get(buyerId)!.state.weapon.selected,'rifle');
+ assert.ok(room.players.get(buyerId)!.state.weapon.inventory?.includes('rifle'));
+
  await a.screenshot({path:'/tmp/strike-bomb-buy-desktop.png'});
  await a.keyboard.press('Escape');await a.getByRole('dialog',{name:'Satın alma',exact:true}).waitFor({state:'hidden'});
  await a.waitForFunction(()=>document.pointerLockElement!==null);
