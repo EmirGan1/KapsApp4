@@ -184,6 +184,7 @@ export function cleanSettings(s: Partial<StrikeSettings> & {binds?:unknown}): St
     : "off";
 
   return {
+    hiddenWeapons: Array.isArray(s.hiddenWeapons)?s.hiddenWeapons.filter(w=>WEAPON_ORDER.includes(w)&&w!=='knife'):[],
     cosmeticLoadout: cleanLoadout(s.cosmeticLoadout),
     bindings: cleanBindings(s.bindings,s.binds),
     selectedSkin:s.selectedSkin?cleanSkin(s.selectedSkin):undefined,
