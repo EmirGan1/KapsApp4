@@ -22,6 +22,7 @@ import {
   cleanSettings,
   WEAPONS,
   WEAPON_ORDER,
+  STARTER_WEAPONS,
 } from "../../../games/kapsstrike/config";
 import {
   MapId,
@@ -79,7 +80,7 @@ export default function KapsStrikeGame({
     }
   });
   const [view, setView] = useState<"menu" | "lobby" | "loading" | "play" | "pause" | "match_end">("menu");
-  const [panel, setPanel] = useState<"settings" | "controls" | "skins" | "inventory" | "inventory_admin" | "input" | "create_room" | "touch_layout" | null>(null);
+  const [panel, setPanel] = useState<"weapons" | "settings" | "controls" | "skins" | "inventory" | "inventory_admin" | "input" | "create_room" | "touch_layout" | null>(null);
   const [touchLayout, setTouchLayout] = useState<TouchLayout>(() => loadTouchLayout());
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
@@ -787,10 +788,21 @@ export default function KapsStrikeGame({
 
   useEffect(()=>{
     let active=true;
-    const sync=()=>{setSettings(old=>({...old,cosmeticLoadout:{}}));socket?.timeout(6000).emit('strike:inventory_get',{},(err:any,r:any)=>{if(active&&!err&&r?.success)setSettings(old=>({...old,cosmeticLoadout:r.state.equipped}));});};
+    const sync=()=>{setSettings(old=>({...old,cosmeticLoadout:{},hiddenWeapons:[]}));socket?.timeout(6000).emit('strike:inventory_get',{},(err:any,r:any)=>{if(active&&!err&&r?.success)setSettings(old=>({...old,cosmeticLoadout:r.state.equipped,hiddenWeapons:r.state.hiddenWeapons||[]}));});};
     if(socket?.connected)sync();socket?.on('connect',sync);
     return()=>{active=false;socket?.off('connect',sync);};
   },[socket,currentUserId]);
+  useEffect(()=>{
+    const open=(e:KeyboardEvent)=>{if(e.code!=='KeyB'||e.repeat||view!=='play'||category==='bomb'||(e.target instanceof HTMLElement&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)))return;e.preventDefault();game.current?.pause();setPanel('weapons');};
+    window.addEventListener('keydown',open);return()=>window.removeEventListener('keydown',open);
+  },[view,category]);
+  const [loadoutBusy,setLoadoutBusy]=useState(false);
+  const [loadoutError,setLoadoutError]=useState('');
+  const toggleWeapon=(id:WeaponId)=>{
+    if(loadoutBusy||!socket?.connected)return;
+    const hidden=settings.hiddenWeapons||[];const next=hidden.includes(id)?hidden.filter(w=>w!==id):[...hidden,id];setLoadoutBusy(true);setLoadoutError('');
+    socket.timeout(6000).emit('strike:inventory_preferences',{hiddenWeapons:next},(err:any,r:any)=>{setLoadoutBusy(false);if(err||!r?.success){setLoadoutError(r?.error||'Tercih kaydedilemedi.');return;}setSettings(old=>({...old,hiddenWeapons:r.state.hiddenWeapons||[]}));});
+  };
   const setting = (patch: Partial<StrikeSettings>) =>
     setSettings((old) => cleanSettings({ ...old, ...patch }));
 
@@ -1119,7 +1131,7 @@ export default function KapsStrikeGame({
                 transform: `translateX(-50%) scale(${touchLayout.weapon.size})`,
               }}
             >
-              {(hud?.inventory || WEAPON_ORDER.slice(0, 6)).map((wId) => (
+              {(hud?.inventory || WEAPON_ORDER.slice(0, 6)).filter(w=>category==='bomb'||!settings.hiddenWeapons?.includes(w)).map((wId) => (
                 <button
                   key={wId}
                   type="button"
@@ -2051,7 +2063,7 @@ export default function KapsStrikeGame({
             <button aria-label="Kontroller" onClick={()=>setPanel('controls')}>Kontroller<small>Tuş atamaları ve silah inceleme</small></button>
             <button onClick={()=>setPanel('input')}>Mobil Kontroller / Jiroskop<small>Dokunma, hassasiyet ve sensör</small></button>
             <button onClick={()=>setPanel('touch_layout')}>🎮 PUBG Tuş Düzeni<small>Tuşları ekranda serbestçe taşı & boyutlandır</small></button>
-            <button onClick={()=>setPanel('inventory')}>Envanter / Kasalar<small>Kaplamalarını seç</small></button><button aria-label="Karakter" onClick={()=>setPanel('skins')}>Karakter<small>Görünümünü seç</small></button>
+            <button onClick={()=>setPanel('inventory')}>Envanter / Kasalar<small>Kaplamalarını seç</small></button>{category!=='bomb'&&<button onClick={()=>setPanel('weapons')}>Silah düzeni · B<small>Gizle veya geri al</small></button>}<button aria-label="Karakter" onClick={()=>setPanel('skins')}>Karakter<small>Görünümünü seç</small></button>
           </nav>
           <button className="ks-mic-toggle" onClick={toggleVoice}>{isVoiceMuted?'Mikrofonu aç':'Mikrofonu sustur'}</button>
           <button className="ks-leave" onClick={()=>{setPanel(null);exit();}}>Menüye / Lobiye Dön</button>
@@ -2059,9 +2071,10 @@ export default function KapsStrikeGame({
       )}
       {panel && panel !== 'create_room' && panel !== 'touch_layout' && ['menu','lobby','pause'].includes(view) && (
         <div className="ks-overlay ks-feature-overlay" onClick={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
-          <div className="ks-menu ks-feature-card" role="dialog" aria-modal="true" aria-label={{inventory_admin:'Yönetici envanteri',inventory:'Envanter ve kasalar',skins:'Karakter seçimi',controls:'Kontroller',settings:'Görüntü ve ses',input:'Mobil kontroller'}[panel]}>
-            <div className="ks-panel-bar"><span>KAPSSTRIKE / {{inventory_admin:'YÖNETİM',inventory:'ENVANTER',skins:'KARAKTER',controls:'KONTROLLER',settings:'AYARLAR',input:'MOBİL KONTROLLER'}[panel]}</span><button autoFocus onClick={()=>setPanel(null)} aria-label="Paneli kapat">Geri dön <span aria-hidden="true">×</span></button></div>
+          <div className="ks-menu ks-feature-card" role="dialog" aria-modal="true" aria-label={{weapons:'Silah düzeni',inventory_admin:'Yönetici envanteri',inventory:'Envanter ve kasalar',skins:'Karakter seçimi',controls:'Kontroller',settings:'Görüntü ve ses',input:'Mobil kontroller'}[panel]}>
+            <div className="ks-panel-bar"><span>KAPSSTRIKE / {{weapons:'SİLAH DÜZENİ',inventory_admin:'YÖNETİM',inventory:'ENVANTER',skins:'KARAKTER',controls:'KONTROLLER',settings:'AYARLAR',input:'MOBİL KONTROLLER'}[panel]}</span><button autoFocus onClick={()=>setPanel(null)} aria-label="Paneli kapat">Geri dön <span aria-hidden="true">×</span></button></div>
             <div className="ks-panel-content">
+              {panel==='weapons'&&<div><h2>Kill Yarışı · Silah düzeni</h2><p>Gizlenen silahlar tekerlek ve hızlı seçimde atlanır. Eşyaların silinmez; istediğin zaman geri alabilirsin. Bıçak her zaman kullanılabilir.</p><div className="ks-loadout-grid">{WEAPON_ORDER.filter(w=>w!=='knife').map(w=><button key={w} disabled={loadoutBusy} aria-pressed={!settings.hiddenWeapons?.includes(w)} onClick={()=>toggleWeapon(w)}><b>{WEAPONS[w].name}</b><span>{STARTER_WEAPONS.includes(w)?"Başlangıç silahı":"Ganimet silahı"}</span><small>{settings.hiddenWeapons?.includes(w)?'Gizli · Geri al':'Etkin · Gizle'}</small></button>)}</div><p role="status">{loadoutError||'Tercihler hesabına kaydedilir.'}</p></div>}
               {panel==='inventory'&&<StrikeInventory socket={socket} initialSkin={settings.selectedSkin} onSkin={skin=>setting({selectedSkin:skin})} onChange={state=>setting({cosmeticLoadout:state.equipped})}/>}
               {panel==='inventory_admin'&&<StrikeInventoryAdmin socket={socket}/>}
               {panel==='skins'&&<StrikeSkins socket={socket} initialSkin={settings.selectedSkin} onSaved={skin=>setting({selectedSkin:skin})}/>}

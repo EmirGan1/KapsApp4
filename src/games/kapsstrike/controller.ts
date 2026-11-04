@@ -347,6 +347,7 @@ export class StrikeController {
     const wasTouch=this.isTouchDevice;
     const changed=JSON.stringify(next.bindings)!==JSON.stringify(this.settings.bindings);
     Object.assign(this.settings,next);
+    if(!this.state.bomb && next.hiddenWeapons?.includes(this.pendingWeapon || this.state.player.weapon.selected)) this.pendingWeapon="knife";
     if(changed)this.setBindings(cleanBindings(next.bindings));
     this.audio.volume=next.volume*(next.effectsVolume??.8);
     this.renderer.updateSettings(next);
@@ -381,13 +382,13 @@ export class StrikeController {
       if(this.down("inspect"))this.renderer.inspect();
       if(this.down("interact"))this.pendingInteract=true;
       if (this.down("reload")) this.pendingReload = true;
-      const available=WEAPON_ORDER.filter(w=>ownsWeapon(this.state.player.weapon,w));
+      const available=WEAPON_ORDER.filter(w=>ownsWeapon(this.state.player.weapon,w)&&(!!this.state.bomb||!this.settings.hiddenWeapons?.includes(w)));
       const current = this.pendingWeapon || this.state.player.weapon.selected;
       let weapon: WeaponId | undefined = available.find(w => w in this.bindings && this.down(w as Action));
       if (this.down("next") || this.down("previous")) {
         weapon = available[(available.indexOf(current) + (this.down("next") ? 1 : -1) + available.length) % available.length];
       }
-      if (this.down("last")&&ownsWeapon(this.state.player.weapon,this.previousWeapon)) weapon = this.previousWeapon;
+      if (this.down("last")&&available.includes(this.previousWeapon)) weapon = this.previousWeapon;
       if (weapon && current !== weapon) { this.previousWeapon = current; this.pendingWeapon = weapon; }
     }
     return (Object.keys(this.bindings) as Action[]).some(a => this.down(a));
@@ -946,7 +947,7 @@ export class StrikeController {
   public setTouchSprint(sprint: boolean) { this.touchSprint = sprint; }
   public triggerReload() { this.pendingReload = true; }
   public triggerInspect() { this.renderer.inspect(); }
-  public selectWeapon(w: WeaponId) { this.pendingWeapon = w; }
+  public selectWeapon(w: WeaponId) { if(this.state.bomb||!this.settings.hiddenWeapons?.includes(w)) this.pendingWeapon = w; }
   public triggerDemoBomb() {
     if (this.isMultiplayer) {
       this.socket?.emit("strike:bomb_action", { kind: "fast_detonate" });

@@ -339,11 +339,16 @@ export default function StrikeInventory({
   const [state, setState] = useState(emptyInventory);
   const [tab, setTab] = useState<'cases' | 'items' | 'characters'>('cases');
   const [selected, setSelected] = useState<string>(CASES[0].id);
+  const [search,setSearch]=useState('');
+  const [weaponFilter,setWeaponFilter]=useState('all');
+  const [rarityFilter,setRarityFilter]=useState('all');
+  const [equippedOnly,setEquippedOnly]=useState(false);
   const [busy, setBusy] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [reward, setReward] = useState<Cosmetic | null>(null);
   const [message, setMessage] = useState('');
   const [sound, setSound] = useState(true);
+  const [rewardChance,setRewardChance]=useState(0);
   const [pendingReward, setPendingReward] = useState<Cosmetic | null>(null);
 
   const audio = useRef<AudioContext | null>(null);
@@ -423,6 +428,7 @@ export default function StrikeInventory({
         return;
       }
       update(r.state);
+      setRewardChance(caseRewards(selected).find(p=>p.item.id===r.item.id)?.chance||0);
       setPendingReward(r.item);
       setSpinning(true);
       setMessage('Kasa açılıyor…');
@@ -451,6 +457,7 @@ export default function StrikeInventory({
     });
   };
 
+  const visibleItems=COSMETICS.filter(c=>state.owned[c.id]&&(weaponFilter==='all'||c.weapon===weaponFilter)&&(rarityFilter==='all'||c.rarity===rarityFilter)&&(!equippedOnly||state.equipped[c.weapon]===c.id)&&(c.name+' '+WEAPONS[c.weapon].name).toLocaleLowerCase('tr-TR').includes(search.toLocaleLowerCase('tr-TR'))).sort((a,b)=>Object.keys(RARITIES).indexOf(b.rarity)-Object.keys(RARITIES).indexOf(a.rarity)||a.name.localeCompare(b.name,'tr'));
   const pool = caseRewards(selected),cost=caseCost(selected,state.freeCases);
 
   return (
@@ -523,7 +530,7 @@ export default function StrikeInventory({
               >
                 <strong>{RARITIES[reward.rarity].name}</strong>
                 <WeaponArt item={reward} />
-                <h3>{reward.name}</h3>
+                <h3>{reward.name}</h3><p>Bu eşyanın çıkma şansı: %{rewardChance.toLocaleString("tr-TR",{maximumFractionDigits:3})}</p>
                 <span className="font-semibold text-amber-300">
                   {WEAPONS[reward.weapon]?.name || reward.weapon}
                   {reward.knife ? ` (${reward.knife.toUpperCase()})` : ''}
@@ -566,9 +573,9 @@ export default function StrikeInventory({
         </>
       ) : (
         <>
-          <p>Karakter kostümünü ana menüdeki Karakter / Skin bölümünden değiştirebilirsin.</p>
-          <div className="ks-loot-grid">
-            {COSMETICS.filter((c) => state.owned[c.id]).map((item) => (
+          <div className="ks-inventory-toolbar"><input aria-label="Skin ara" placeholder="Skin veya silah ara…" value={search} onChange={e=>setSearch(e.target.value)}/><select aria-label="Silah filtresi" value={weaponFilter} onChange={e=>setWeaponFilter(e.target.value)}><option value="all">Tüm silahlar</option>{Object.entries(WEAPONS).map(([id,w])=><option key={id} value={id}>{w.name}</option>)}</select><select aria-label="Nadirlik filtresi" value={rarityFilter} onChange={e=>setRarityFilter(e.target.value)}><option value="all">Tüm nadirlikler</option>{Object.entries(RARITIES).map(([id,r])=><option key={id} value={id}>{r.name}</option>)}</select><label><input type="checkbox" checked={equippedOnly} onChange={e=>setEquippedOnly(e.target.checked)}/> Yalnızca kuşanılanlar</label><button onClick={()=>{setSearch('');setWeaponFilter('all');setRarityFilter('all');setEquippedOnly(false);}}>Filtreleri temizle</button></div>
+          <p>{visibleItems.length} görünüm · Kuşanılan skinler işaretlidir</p>{!visibleItems.length&&<p role="status">Bu filtrelerle eşleşen görünüm yok.</p>}<div className="ks-loot-grid">
+            {visibleItems.map((item) => (
               <article key={item.id} style={{ '--rarity': RARITIES[item.rarity].color } as React.CSSProperties}>
                 <WeaponArt item={item} />
                 <b>{item.name}</b>
