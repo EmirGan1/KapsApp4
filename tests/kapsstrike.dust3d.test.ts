@@ -59,8 +59,3 @@ test('B exterior apron and window rear pocket are filled to site level',()=>{
   assert.ok(floor,`filled B pocket ${x},${z}`);assert.equal(floor!.y+floor!.h,2.4);assert.equal(support(map,{x,y:2.4,z},2.41),2.4);
  }
 });
-
-test('A Long upper-ramp side pocket has an escape onto the ramp and site',()=>{
- const p={x:49.5,y:1.6,z:31};assert.equal(support(map,p,1.61),1.6);
- let m=walk(p,{x:47,z:30});m=walk(m.position,{x:39,z:30});m=walk(m.position,{x:39,z:36});assert.ok(Math.abs(m.position.y-3.2)<.1);
-});

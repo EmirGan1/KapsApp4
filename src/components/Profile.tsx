@@ -12,7 +12,7 @@ import AdminModerationMenu from "./AdminModerationMenu";
 import RoleBadges from "./RoleBadges";
 import EditRolesModal from "./EditRolesModal";
 import { MediaModalData } from "../types";
-import { getApiUrl, getAuthHeaders } from "../utils/api";
+import { getApiUrl } from "../utils/api";
 import { compressImage } from "../utils/imageCompressor";
 
 export default function Profile({
@@ -227,7 +227,7 @@ export default function Profile({
       const formData = new FormData();
       formData.append("file", fileToUpload);
 
-      const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
       if (!res.ok) {
         if (res.status === 413) {
           console.error('[HATA NEREDE - Profile.tsx:handleAvatarChange] Sunucu/Nginx HTTP 413 döndürdü.');
@@ -361,7 +361,6 @@ export default function Profile({
               <input
                 type="file"
                 accept="image/*"
-                aria-label="Profil fotoğrafı seç"
                 className="hidden"
                 onChange={handleAvatarChange}
                 disabled={uploading}
