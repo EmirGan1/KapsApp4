@@ -1,3 +1,4 @@
+import AyvalikRooms from "./AyvalikRooms";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { 
@@ -10,6 +11,17 @@ import {
 } from "lucide-react";
 import Avatar from "./Avatar";
 import { getApiUrl } from "../utils/api";
+
+const AYVALIK_SECTIONS = [
+ {id:'schedule',title:'Gezi programı',description:'Üç günün etkinlikleri, buluşma saatleri ve rotaları.',icon:CalendarDays},
+ {id:'rooms',title:'Oda seçimi',description:'2–3 kişilik odaları gör, oda aç ve arkadaşlarını davet et.',icon:Users},
+ {id:'chat',title:'Gezi sohbeti',description:'Arkadaşlarınla haberleş, fotoğraf ve mesaj paylaş.',icon:MessageSquare},
+ {id:'weather',title:'Hava ve giyim',description:'Gezi günleri için hava ve kıyafet rehberi.',icon:CloudRain},
+ {id:'gallery',title:'Gezi galerisi',description:'Ortak anıları fotoğraf ve videolarla biriktir.',icon:Image},
+ {id:'checklist',title:'Çanta kontrolü',description:'İhtiyaçlarını hazırla, tamamladıklarını işaretle.',icon:Backpack},
+ {id:'reflections',title:'CAS günlüğü',description:'Deneyimlerini ve öğrenme çıktılarını kaydet.',icon:BookOpen},
+ {id:'guide',title:'Otel ve rehber',description:'Konaklama, iletişim ve resmi gezi bilgileri.',icon:Hotel},
+] as const;
 
 export interface AyvalikCasPanelProps {
   socket: Socket | null;
@@ -482,7 +494,7 @@ export default function AyvalikCasPanel({
   onBackToMain
 }: AyvalikCasPanelProps) {
   // Tabs: 'schedule' | 'weather' | 'chat' | 'gallery' | 'checklist' | 'reflections' | 'guide'
-  const [activeTab, setActiveTab] = useState<"schedule" | "weather" | "chat" | "gallery" | "checklist" | "reflections" | "guide">("schedule");
+  const [activeTab, setActiveTab] = useState<"home" | "rooms" | "schedule" | "weather" | "chat" | "gallery" | "checklist" | "reflections" | "guide">("home");
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | "all">("all");
 
   // 1. LIVE COUNTDOWN TO TRIP (25 Kasım 2026, 06:00)
@@ -623,7 +635,6 @@ export default function AyvalikCasPanel({
     }
 
     const text = chatInput.trim();
-    setChatInput("");
     setChatLoading(true);
 
     try {
@@ -633,9 +644,9 @@ export default function AyvalikCasPanel({
         body: JSON.stringify({ content: text })
       });
       const data = await res.json();
-      if (!data.success && data.error) {
-        alert(data.error);
-      }
+      if (!data.success) {
+        alert(data.error||"Mesaj gönderilemedi.");
+      } else { setChatInput(""); fetchMessages(); }
     } catch (err) {
       console.error("Chat send error:", err);
     } finally {
@@ -897,19 +908,19 @@ export default function AyvalikCasPanel({
   const pdfBrochureUrl = "/assets/aistudio/AYVALIK_CAS_PROJES__261105_100129_95e2bfcf.pdf";
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors overflow-y-auto">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors overflow-y-auto overflow-x-hidden">
       
       {/* ========================================================================= */}
       {/* 1. HERO BANNER: AYVALIK CAS 2026 GEZİ MERKEZİ & GERİ SAYIM               */}
       {/* ========================================================================= */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-950 text-white p-6 sm:p-8 md:p-10 shadow-2xl border-b border-emerald-500/20">
+      <div className="relative shrink-0 min-w-0 bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-950 text-white p-6 sm:p-8 md:p-10 shadow-2xl border-b border-emerald-500/20">
         {/* Decorative Ege Deniz ve Doğa Işıltıları */}
         <div className="absolute -top-16 -right-16 w-80 h-80 rounded-full bg-emerald-400/15 blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-1/3 w-64 h-64 rounded-full bg-teal-400/10 blur-2xl pointer-events-none" />
 
-        <div className="relative z-10 max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="relative z-10 max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] items-center gap-6">
           
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3">
             {/* Top Badges */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-black tracking-wider uppercase text-emerald-100 flex items-center gap-1.5 border border-white/20">
@@ -959,8 +970,8 @@ export default function AyvalikCasPanel({
           </div>
 
           {/* Right Side: LIVE COUNTDOWN TO TRIP */}
-          <div className="shrink-0 p-5 sm:p-6 rounded-3xl bg-black/40 backdrop-blur-xl border border-white/20 shadow-2xl space-y-3 min-w-[280px]">
-            <div className="flex items-center justify-between text-xs font-bold text-emerald-200 border-b border-white/15 pb-2">
+          <div className="shrink-0 p-5 sm:p-6 rounded-3xl bg-black/40 backdrop-blur-xl border border-white/20 shadow-2xl space-y-3 min-w-0 w-full">
+            <div className="flex flex-wrap gap-2 items-center justify-between text-xs font-bold text-emerald-200 border-b border-white/15 pb-2">
               <span className="flex items-center gap-1.5">
                 <Clock size={15} className="text-amber-400 animate-pulse" />
                 <span>Gezi Başlangıcına Kalan Süre</span>
@@ -998,43 +1009,15 @@ export default function AyvalikCasPanel({
       {/* ========================================================================= */}
       {/* 2. ANA PANEL SEKMELERİ (HORIZONTAL TAB BAR)                              */}
       {/* ========================================================================= */}
-      <div className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-3">
-            {[
-              { id: "schedule", label: "📅 Gezi Ajandası & Program", icon: CalendarDays },
-              { id: "weather", label: "🌤️ 25-27 Kasım Hava & Giyim", icon: CloudRain },
-              { id: "chat", label: `💬 Gezi Özel Sohbeti (${messages.length})`, icon: MessageSquare },
-              { id: "gallery", label: `📸 Gezi Galerisi (${galleryItems.length})`, icon: Image },
-              { id: "checklist", label: `🎒 Çanta Kontrolü (${checkedItems.length}/${DEFAULT_PACKING_ITEMS.length})`, icon: Backpack },
-              { id: "reflections", label: "📝 CAS Değerlendirme & Günlük", icon: BookOpen },
-              { id: "guide", label: "🏨 Otel, İletişim & Rehber", icon: Hotel },
-            ].map(tab => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-black whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
-                    isActive
-                      ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20 scale-[1.02]"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
-                  }`}
-                >
-                  <Icon size={16} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      {activeTab!=='home'&&<nav className="shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"><div className="max-w-7xl mx-auto p-4 flex flex-wrap gap-3 items-center"><button onClick={()=>setActiveTab('home')} className="font-bold text-emerald-600 flex gap-2 items-center"><ArrowLeft size={18}/>Ayvalık ana sayfası</button><select aria-label="Gezi bölümü" className="min-w-0 p-2 rounded-xl bg-slate-100 dark:bg-slate-800" value={activeTab} onChange={e=>setActiveTab(e.target.value as any)}>{AYVALIK_SECTIONS.map(t=><option key={t.id} value={t.id}>{t.title}</option>)}</select></div></nav>}
 
       {/* ========================================================================= */}
       {/* 3. AKTİF SEKME İÇERİĞİ                                                    */}
       {/* ========================================================================= */}
       <div className="max-w-7xl mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-6">
+        {activeTab==='home'&&<section aria-label="Ayvalık bölümleri" className="space-y-5"><div><h2 className="text-2xl font-black">Gezini planla, arkadaşlarınla hazırlan</h2><p className="text-slate-500 mt-2">Gitmek istediğin bölümü seç.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">{AYVALIK_SECTIONS.map((section)=>{const Icon=section.icon;return <button key={section.id} onClick={()=>setActiveTab(section.id)} className="group min-w-0 text-left p-6 sm:p-7 rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm hover:shadow-lg hover:border-emerald-500 focus-visible:outline-2 focus-visible:outline-emerald-500 transition-all"><span className="inline-flex p-4 rounded-2xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-200 mb-5"><Icon size={28}/></span><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-black">{section.title}</h3><ChevronRight className="shrink-0 text-emerald-500"/></div><p className="mt-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{section.description}</p></button>;})}</div></section>}
+        <AyvalikRooms currentUserId={currentUserId} socket={socket} active={activeTab==='rooms'} onOpen={()=>setActiveTab('rooms')}/>
+
 
         {/* ----------------------------------------------------------------------- */}
         {/* SEKME 1: GEZİ AJANDASI VE DETAYLI SAAT SAAT PROGRAM                      */}
@@ -1414,11 +1397,12 @@ export default function AyvalikCasPanel({
                 onChange={e => setChatInput(e.target.value)}
                 placeholder={isSendingMedia ? "Medya yükleniyor..." : "Ayvalık CAS sohbetine mesaj yaz..."}
                 disabled={chatLoading || isSendingMedia}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="min-w-0 flex-1 py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
 
               <button
                 type="submit"
+                aria-label="Mesaj gönder"
                 disabled={chatLoading || !chatInput.trim() || isSendingMedia}
                 className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold transition-all cursor-pointer shadow-md shadow-emerald-600/20 shrink-0"
               >
