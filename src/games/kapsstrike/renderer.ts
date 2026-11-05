@@ -382,7 +382,7 @@ export class StrikeRenderer {
           const tantoTip = stylePart('tanto', 'blade-chisel-point', 0, 0.008, 0.31, 0.008, 0.042, 0.07, '#e2e8f0', 'blade');
           tantoTip.rotation.x = -0.32;
 
-          this.knifeRig=createKnifeRig(this.scene,root,(color,metal)=>this.material(color,false,metal?'metal':undefined));
+          this.knifeRig=createKnifeRig(this.scene,root,(color: any,metal: any)=>this.material(color,false,metal?'metal':undefined));
 
           this.weapons.set(id, root);
           continue;

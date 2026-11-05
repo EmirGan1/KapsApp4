@@ -27,7 +27,8 @@ import {
   FolderX,
   LogOut,
   KeyRound,
-  Calculator
+  Calculator,
+  Compass
 } from "lucide-react";
 import { APP_ROUTES, getTabFromPathname, getPathFromTab, AppTab } from "./routes";
 import { useSEO } from "./components/SEO";
@@ -44,6 +45,7 @@ import Games from "./components/Games";
 import VoiceChat from "./components/VoiceChat";
 import LiveMap from "./components/LiveMap";
 import WeatherDashboard from "./components/WeatherDashboard";
+import AyvalikCasPanel from "./components/AyvalikCasPanel";
 import Announcements, { AnnouncementItem } from "./components/Announcements";
 import KapsculatorHub from "./components/KapsculatorHub";
 import AnnouncementModal from "./components/AnnouncementModal";
@@ -1147,6 +1149,18 @@ export default function App() {
               active={activeTab === 'agenda'} 
               onClick={() => handleTabChange('agenda')} 
             />
+            <NavItem 
+              to="/ayvalik-cas"
+              icon={<Compass className="text-emerald-500 animate-pulse" />} 
+              label="Ayvalık CAS" 
+              active={activeTab === 'ayvalik-cas'} 
+              extraBadge={
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                  25-27 Kas
+                </span>
+              }
+              onClick={() => handleTabChange('ayvalik-cas')} 
+            />
             <NavItem to="/genel-sohbet" icon={<Globe />} label="Genel Sohbet" active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
             <NavItem to="/akis" icon={<LayoutGrid />} label="Akış" active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
             <NavItem to="/dersler" icon={<Folder className="text-blue-500" />} label="Ders Klasörleri" active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
@@ -1327,6 +1341,20 @@ export default function App() {
           <WeatherDashboard 
             darkMode={darkMode}
             onBackToMain={() => handleTabChange('dashboard')} 
+          />
+        )}
+
+        {/* Ayvalık CAS 2026 Panel Tab */}
+        {activeTab === 'ayvalik-cas' && (
+          <AyvalikCasPanel 
+            socket={socket}
+            currentUserId={currentUserId}
+            currentUsername={username}
+            avatar={avatar}
+            color={color}
+            currentUserRoles={currentUserRoles}
+            isEmirgan={isEmirgan}
+            onBackToMain={() => handleTabChange('dashboard')}
           />
         )}
 

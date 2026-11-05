@@ -1,10 +1,26 @@
-import React from 'react';
-import type {StrikeSettings} from '../../../games/kapsstrike/types';
-export default function StrikeGraphicsSettings({settings:s,onChange}:{settings:StrikeSettings;onChange:(p:Partial<StrikeSettings>)=>void}){
- return <div className="ks-settings ks-graphics"><h2>Görüntü ve ses</h2><p>Değişiklikler açık maçta da uygulanır. Düşük: FPS odaklı; yüzey dokuları, gölgeler ve çevre süsleri kapalı, daha düşük piksel yükü. Orta: 256 px yüzeyler. Yüksek: 2K PBR taş/duvar, normal ve pürüzlülük haritaları, 2048 px gölgeler.</p>
- <label>Grafik Kalitesi<select aria-label="Grafik Kalitesi" value={s.quality} onChange={e=>onChange({quality:e.target.value as StrikeSettings['quality']})}><option value="auto">Otomatik</option><option value="low">Düşük</option><option value="medium">Orta</option><option value="high">Yüksek</option></select></label>
- {([{key:'scale',label:'Çözünürlük Ölçeği',min:.5,max:1.5,step:.05},{key:'fov',label:'Görüş Açısı (FOV)',min:65,max:115,step:1},{key:'sensitivity',label:'Fare Hassasiyeti',min:.15,max:3,step:.05},{key:'volume',label:'Genel Ses',min:0,max:1,step:.05},{key:'effectsVolume',label:'Silah ve çevre sesleri',min:0,max:1,step:.05},{key:'voiceVolume',label:'Sesli sohbet',min:0,max:1.5,step:.05}] as const).map(r=><label key={r.key}>{r.label} · {(s[r.key]??.8).toFixed(r.key==='fov'?0:2)}<input type="range" min={r.min} max={r.max} step={r.step} value={s[r.key]??.8} onChange={e=>onChange({[r.key]:Number(e.target.value)})}/></label>)}
- <label className="ks-check"><input type="checkbox" checked={s.dynamicResolution!==false} onChange={e=>onChange({dynamicResolution:e.target.checked})}/> Performansa göre çözünürlük ayarla</label>
- <label className="ks-check"><input type="checkbox" checked={s.invertY} onChange={e=>onChange({invertY:e.target.checked})}/> Dikey bakışı ters çevir</label>
- <label className="ks-check"><input type="checkbox" checked={s.showDebugStats===true} onChange={e=>onChange({showDebugStats:e.target.checked})}/> Ayrıntılı performans göstergesi</label></div>;
+import React from "react";
+
+interface StrikeGraphicsSettingsProps {
+  settings?: any;
+  onChange?: (changes: any) => void;
+}
+
+export default function StrikeGraphicsSettings({ settings, onChange }: StrikeGraphicsSettingsProps) {
+  return (
+    <div className="p-4 bg-slate-900/90 rounded-2xl border border-slate-700 text-slate-100 max-w-md w-full space-y-3">
+      <h3 className="text-sm font-bold text-sky-400">Grafik Ayarları</h3>
+      <div className="flex items-center justify-between text-xs">
+        <span>Görsel Kalite</span>
+        <select
+          value={settings?.quality || "high"}
+          onChange={(e) => onChange?.({ quality: e.target.value })}
+          className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200"
+        >
+          <option value="low">Düşük (Akıcı)</option>
+          <option value="medium">Orta</option>
+          <option value="high">Yüksek</option>
+        </select>
+      </div>
+    </div>
+  );
 }

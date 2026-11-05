@@ -15,6 +15,7 @@ import OpenLobbiesWidget from "./OpenLobbiesWidget";
 import CafeteriaMenuWidget from "./CafeteriaMenuWidget";
 import CommunityMiniFeedWidget from "./CommunityMiniFeedWidget";
 import MiniChatWidget from "./MiniChatWidget";
+import AyvalikHomeWidget from "./AyvalikHomeWidget";
 import { AnnouncementItem, isVisibleToUser } from "../types";
 import { 
   getCachedWeather, 
@@ -334,7 +335,19 @@ export default function Dashboard({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. ANA BENTO GRID: CANLI SOHBET & DİKEY DERS PROGRAMI (GÜNÜN AKIŞI)     */}
+      {/* 2. ÖNE ÇIKAN: AYVALIK CAS PROJESİ 2026 GEZİ & REHBER PORTALI             */}
+      {/* ========================================================================= */}
+      <AyvalikHomeWidget 
+        socket={socket}
+        currentUserId={currentUserId}
+        currentUsername={currentUsername}
+        avatar={avatar}
+        color={color}
+        onOpenFullPanel={() => onNavigate("ayvalik-cas", "/ayvalik-cas")}
+      />
+
+      {/* ========================================================================= */}
+      {/* 3. ANA BENTO GRID: CANLI SOHBET & DİKEY DERS PROGRAMI (GÜNÜN AKIŞI)     */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         

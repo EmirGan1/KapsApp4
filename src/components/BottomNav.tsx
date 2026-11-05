@@ -22,7 +22,8 @@ import {
   Moon, 
   LogOut, 
   X,
-  Calculator 
+  Calculator,
+  Compass 
 } from "lucide-react";
 import { AppTab } from "../routes";
 
@@ -67,6 +68,7 @@ export default function BottomNav({
     'profile', 
     'notifications', 
     'announcements', 
+    'ayvalik-cas',
     'ib-calculator',
     'agenda', 
     'global', 
@@ -225,6 +227,12 @@ export default function BottomNav({
                 label="Ajanda" 
                 active={activeTab === 'agenda'} 
                 onClick={() => { handleTabChange('agenda'); setIsMobileMoreOpen(false); }} 
+              />
+              <DrawerGridItem 
+                icon={<Compass size={22} className="text-emerald-500 animate-pulse" />} 
+                label="Ayvalık CAS" 
+                active={activeTab === 'ayvalik-cas'} 
+                onClick={() => { handleTabChange('ayvalik-cas'); setIsMobileMoreOpen(false); }} 
               />
               <DrawerGridItem 
                 icon={<Globe size={22} className="text-emerald-500" />} 

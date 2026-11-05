@@ -1,3 +1,10 @@
-export const GRAPHICS={low:{surface:0,shadow:0,dpr:1,pixelScale:.8,tracers:12,smoke:2},medium:{surface:256,shadow:0,dpr:1.5,pixelScale:1,tracers:32,smoke:6},high:{surface:1024,shadow:2048,dpr:2,pixelScale:1,tracers:48,smoke:12}} as const;
-/** Draw speed reduced 25%; inspect keeps brisk rotations across three complete flourishes. */
-export function knifeTiming(style:string){return style==='karambit'||style==='butterfly'?{inspect:2.6,deploy:.24}:{inspect:.95,deploy:.28};}
+export const GRAPHICS: Record<string, any> = {
+  high: { shadows: true, bloom: true, fov: 75, particles: true },
+  medium: { shadows: true, bloom: false, fov: 75, particles: false },
+  low: { shadows: false, bloom: false, fov: 75, particles: false }
+};
+
+export const knifeTiming: any = {
+  deploy: 0.5,
+  inspect: 1.2
+};

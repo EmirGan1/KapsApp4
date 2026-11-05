@@ -16,6 +16,7 @@ import { registerCourseRoutes } from "./src/server/courseController";
 import { registerPostRoutes } from "./src/server/postsController";
 import { registerAdminController } from "./src/server/adminController";
 import { registerAgendaController } from "./src/server/agendaController";
+import { initAyvalikCasTables, registerAyvalikCasRoutes } from "./src/server/ayvalikController";
 import { setupChatSocketHandlers } from "./src/server/socket";
 import { initPasswordResetDb, registerPasswordResetRoutes } from "./src/server/passwordResetController";
 
@@ -893,6 +894,13 @@ async function initDb() {
     await seedOctoberLunchMenu(client);
   } catch (agendaInitErr) {
     console.error("Agenda table initialization error:", agendaInitErr);
+  }
+
+  // Ayvalık CAS 2026 Tabloları
+  try {
+    initAyvalikCasTables(client);
+  } catch (ayvalikInitErr) {
+    console.error("Ayvalık CAS table initialization error:", ayvalikInitErr);
   }
 
   // Emirgan Yönetimi: Dinamik Günün Sözü Tablosu
@@ -3167,6 +3175,7 @@ async function startServer() {
   // Admin, Daily Quote and Screen Time Controllers
   registerAdminController(app, client, requireEmirganAdmin, io);
   registerAgendaController(app, client);
+  registerAyvalikCasRoutes(app, client, io);
 
   // Admin: Overall System Metrics & Health Dashboard
   app.get("/api/admin/overview", requireEmirganAdmin, async (req, res) => {

@@ -1,10 +1,21 @@
-export function formatMessageDate(value: string | number | Date): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
-  const days = Math.floor((day(now) - day(date)) / 86400000);
-  if (days <= 0) return date.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-  if (days <= 3) return `${days} gün önce`;
-  return date.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+export function formatMessageDate(dateStr?: string | number | null): string {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const hours = d.getHours().toString().padStart(2, "0");
+    const minutes = d.getMinutes().toString().padStart(2, "0");
+
+    if (isToday) {
+      return `${hours}:${minutes}`;
+    }
+
+    const day = d.getDate().toString().padStart(2, "0");
+    const month = (d.getMonth() + 1).toString().padStart(2, "0");
+    return `${day}.${month} ${hours}:${minutes}`;
+  } catch {
+    return String(dateStr);
+  }
 }

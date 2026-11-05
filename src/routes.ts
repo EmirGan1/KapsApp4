@@ -4,7 +4,7 @@ export { safeDecodeURI };
 
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
-export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator";
+export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ayvalik-cas";
 
 export interface RouteMeta {
   path: string;
@@ -25,6 +25,13 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     title: "KapsApp - Ana Sayfa, Kampüs Paneli ve Sosyal İletişim",
     description: "KapsApp kampüs paneli; anlık ders programı takibi, kampüs hava durumu, sesli sohbet, canlı harita ve ders klasörlerini birleştiren yeni nesil öğrenci platformudur.",
     canonical: "https://kapsapp.online/",
+  },
+  ayvalikCas: {
+    path: "/ayvalik-cas",
+    tab: "ayvalik-cas",
+    title: "Ayvalık CAS Projesi Gezi Paneli (25-27 Kasım 2026) | KapsApp",
+    description: "Ayvalık CAS Projesi 2026 gezi paneli; gün gün detaylı ajanda, 25-27 Kasım hava durumu tahminleri ve giyim uyarıları, geziye özel anlık sohbet ve medya galerisi.",
+    canonical: "https://kapsapp.online/ayvalik-cas",
   },
   chats: {
     path: "/sohbetler",
@@ -179,6 +186,11 @@ export function getTabFromPathname(pathname: string): {
     return { tab: "ib-calculator" };
   }
 
+  // Ayvalık CAS Gezi Paneli aliases
+  if (cleanPath === "/ayvalik-cas" || cleanPath === "/ayvalik" || cleanPath === "/cas-ayvalik") {
+    return { tab: "ayvalik-cas" };
+  }
+
   // Exact matches
   for (const key of Object.keys(APP_ROUTES)) {
     const meta = APP_ROUTES[key];
@@ -207,6 +219,7 @@ export function getPathFromTab(
 
   switch (tab) {
     case "dashboard": return "/";
+    case "ayvalik-cas": return "/ayvalik-cas";
     case "chats": return "/sohbetler";
     case "global": return "/genel-sohbet";
     case "folders": return "/dersler";
