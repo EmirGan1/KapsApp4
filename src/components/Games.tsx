@@ -18,6 +18,7 @@ import BilliardsGame from './BilliardsGame';
 import StrikeBoundary from './games/kapsstrike/StrikeBoundary';
 // Keep game styles in the eagerly loaded stylesheet so a stale deploy cannot break the lazy game import.
 import './games/kapsstrike/kapsstrike.css';
+const GeceNobetiGame = lazy(() => import('./games/gece-nobeti/GeceNobetiGame'));
 const KapsStrikeGame = lazy(() => import('./games/kapsstrike/KapsStrikeGame'));
 import DungeonGame from './games/dungeon/DungeonGame';
 import KapstorialGame from './games/kapstorial/KapstorialGame';
@@ -54,7 +55,7 @@ interface LeaderboardUser {
 }
 
 type GameCategory = 'all' | 'cards' | 'arcade' | 'strategy' | 'active_lobbies';
-type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party' | 'billiards' | 'kapstorial' | 'dungeon' | 'kapsstrike';
+type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party' | 'billiards' | 'kapstorial' | 'dungeon' | 'kapsstrike' | 'gece-nobeti';
 
 export default function Games({
   socket,
@@ -64,7 +65,7 @@ export default function Games({
   color,
   onUserClick
 }: GamesProps) {
-  const [selectedGame, setSelectedGame] = useState<SelectedGameType>(() => new URLSearchParams(window.location.search).get('oyun') === 'kapsstrike' ? 'kapsstrike' : new URLSearchParams(window.location.search).get('oyun') === 'dungeon' ? 'dungeon' : 'hub');
+  const [selectedGame, setSelectedGame] = useState<SelectedGameType>(() => new URLSearchParams(window.location.search).get('oyun') === 'gece-nobeti' ? 'gece-nobeti' : new URLSearchParams(window.location.search).get('oyun') === 'kapsstrike' ? 'kapsstrike' : new URLSearchParams(window.location.search).get('oyun') === 'dungeon' ? 'dungeon' : 'hub');
   const [activeCategory, setActiveCategory] = useState<GameCategory>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -456,6 +457,8 @@ export default function Games({
     );
   }
 
+  if (selectedGame === 'gece-nobeti') return <Suspense fallback={<div role="status" className="p-8">Gece Nöbeti yükleniyor…</div>}><GeceNobetiGame onBack={() => setSelectedGame('hub')}/></Suspense>;
+
   if (selectedGame === 'dungeon') return <DungeonGame socket={socket} currentUserId={currentUserId} onBack={() => setSelectedGame('hub')} />;
 
   // Route: Kapstorial (Territorial.io clone)
@@ -478,6 +481,14 @@ export default function Games({
 
   // Games definition list
   const allGames = [
+    {
+      id:'gece-nobeti',title:'Gece Nöbeti: İnkılap Tarihi',subtitle:'Tek kişilik · Tarih soruları ve gerilim',
+      category:['arcade','strategy'],badge:'YENİ',badgeColor:'bg-red-500/20 text-red-400',
+      gradient:'from-red-800 via-red-600 to-amber-600',icon:'🌙',capacity:'1 Oyuncu',activeRooms:0,
+      features:['10 İnkılap Tarihi sorusuyla sabaha ulaş','Gücünü yönet, kapıyı kapat ve doğru cevabı seç','Ani korkutma, yüksek ses ve yanıp sönen efektler içerir'],
+      preview:<div className="w-full rounded-xl bg-gradient-to-b from-slate-900 to-black p-5 text-center"><span className="text-3xl">🌙</span><p className="mt-2 font-black tracking-widest text-red-400">GECE NÖBETİ</p><p className="mt-1 text-xs text-amber-300">12:00 AM → 6:00 AM</p></div>,
+      actionPrimary:'Nöbete Başla',onClick:()=>setSelectedGame('gece-nobeti')
+    },
     {
       id: 'kapsstrike',
       title: 'KapsStrike 3D FPS',
