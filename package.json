@@ -35,7 +35,8 @@
     "test:strike:knives": "node --import tsx tests/kapsstrike.knife.browser.ts",
     "test:strike:measure": "node --import tsx tests/kapsstrike.hitreg.measure.ts",
     "test:strike:dust3d": "node --import tsx tests/kapsstrike.dust3d.browser.ts",
-    "test:strike:progression": "node --import tsx tests/kapsstrike.progression.browser.ts"
+    "test:strike:progression": "node --import tsx tests/kapsstrike.progression.browser.ts",
+    "test:strike:audit": "node --import tsx --test tests/kapsstrike.audit1000.test.ts"
   },
   "dependencies": {
     "@babylonjs/core": "8.50.2",

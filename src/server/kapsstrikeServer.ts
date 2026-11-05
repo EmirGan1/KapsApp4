@@ -1493,6 +1493,8 @@ export class KapsStrikeServerManager {
       if(request.kind==='drop_weapon'){const player=room.players.get(socket.id)!;const success=dropBombWeapon(b,room.world,player.state,room.tick);if(success)player.pendingFire=undefined;reply(success,success?undefined:'Bu silah bırakılamaz.');return;}
       if(request.kind==='drop'){reply(dropBomb(b,socket.id));return;}
       if(request.kind==='fast_detonate'){
+        // The UI hiding this test shortcut is not an authorization boundary.
+        if([...room.players.values()].filter(p=>!p.id.startsWith('bot-')).length!==1){reply(false,'Hızlı patlatma yalnızca tek oyunculu test maçında kullanılabilir.');return;}
         if(b.phase==='planted'){
           b.deadline=Math.min(b.deadline,now+2.2);
           reply(true);
