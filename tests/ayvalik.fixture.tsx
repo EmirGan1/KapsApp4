@@ -1,5 +1,6 @@
-import {BrowserRouter} from "react-router-dom";
-import React from 'react';import {createRoot} from 'react-dom/client';
-import AyvalikCasPanel from '../src/components/AyvalikCasPanel';import '../src/index.css';
-const id=Number(new URLSearchParams(location.search).get('user')||1);
-createRoot(document.getElementById('root')!).render(<BrowserRouter><div className="dark" style={{display:'flex',height:'100vh',width:'100%',minWidth:0}}><AyvalikCasPanel socket={null} currentUserId={id} currentUsername={'Öğrenci '+id} avatar={null}/></div></BrowserRouter>);
+import {BrowserRouter} from 'react-router-dom';import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+import AyvalikCasPanel from '../src/components/AyvalikCasPanel';import AyvalikHomeWidget from '../src/components/AyvalikHomeWidget';import '../src/index.css';
+const handlers=new Map<string,Set<Function>>();const socket:any={on:(name:string,fn:Function)=>{if(!handlers.has(name))handlers.set(name,new Set());handlers.get(name)!.add(fn);},off:(name:string,fn:Function)=>handlers.get(name)?.delete(fn)};
+(window as any).emitCasEvent=(name:string,data:unknown)=>handlers.get(name)?.forEach(fn=>fn(data));
+function Fixture(){const[id,setId]=useState(Number(new URLSearchParams(location.search).get('user')||1)),[widget,setWidget]=useState(new URLSearchParams(location.search).get('widget')==='1');(window as any).changeCasUser=setId;const props={socket:new URLSearchParams(location.search).has('socket')?socket:null,currentUserId:id,currentUsername:'Öğrenci '+id,avatar:null};return <div className="dark flex h-dvh w-full min-w-0">{widget?<div className="w-full overflow-auto"><AyvalikHomeWidget {...props} onOpenFullPanel={()=>setWidget(false)}/></div>:<AyvalikCasPanel {...props}/>}</div>;}
+createRoot(document.getElementById('root')!).render(<BrowserRouter><Fixture/></BrowserRouter>);
