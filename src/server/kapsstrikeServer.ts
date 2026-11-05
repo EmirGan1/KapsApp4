@@ -1,3 +1,5 @@
+import {dropBombWeapon,pickupBombWeapon} from '../games/kapsstrike/bombWeapons';
+import {safeSpawn} from "../games/kapsstrike/spawns";
 import {tracePlayer} from '../games/kapsstrike/hitboxes';
 import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
@@ -326,14 +328,14 @@ export class StrikeRoom {
     };
   }
 
-  getSpawnPosition(team: StrikeTeam, playerIndex: number): Vec3 {
+  getSpawnPosition(team: StrikeTeam, playerIndex: number, occupied: readonly Vec3[] = [...this.players.values()].filter(p=>p.state.hp>0).map(p=>p.state.movement.position)): Vec3 {
     const mapDef = MAPS[this.map];
     if (this.mode !== "ffa") {
       const half = Math.max(1, Math.floor(mapDef.spawns.length / 2));
       const pool = team === "red" ? mapDef.spawns.slice(0, half) : mapDef.spawns.slice(half);
-      return pool[playerIndex % pool.length] || mapDef.spawns[0];
+      return safeSpawn(mapDef,pool,playerIndex,occupied);
     }
-    return mapDef.spawns[playerIndex % mapDef.spawns.length] || mapDef.spawns[0];
+    return safeSpawn(mapDef,mapDef.spawns,playerIndex,occupied);
   }
 }
 
@@ -556,7 +558,7 @@ export class KapsStrikeServerManager {
         previous?.emit("strike:session_replaced");previous?.leave(`strike:${roomCode}`);
         p.id = socketId;p.state.id=socketId;p.isDisconnected=false;delete p.disconnectedAt;
         p.lastSequence=-1;p.lastQueuedSequence=-1;
-        p.inputQueue=[];p.heldInput=undefined;p.lastInputTick=room.tick;p.history=[];p.state.weapon.triggerHeld=false;
+        p.inputQueue=[];p.receivedInputs.clear();p.heldInput=undefined;p.lastInputTick=room.tick;p.history=[];p.state.weapon.triggerHeld=false;
         // Guarantee player returns to their exact original team
         if (p.originalTeam) {
           const side=room.bomb?.players[sId]?.team;
@@ -816,7 +818,8 @@ export class KapsStrikeServerManager {
     room.world=createWorld(MAPS[room.map]);
 
     // Reset all players and position them at spawns
-    let idx = 0;
+    const spawnCounts={red:0,blue:0,none:0};
+    const occupiedSpawns:Vec3[]=[];
     room.players.forEach((p) => {
       p.damageCredits.clear();
       p.kills = 0;
@@ -830,7 +833,8 @@ export class KapsStrikeServerManager {
       p.inputQueue = [];p.heldInput=undefined;p.lastInputTick=0;
       p.history = [];p.pendingFire=undefined;
 
-      const spawn = room.getSpawnPosition(p.team, idx++);
+      const spawn = room.getSpawnPosition(p.team, spawnCounts[p.team]++,occupiedSpawns);
+      occupiedSpawns.push(spawn);
       p.state.movement = newMovement(spawn);
       p.state.weapon.inventory=[];p.state.weapon.selected="rifle";
       p.state.yaw=0;p.state.pitch=0;
@@ -910,7 +914,7 @@ export class KapsStrikeServerManager {
     }
 
     if(player.state.hp<=0){reject('dead');return;}
-    if(room.bomb&&!['active','planted','result'].includes(room.bomb.phase)){reject('round-frozen');return;}
+    if(room.bomb&&!['buy','active','planted','result'].includes(room.bomb.phase)){reject('round-frozen');return;}
     // Cap input queue to prevent packet flooding/replay abuse
     if (player.inputQueue.length >= 24){reject('input-queue-full');return;}
     player.lastQueuedSequence = command.sequence;
@@ -932,7 +936,7 @@ export class KapsStrikeServerManager {
   public tickSimulation(room: StrikeRoom): void {
     const mapDef = MAPS[room.map];
     room.tick++;
-    if(!room.bomb)advanceWorld(room.world,mapDef,room.tick);
+    if(!room.bomb)advanceWorld(room.world,mapDef,room.tick);else room.world.pickups=room.world.pickups.filter(p=>!p.opened&&p.expires>room.tick);
     if(room.bomb){const b=room.bomb,round=b.round,phase=b.phase,explosion=b.explosion;
       for(const p of Object.values(b.players)){const live=room.players.get(p.id);p.alive=!!live&&live.state.hp>0;if(live)p.position={...live.state.movement.position};}
       stepBomb(b,room.tick*C.dt);
@@ -940,7 +944,22 @@ export class KapsStrikeServerManager {
       if(b.phase==='result'&&phase!=='result')for(const p of room.players.values())if(b.players[p.id]?.team===b.winner)this.creditReward(p.userId,`${room.rewardMatchId}:round:${round}`,'round');
       room.teamScores={red:b.scores.T,blue:b.scores.CT};
       if(b.phase==='finished'){this.concludeMatch(room,{team:b.winner==='T'?'red':'blue',reason:b.reason||'Bomba maçı sona erdi'});return;}
-      if(b.round!==round||room.tick===1){let i=0;for(const p of room.players.values()){const bp=b.players[p.id];if(!bp)continue;p.team=bp.team==='T'?'red':'blue';p.originalTeam=p.team;p.color=p.team==='red'?'#ef4444':'#3b82f6';p.state.movement=newMovement(room.getSpawnPosition(p.team,i++));p.state.hp=100;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();p.state.weapon.switchUntil=0;p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;p.inputQueue=[];p.heldInput=undefined;p.state.weapon.selected='pistol';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;p.history=[];p.pendingFire=undefined;room.addEvent({actor:p.id,kind:'respawn',from:p.state.movement.position});}}
+      if(b.round!==round||room.tick===1){room.world.pickups=[];
+        const counts={red:0,blue:0,none:0},occupied:Vec3[]=[];
+        for(const p of room.players.values()){
+          const bp=b.players[p.id];if(!bp)continue;
+          p.team=bp.team==='T'?'red':'blue';p.originalTeam=p.team;p.color=p.team==='red'?'#ef4444':'#3b82f6';
+          const spawn=room.getSpawnPosition(p.team,counts[p.team]++,occupied);occupied.push(spawn);
+          p.state.movement=newMovement(spawn);bp.position={...spawn};
+          p.state.hp=100;p.state.armor=bp.armor;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();
+          p.state.weapon.inventory=[...bp.weapons];p.state.weapon.switchUntil=0;
+          p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;
+          p.inputQueue=[];p.receivedInputs.clear();p.heldInput=undefined;p.lastInputTick=room.tick;
+          p.state.weapon.selected=bp.weapons.find(w=>w!=='knife')||'knife';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;
+          for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;
+          p.history=[];p.pendingFire=undefined;room.addEvent({actor:p.id,kind:'respawn',from:spawn});
+        }
+      }
     }
     const now = Date.now();
 
@@ -1000,7 +1019,7 @@ export class KapsStrikeServerManager {
         player.state.yaw = input.yaw;
         player.state.pitch = clamp(input.pitch, -1.48, 1.48);
 
-        if(!room.bomb&&input.interact)claimSupply(room.world,mapDef,player.state,room.tick);
+        if(input.interact){if(room.bomb)pickupBombWeapon(room.bomb,room.world,mapDef,player.state,room.tick);else claimSupply(room.world,mapDef,player.state,room.tick);}
 
         // Handle weapon switch request
         if (input.weapon && (!room.bomb||room.bomb.players[player.id]?.weapons.includes(input.weapon)) && ownsWeapon(player.state.weapon,input.weapon) && input.weapon !== player.state.weapon.selected) {
@@ -1264,6 +1283,7 @@ export class KapsStrikeServerManager {
       if(id!==killer.id && helper && credit.amount>=20 && room.tick-credit.tick<=8/C.dt){helper.assists++;helper.score+=25;}
     }
     victim.damageCredits.clear();
+    if(room.bomb)dropBombWeapon(room.bomb,room.world,victim.state,room.tick,true);
     dropInventory(room.world,victim.state,room.tick);
     if(room.bomb){room.bomb.players[victim.id].alive=false;dropBomb(room.bomb,victim.id);killer.state.hp=Math.min(100,killer.state.hp);const p=room.bomb.players[killer.id];if(p)p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.killReward);}
     victim.deaths++;
@@ -1464,11 +1484,13 @@ export class KapsStrikeServerManager {
           player.state.weapon.inventory=[...b.players[socket.id].weapons];
           if(Object.hasOwn(WEAPONS,request.item)){
             const weapon=request.item as WeaponId;player.state.weapon.selected=weapon;
-            player.state.weapon.ammo[weapon]=WEAPONS[weapon].capacity;player.state.weapon.reloadUntil=0;
+            player.state.weapon.ammo[weapon]=WEAPONS[weapon].capacity;player.state.weapon.reloadUntil=0;player.state.weapon.switchUntil=room.tick+24;player.pendingFire=undefined;
           }
         }
         this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(success);return;
       }
+      if(request.kind==='pickup_weapon'){const player=room.players.get(socket.id)!;reply(pickupBombWeapon(b,room.world,MAPS[room.map],player.state,room.tick));return;}
+      if(request.kind==='drop_weapon'){const player=room.players.get(socket.id)!;const success=dropBombWeapon(b,room.world,player.state,room.tick);if(success)player.pendingFire=undefined;reply(success,success?undefined:'Bu silah bırakılamaz.');return;}
       if(request.kind==='drop'){reply(dropBomb(b,socket.id));return;}
       if(request.kind==='fast_detonate'){
         if(b.phase==='planted'){

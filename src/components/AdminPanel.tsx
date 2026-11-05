@@ -9,7 +9,7 @@ import {
   Award, Plus, ArrowUp, ArrowDown, Layers, Sparkles, Palette, Flame,
   Volume2, Play, Send, Upload, Image as ImageIcon, Video as VideoIcon
 } from "lucide-react";
-import { getApiUrl } from "../utils/api";
+import { getApiUrl, getAuthHeaders } from "../utils/api";
 import { COURSE_ROLES, CourseRole, sortRolesByPosition } from "../types";
 import RoleBadges from "./RoleBadges";
 import PasswordResetRequests from "./PasswordResetRequests";
@@ -379,13 +379,9 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const token = localStorage.getItem("token") || localStorage.getItem("lan_token") || "";
       const res = await fetch(getApiUrl("/api/upload"), {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "X-Username": "emirgan"
-        },
+        headers: getAuthHeaders(),
         body: formData
       });
       if (!res.ok) throw new Error("Yükleme başarısız");

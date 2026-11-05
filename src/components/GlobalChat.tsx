@@ -13,7 +13,7 @@ import {
   removeFromGlobalCache, 
   clearGlobalCache 
 } from "../utils/globalChatCache";
-import { getApiUrl } from "../utils/api";
+import { getApiUrl, getAuthHeaders } from "../utils/api";
 import { compressImage } from "../utils/imageCompressor";
 
 export default function GlobalChat({
@@ -362,7 +362,7 @@ export default function GlobalChat({
 
         const formData = new FormData();
         formData.append("file", fileToUpload);
-        const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
+        const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
         if (!res.ok) {
           if (res.status === 413) {
             console.error('[HATA NEREDE - GlobalChat.tsx:handleFileUpload] Sunucu/Nginx HTTP 413 döndürdü.');
@@ -410,7 +410,7 @@ export default function GlobalChat({
         const formData = new FormData();
         formData.append("file", audioBlob, "audio.webm");
 
-        const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
+        const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
         const data = await res.json();
         if (data.url && socket) {
           socket.emit("send_global_message", {
