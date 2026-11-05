@@ -64,3 +64,25 @@ test('A Long upper-ramp side pocket has an escape onto the ramp and site',()=>{
  const p={x:49.5,y:1.6,z:31};assert.equal(support(map,p,1.61),1.6);
  let m=walk(p,{x:47,z:30});m=walk(m.position,{x:39,z:30});m=walk(m.position,{x:39,z:36});assert.ok(Math.abs(m.position.y-3.2)<.1);
 });
+
+test('CT Spawn and CT Mid have no direct sightlines onto A Site or B Site',async()=>{
+ const {BOMB_SITES}=await import('../src/games/kapsstrike/bomb');
+ const ctSpawns=map.spawns.slice(5);
+ for(const site of BOMB_SITES){
+  for(const ct of ctSpawns){
+   const eye={x:ct.x,y:ct.y+1.62,z:ct.z};
+   for(const dx of [-3,-1.5,0,1.5,3]){
+    for(const dz of [-3,-1.5,0,1.5,3]){
+     const target={x:site.x+dx,y:site.y,z:site.z+dz};
+     if(!fits(map,target,1.8))continue;
+     const targetEye={...target,y:target.y+1.62};
+     const vx=targetEye.x-eye.x,vy=targetEye.y-eye.y,vz=targetEye.z-eye.z,dist=Math.hypot(vx,vy,vz);
+     const dir={x:vx/dist,y:vy/dist,z:vz/dist};
+     const blocked=map.solids.some(s=>!s.detail&&!s.hidden&&raySolid(eye,dir,s,dist)<dist-0.1);
+     assert.ok(blocked,`Unblocked sightline from CT Spawn ${JSON.stringify(ct)} to Site ${site.id} ${JSON.stringify(target)}`);
+    }
+   }
+  }
+ }
+});
+

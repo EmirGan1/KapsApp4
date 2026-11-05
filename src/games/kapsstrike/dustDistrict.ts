@@ -38,13 +38,12 @@ export function dustDistrict():MapDefinition{
   }
  }
  const walkable=(x:number,z:number)=>{const ix=Math.floor(x/cell+64),iy=Math.floor(64-z/cell);return ix>=0&&iy>=0&&ix<n&&iy<n&&!closed[iy][ix];};
- for(const name of ['A Long Doors','Mid Doors','B Doors'] as const){
+ for(const name of ['A Long Doors','Mid Doors'] as const){
   const p=dust2Point(DUST2_AREAS[name][0],DUST2_AREAS[name][1]);
   for(const side of [-1,1])box('door-leaf',p.x+side*1.3,0,p.z,.65,2.8,.18,'#797367',false,'wood');
   for(const side of [-1,1]){box('door-jamb',p.x+side*1.95,0,p.z,.3,3.7,.4,'#bda98a');for(let k=0;k<3;k++)box('door-ironwork',p.x+side*1.3,.5+k*.8,p.z-.12,.6,.07,.08,'#4d5049',true,'metal');}
   box('door-arch-header',p.x,3.4,p.z,4.2,.35,.4,'#d2bc99');
   if(name==='A Long Doors')box('long-doors-ceiling',p.x,3.8,p.z,4.2,.3,7,'#a99578');
-
  }
  const terrain=addDust2Architecture(solids,walkable);
  const heightAt=(x:number,z:number)=>Math.max(0,...terrain.filter(s=>overlaps(s,{x,y:0,z},.01)).map(s=>surface(s,x,z)));
