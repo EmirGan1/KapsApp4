@@ -1,5 +1,4 @@
 import AyvalikWeather from "./ayvalik/AyvalikWeather";
-import TripCompanion from "./ayvalik/TripCompanion";
 import {usePackingList} from "./ayvalik/usePackingList";
 import {activityId,casDateLabel,readStringList,readReflectionDraft,downloadText,programCalendar} from "../utils/ayvalik";
 import {useSearchParams} from "react-router-dom";
@@ -944,7 +943,7 @@ function AyvalikCasContent({
       {/* ========================================================================= */}
       <div className="max-w-7xl mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-6">
         {notice&&!showUploadModal&&!selectedLightboxItem&&<div role="alert" className="rounded-2xl p-4 border border-amber-400 bg-amber-50 dark:bg-amber-950 flex gap-3"><p className="flex-1">{notice}</p><button aria-label="Bildirimi kapat" onClick={()=>setNotice('')}>×</button></div>}
-        {activeTab==='home'&&<TripCompanion program={AYVALIK_PROGRAM} items={DEFAULT_PACKING_ITEMS} checked={checkedItems} now={now} onOpen={setActiveTab}/>}
+        {activeTab==='home'&&<AyvalikWeather/>}
         {activeTab==='home'&&<section aria-label="Ayvalık bölümleri" className="space-y-5"><div><h2 className="text-2xl font-black">Gezini planla, arkadaşlarınla hazırlan</h2><p className="text-slate-500 mt-2">Gitmek istediğin bölümü seç.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">{AYVALIK_SECTIONS.map((section)=>{const Icon=section.icon;return <button key={section.id} onClick={()=>setActiveTab(section.id)} className="group min-w-0 text-left p-6 sm:p-7 rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm hover:shadow-lg hover:border-emerald-500 focus-visible:outline-2 focus-visible:outline-emerald-500 transition-all"><span className="inline-flex p-4 rounded-2xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-200 mb-5"><Icon size={28}/></span><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-black">{section.title}</h3><ChevronRight className="shrink-0 text-emerald-500"/></div><p className="mt-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{section.description}</p></button>;})}</div></section>}
         <AyvalikRooms currentUserId={currentUserId} socket={socket} active={activeTab==='rooms'} onOpen={()=>setActiveTab('rooms')}/>
 
@@ -1075,7 +1074,7 @@ function AyvalikCasContent({
         {/* ----------------------------------------------------------------------- */}
         {/* SEKME 2: 25-27 KASIM AYVALIK HAVA TAHMİNİ VE DETAYLI GİYİM UYARILARI      */}
         {/* ----------------------------------------------------------------------- */}
-        {activeTab === 'weather' && <div className="space-y-6"><AyvalikWeather/><div className="grid gap-4 md:grid-cols-3">{AYVALIK_CLOTHING_GUIDE.map(day=><article key={day.dayNum} className="rounded-3xl p-6 border bg-white dark:bg-slate-900 space-y-4"><h3 className="font-black text-lg">{day.emoji} {day.dayNum}. gün · Giyim rehberi</h3><p className="text-sm text-slate-500">{day.text}</p><ul className="space-y-2 text-sm">{day.essentials.map(item=><li key={item}>✓ {item}</li>)}</ul></article>)}</div></div>}
+        {activeTab === 'weather' && <div className="space-y-6 animate-fade-in"><AyvalikWeather/></div>}
 
         {activeTab === "chat" && (
           <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-[650px] overflow-hidden animate-fade-in">
