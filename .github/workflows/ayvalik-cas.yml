@@ -4,7 +4,7 @@ on:
     paths:
       - 'src/components/Ayvalik*'
       - 'src/components/ayvalik/**'
-      - 'src/utils/ayvalik.ts'
+      - 'src/utils/ayvalik*'
       - 'src/server/ayvalik*'
       - 'tests/ayvalik*'
       - '.github/workflows/ayvalik-cas.yml'
@@ -30,9 +30,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ayvalik:browser
       - run: npm run test:ayvalik:companion
+      - run: npm run test:ayvalik:weather
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ayvalik-companion-previews
-          path: /tmp/cas-companion-*.png
+          path: |
+            /tmp/cas-companion-*.png
+            /tmp/cas-weather-*.png
           if-no-files-found: ignore

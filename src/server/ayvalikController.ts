@@ -1,3 +1,4 @@
+import {registerAyvalikWeather} from './ayvalikWeather';
 import {resolveAyvalikUser} from "./ayvalikAuth";
 import {initAyvalikRooms,registerAyvalikRooms} from "./ayvalikRooms";
 import { Express, Request, Response } from "express";
@@ -88,6 +89,7 @@ const packingIds=new Set(['id_card','personal_headphones','raincoat','boots','sp
 export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server) {
   // Helper to extract user from token
   registerAyvalikRooms(app,client,io);
+  registerAyvalikWeather(app,client);
   const resolveUser = (req:Request)=>resolveAyvalikUser(req,client);
 
   // -------------------------------------------------------------

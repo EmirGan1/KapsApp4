@@ -1,3 +1,4 @@
+import AyvalikWeather from "./ayvalik/AyvalikWeather";
 import {usePackingList} from "./ayvalik/usePackingList";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Socket } from "socket.io-client";
@@ -7,7 +8,7 @@ import {
   MapPin, Clock, ArrowRight, ExternalLink, AlertTriangle, 
   Sparkles, Hotel, Heart, Download, Upload, Info, RefreshCw
 } from "lucide-react";
-import { AYVALIK_PROGRAM, AYVALIK_CLOTHING_GUIDE, DEFAULT_PACKING_ITEMS } from "./AyvalikCasPanel";
+import { AYVALIK_PROGRAM, DEFAULT_PACKING_ITEMS } from "./AyvalikCasPanel";
 import { getApiUrl } from "../utils/api";
 import Avatar from "./Avatar";
 
@@ -295,7 +296,7 @@ function AyvalikWidgetContent({
         {/* ======================================================== */}
         {/* TAB 1: 25-27 KASIM AYVALIK HAVA DURUMU & GÜNLÜK UYARILAR */}
         {/* ======================================================== */}
-        {activeTab==='weather'&&<div className="space-y-4"><h3 className="text-xl font-black">Gezi için giyim hazırlığı</h3><p className="text-sm text-slate-500">Bu bir hazırlık rehberidir, canlı hava tahmini değildir.</p><a className="inline-block text-emerald-600 font-bold" href="https://www.mgm.gov.tr/?il=Balikesir&ilce=Ayvalik" target="_blank" rel="noopener noreferrer">MGM Ayvalık tahminini aç ↗</a><div className="grid md:grid-cols-3 gap-4">{AYVALIK_CLOTHING_GUIDE.map(day=><article key={day.dayNum} className="p-5 border rounded-2xl space-y-3"><h4 className="font-black">{day.emoji} {day.dayNum}. gün · {day.title}</h4><p className="text-sm text-slate-500">{day.text}</p><p className="text-sm">{day.essentials.join(' · ')}</p></article>)}</div></div>}
+        {activeTab==='weather'&&<AyvalikWeather/>}
 
         {activeTab === "agenda" && (
           <div className="space-y-4">
