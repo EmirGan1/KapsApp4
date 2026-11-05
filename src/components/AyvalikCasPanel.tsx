@@ -1,3 +1,4 @@
+import AyvalikWeather from "./ayvalik/AyvalikWeather";
 import TripCompanion from "./ayvalik/TripCompanion";
 import {usePackingList} from "./ayvalik/usePackingList";
 import {activityId,casDateLabel,readStringList,readReflectionDraft,downloadText,programCalendar} from "../utils/ayvalik";
@@ -1074,7 +1075,7 @@ function AyvalikCasContent({
         {/* ----------------------------------------------------------------------- */}
         {/* SEKME 2: 25-27 KASIM AYVALIK HAVA TAHMİNİ VE DETAYLI GİYİM UYARILARI      */}
         {/* ----------------------------------------------------------------------- */}
-        {activeTab === 'weather' && <section className="space-y-5"><div className="p-6 rounded-3xl bg-blue-950 text-white space-y-3"><h2 className="text-2xl font-black">Hava ve giyim hazırlığı</h2><p>Bu bölüm hazırlık rehberidir; canlı hava tahmini değildir. Güncel hava durumunu yolculuğa yakın tarihte kontrol et.</p><a href="https://www.mgm.gov.tr/?il=Balikesir&ilce=Ayvalik" target="_blank" rel="noopener noreferrer" className="inline-flex rounded-xl bg-white text-blue-950 px-4 py-3 font-bold">MGM Ayvalık tahminini aç ↗</a></div><div className="grid gap-4 md:grid-cols-3">{AYVALIK_CLOTHING_GUIDE.map(day=><article key={day.dayNum} className="rounded-3xl p-6 border bg-white dark:bg-slate-900 space-y-4"><span className="text-3xl">{day.emoji}</span><h3 className="font-black text-lg">{day.dayNum}. gün · {day.title}</h3><p className="text-sm text-slate-500">{day.text}</p><ul className="space-y-2 text-sm">{day.essentials.map(item=><li key={item}>✓ {item}</li>)}</ul></article>)}</div></section>}
+        {activeTab === 'weather' && <div className="space-y-6"><AyvalikWeather/><div className="grid gap-4 md:grid-cols-3">{AYVALIK_CLOTHING_GUIDE.map(day=><article key={day.dayNum} className="rounded-3xl p-6 border bg-white dark:bg-slate-900 space-y-4"><h3 className="font-black text-lg">{day.emoji} {day.dayNum}. gün · Giyim rehberi</h3><p className="text-sm text-slate-500">{day.text}</p><ul className="space-y-2 text-sm">{day.essentials.map(item=><li key={item}>✓ {item}</li>)}</ul></article>)}</div></div>}
 
         {activeTab === "chat" && (
           <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-[650px] overflow-hidden animate-fade-in">
