@@ -29,5 +29,18 @@ jobs:
       - name: 1000 geometry and bomb scenarios
         run: npm run test:strike:audit
       - name: Existing bomb and route regressions
-        run: node --import tsx --test tests/kapsstrike.bomb.test.ts tests/kapsstrike.bombWeapons.test.ts tests/kapsstrike.spawn.test.ts tests/kapsstrike.dust3d.test.ts tests/kapsstrike.multiplayer.test.ts tests/kapsstrike.controls.test.ts tests/kapsstrike.hitreg.test.ts
+        run: node --import tsx --test tests/kapsstrike.bomb.test.ts tests/kapsstrike.bombWeapons.test.ts tests/kapsstrike.spawn.test.ts tests/kapsstrike.dust3d.test.ts tests/kapsstrike.multiplayer.test.ts tests/kapsstrike.controls.test.ts tests/kapsstrike.hitreg.test.ts tests/kapsstrike.bombShortcuts.test.ts
       - run: npm run build
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Desktop and touch bomb flow
+        env:
+          STRIKE_QA_COMPACT: '1'
+        run: node --import tsx tests/kapsstrike.bomb.browser.ts
+      - name: Save map and bomb screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dust-bomb-screenshots-${{ github.event_name }}
+          path: /tmp/strike-*.png
+          if-no-files-found: ignore

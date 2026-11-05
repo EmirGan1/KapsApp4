@@ -69,7 +69,7 @@ try{
  await a.locator('.ks-bomb-objective').waitFor();
  console.log('plant-ready',await a.evaluate(()=>({active:(window as any).strike.active,locked:!!document.pointerLockElement,hud:!!document.querySelector('.ks-bomb-objective')})));
  await a.keyboard.press('Digit7');await a.waitForFunction(()=>(window as any).strike.renderer.scene.getMeshByName('held-bomb')?.isEnabled());
- await a.keyboard.press('KeyG');await a.waitForFunction(()=>(window as any).strike.state.bomb.carrier===undefined);
+ await a.keyboard.press('Shift+KeyG');await a.waitForFunction(()=>(window as any).strike.state.bomb.carrier===undefined);
  await a.keyboard.down('KeyE');await a.waitForFunction(()=>(window as any).strike.state.bomb.phase==='planted',{},{timeout:60000});await a.keyboard.up('KeyE');
  await b.waitForFunction(()=>(window as any).strike.state.bomb.phase==='planted');
  assert.equal(room.bomb!.players[ps[0].id].plants,1);
@@ -89,6 +89,11 @@ try{
  await a.waitForFunction(()=>(window as any).strike.state.bomb.round===2,{},{timeout:60000});
  assert.equal(room.teamScores.blue,1);assert.equal(room.bomb!.players[ps[1].id].money,3950);
  assert.equal(errors.length,0,errors.join('\n'));
+ // Test-only Short viewpoint; screenshots document the revised approach geometry.
+ ps[0].state.movement.position={x:13,y:3.2,z:24};ps[0].state.movement.velocity={x:0,y:0,z:0};
+ await a.waitForFunction(()=>Math.abs((window as any).strike.state.player.movement.position.z-24)<.5);
+ await a.screenshot({path:'/tmp/strike-short-cover.png'});
+
  if(!compact){
  await b.evaluate(()=>(window as any).strike.renderer.engine.stopRenderLoop());
  await a.setViewportSize({width:640,height:400});
