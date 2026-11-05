@@ -45,6 +45,14 @@ try{
  assert.equal(room.players.size,8);assert.equal([...room.players.values()].filter(p=>p.team==='red').length,4);assert.equal([...room.players.values()].filter(p=>p.team==='blue').length,4);
  for(const p of room.players.values())for(const q of room.players.values())if(p!==q)assert.ok(Math.hypot(p.state.movement.position.x-q.state.movement.position.x,p.state.movement.position.z-q.state.movement.position.z)>.7);
  console.log('PASS 4v4: eight independent network clients, two rendered browser views, distinct spawns');
+ for(const size of [{width:320,height:740},{width:390,height:844},{width:844,height:390},{width:768,height:1024}]){
+  await b.setViewportSize(size);await b.waitForFunction(()=>document.querySelectorAll('.ks-bomb-player').length===8);
+  await b.screenshot({path:'/tmp/strike-4v4-roster-'+size.width+'.png'});
+  assert.equal(await b.evaluate(()=>{const blockers=[...document.querySelectorAll('.ks-pause-gear-btn,.ks-top-left-bar')].map(n=>n.getBoundingClientRect());return [...document.querySelectorAll('.ks-bomb-player')].every(n=>{const r=n.getBoundingClientRect();return r.x>=0&&r.right<=innerWidth&&blockers.every(q=>r.right<=q.left||r.left>=q.right||r.bottom<=q.top||r.top>=q.bottom);});}),true,'all eight roster cards must clear mic/pause controls');
+  assert.equal(await b.evaluate(()=>{const r=document.querySelector('.ks-bomb-score')!.getBoundingClientRect();return [...document.querySelectorAll('.ks-health,.ks-bomb-objective,.ks-minimap')].every(n=>{const q=n.getBoundingClientRect();return r.right<=q.left||r.left>=q.right||r.bottom<=q.top||r.top>=q.bottom;});}),true,'score must clear health, objective and radar');
+ }
+ await b.setViewportSize({width:390,height:844});console.log('PASS 4v4 roster cards clear mic and pause buttons at four viewport sizes');
+
 
  room.bomb!.phase='active';room.bomb!.deadline=room.tick/120+300;
  await resume(a);await a.waitForFunction(()=>document.pointerLockElement!==null);

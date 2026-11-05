@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'src/games/kapsstrike/**'
+      - 'src/components/games/kapsstrike/**'
       - 'src/server/kapsstrikeServer.ts'
       - 'tests/kapsstrike*'
       - '.github/workflows/dust-bomb-audit.yml'
