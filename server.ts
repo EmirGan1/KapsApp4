@@ -898,7 +898,7 @@ async function initDb() {
 
   // Ayvalık CAS 2026 Tabloları
   try {
-    initAyvalikCasTables(client);
+    await initAyvalikCasTables(client);
   } catch (ayvalikInitErr) {
     console.error("Ayvalık CAS table initialization error:", ayvalikInitErr);
   }
@@ -12593,7 +12593,8 @@ async function startServer() {
 
   // Get local IP
   const getLocalIP = () => {
-    const interfaces = os.networkInterfaces();
+    let interfaces: ReturnType<typeof os.networkInterfaces>;
+    try { interfaces = os.networkInterfaces(); } catch { return "localhost"; }
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name] || []) {
         if (iface.family === "IPv4" && !iface.internal) return iface.address;

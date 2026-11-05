@@ -1,10 +1,10 @@
 import { Express, Request, Response } from "express";
 import { Server, Socket } from "socket.io";
 
-export function initAyvalikCasTables(client: any) {
+export async function initAyvalikCasTables(client: any) {
   try {
     // 1. Ayvalık CAS Chat Messages
-    client.execute(`
+    await client.execute(`
       CREATE TABLE IF NOT EXISTS ayvalik_cas_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sender_id INTEGER NOT NULL,
@@ -17,10 +17,10 @@ export function initAyvalikCasTables(client: any) {
         is_pinned INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
-    `).catch(() => {});
+    `);
 
     // 2. Ayvalık CAS Gallery
-    client.execute(`
+    await client.execute(`
       CREATE TABLE IF NOT EXISTS ayvalik_cas_gallery (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -35,10 +35,10 @@ export function initAyvalikCasTables(client: any) {
         likes_count INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
-    `).catch(() => {});
+    `);
 
     // 3. Ayvalık CAS Gallery Likes
-    client.execute(`
+    await client.execute(`
       CREATE TABLE IF NOT EXISTS ayvalik_cas_gallery_likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         gallery_id INTEGER NOT NULL,
@@ -46,10 +46,10 @@ export function initAyvalikCasTables(client: any) {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(gallery_id, user_id)
       )
-    `).catch(() => {});
+    `);
 
     // 4. Ayvalık CAS Reflections (Öğrenci Günlüğü & CAS Notları)
-    client.execute(`
+    await client.execute(`
       CREATE TABLE IF NOT EXISTS ayvalik_cas_reflections (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -59,10 +59,10 @@ export function initAyvalikCasTables(client: any) {
         reflection_text TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
-    `).catch(() => {});
+    `);
 
     // 5. Ayvalık CAS Packing Checklist (Kişiye Özel Çanta Kontrolü)
-    client.execute(`
+    await client.execute(`
       CREATE TABLE IF NOT EXISTS ayvalik_cas_checklist (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -71,10 +71,11 @@ export function initAyvalikCasTables(client: any) {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, item_id)
       )
-    `).catch(() => {});
+    `);
 
   } catch (err) {
     console.error("[Ayvalık CAS] Database initialization error:", err);
+    throw err;
   }
 }
 

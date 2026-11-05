@@ -1,110 +1,38 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { GyroStatus, GyroSample, GyroDelta, checkGyroSupport } from "../utils/gameGyroscope";
-
-export function useGameGyroscope(
-  enabled: boolean,
-  onDelta?: (delta: GyroDelta) => void,
-  onSample?: (sample: GyroSample) => void
-) {
-  const [status, setStatus] = useState<GyroStatus>(() => {
-    if (!checkGyroSupport()) return "unsupported";
-    if (typeof (DeviceOrientationEvent as any)?.requestPermission === "function") {
-      return "needs_permission";
-    }
-    return "idle";
-  });
-
-  const [permissionGranted, setPermissionGranted] = useState<boolean>(() => {
-    return typeof (DeviceOrientationEvent as any)?.requestPermission !== "function";
-  });
-
-  const lastSampleRef = useRef<{ alpha: number; beta: number; gamma: number } | null>(null);
-  const onDeltaRef = useRef(onDelta);
-  const onSampleRef = useRef(onSample);
-
-  useEffect(() => {
-    onDeltaRef.current = onDelta;
-    onSampleRef.current = onSample;
-  }, [onDelta, onSample]);
-
-  const recenter = useCallback(() => {
-    lastSampleRef.current = null;
-  }, []);
-
-  const request = useCallback(async (): Promise<boolean> => {
-    if (!checkGyroSupport()) {
-      setStatus("unsupported");
-      return false;
-    }
-
-    if (typeof (DeviceOrientationEvent as any)?.requestPermission === "function") {
-      try {
-        const response = await (DeviceOrientationEvent as any).requestPermission();
-        if (response === "granted") {
-          setPermissionGranted(true);
-          setStatus("active");
-          return true;
-        } else {
-          setPermissionGranted(false);
-          setStatus("permission_denied");
-          return false;
-        }
-      } catch (err) {
-        setStatus("permission_denied");
-        return false;
-      }
-    } else {
-      setPermissionGranted(true);
-      setStatus("active");
-      return true;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!enabled || !permissionGranted) {
-      if (status === "active") setStatus("idle");
-      return;
-    }
-
-    setStatus("active");
-
-    const handleOrientation = (e: DeviceOrientationEvent) => {
-      const alpha = e.alpha ?? 0;
-      const beta = e.beta ?? 0;
-      const gamma = e.gamma ?? 0;
-
-      const sample: GyroSample = { alpha, beta, gamma };
-      onSampleRef.current?.(sample);
-
-      if (lastSampleRef.current) {
-        let deltaAlpha = alpha - lastSampleRef.current.alpha;
-        if (deltaAlpha > 180) deltaAlpha -= 360;
-        if (deltaAlpha < -180) deltaAlpha += 360;
-
-        let deltaBeta = beta - lastSampleRef.current.beta;
-        let deltaGamma = gamma - lastSampleRef.current.gamma;
-
-        // Radians conversion
-        const yaw = (deltaAlpha * Math.PI) / 180;
-        const pitch = (deltaBeta * Math.PI) / 180;
-        const roll = (deltaGamma * Math.PI) / 180;
-
-        onDeltaRef.current?.({ yaw, pitch, roll });
-      }
-
-      lastSampleRef.current = { alpha, beta, gamma };
-    };
-
-    window.addEventListener("deviceorientation", handleOrientation, true);
-    return () => {
-      window.removeEventListener("deviceorientation", handleOrientation, true);
-    };
-  }, [enabled, permissionGranted]);
-
-  return {
-    status,
-    permissionGranted,
-    request,
-    recenter
+import {useEffect,useRef,useState} from 'react';
+import {OrientationTracker,gyroAvailability,requestOrientationAccess,screenAngle,type GyroDelta,type GyroStatus,type OrientationSample} from '../utils/gameGyroscope';
+export function useGameGyroscope(enabled:boolean,onDelta:(d:GyroDelta)=>void,onReading?:(s:OrientationSample)=>void){
+ const [permission,setPermission]=useState<ReturnType<typeof gyroAvailability>|'denied'|'error'>(()=>typeof window==='undefined'?'unsupported':gyroAvailability());
+ const [status,setStatus]=useState<GyroStatus>('off');
+ const tracker=useRef(new OrientationTracker());
+ const callbacks=useRef({onDelta,onReading});callbacks.current={onDelta,onReading};
+ const request=async()=>{
+  setStatus('requesting');
+  const result=await requestOrientationAccess();setPermission(result);setStatus(result==='granted'?'waiting':result);tracker.current.reset();return result==='granted';
+ };
+ useEffect(()=>{
+  tracker.current.reset();
+  if(!enabled){setStatus(permission==='granted'||permission==='permission'?'off':permission);return;}
+  if(permission!=='granted'){setStatus(permission);return;}
+  setStatus('waiting');let lastData=performance.now(),lastReading=0,source='',standardAt=-Infinity,receiving=false;
+  const receive=(e:DeviceOrientationEvent)=>{
+   if(document.hidden)return;
+   const now=performance.now();
+   if(e.type==='deviceorientationabsolute'&&now-standardAt<1000)return;
+   if(e.beta===null||e.gamma===null||!Number.isFinite(e.beta)||!Number.isFinite(e.gamma)||(e.alpha!==null&&!Number.isFinite(e.alpha)))return;
+   if(e.type==='deviceorientation')standardAt=now;
+   if(source&&source!==e.type)tracker.current.reset();source=e.type;lastData=now;
+   if(!receiving){receiving=true;setStatus('active');}
+   const sample={alpha:e.alpha,beta:e.beta,gamma:e.gamma},d=tracker.current.sample(sample,screenAngle(),now);
+   if(now-lastReading>=100){lastReading=now;callbacks.current.onReading?.(sample);}
+   if(d)callbacks.current.onDelta(d);
   };
+  const reset=()=>{tracker.current.reset();receiving=false;lastData=performance.now();setStatus('waiting');};
+  const timer=window.setInterval(()=>{if(document.hidden)return;if(performance.now()-lastData>4000){receiving=false;tracker.current.reset();setStatus('unavailable');}},1000);
+  window.addEventListener('deviceorientation',receive);
+  window.addEventListener('deviceorientationabsolute',receive as EventListener);
+  window.addEventListener('orientationchange',reset);document.addEventListener('visibilitychange',reset);
+  return()=>{clearInterval(timer);window.removeEventListener('deviceorientation',receive);window.removeEventListener('deviceorientationabsolute',receive as EventListener);window.removeEventListener('orientationchange',reset);document.removeEventListener('visibilitychange',reset);tracker.current.reset();};
+ },[enabled,permission]);
+ return {status,request,recenter:()=>tracker.current.reset(),permissionGranted:permission==='granted'};
 }
+export type GameGyroscope=ReturnType<typeof useGameGyroscope>;
