@@ -36,7 +36,10 @@
     "test:strike:measure": "node --import tsx tests/kapsstrike.hitreg.measure.ts",
     "test:strike:dust3d": "node --import tsx tests/kapsstrike.dust3d.browser.ts",
     "test:strike:progression": "node --import tsx tests/kapsstrike.progression.browser.ts",
-    "test:strike:audit": "node --import tsx --test tests/kapsstrike.audit1000.test.ts"
+    "test:strike:audit": "node --import tsx --test tests/kapsstrike.audit1000.test.ts",
+    "test:strike:4v4": "node --import tsx --test tests/kapsstrike.4v4.test.ts",
+    "test:strike:4v4:network": "node --import tsx tests/kapsstrike.4v4.network.ts",
+    "test:strike:4v4:browser": "node --import tsx tests/kapsstrike.4v4.browser.ts"
   },
   "dependencies": {
     "@babylonjs/core": "8.50.2",

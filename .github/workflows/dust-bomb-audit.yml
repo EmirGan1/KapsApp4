@@ -28,6 +28,10 @@ jobs:
         run: npm run test:strike:audit
       - name: Existing bomb and route regressions
         run: node --import tsx --test tests/kapsstrike.bomb.test.ts tests/kapsstrike.bombWeapons.test.ts tests/kapsstrike.spawn.test.ts tests/kapsstrike.dust3d.test.ts tests/kapsstrike.multiplayer.test.ts tests/kapsstrike.controls.test.ts tests/kapsstrike.hitreg.test.ts tests/kapsstrike.bombShortcuts.test.ts
+      - name: 4v4 spawn, routes, halftime and spectator regressions
+        run: npm run test:strike:4v4
+      - name: Eight real network clients and A/B objectives
+        run: npm run test:strike:4v4:network
       - run: npm run build
       - name: Install test browser
         run: npx playwright install --with-deps chromium
@@ -35,6 +39,8 @@ jobs:
         env:
           STRIKE_QA_COMPACT: '1'
         run: node --import tsx tests/kapsstrike.bomb.browser.ts
+      - name: 4v4 desktop and touch spectator flow
+        run: npm run test:strike:4v4:browser
       - name: Save map and bomb screenshots
         if: always()
         uses: actions/upload-artifact@v4
