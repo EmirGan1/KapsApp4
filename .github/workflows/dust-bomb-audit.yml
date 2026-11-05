@@ -23,7 +23,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci --no-audit --no-fund
+      - name: Install (repository lockfile predates Babylon and Playwright)
+        run: npm install --no-audit --no-fund
       - run: npm run lint
       - name: 1000 geometry and bomb scenarios
         run: npm run test:strike:audit
