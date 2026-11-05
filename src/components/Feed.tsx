@@ -30,7 +30,7 @@ import MultiMediaPostViewer, { extractPostMediaItems } from "./MultiMediaPostVie
 import CourseFilesManager from "./CourseFilesManager";
 import LikesModal from "./LikesModal";
 import PostCard from "./PostCard";
-import { getApiUrl } from "../utils/api";
+import { getApiUrl, getAuthHeaders } from "../utils/api";
 import { compressImage } from "../utils/imageCompressor";
 
 export interface SelectedMediaItem {
@@ -383,8 +383,8 @@ export default function Feed({
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", url);
-        const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.withCredentials = true;
+        getAuthHeaders().forEach((value,key)=>xhr.setRequestHeader(key,value));
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
             const percent = Math.round((event.loaded / event.total) * 100);
@@ -570,7 +570,7 @@ export default function Feed({
       }
       const formData = new FormData();
       formData.append("file", fileToUpload);
-      const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData });
+      const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) {
         if (res.status === 413) {
           console.error('[HATA NEREDE - Feed.tsx:handleStoryUpload] Sunucu/Nginx HTTP 413 döndürdü.');
