@@ -11,7 +11,7 @@ import {
 import { AnnouncementItem, AnnouncementStyles, isVisibleToUser, parseTargetRoles } from "../types";
 import TargetRoleSelector from "./TargetRoleSelector";
 import TargetRoleBadge from "./TargetRoleBadge";
-import { getApiUrl, getAuthHeaders } from "../utils/api";
+import { getApiUrl } from "../utils/api";
 
 export type { AnnouncementStyles, AnnouncementItem };
 
@@ -166,9 +166,10 @@ export default function Announcements({
         const formData = new FormData();
         formData.append("file", file);
 
+        const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
         const res = await fetch(getApiUrl("/api/upload"), {
           method: "POST",
-          headers: getAuthHeaders(),
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
           body: formData
         });
 
@@ -216,9 +217,10 @@ export default function Announcements({
         try {
           const formData = new FormData();
           formData.append("file", blob);
+          const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
           const res = await fetch(getApiUrl("/api/upload"), {
             method: "POST",
-            headers: getAuthHeaders(),
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
             body: formData
           });
           if (res.ok) {

@@ -1,4 +1,3 @@
-import {useSearchParams} from "react-router-dom";
 import AyvalikRooms from "./AyvalikRooms";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Socket } from "socket.io-client";
@@ -495,10 +494,7 @@ export default function AyvalikCasPanel({
   onBackToMain
 }: AyvalikCasPanelProps) {
   // Tabs: 'schedule' | 'weather' | 'chat' | 'gallery' | 'checklist' | 'reflections' | 'guide'
-  const [sectionParams,setSectionParams]=useSearchParams();
-  const section=sectionParams.get('section');
-  const activeTab=AYVALIK_SECTIONS.some(s=>s.id===section)?(section||'home'):'home';
-  const setActiveTab=(tab:string)=>{const next=new URLSearchParams(sectionParams);if(tab==='home')next.delete('section');else next.set('section',tab);setSectionParams(next,{replace:activeTab!=='home'});};
+  const [activeTab, setActiveTab] = useState<"home" | "rooms" | "schedule" | "weather" | "chat" | "gallery" | "checklist" | "reflections" | "guide">("home");
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | "all">("all");
 
   // 1. LIVE COUNTDOWN TO TRIP (25 Kasım 2026, 06:00)
@@ -963,11 +959,11 @@ export default function AyvalikCasPanel({
 
               {onBackToMain && (
                 <button
-                  onClick={()=>activeTab==='home'?onBackToMain():setActiveTab('home')}
+                  onClick={onBackToMain}
                   className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/25 text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
                 >
                   <ArrowLeft size={16} />
-                  <span>{activeTab==='home'?'Ana Sayfaya Dön':'Ayvalık Ana Sayfasına Dön'}</span>
+                  <span>Ana Sayfaya Dön</span>
                 </button>
               )}
             </div>

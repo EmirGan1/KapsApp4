@@ -56,7 +56,6 @@ export function support(map: MapDefinition, p: Vec3, maxY: number) {
 export function newMovement(position: Vec3): MovementState {
   return {
     position: { ...position },
-    spawnPosition: { ...position },
     velocity: { x: 0, y: 0, z: 0 },
     grounded: true,
     stance: "stand",
@@ -72,27 +71,6 @@ export function move(
   map: MapDefinition,
   tick: number,
 ) {
-  if (![m.position.x,m.position.y,m.position.z,m.velocity.x,m.velocity.y,m.velocity.z].every(Number.isFinite) || m.position.y < -10 || m.position.y > 40 || Math.abs(m.position.x)>map.bounds+2 || Math.abs(m.position.z)>map.bounds+2) {
-    Object.assign(m,newMovement(m.spawnPosition||map.spawns[0]));return;
-  }
-  // Recover embedded capsules without forcing a standing player out of valid crawl spaces.
-  if (!fits(map,m.position,C.crouching)) {
-    const saved=m.lastSafePosition;
-    if(saved&&fits(map,saved,C.crouching))m.position={...saved};
-    else {
-      let clear:Vec3|undefined;
-      for(const radius of [.15,.3,.5,.75,1]){
-        for(let i=0;i<16;i++){
-          const q={x:m.position.x+Math.cos(i*Math.PI/8)*radius,y:m.position.y,z:m.position.z+Math.sin(i*Math.PI/8)*radius};
-          q.y=support(map,q,q.y+C.step);
-          if(Math.abs(q.y-m.position.y)<=C.step&&Math.abs(q.x)<map.bounds-C.radius&&Math.abs(q.z)<map.bounds-C.radius&&fits(map,q,C.crouching)){clear=q;break;}
-        }
-        if(clear)break;
-      }
-      m.position=clear||{...(m.spawnPosition||map.spawns[0])};
-    }
-    m.velocity={x:0,y:0,z:0};
-  }
   const dt = C.dt,
     p = m.position,
     v = m.velocity,
@@ -195,13 +173,12 @@ export function move(
       m.grounded = false;
     }
   }
-  if(fits(map,p,m.height))m.lastSafePosition={...p};
   if (
     ![p.x, p.y, p.z, v.x, v.y, v.z].every(Number.isFinite) ||
     p.y < -10 ||
     p.y > 40
   ) {
-    Object.assign(m, newMovement(m.spawnPosition || map.spawns[0]));
+    Object.assign(m, newMovement(map.spawns[0]));
   }
 }
 /** Ray/convex-solid intersection, including the actual ramp plane rather than its box. */

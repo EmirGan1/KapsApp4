@@ -1,4 +1,0 @@
-import React,{useState,useEffect} from 'react';import {createRoot} from 'react-dom/client';import {io} from 'socket.io-client';import Profile from '../src/components/Profile';import '../src/index.css';
-const port=new URLSearchParams(location.search).get('port');const socket=io('http://127.0.0.1:'+port,{auth:{token:localStorage.getItem('lan_token')||localStorage.getItem('token')||localStorage.getItem('auth_token')}});
-function App(){const[ready,setReady]=useState(socket.connected),[avatar,setAvatar]=useState<string|null>(null);useEffect(()=>{socket.on('connect',()=>setReady(true));},[]);return ready?<Profile socket={socket} currentUserId={101} viewingUserId={101} username="UploadTester" avatar={avatar} onLogout={()=>{}} onAvatarUpdated={url=>{setAvatar(url);(window as any).uploadedAvatar=url;}} onUserClick={()=>{}}/>:<p>Bağlanıyor…</p>;}
-createRoot(document.getElementById('root')!).render(<App/>);
