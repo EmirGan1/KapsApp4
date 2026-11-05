@@ -934,7 +934,7 @@ export class KapsStrikeServerManager {
     room.tick++;
     if(!room.bomb)advanceWorld(room.world,mapDef,room.tick);
     if(room.bomb){const b=room.bomb,round=b.round,phase=b.phase,explosion=b.explosion;
-      for(const p of (Object.values(b.players || {}) as any[])){const live=room.players.get(p.id);p.alive=!!live&&live.state.hp>0;if(live)p.position={...live.state.movement.position};}
+      for(const p of Object.values(b.players)){const live=room.players.get(p.id);p.alive=!!live&&live.state.hp>0;if(live)p.position={...live.state.movement.position};}
       stepBomb(b,room.tick*C.dt);
       if(b.explosion&&b.explosion!==explosion)for(const p of room.players.values())if(!b.players[p.id]?.alive&&p.state.hp>0){p.state.hp=0;p.state.deadUntil=room.tick+C.respawnTicks;p.deaths++;p.pendingFire=undefined;p.inputQueue=[];room.addEvent({actor:p.id,kind:'death'});}
       if(b.phase==='result'&&phase!=='result')for(const p of room.players.values())if(b.players[p.id]?.team===b.winner)this.creditReward(p.userId,`${room.rewardMatchId}:round:${round}`,'round');
