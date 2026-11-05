@@ -9,7 +9,7 @@ for(const disconnected of [false,true])test('real bomb handler rejects fast deto
  room.players.get('ct')!.isDisconnected=disconnected;
  room.bomb!.phase='planted';room.bomb!.deadline=100;
  const handlers=new Map<string,Function>();
- const socket:any={id:'t',join(){},on(event:string,handler:Function){handlers.set(event,handler);return this;},emit(){}};
+ const socket:any={id:'t',join(){},on(event:string,handler:Function){handlers.set(event,handler);return this;},emit(){},once(){return this;}};
  server.register(socket,{id:901,username:'t'});
  let result:any;handlers.get('strike:bomb_action')!({kind:'fast_detonate'},(value:any)=>result=value);
  assert.equal(result.success,false);assert.equal(room.bomb!.deadline,100);
