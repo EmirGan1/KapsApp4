@@ -1,8 +1,11 @@
+import {resolveAyvalikUser} from "./ayvalikAuth";
+import {initAyvalikRooms,registerAyvalikRooms} from "./ayvalikRooms";
 import { Express, Request, Response } from "express";
 import { Server, Socket } from "socket.io";
 
 export async function initAyvalikCasTables(client: any) {
   try {
+    await initAyvalikRooms(client);
     // 1. Ayvalık CAS Chat Messages
     await client.execute(`
       CREATE TABLE IF NOT EXISTS ayvalik_cas_messages (
@@ -81,21 +84,8 @@ export async function initAyvalikCasTables(client: any) {
 
 export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server) {
   // Helper to extract user from token
-  const resolveUser = async (req: Request) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : (req.query.token as string || req.body?.token);
-    if (!token) return null;
-    try {
-      const res = await client.execute({
-        sql: "SELECT id, username, avatar, color, roles, is_admin FROM users WHERE token = ?",
-        args: [token]
-      });
-      if (res.rows && res.rows.length > 0) {
-        return res.rows[0];
-      }
-    } catch {}
-    return null;
-  };
+  registerAyvalikRooms(app,client,io);
+  const resolveUser = (req:Request)=>resolveAyvalikUser(req,client);
 
   // -------------------------------------------------------------
   // 1. MESSAGES ENDPOINTS

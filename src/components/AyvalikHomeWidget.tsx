@@ -271,7 +271,7 @@ export default function AyvalikHomeWidget({
         <div className="absolute -right-8 -top-8 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute left-1/3 -bottom-10 w-40 h-40 bg-teal-400/20 rounded-full blur-xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="relative z-10 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-xs font-black uppercase tracking-wider text-white">
@@ -293,7 +293,7 @@ export default function AyvalikHomeWidget({
           </div>
 
           {/* Geri Sayım & Tam Paneli Aç Butonu */}
-          <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-3 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 min-w-0">
             <div className="bg-white/15 backdrop-blur-md border border-white/25 rounded-2xl px-4 py-2 text-center">
               <div className="text-[10px] uppercase font-bold text-emerald-200 tracking-wider">
                 Geziye Kalan Süre
