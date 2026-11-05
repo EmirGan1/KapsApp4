@@ -1,3 +1,4 @@
+import {usePackingList} from "./ayvalik/usePackingList";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { 
@@ -6,7 +7,7 @@ import {
   MapPin, Clock, ArrowRight, ExternalLink, AlertTriangle, 
   Sparkles, Hotel, Heart, Download, Upload, Info, RefreshCw
 } from "lucide-react";
-import { AYVALIK_PROGRAM } from "./AyvalikCasPanel";
+import { AYVALIK_PROGRAM, AYVALIK_CLOTHING_GUIDE, DEFAULT_PACKING_ITEMS } from "./AyvalikCasPanel";
 import { getApiUrl } from "../utils/api";
 import Avatar from "./Avatar";
 
@@ -19,7 +20,9 @@ interface AyvalikHomeWidgetProps {
   onOpenFullPanel: () => void;
 }
 
-export default function AyvalikHomeWidget({
+export default function AyvalikHomeWidget(props:AyvalikHomeWidgetProps){return <AyvalikWidgetContent key={props.currentUserId} {...props}/>;}
+
+function AyvalikWidgetContent({
   socket,
   currentUserId,
   currentUsername,
@@ -63,26 +66,13 @@ export default function AyvalikHomeWidget({
   const [isUploading, setIsUploading] = useState(false);
 
   // Mini Packing State
-  const [packedItems, setPackedItems] = useState<Record<string, boolean>>(() => {
-    try {
-      const saved = localStorage.getItem("ayvalik_cas_packing");
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  const togglePacked = (id: string) => {
-    setPackedItems(prev => {
-      const updated = { ...prev, [id]: !prev[id] };
-      localStorage.setItem("ayvalik_cas_packing", JSON.stringify(updated));
-      return updated;
-    });
-  };
+  const {checked:packedIds,toggle:togglePacked,loading:packingLoading,status:packingStatus}=usePackingList(currentUserId,DEFAULT_PACKING_ITEMS.map(i=>i.id));
+  const packedItems=Object.fromEntries(packedIds.map(id=>[id,true]));
+  const [notice,setNotice]=useState('');
 
   // Fetch initial mini chat and gallery
   useEffect(() => {
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
 
     // Fetch messages
@@ -111,7 +101,7 @@ export default function AyvalikHomeWidget({
     if (!socket) return;
 
     const handleNewMsg = (msg: any) => {
-      setMessages(prev => [...prev.slice(-4), msg]);
+      setMessages(prev => [...prev.filter(m=>m.id!==msg.id).slice(-4), msg]);
       setTimeout(() => {
         if (chatScrollRef.current) {
           chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
@@ -120,7 +110,7 @@ export default function AyvalikHomeWidget({
     };
 
     const handleNewItem = (item: any) => {
-      setGalleryItems(prev => [item, ...prev.slice(0, 5)]);
+      setGalleryItems(prev => [item, ...prev.filter(m=>m.id!==item.id).slice(0, 5)]);
     };
 
     socket.on("ayvalik:new_message", handleNewMsg);
@@ -136,7 +126,7 @@ export default function AyvalikHomeWidget({
     e.preventDefault();
     if (!chatInput.trim() || isSending) return;
 
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     if (!token) return;
 
     setIsSending(true);
@@ -150,121 +140,33 @@ export default function AyvalikHomeWidget({
         body: JSON.stringify({ content: chatInput.trim() })
       });
       const data = await res.json();
-      if (data.success) {
-        setChatInput("");
-      }
+      if (res.ok && data.success) {
+        setChatInput("");setMessages(prev=>[...prev.filter(m=>m.id!==data.message.id).slice(-4),data.message]);
+      }else setNotice(data.error||"Mesaj gönderilemedi.");
     } catch (err) {
-      // Failed quietly
+      setNotice("Mesaj gönderilemedi. Bağlantını kontrol et.");
     } finally {
       setIsSending(false);
     }
   };
 
-  const handleQuickUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-    if (!token) return;
-
-    setIsUploading(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result as string;
-      const mediaType = file.type.startsWith("video") ? "video" : "image";
-      try {
-        await fetch(getApiUrl("/api/ayvalik/gallery"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            media_url: base64,
-            media_type: mediaType,
-            caption: `${file.name.replace(/\.[^/.]+$/, "")} (Anasayfa Yüklemesi)`,
-            day_tag: `Gün ${selectedDay}`,
-            location_tag: "Ayvalık"
-          })
-        });
-      } catch (err) {
-        // Handled
-      } finally {
-        setIsUploading(false);
-      }
-    };
-    reader.readAsDataURL(file);
+  const handleQuickUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input=e.currentTarget,file=input.files?.[0];if(!file)return;
+    const token=localStorage.getItem('lan_token')||localStorage.getItem('token')||localStorage.getItem('auth_token');if(!token)return;
+    setIsUploading(true);try{
+      const form=new FormData();form.append('file',file);
+      const upload=await fetch(getApiUrl('/api/upload'),{method:'POST',headers:{Authorization:`Bearer ${token}`},body:form});const data=await upload.json();if(!upload.ok||!data.url)throw Error(data.error||'Dosya yüklenemedi.');
+      const response=await fetch(getApiUrl('/api/ayvalik/gallery'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({media_url:data.url,media_type:file.type.startsWith('video/')?'video':'image',caption:file.name.replace(/\.[^/.]+$/,''),day_tag:['1. Gün - Saha Çalışması & Cunda','2. Gün - Küçükköy & Şeytan Sofrası','3. Gün - Zeytin Hasadı & Dönüş'][selectedDay-1],location_tag:'Ayvalık'})});const saved=await response.json();if(!response.ok||!saved.success)throw Error(saved.error||'Galeri kaydedilemedi.');setGalleryItems(prev=>[saved.item,...prev.filter(i=>i.id!==saved.item.id).slice(0,5)]);
+    }catch(error){setNotice(error instanceof Error?error.message:'Yükleme tamamlanamadı.');}finally{setIsUploading(false);input.value='';}
   };
 
-  // Weather Days for 25-27 November
-  const weatherForecast = [
-    {
-      day: 1,
-      date: "25 Kasım Çarşamba",
-      summary: "Sağanak Yağış & Kuvvetli Lodos",
-      tempDay: "13°C",
-      tempNight: "8°C",
-      wind: "42 km/s (Lodos)",
-      rainChance: "%85",
-      humidity: "%88",
-      icon: "🌧️",
-      accentBg: "from-blue-600/10 via-sky-500/5 to-transparent",
-      accentBorder: "border-blue-400/30",
-      warningLevel: "Kritik",
-      warningTitle: "Şiddetli Yağmur & Rüzgar Uyarısı",
-      warningText: "25 Kasım günü Ayvalık genelinde kuvvetli lodos fırtınası ve sağanak yağış beklenmektedir. Şemsiye, su geçirmez kapüşonlu rüzgarlık/yağmurluk ve yedek çorap mutlaka yanınızda olmalıdır! Kardeş okul bahçesindeki atölyeler için ıslanmayan ayakkabı giyiniz.",
-      recommendedGear: ["Su Geçirmez Yağmurluk", "Şemsiye", "Yedek Çorap", "Su Geçirmez Ayakkabı"]
-    },
-    {
-      day: 2,
-      date: "26 Kasım Perşembe",
-      summary: "Parçalı Bulutlu & Serin Poyraz",
-      tempDay: "15°C",
-      tempNight: "9°C",
-      wind: "30 km/s (Poyraz)",
-      rainChance: "%20",
-      humidity: "%65",
-      icon: "⛅",
-      accentBg: "from-amber-500/10 via-orange-500/5 to-transparent",
-      accentBorder: "border-amber-400/30",
-      warningLevel: "Önemli",
-      warningTitle: "Şeytan Sofrası Rüzgarı & Soğuk Çarpması",
-      warningText: "Öğleden sonra Şeytan Sofrası tepesinde gün batımı izlenecektir. Açık tepe rüzgara tamamen açıktır ve gün batımında hava aniden 7°C'ye kadar hissedilebilir! Polar hırka, rüzgarlık ve boyunluk/bere takılması önemle tavsiye edilir.",
-      recommendedGear: ["Polar Hırka", "Rüzgarlık", "Bere/Boyunluk", "Küçükköy için Kişisel Kulaklık"]
-    },
-    {
-      day: 3,
-      date: "27 Kasım Cuma",
-      summary: "Açık Güneşli & İdeal Hasat Havası",
-      tempDay: "17°C",
-      tempNight: "10°C",
-      wind: "18 km/s (Hafif Esinti)",
-      rainChance: "%10",
-      humidity: "%58",
-      icon: "☀️",
-      accentBg: "from-emerald-500/10 via-teal-500/5 to-transparent",
-      accentBorder: "border-emerald-400/30",
-      warningLevel: "Tavsiye",
-      warningTitle: "Zeytin Hasadı ve Çamur Zemin Uyarısı",
-      warningText: "Kürşat Zeytinliği'nde bizzat zeytin hasadı yapılacaktır. Yağış sonrası toprak nemli ve çamurlu olacaktır. Kesinlikle beyaz/pahalı ayakkabı giymeyiniz! Kirlenmeye uygun yürüyüş botu veya outdoor spor ayakkabı ile rahat pantolon giyiniz.",
-      recommendedGear: ["Arazi / Yürüyüş Botu", "Kirlenebilir Rahat Pantolon", "Güneş Gözlüğü", "CAS Not Defteri"]
-    }
-  ];
-
-  const packingItems = [
-    { id: "id_card", label: "T.C. Kimlik Kartı", critical: true, sub: "Otel girişi ve yol denetimleri için zorunlu" },
-    { id: "headphones", label: "Kişisel Kulaklık (3.5mm veya Type-C)", critical: true, sub: "Sabancı Üniv. Küçükköy teknoloji atölyesi için zorunlu" },
-    { id: "raincoat", label: "Su Geçirmez Yağmurluk / Rüzgarlık", critical: true, sub: "25 Kasım sağanak yağışı ve lodos için şart" },
-    { id: "hiking_boots", label: "Yürüyüş Botu / Kirlenebilir Ayakkabı", critical: true, sub: "27 Kasım Kürşat Zeytinliği hasadı için şart" },
-    { id: "fleece", label: "Polar Hırka & Kalın Sweatshirt", critical: false, sub: "Şeytan Sofrası gün batımı rüzgarı için" },
-    { id: "powerbank", label: "Taşınabilir Şarj Aleti (Powerbank)", critical: false, sub: "Tüm gün süren saha atölyeleri için" },
-    { id: "cas_book", label: "CAS Yansıma Defteri & Kalem", critical: false, sub: "Akşam 19:30 değerlendirme toplantıları için" }
-  ];
+  const packingItems=DEFAULT_PACKING_ITEMS.map(i=>({...i,critical:i.required,sub:i.note}));
 
   const currentDayProgram = AYVALIK_PROGRAM.filter(p => p.day === selectedDay);
 
   return (
     <div className="relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xl transition-all">
+      {notice&&<p role="alert" className="p-4 bg-amber-50 dark:bg-amber-950">{notice}</p>}
       {/* Üst Başlık Banner */}
       <div className="relative bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 p-5 sm:p-6 text-white overflow-hidden">
         {/* Dekoratif Arka Plan Işıkları */}
@@ -393,123 +295,8 @@ export default function AyvalikHomeWidget({
         {/* ======================================================== */}
         {/* TAB 1: 25-27 KASIM AYVALIK HAVA DURUMU & GÜNLÜK UYARILAR */}
         {/* ======================================================== */}
-        {activeTab === "weather" && (
-          <div className="space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <span>🌤️ 25 - 27 Kasım 2026 Ayvalık Meteoroloji Raporu & Kıyafet Rehberi</span>
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Her gün için özel olarak hazırlanan rüzgar, yağış ve zemin koşulları analizleri.
-                </p>
-              </div>
-              <a
-                href="/assets/aistudio/AYVALIK_CAS_PROJES__261105_100129_95e2bfcf.pdf"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
-              >
-                <span>Resmi Program PDF'ini Görüntüle</span>
-                <ExternalLink size={13} />
-              </a>
-            </div>
+        {activeTab==='weather'&&<div className="space-y-4"><h3 className="text-xl font-black">Gezi için giyim hazırlığı</h3><p className="text-sm text-slate-500">Bu bir hazırlık rehberidir, canlı hava tahmini değildir.</p><a className="inline-block text-emerald-600 font-bold" href="https://www.mgm.gov.tr/?il=Balikesir&ilce=Ayvalik" target="_blank" rel="noopener noreferrer">MGM Ayvalık tahminini aç ↗</a><div className="grid md:grid-cols-3 gap-4">{AYVALIK_CLOTHING_GUIDE.map(day=><article key={day.dayNum} className="p-5 border rounded-2xl space-y-3"><h4 className="font-black">{day.emoji} {day.dayNum}. gün · {day.title}</h4><p className="text-sm text-slate-500">{day.text}</p><p className="text-sm">{day.essentials.join(' · ')}</p></article>)}</div></div>}
 
-            {/* 3 Günlük Hava Kartları Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {weatherForecast.map((w) => (
-                <div
-                  key={w.day}
-                  className={`p-4 rounded-2xl bg-white dark:bg-slate-800/90 border ${w.accentBorder} shadow-sm space-y-3 relative overflow-hidden`}
-                >
-                  <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${w.accentBg} rounded-full blur-xl pointer-events-none`} />
-
-                  {/* Gün Başlığı */}
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                        {w.day}. GÜN
-                      </div>
-                      <div className="text-sm font-black text-slate-800 dark:text-slate-100">
-                        {w.date}
-                      </div>
-                    </div>
-                    <span className="text-3xl select-none">{w.icon}</span>
-                  </div>
-
-                  {/* Sıcaklık & Rüzgar İstatistikleri */}
-                  <div className="flex items-baseline justify-between py-2 border-y border-slate-100 dark:border-slate-700/60">
-                    <div>
-                      <div className="text-2xl font-black text-slate-900 dark:text-slate-100">
-                        {w.tempDay}
-                      </div>
-                      <div className="text-[11px] text-slate-400">Gece {w.tempNight}</div>
-                    </div>
-                    <div className="text-right text-xs space-y-0.5">
-                      <div className="text-slate-600 dark:text-slate-300 font-semibold flex items-center justify-end gap-1">
-                        <Wind size={13} className="text-sky-500" />
-                        <span>{w.wind}</span>
-                      </div>
-                      <div className="text-slate-500 text-[11px]">Yağış: {w.rainChance} | Nem: {w.humidity}</div>
-                    </div>
-                  </div>
-
-                  {/* Günlük Özel Uyarı Kutusu */}
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-slate-800 dark:text-slate-200 space-y-1">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400">
-                      <AlertTriangle size={14} className="shrink-0" />
-                      <span>{w.warningTitle}</span>
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-                      {w.warningText}
-                    </p>
-                  </div>
-
-                  {/* Önerilen Kıyafet ve Ekipmanlar */}
-                  <div className="pt-1">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                      Önerilen Ekipman & Kıyafet
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {w.recommendedGear.map((gear, gIdx) => (
-                        <span
-                          key={gIdx}
-                          className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-medium"
-                        >
-                          ✓ {gear}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Otel ve Acente İletişim Bilgi Şeridi */}
-            <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                <Hotel size={16} className="text-emerald-500 shrink-0" />
-                <span>
-                  <strong>Konaklama:</strong> 4★ Bacacan Otel Ayvalık (Yarım Pansiyon Açık Büfe)
-                </span>
-                <span className="hidden md:inline text-slate-400">•</span>
-                <span className="hidden md:inline text-slate-500">Tel: +90 266 312 24 14</span>
-              </div>
-              <button
-                type="button"
-                onClick={onOpenFullPanel}
-                className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-1"
-              >
-                <span>Detaylı Otel & İletişim Rehberi</span>
-                <ArrowRight size={13} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* TAB 2: 3 GÜNLÜK GEZİ AJANDASI (PROGRAM AKIŞI)            */}
-        {/* ======================================================== */}
         {activeTab === "agenda" && (
           <div className="space-y-4">
             {/* Gün Seçicisi */}
@@ -649,7 +436,7 @@ export default function AyvalikHomeWidget({
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <input
                 type="text"
-                value={chatInput}
+                maxLength={4000} value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder="Gezi grubuna mesaj yaz..."
                 className="flex-1 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -707,7 +494,8 @@ export default function AyvalikHomeWidget({
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
                 {galleryItems.map((item) => (
                   <div
-                    key={item.id}
+                    key={item.id} role="button" aria-label="Galeriyi aç" tabIndex={0}
+                    onKeyDown={e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();onOpenFullPanel();}}}
                     onClick={onOpenFullPanel}
                     className="group relative aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer shadow-xs"
                   >
@@ -741,6 +529,7 @@ export default function AyvalikHomeWidget({
         {/* ======================================================== */}
         {/* TAB 5: ÇANTA KONTROL LİSTESİ                             */}
         {/* ======================================================== */}
+        {activeTab==='packing'&&<p role="status" className="p-3 text-sm text-slate-500">{packingLoading?'Liste yükleniyor…':packingStatus}</p>}
         {activeTab === "packing" && (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs">
@@ -757,7 +546,8 @@ export default function AyvalikHomeWidget({
                 const isChecked = !!packedItems[item.id];
                 return (
                   <div
-                    key={item.id}
+                    key={item.id} role="checkbox" aria-label={item.label} aria-checked={isChecked} aria-disabled={packingLoading} tabIndex={0}
+                    onKeyDown={e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();togglePacked(item.id);}}}
                     onClick={() => togglePacked(item.id)}
                     className={`p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-2.5 ${
                       isChecked

@@ -82,6 +82,9 @@ export async function initAyvalikCasTables(client: any) {
   }
 }
 
+const isCasAdmin=(user:any)=>Number(user.is_admin)===1||String(user.username||'').trim().toLowerCase()==='emirgan';
+const validMedia=(url:unknown)=>typeof url==='string'&&url.length<=2048&&((url.startsWith('/')&&!url.startsWith('//'))||/^https?:\/\//i.test(url));
+const packingIds=new Set(['id_card','personal_headphones','raincoat','boots','spare_clothes','fleece','powerbank','chargers','medicines','notebook','water_bottle','return_clothes']);
 export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server) {
   // Helper to extract user from token
   registerAyvalikRooms(app,client,io);
@@ -92,13 +95,14 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
   // -------------------------------------------------------------
   app.get("/api/ayvalik/messages", async (req: Request, res: Response) => {
     try {
+      if(!await resolveUser(req))return res.status(401).json({success:false,error:'Giriş yapmanız gerekiyor.'});
       const result = await client.execute({
-        sql: "SELECT * FROM ayvalik_cas_messages ORDER BY id ASC LIMIT 250",
+        sql: "SELECT * FROM (SELECT * FROM ayvalik_cas_messages ORDER BY id DESC LIMIT 250) ORDER BY id ASC",
         args: []
       });
       return res.json({ success: true, messages: result.rows || [] });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Mesajlar yüklenemedi." });
+      return res.status(500).json({ success: false, error: "Mesajlar yüklenemedi." });
     }
   });
 
@@ -109,8 +113,11 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
         return res.status(401).json({ success: false, error: "Giriş yapmanız gerekiyor." });
       }
 
-      const { content, media_url, media_type, is_pinned } = req.body;
-      if (!content && !media_url) {
+      const { content, media_url, media_type, is_pinned } = req.body||{};
+      if((content!=null&&typeof content!=='string')||(typeof content==='string'&&content.length>4000)||(media_url!=null&&!validMedia(media_url))||(media_type!=null&&!['image','video'].includes(media_type)))return res.status(400).json({success:false,error:'Geçersiz mesaj veya medya.'});
+      if(is_pinned!=null&&![true,false,0,1].includes(is_pinned))return res.status(400).json({success:false,error:'Geçersiz sabitleme seçimi.'});
+      if(is_pinned&&!isCasAdmin(user))return res.status(403).json({success:false,error:'Mesaj sabitlemek için yönetici yetkisi gerekli.'});
+      if (!content?.trim() && !media_url) {
         return res.status(400).json({ success: false, error: "Mesaj içeriği veya medya gereklidir." });
       }
 
@@ -148,7 +155,7 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
 
       return res.json({ success: true, message: newMsg });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Mesaj gönderilemedi." });
+      return res.status(500).json({ success: false, error: "Mesaj gönderilemedi." });
     }
   });
 
@@ -158,7 +165,8 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
   app.get("/api/ayvalik/gallery", async (req: Request, res: Response) => {
     try {
       const user = await resolveUser(req);
-      const currentUserId = user ? Number(user.id) : 0;
+      if(!user)return res.status(401).json({success:false,error:'Giriş yapmanız gerekiyor.'});
+      const currentUserId = Number(user.id);
       const dayFilter = req.query.day as string;
       const locationFilter = req.query.location as string;
 
@@ -199,7 +207,7 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
 
       return res.json({ success: true, items });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Galeri yüklenemedi." });
+      return res.status(500).json({ success: false, error: "Galeri yüklenemedi." });
     }
   });
 
@@ -210,7 +218,8 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
         return res.status(401).json({ success: false, error: "Giriş yapmanız gerekiyor." });
       }
 
-      const { media_url, media_type, caption, day_tag, location_tag } = req.body;
+      const { media_url, media_type, caption, day_tag, location_tag } = req.body||{};
+      if(!validMedia(media_url)||(media_type!=null&&!['image','video'].includes(media_type))||[[caption,1000],[day_tag,100],[location_tag,160]].some(([value,max])=>value!=null&&(typeof value!=='string'||value.length>Number(max))))return res.status(400).json({success:false,error:'Geçersiz galeri bilgileri.'});
       if (!media_url) {
         return res.status(400).json({ success: false, error: "Medya URL'si gereklidir." });
       }
@@ -253,7 +262,7 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
 
       return res.json({ success: true, item: newItem });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Medya eklenemedi." });
+      return res.status(500).json({ success: false, error: "Medya eklenemedi." });
     }
   });
 
@@ -264,53 +273,22 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
         return res.status(401).json({ success: false, error: "Giriş yapmanız gerekiyor." });
       }
 
-      const galleryId = Number(req.params.id);
-      const userId = Number(user.id);
-
-      // Check existing like
-      const checkLike = await client.execute({
-        sql: "SELECT id FROM ayvalik_cas_gallery_likes WHERE gallery_id = ? AND user_id = ?",
-        args: [galleryId, userId]
-      });
-
-      let liked = false;
-      if (checkLike.rows && checkLike.rows.length > 0) {
-        // Unlike
-        await client.execute({
-          sql: "DELETE FROM ayvalik_cas_gallery_likes WHERE gallery_id = ? AND user_id = ?",
-          args: [galleryId, userId]
-        });
-        await client.execute({
-          sql: "UPDATE ayvalik_cas_gallery SET likes_count = MAX(0, likes_count - 1) WHERE id = ?",
-          args: [galleryId]
-        });
-        liked = false;
-      } else {
-        // Like
-        await client.execute({
-          sql: "INSERT INTO ayvalik_cas_gallery_likes (gallery_id, user_id) VALUES (?, ?)",
-          args: [galleryId, userId]
-        });
-        await client.execute({
-          sql: "UPDATE ayvalik_cas_gallery SET likes_count = likes_count + 1 WHERE id = ?",
-          args: [galleryId]
-        });
-        liked = true;
-      }
-
-      const updated = await client.execute({
-        sql: "SELECT likes_count FROM ayvalik_cas_gallery WHERE id = ?",
-        args: [galleryId]
-      });
-      const newCount = updated.rows?.[0]?.likes_count ?? 0;
-
-      if (io) {
-        io.emit("ayvalik:gallery_liked", { id: galleryId, likes_count: newCount });
-      }
-
-      return res.json({ success: true, liked, likes_count: newCount });
+      const galleryId=Number(req.params.id),userId=Number(user.id);
+      if(!Number.isSafeInteger(galleryId)||galleryId<1)return res.status(400).json({success:false,error:'Geçersiz medya.'});
+      const tx=await client.transaction('write');let liked=false,newCount=0;
+      try{
+        const exists=await tx.execute({sql:'SELECT id FROM ayvalik_cas_gallery WHERE id=?',args:[galleryId]});
+        if(!exists.rows.length){await tx.rollback();return res.status(404).json({success:false,error:'Medya bulunamadı.'});}
+        const previous=await tx.execute({sql:'SELECT id FROM ayvalik_cas_gallery_likes WHERE gallery_id=? AND user_id=?',args:[galleryId,userId]});
+        liked=!previous.rows.length;
+        await tx.execute({sql:liked?'INSERT INTO ayvalik_cas_gallery_likes(gallery_id,user_id) VALUES(?,?)':'DELETE FROM ayvalik_cas_gallery_likes WHERE gallery_id=? AND user_id=?',args:[galleryId,userId]});
+        await tx.execute({sql:'UPDATE ayvalik_cas_gallery SET likes_count=(SELECT COUNT(*) FROM ayvalik_cas_gallery_likes WHERE gallery_id=?) WHERE id=?',args:[galleryId,galleryId]});
+        const count=await tx.execute({sql:'SELECT likes_count FROM ayvalik_cas_gallery WHERE id=?',args:[galleryId]});newCount=Number(count.rows[0].likes_count);await tx.commit();
+      }catch(error){await tx.rollback();throw error;}finally{tx.close();}
+      io?.emit('ayvalik:gallery_liked',{id:galleryId,likes_count:newCount});
+      return res.json({success:true,liked,likes_count:newCount});
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "İşlem başarısız." });
+      return res.status(500).json({ success: false, error: "İşlem başarısız." });
     }
   });
 
@@ -321,24 +299,19 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
         return res.status(401).json({ success: false, error: "Giriş yapmanız gerekiyor." });
       }
 
-      const galleryId = Number(req.params.id);
-      const isOwnerOrAdmin = (user.username || "").toLowerCase() === "emirgan" || Number(user.is_admin) === 1;
-
-      if (isOwnerOrAdmin) {
-        await client.execute({ sql: "DELETE FROM ayvalik_cas_gallery WHERE id = ?", args: [galleryId] });
-      } else {
-        await client.execute({ sql: "DELETE FROM ayvalik_cas_gallery WHERE id = ? AND user_id = ?", args: [galleryId, user.id] });
-      }
-
-      await client.execute({ sql: "DELETE FROM ayvalik_cas_gallery_likes WHERE gallery_id = ?", args: [galleryId] });
-
-      if (io) {
-        io.emit("ayvalik:gallery_deleted", { id: galleryId });
-      }
-
-      return res.json({ success: true, message: "Medya başarıyla silindi." });
+      const galleryId=Number(req.params.id);
+      if(!Number.isSafeInteger(galleryId)||galleryId<1)return res.status(400).json({success:false,error:'Geçersiz medya.'});
+      const tx=await client.transaction('write');
+      try{
+        const item=await tx.execute({sql:'SELECT user_id FROM ayvalik_cas_gallery WHERE id=?',args:[galleryId]});
+        if(!item.rows.length){await tx.rollback();return res.status(404).json({success:false,error:'Medya bulunamadı.'});}
+        if(Number(item.rows[0].user_id)!==Number(user.id)&&!isCasAdmin(user)){await tx.rollback();return res.status(403).json({success:false,error:'Yalnızca kendi paylaşımını silebilirsin.'});}
+        await tx.execute({sql:'DELETE FROM ayvalik_cas_gallery WHERE id=?',args:[galleryId]});await tx.execute({sql:'DELETE FROM ayvalik_cas_gallery_likes WHERE gallery_id=?',args:[galleryId]});await tx.commit();
+      }catch(error){await tx.rollback();throw error;}finally{tx.close();}
+      io?.emit('ayvalik:gallery_deleted',{id:galleryId});
+      return res.json({success:true,message:'Medya silindi.'});
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Silinemedi." });
+      return res.status(500).json({ success: false, error: "Silinemedi." });
     }
   });
 
@@ -348,7 +321,8 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
   app.get("/api/ayvalik/reflections", async (req: Request, res: Response) => {
     try {
       const user = await resolveUser(req);
-      const currentUserId = user ? Number(user.id) : 0;
+      if(!user)return res.status(401).json({success:false,error:'Giriş yapmanız gerekiyor.'});
+      const currentUserId = Number(user.id);
       
       const result = await client.execute({
         sql: "SELECT * FROM ayvalik_cas_reflections WHERE user_id = ? ORDER BY day_number ASC, id ASC",
@@ -357,7 +331,7 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
 
       return res.json({ success: true, reflections: result.rows || [] });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Notlar yüklenemedi." });
+      return res.status(500).json({ success: false, error: "Notlar yüklenemedi." });
     }
   });
 
@@ -368,8 +342,9 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
         return res.status(401).json({ success: false, error: "Giriş yapmanız gerekiyor." });
       }
 
-      const { day_number, learning_outcome, reflection_text } = req.body;
-      if (!reflection_text) {
+      const { day_number, learning_outcome, reflection_text } = req.body||{};
+      if(![1,2,3].includes(day_number)||typeof reflection_text!=='string'||reflection_text.length>12000||(learning_outcome!=null&&(typeof learning_outcome!=='string'||learning_outcome.length>200)))return res.status(400).json({success:false,error:'Geçersiz günlük bilgileri.'});
+      if (!reflection_text.trim()) {
         return res.status(400).json({ success: false, error: "Değerlendirme notu boş bırakılamaz." });
       }
 
@@ -387,7 +362,7 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
 
       return res.json({ success: true, reflection: insertRes.rows?.[0] });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Kayıt yapılamadı." });
+      return res.status(500).json({ success: false, error: "Kayıt yapılamadı." });
     }
   });
 
@@ -398,7 +373,7 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
     try {
       const user = await resolveUser(req);
       if (!user) {
-        return res.json({ success: true, checkedIds: [] });
+        return res.status(401).json({ success: false, error:'Giriş yapmanız gerekiyor.' });
       }
 
       const resDb = await client.execute({
@@ -412,7 +387,7 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
 
       return res.json({ success: true, checkedIds });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Checklist alınamadı." });
+      return res.status(500).json({ success: false, error: "Checklist alınamadı." });
     }
   });
 
@@ -423,8 +398,8 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
         return res.status(401).json({ success: false, error: "Giriş yapmanız gerekiyor." });
       }
 
-      const { item_id, is_checked } = req.body;
-      if (!item_id) {
+      const { item_id, is_checked } = req.body||{};
+      if (typeof item_id!=='string'||!packingIds.has(item_id)||typeof is_checked!=='boolean') {
         return res.status(400).json({ success: false, error: "Öğe ID'si gereklidir." });
       }
 
@@ -437,7 +412,7 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
 
       return res.json({ success: true, item_id, is_checked: Boolean(is_checked) });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || "Güncellenemedi." });
+      return res.status(500).json({ success: false, error: "Güncellenemedi." });
     }
   });
 }

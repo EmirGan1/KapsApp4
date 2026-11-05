@@ -1,3 +1,6 @@
+import TripCompanion from "./ayvalik/TripCompanion";
+import {usePackingList} from "./ayvalik/usePackingList";
+import {activityId,casDateLabel,readStringList,readReflectionDraft,downloadText,programCalendar} from "../utils/ayvalik";
 import {useSearchParams} from "react-router-dom";
 import AyvalikRooms from "./AyvalikRooms";
 import React, { useState, useEffect, useMemo, useRef } from "react";
@@ -11,7 +14,7 @@ import {
   X, Check, Flame, Radio, Droplets, Info, Megaphone
 } from "lucide-react";
 import Avatar from "./Avatar";
-import { getApiUrl } from "../utils/api";
+import { getApiUrl, getAuthHeaders } from "../utils/api";
 
 const AYVALIK_SECTIONS = [
  {id:'schedule',title:'Gezi programı',description:'Üç günün etkinlikleri, buluşma saatleri ve rotaları.',icon:CalendarDays},
@@ -413,67 +416,18 @@ export const AYVALIK_PROGRAM = [
   }
 ];
 
-// Detailed 25-27 November Ayvalık Weather Forecast & Meteorological Advisories
-export const AYVALIK_WEATHER_FORECAST = [
-  {
-    dayNum: 1,
-    date: "25 Kasım 2026, Çarşamba",
-    status: "Parçalı Çok Bulutlu & Öğleden Sonra Yağmur",
-    tempMax: 15,
-    tempMin: 9,
-    precipitationProb: 65,
-    rainMm: "5-8 mm",
-    windSpeed: "26 km/s",
-    windDir: "Güneybatı (Lodos)",
-    humidity: "%78",
-    uvIndex: 2,
-    emoji: "🌧️",
-    advisoryTitle: "⚠️ 1. GÜN GİYİM VE EKİPMAN UYARISI",
-    advisoryText: "Öğleden sonra kardeş okul sahasındaki atölyelerde ve akşam Cunda Adası yürüyüşünde rüzgarlı sağanak yağış bekleniyor! Su geçirmez kapüşonlu yağmurluk, rüzgarlık mont ve kaymaz tabanlı spor ayakkabı giymeniz şiddetle önerilir. Spor ve dans atölyeleri için sırt çantanızda yedek çorap ve tişört bulundurun.",
-    essentials: ["Su geçirmez yağmurluk", "Yedek çorap & tişört", "Kaymaz spor ayakkabı", "Küçük el havlusu"]
-  },
-  {
-    dayNum: 2,
-    date: "26 Kasım 2026, Perşembe",
-    status: "Kuvvetli Rüzgarlı & Aralıklı Sağanak Yağış",
-    tempMax: 14,
-    tempMin: 8,
-    precipitationProb: 75,
-    rainMm: "10-14 mm",
-    windSpeed: "38 km/s",
-    windDir: "Kuzey-Kuzeybatı (Poyraz / Karayel)",
-    humidity: "%84",
-    uvIndex: 2,
-    emoji: "💨",
-    advisoryTitle: "⚠️ 2. GÜN ŞEYTAN SOFRASI & RÜZGAR UYARISI",
-    advisoryText: "Şeytan Sofrası yüksek seyir tepesi olduğu için açık havada çok sert, dondurucu ve nemli rüzgar esecektir! Şemsiyeler rüzgarda ters dönebileceğinden mutlaka sağlam fermuarlı rüzgar kesici mont, kalın polar/sweatshirt, bere ve boyunluk/atkı yanınızda olsun. Küçükköy ve müze içi gezisi sonrasında tepeye çıkarken kat kat giyinmeyi tercih edin.",
-    essentials: ["Rüzgar kesici kalın mont", "Polar / Sweatshirt", "Bere / Atkı", "Rüzgara dayanıklı yağmurluk"]
-  },
-  {
-    dayNum: 3,
-    date: "27 Kasım 2026, Cuma",
-    status: "Serin, Bulutlu & Çisenti (Islak Arazi)",
-    tempMax: 13,
-    tempMin: 7,
-    precipitationProb: 40,
-    rainMm: "1-3 mm",
-    windSpeed: "18 km/s",
-    windDir: "Kuzeydoğu (Poyraz)",
-    humidity: "%72",
-    uvIndex: 2,
-    emoji: "⛅",
-    advisoryTitle: "⚠️ 3. GÜN ZEYTİN HASADI & ARAZİ UYARISI",
-    advisoryText: "Kürşat Zeytinliği'nde hasat açık tarım bahçesinde ve toprak zeminde gerçekleşecektir. Önceki günün yağışları sebebiyle zemin çamurlu ve kaygan olacaktır! Kirlenmesinden çekinmeyeceğiniz rahat arazi pantolonu, çamur tutmayan dayanıklı bot veya outdoor ayakkabı giyin. İstanbul dönüş yolculuğu için otobüste giymek üzere temiz yedek ayakkabı ve eşofmanınızı el çantanızda ayırın.",
-    essentials: ["Çamur tutmayan bot / outdoor ayakkabı", "Eski rahat pantolon", "Dönüş için temiz yedek ayakkabı", "Bahçe eldiveni (isteğe bağlı)"]
-  }
+export const AYVALIK_CLOTHING_GUIDE = [
+ {dayNum:1,title:'Atölyeler ve Cunda',emoji:'🎒',text:'Uzun etkinlik günü için rahat ayakkabı, katmanlı giyim ve yedek üst hazırla.',essentials:['Rahat spor ayakkabı','Yedek çorap ve tişört','Hafif yağmurluk']},
+ {dayNum:2,title:'Küçükköy ve Şeytan Sofrası',emoji:'🧥',text:'Açık hava yürüyüşü için rüzgarlık ve kolay çıkarılabilen katmanlar tercih et.',essentials:['Rüzgarlık','Polar / sweatshirt','Su matarası']},
+ {dayNum:3,title:'Hasat ve dönüş yolculuğu',emoji:'🫒',text:'Arazi çalışmasına uygun ayakkabı ile dönüş için temiz yedek kıyafetini ayrı tut.',essentials:['Araziye uygun ayakkabı','Rahat pantolon','Dönüş için yedek kıyafet']},
 ];
 
 // Interactive Packing Checklist items from brochure recommendations
 export const DEFAULT_PACKING_ITEMS = [
-  { id: "id_card", label: "T.C. Kimlik Kartı / Nüfus Cüzdanı", category: "Zorunlu", note: "Otel giriş ve sigorta için yasal zorunluluktur", required: true },
-  { id: "personal_headphones", label: "Kişisel Kablolu/Kablosuz Kulaklık", category: "Zorunlu", note: "Karayolları yönetmeliği gereği otobüste kulaklık verilmez", required: true },
-  { id: "raincoat", label: "Kapüşonlu Yağmurluk / Rüzgarlık Mont", category: "Giyim", note: "25-26 Kasım sağanak ve rüzgarı için şarttır", required: true },
-  { id: "boots", label: "Dayanıklı Spor Ayakkabı ve Su Geçirmez Bot", category: "Giyim", note: "Hasat ve arazi çalışmalarında zemin ıslak olacaktır", required: true },
+  { id: "id_card", label: "T.C. Kimlik Kartı / Nüfus Cüzdanı", category: "Zorunlu", note: "Kimlik kontrolleri için kolay ulaşabileceğin yerde bulundur", required: true },
+  { id: "personal_headphones", label: "Kişisel Kablolu/Kablosuz Kulaklık", category: "Zorunlu", note: "Yolculukta kişisel dinleme için", required: true },
+  { id: "raincoat", label: "Kapüşonlu Yağmurluk / Rüzgarlık Mont", category: "Giyim", note: "Açık hava etkinliklerinde hava değişimine hazırlık için", required: true },
+  { id: "boots", label: "Dayanıklı Spor Ayakkabı ve Su Geçirmez Bot", category: "Giyim", note: "Hasat ve arazi çalışmalarında zemine uygun ayakkabı seç", required: true },
   { id: "spare_clothes", label: "Yedek Çorap, Tişört ve Rahat Pantolon", category: "Giyim", note: "Saha spor atölyeleri ve hasat sonrası değişim için", required: true },
   { id: "fleece", label: "Kalın Polar / Sweatshirt / Bere", category: "Giyim", note: "Şeytan Sofrası yüksek tepesi oldukça soğuk ve rüzgarlıdır", required: true },
   { id: "powerbank", label: "Powerbank (Taşınabilir Şarj Cihazı)", category: "Elektronik", note: "Otobüste priz vardır ancak arazi için tavsiye edilir", required: false },
@@ -484,7 +438,9 @@ export const DEFAULT_PACKING_ITEMS = [
   { id: "return_clothes", label: "Dönüş Yolculuğu İçin Temiz Yedek Kıyafet", category: "Giyim", note: "Hasattan sonra otobüste rahat etmek için", required: false }
 ];
 
-export default function AyvalikCasPanel({
+export default function AyvalikCasPanel(props:AyvalikCasPanelProps){return <AyvalikCasContent key={props.currentUserId} {...props}/>;}
+
+function AyvalikCasContent({
   socket,
   currentUserId,
   currentUsername,
@@ -499,6 +455,9 @@ export default function AyvalikCasPanel({
   const section=sectionParams.get('section');
   const activeTab=AYVALIK_SECTIONS.some(s=>s.id===section)?(section||'home'):'home';
   const setActiveTab=(tab:string)=>{const next=new URLSearchParams(sectionParams);if(tab==='home')next.delete('section');else next.set('section',tab);setSectionParams(next,{replace:activeTab!=='home'});};
+  const [notice,setNotice]=useState('');
+  const [now,setNow]=useState(Date.now());
+  const [packingQuery,setPackingQuery]=useState(''),[onlyMissing,setOnlyMissing]=useState(false);
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | "all">("all");
 
   // 1. LIVE COUNTDOWN TO TRIP (25 Kasım 2026, 06:00)
@@ -514,6 +473,7 @@ export default function AyvalikCasPanel({
     const tripStart = new Date("2026-11-25T06:00:00+03:00").getTime();
     const updateCountdown = () => {
       const now = Date.now();
+      setNow(now);
       const diff = tripStart - now;
       if (diff <= 0) {
         setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0, isPassed: true });
@@ -532,12 +492,7 @@ export default function AyvalikCasPanel({
 
   // 2. CHECKED ACTIVITIES (Interactive Schedule Completion)
   const [completedActivities, setCompletedActivities] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem(`ayvalik_completed_act_${currentUserId}`);
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
+    return [...new Set(readStringList(`ayvalik_completed_act_${currentUserId}`).flatMap(value=>AYVALIK_PROGRAM.filter(a=>activityId(a)===value||a.title===value).map(activityId)))];
   });
 
   const toggleActivityCompletion = (actTitle: string) => {
@@ -551,48 +506,7 @@ export default function AyvalikCasPanel({
   };
 
   // 3. PACKING CHECKLIST STATE
-  const [checkedItems, setCheckedItems] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem(`ayvalik_checklist_${currentUserId}`);
-      return stored ? JSON.parse(stored) : ["id_card", "personal_headphones"];
-    } catch {
-      return ["id_card", "personal_headphones"];
-    }
-  });
-
-  useEffect(() => {
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-    if (!token) return;
-    fetch(getApiUrl("/api/ayvalik/checklist"), {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data && Array.isArray(data.checkedIds) && data.checkedIds.length > 0) {
-          setCheckedItems(data.checkedIds);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const toggleChecklistItem = (itemId: string) => {
-    const nextChecked = checkedItems.includes(itemId)
-      ? checkedItems.filter(id => id !== itemId)
-      : [...checkedItems, itemId];
-    setCheckedItems(nextChecked);
-    try {
-      localStorage.setItem(`ayvalik_checklist_${currentUserId}`, JSON.stringify(nextChecked));
-    } catch {}
-
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-    if (token) {
-      fetch(getApiUrl("/api/ayvalik/checklist/toggle"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ item_id: itemId, is_checked: !checkedItems.includes(itemId) })
-      }).catch(() => {});
-    }
-  };
+  const {checked:checkedItems,toggle:toggleChecklistItem,loading:packingLoading,status:packingStatus}=usePackingList(currentUserId,DEFAULT_PACKING_ITEMS.map(i=>i.id));
 
   // 4. LIVE AYVALIK CAS CHAT STATE
   const [messages, setMessages] = useState<CasMessage[]>([]);
@@ -602,7 +516,7 @@ export default function AyvalikCasPanel({
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const fetchMessages = () => {
-    fetch(getApiUrl("/api/ayvalik/messages"))
+    fetch(getApiUrl("/api/ayvalik/messages"),{headers:getAuthHeaders()})
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data.messages)) {
@@ -632,7 +546,7 @@ export default function AyvalikCasPanel({
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!chatInput.trim()) return;
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     if (!token) {
       alert("Mesaj yazmak için giriş yapmalısınız.");
       return;
@@ -652,7 +566,7 @@ export default function AyvalikCasPanel({
         alert(data.error||"Mesaj gönderilemedi.");
       } else { setChatInput(""); fetchMessages(); }
     } catch (err) {
-      console.error("Chat send error:", err);
+      setNotice("Mesaj gönderilemedi. Bağlantını kontrol edip tekrar dene.");
     } finally {
       setChatLoading(false);
     }
@@ -661,7 +575,7 @@ export default function AyvalikCasPanel({
   const handleChatFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     if (!token) return;
 
     setIsSendingMedia(true);
@@ -675,9 +589,10 @@ export default function AyvalikCasPanel({
         body: formData
       });
       const uploadData = await uploadRes.json();
+      if (!uploadRes.ok||!uploadData.url) throw Error(uploadData.error||"Dosya yüklenemedi.");
       if (uploadData.url) {
         const isVid = file.type.startsWith("video/");
-        await fetch(getApiUrl("/api/ayvalik/messages"), {
+        const messageRes=await fetch(getApiUrl("/api/ayvalik/messages"), {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({
@@ -686,6 +601,7 @@ export default function AyvalikCasPanel({
             media_type: isVid ? "video" : "image"
           })
         });
+        const result=await messageRes.json();if(!messageRes.ok||!result.success)throw Error(result.error||"Medya mesajı gönderilemedi.");fetchMessages();
       }
     } catch (err) {
       console.error("Media upload error:", err);
@@ -701,47 +617,46 @@ export default function AyvalikCasPanel({
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [galleryDayFilter, setGalleryDayFilter] = useState<string>("all");
   const [selectedLightboxItem, setSelectedLightboxItem] = useState<CasGalleryItem | null>(null);
+  const openGalleryItem=(item:CasGalleryItem)=>{setNotice('');setSelectedLightboxItem(item);};
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadCaption, setUploadCaption] = useState("");
   const [uploadDayTag, setUploadDayTag] = useState("1. Gün - Saha Çalışması & Cunda");
   const [uploadLocationTag, setUploadLocationTag] = useState("Cunda Adası");
-  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[] | null>(null);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
 
+  const galleryRequest=useRef(0);
   const fetchGallery = () => {
+    const request=++galleryRequest.current;
     setGalleryLoading(true);
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     const headers: any = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
     fetch(getApiUrl(`/api/ayvalik/gallery?day=${encodeURIComponent(galleryDayFilter)}`), { headers })
       .then(res => res.json())
       .then(data => {
-        if (data && Array.isArray(data.items)) {
+        if (request===galleryRequest.current && data && Array.isArray(data.items)) {
           setGalleryItems(data.items);
         }
       })
       .catch(() => {})
-      .finally(() => setGalleryLoading(false));
+      .finally(() => {if(request===galleryRequest.current)setGalleryLoading(false);});
   };
 
   useEffect(() => {
     fetchGallery();
     if (!socket) return;
     const handleNewGallery = (item: CasGalleryItem) => {
-      setGalleryItems(prev => [item, ...prev.filter(i => i.id !== item.id)]);
+      if(galleryDayFilter==='all'||item.day_tag===galleryDayFilter)setGalleryItems(prev => [item, ...prev.filter(i => i.id !== item.id)]);
     };
     const handleLiked = ({ id, likes_count }: { id: number; likes_count: number }) => {
       setGalleryItems(prev => prev.map(item => item.id === id ? { ...item, likes_count } : item));
-      if (selectedLightboxItem && selectedLightboxItem.id === id) {
-        setSelectedLightboxItem(prev => prev ? { ...prev, likes_count } : null);
-      }
+      setSelectedLightboxItem(prev=>prev?.id===id?{...prev,likes_count}:prev);
     };
     const handleDeleted = ({ id }: { id: number }) => {
       setGalleryItems(prev => prev.filter(i => i.id !== id));
-      if (selectedLightboxItem?.id === id) {
-        setSelectedLightboxItem(null);
-      }
+      setSelectedLightboxItem(prev=>prev?.id===id?null:prev);
     };
 
     socket.on("ayvalik:new_gallery_item", handleNewGallery);
@@ -755,7 +670,7 @@ export default function AyvalikCasPanel({
   }, [socket, galleryDayFilter]);
 
   const handleLikeGalleryItem = async (itemId: number) => {
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     if (!token) {
       alert("Beğenmek için giriş yapmalısınız.");
       return;
@@ -767,6 +682,7 @@ export default function AyvalikCasPanel({
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
+      if (!res.ok||!data.success){setNotice(data.error||'İşlem tamamlanamadı.');return;}
       if (data.success) {
         setGalleryItems(prev => prev.map(item => {
           if (item.id === itemId) {
@@ -774,16 +690,14 @@ export default function AyvalikCasPanel({
           }
           return item;
         }));
-        if (selectedLightboxItem && selectedLightboxItem.id === itemId) {
-          setSelectedLightboxItem(prev => prev ? { ...prev, is_liked: data.liked, likes_count: data.likes_count } : null);
-        }
+        setSelectedLightboxItem(prev=>prev?.id===itemId?{...prev,is_liked:data.liked,likes_count:data.likes_count}:prev);
       }
-    } catch {}
+    } catch {setNotice("Beğeni kaydedilemedi. Tekrar deneyebilirsin.");}
   };
 
   const handleDeleteGalleryItem = async (itemId: number) => {
     if (!confirm("Bu gezi medyasını silmek istediğinizden emin misiniz?")) return;
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     if (!token) return;
 
     try {
@@ -792,11 +706,12 @@ export default function AyvalikCasPanel({
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
+      if (!res.ok||!data.success){setNotice(data.error||'İşlem tamamlanamadı.');return;}
       if (data.success) {
         setGalleryItems(prev => prev.filter(item => item.id !== itemId));
-        if (selectedLightboxItem?.id === itemId) setSelectedLightboxItem(null);
+        setSelectedLightboxItem(prev=>prev?.id===itemId?null:prev);
       }
-    } catch {}
+    } catch {setNotice('Paylaşım silinemedi. Bağlantını kontrol edip tekrar dene.');}
   };
 
   const handleUploadGalleryFiles = async (e: React.FormEvent) => {
@@ -805,10 +720,10 @@ export default function AyvalikCasPanel({
       alert("Lütfen en az bir fotoğraf veya video seçin.");
       return;
     }
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     if (!token) return;
 
-    setIsUploadingFiles(true);
+    setNotice('');setIsUploadingFiles(true);
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
@@ -821,9 +736,10 @@ export default function AyvalikCasPanel({
           body: formData
         });
         const uploadData = await uploadRes.json();
+        if (!uploadRes.ok||!uploadData.url) throw Error(uploadData.error||"Dosya yüklenemedi.");
         if (uploadData.url) {
           const isVid = file.type.startsWith("video/") || file.name.endsWith(".mp4") || file.name.endsWith(".mov");
-          await fetch(getApiUrl("/api/ayvalik/gallery"), {
+          const galleryRes=await fetch(getApiUrl("/api/ayvalik/gallery"), {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
             body: JSON.stringify({
@@ -834,6 +750,8 @@ export default function AyvalikCasPanel({
               location_tag: uploadLocationTag
             })
           });
+          const saved=await galleryRes.json();if(!galleryRes.ok||!saved.success)throw Error(saved.error||"Galeri kaydı oluşturulamadı.");
+          setSelectedFiles(selectedFiles.slice(i+1));
         }
       }
       setShowUploadModal(false);
@@ -842,7 +760,7 @@ export default function AyvalikCasPanel({
       fetchGallery();
     } catch (err) {
       console.error("Gallery upload error:", err);
-      alert("Yükleme sırasında bir hata oluştu.");
+      setNotice("Bazı dosyalar yüklenemedi. Başarıyla kaydedilenler galeride; kalan dosyalarla tekrar deneyebilirsin.");fetchGallery();
     } finally {
       setIsUploadingFiles(false);
     }
@@ -850,13 +768,14 @@ export default function AyvalikCasPanel({
 
   // 6. CAS REFLECTIONS (KAZANIM GÜNLÜĞÜ) STATE
   const [reflections, setReflections] = useState<CasReflection[]>([]);
-  const [reflectionDay, setReflectionDay] = useState<number>(1);
-  const [learningOutcome, setLearningOutcome] = useState("SERVICE - Toplum Hizmeti & Empati");
-  const [reflectionText, setReflectionText] = useState("");
+  const [reflectionDay, setReflectionDay] = useState<number>(()=>readReflectionDraft(currentUserId).day);
+  const [learningOutcome, setLearningOutcome] = useState(()=>readReflectionDraft(currentUserId).outcome);
+  const [reflectionText, setReflectionText] = useState(()=>readReflectionDraft(currentUserId).text);
+  useEffect(()=>{try{localStorage.setItem(`ayvalik_reflection_draft_${currentUserId}`,JSON.stringify({text:reflectionText,day:reflectionDay,outcome:learningOutcome}));}catch{setNotice("Tarayıcı taslağı saklayamadı. Sayfadan ayrılmadan günlüğünü kaydet.");}},[reflectionText,reflectionDay,learningOutcome,currentUserId]);
   const [reflectionSubmitting, setReflectionSubmitting] = useState(false);
 
   const fetchReflections = () => {
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     if (!token) return;
     fetch(getApiUrl("/api/ayvalik/reflections"), {
       headers: { Authorization: `Bearer ${token}` }
@@ -877,10 +796,10 @@ export default function AyvalikCasPanel({
   const handleSaveReflection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reflectionText.trim()) return;
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+    const token = localStorage.getItem("lan_token") || localStorage.getItem("token") || localStorage.getItem("auth_token");
     if (!token) return;
 
-    setReflectionSubmitting(true);
+    setNotice('');setReflectionSubmitting(true);
     try {
       const res = await fetch(getApiUrl("/api/ayvalik/reflections"), {
         method: "POST",
@@ -892,16 +811,20 @@ export default function AyvalikCasPanel({
         })
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setReflectionText("");
         fetchReflections();
-      }
+      } else setNotice(data.error||"Günlük kaydedilemedi; taslağın bu cihazda duruyor.");
     } catch (err) {
-      console.error("Reflection save error:", err);
+      setNotice("Günlük kaydedilemedi; bağlantını kontrol et. Taslağın bu cihazda duruyor.");
     } finally {
       setReflectionSubmitting(false);
     }
   };
+
+  const dialogRef=useRef<HTMLDivElement>(null),dialogBusy=useRef(false);dialogBusy.current=isUploadingFiles;
+  const dialogOpen=showUploadModal||!!selectedLightboxItem;
+  useEffect(()=>{if(!dialogOpen)return;const previous=document.activeElement;const timer=setTimeout(()=>dialogRef.current?.querySelector<HTMLElement>('button,input,select,textarea,a[href]')?.focus(),0);const keys=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!dialogBusy.current){e.preventDefault();setShowUploadModal(false);setSelectedLightboxItem(null);}if(e.key==='Tab'){const focusable=[...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')||[])];const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}};document.addEventListener('keydown',keys);return()=>{clearTimeout(timer);document.removeEventListener('keydown',keys);if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};},[dialogOpen]);
 
   // Filtered Program Schedule
   const filteredSchedule = useMemo(() => {
@@ -917,12 +840,12 @@ export default function AyvalikCasPanel({
       {/* ========================================================================= */}
       {/* 1. HERO BANNER: AYVALIK CAS 2026 GEZİ MERKEZİ & GERİ SAYIM               */}
       {/* ========================================================================= */}
-      <div className="relative shrink-0 min-w-0 bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-950 text-white p-6 sm:p-8 md:p-10 shadow-2xl border-b border-emerald-500/20">
+      <div className="relative shrink-0 min-w-0 bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-950 text-white p-4 sm:p-8 md:p-10 shadow-2xl border-b border-emerald-500/20">
         {/* Decorative Ege Deniz ve Doğa Işıltıları */}
         <div className="absolute -top-16 -right-16 w-80 h-80 rounded-full bg-emerald-400/15 blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-1/3 w-64 h-64 rounded-full bg-teal-400/10 blur-2xl pointer-events-none" />
 
-        <div className="relative z-10 max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] items-center gap-6">
+        <div className="relative z-10 max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] items-center gap-4 sm:gap-6">
           
           <div className="min-w-0 space-y-3">
             {/* Top Badges */}
@@ -931,20 +854,20 @@ export default function AyvalikCasPanel({
                 <Sparkles size={14} className="text-amber-300" />
                 <span>25 - 27 KASIM 2026 • 2 GECE 3 GÜN</span>
               </span>
-              <span className="px-3 py-1 rounded-full bg-amber-400 text-slate-950 text-xs font-black tracking-wider uppercase shadow-md flex items-center gap-1">
+              <span className="px-3 py-1 rounded-full bg-amber-400 text-slate-950 text-xs font-black tracking-wider uppercase shadow-md hidden sm:flex items-center gap-1">
                 <span>🏨 4* BACACAN OTEL AYVALIK</span>
               </span>
-              <span className="px-2.5 py-1 rounded-full bg-teal-500/30 text-teal-200 text-xs font-semibold backdrop-blur-md border border-teal-400/30">
+              <span className="px-2.5 py-1 rounded-full bg-teal-500/30 text-teal-200 text-xs font-semibold hidden sm:inline-block backdrop-blur-md border border-teal-400/30">
                 Fora Turizm (TÜRSAB & IATA)
               </span>
             </div>
 
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white flex items-center gap-3">
+            <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white flex items-center gap-3">
               <span>Ayvalık CAS Projesi Gezi Paneli</span>
               <span className="text-3xl sm:text-4xl">🫒</span>
             </h1>
 
-            <p className="text-sm sm:text-base text-emerald-100 max-w-2xl leading-relaxed font-medium">
+            <p className="hidden sm:block text-sm sm:text-base text-emerald-100 max-w-2xl leading-relaxed font-medium">
               Creativity, Action ve Service alanlarında kardeş okul atölyeleri, Sabancı Üniversitesi Küçükköy Teknoloji Merkezi, Şeytan Sofrası ve Kürşat Ayvalık zeytin hasadı ile dopdolu 3 günlük gezi rehberiniz.
             </p>
 
@@ -1019,6 +942,8 @@ export default function AyvalikCasPanel({
       {/* 3. AKTİF SEKME İÇERİĞİ                                                    */}
       {/* ========================================================================= */}
       <div className="max-w-7xl mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-6">
+        {notice&&!showUploadModal&&!selectedLightboxItem&&<div role="alert" className="rounded-2xl p-4 border border-amber-400 bg-amber-50 dark:bg-amber-950 flex gap-3"><p className="flex-1">{notice}</p><button aria-label="Bildirimi kapat" onClick={()=>setNotice('')}>×</button></div>}
+        {activeTab==='home'&&<TripCompanion program={AYVALIK_PROGRAM} items={DEFAULT_PACKING_ITEMS} checked={checkedItems} now={now} onOpen={setActiveTab}/>}
         {activeTab==='home'&&<section aria-label="Ayvalık bölümleri" className="space-y-5"><div><h2 className="text-2xl font-black">Gezini planla, arkadaşlarınla hazırlan</h2><p className="text-slate-500 mt-2">Gitmek istediğin bölümü seç.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">{AYVALIK_SECTIONS.map((section)=>{const Icon=section.icon;return <button key={section.id} onClick={()=>setActiveTab(section.id)} className="group min-w-0 text-left p-6 sm:p-7 rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm hover:shadow-lg hover:border-emerald-500 focus-visible:outline-2 focus-visible:outline-emerald-500 transition-all"><span className="inline-flex p-4 rounded-2xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-200 mb-5"><Icon size={28}/></span><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-black">{section.title}</h3><ChevronRight className="shrink-0 text-emerald-500"/></div><p className="mt-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{section.description}</p></button>;})}</div></section>}
         <AyvalikRooms currentUserId={currentUserId} socket={socket} active={activeTab==='rooms'} onOpen={()=>setActiveTab('rooms')}/>
 
@@ -1028,12 +953,13 @@ export default function AyvalikCasPanel({
         {/* ----------------------------------------------------------------------- */}
         {activeTab === "schedule" && (
           <div className="space-y-6 animate-fade-in">
+            <button className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold" onClick={()=>downloadText('ayvalik-cas-2026.ics',programCalendar(AYVALIK_PROGRAM),'text/calendar;charset=utf-8')}>Programı takvimime ekle</button>
             {/* Header & Day Filter */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
               <div>
                 <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                   <CalendarDays className="text-emerald-600" size={24} />
-                  <span>3 Günlük Resmi Gezi Programı</span>
+                  <span>3 Günlük Gezi Programı</span>
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Tamamladığınız etkinlikleri yanlarındaki daireye tıklayarak işaretleyebilirsiniz ({completedActivities.length}/{AYVALIK_PROGRAM.length} tamamlandı).
@@ -1066,7 +992,7 @@ export default function AyvalikCasPanel({
             {/* Timeline Stream */}
             <div className="space-y-4">
               {filteredSchedule.map((item, idx) => {
-                const isCompleted = completedActivities.includes(item.title);
+                const isCompleted = completedActivities.includes(activityId(item));
                 return (
                   <div
                     key={idx}
@@ -1079,7 +1005,8 @@ export default function AyvalikCasPanel({
                     <div className="flex items-start gap-4">
                       {/* Checkbox */}
                       <button
-                        onClick={() => toggleActivityCompletion(item.title)}
+                        aria-label={`${item.day}. gün ${item.time} ${item.title}`} aria-pressed={isCompleted}
+                        onClick={() => toggleActivityCompletion(activityId(item))}
                         className="mt-1 text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer shrink-0"
                         title={isCompleted ? "Tamamlanmadı olarak işaretle" : "Tamamlandı olarak işaretle"}
                       >
@@ -1147,124 +1074,8 @@ export default function AyvalikCasPanel({
         {/* ----------------------------------------------------------------------- */}
         {/* SEKME 2: 25-27 KASIM AYVALIK HAVA TAHMİNİ VE DETAYLI GİYİM UYARILARI      */}
         {/* ----------------------------------------------------------------------- */}
-        {activeTab === "weather" && (
-          <div className="space-y-6 animate-fade-in">
-            {/* Top Meteorological Advisory Banner */}
-            <div className="p-6 rounded-3xl bg-gradient-to-r from-blue-600 via-indigo-600 to-teal-600 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <span className="px-3 py-1 rounded-full bg-white/20 text-xs font-black tracking-wider uppercase">
-                  🌊 Ege & Ayvalık Kıyı İklimi
-                </span>
-                <h2 className="text-2xl font-black text-white">
-                  25 - 27 Kasım 2026 Meteorolojik Tahmin & Uyarı Raporu
-                </h2>
-                <p className="text-xs sm:text-sm text-blue-100 max-w-2xl">
-                  Gezi tarihlerinde Ayvalık'ta Lodos ve Poyraz rüzgarları eşliğinde sağanak yağış ve serin hava beklenmektedir. Aşağıdaki gün gün giyim ve ekipman uyarılarını mutlaka inceleyin.
-                </p>
-              </div>
+        {activeTab === 'weather' && <section className="space-y-5"><div className="p-6 rounded-3xl bg-blue-950 text-white space-y-3"><h2 className="text-2xl font-black">Hava ve giyim hazırlığı</h2><p>Bu bölüm hazırlık rehberidir; canlı hava tahmini değildir. Güncel hava durumunu yolculuğa yakın tarihte kontrol et.</p><a href="https://www.mgm.gov.tr/?il=Balikesir&ilce=Ayvalik" target="_blank" rel="noopener noreferrer" className="inline-flex rounded-xl bg-white text-blue-950 px-4 py-3 font-bold">MGM Ayvalık tahminini aç ↗</a></div><div className="grid gap-4 md:grid-cols-3">{AYVALIK_CLOTHING_GUIDE.map(day=><article key={day.dayNum} className="rounded-3xl p-6 border bg-white dark:bg-slate-900 space-y-4"><span className="text-3xl">{day.emoji}</span><h3 className="font-black text-lg">{day.dayNum}. gün · {day.title}</h3><p className="text-sm text-slate-500">{day.text}</p><ul className="space-y-2 text-sm">{day.essentials.map(item=><li key={item}>✓ {item}</li>)}</ul></article>)}</div></section>}
 
-              <div className="p-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-center shrink-0">
-                <span className="text-3xl block">🌧️ 14°C</span>
-                <span className="text-[11px] font-bold text-blue-100">Ortalama Sıcaklık</span>
-              </div>
-            </div>
-
-            {/* 3-Day Weather Cards */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {AYVALIK_WEATHER_FORECAST.map((w) => (
-                <div
-                  key={w.dayNum}
-                  className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm p-6 flex flex-col justify-between space-y-5"
-                >
-                  <div className="space-y-4">
-                    {/* Header */}
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                      <div>
-                        <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 font-mono block">
-                          {w.dayNum}. GÜN
-                        </span>
-                        <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
-                          {w.date}
-                        </h3>
-                      </div>
-                      <span className="text-4xl filter drop-shadow">{w.emoji}</span>
-                    </div>
-
-                    {/* Temperature & Metrics */}
-                    <div className="flex items-baseline justify-between bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800">
-                      <div>
-                        <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                          {w.tempMax}°C
-                        </span>
-                        <span className="text-xs font-semibold text-slate-400 ml-1.5 font-mono">
-                          / Gece {w.tempMin}°C
-                        </span>
-                      </div>
-                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300 max-w-[130px] text-right">
-                        {w.status}
-                      </span>
-                    </div>
-
-                    {/* Meteorological Indicators */}
-                    <div className="grid grid-cols-2 gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center gap-2">
-                        <Droplets size={16} className="text-blue-500" />
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">Yağış İhtimali</span>
-                          <span className="font-bold font-mono">%{w.precipitationProb} ({w.rainMm})</span>
-                        </div>
-                      </div>
-
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center gap-2">
-                        <Wind size={16} className="text-teal-500" />
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">Rüzgar</span>
-                          <span className="font-bold font-mono">{w.windSpeed}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Specific Day Advisory Box */}
-                    <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
-                      <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-black text-xs">
-                        <AlertTriangle size={15} />
-                        <span>{w.advisoryTitle}</span>
-                      </div>
-                      <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
-                        {w.advisoryText}
-                      </p>
-                    </div>
-
-                    {/* Must-Haves Checklist */}
-                    <div>
-                      <span className="text-[11px] font-bold text-slate-400 block mb-1.5 uppercase tracking-wide">
-                        Günün Olmazsa Olmazları:
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {w.essentials.map((item, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-500/20"
-                          >
-                            ✓ {item}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-[11px] text-slate-400 text-center border-t border-slate-100 dark:border-slate-800 pt-3">
-                    Rüzgar Yönü: <strong>{w.windDir}</strong> • Nem: <strong>{w.humidity}</strong>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ----------------------------------------------------------------------- */}
-        {/* SEKME 3: AYVALIK CAS ÖZEL CANLI SOHBETİ                                  */}
-        {/* ----------------------------------------------------------------------- */}
         {activeTab === "chat" && (
           <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-[650px] overflow-hidden animate-fade-in">
             {/* Chat Header */}
@@ -1351,7 +1162,7 @@ export default function AyvalikCasPanel({
                             {msg.username}
                           </span>
                           <span>
-                            {new Date(msg.created_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+                            {casDateLabel(msg.created_at)}
                           </span>
                         </div>
 
@@ -1397,7 +1208,7 @@ export default function AyvalikCasPanel({
 
               <input
                 type="text"
-                value={chatInput}
+                maxLength={4000} value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 placeholder={isSendingMedia ? "Medya yükleniyor..." : "Ayvalık CAS sohbetine mesaj yaz..."}
                 disabled={chatLoading || isSendingMedia}
@@ -1448,7 +1259,7 @@ export default function AyvalikCasPanel({
                 </select>
 
                 <button
-                  onClick={() => setShowUploadModal(true)}
+                  onClick={() => {setNotice('');setShowUploadModal(true);}}
                   className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
                 >
                   <Plus size={16} />
@@ -1472,7 +1283,7 @@ export default function AyvalikCasPanel({
                   Gezide çektiğin fotoğrafları ve videoları yükleyerek sınıf arkadaşlarınla ortak hafızada toplayabilirsin!
                 </p>
                 <button
-                  onClick={() => setShowUploadModal(true)}
+                  onClick={() => {setNotice('');setShowUploadModal(true);}}
                   className="mt-2 px-5 py-2.5 rounded-2xl bg-emerald-600 text-white font-bold text-xs shadow-md cursor-pointer hover:bg-emerald-500 transition-all"
                 >
                   + İlk Fotoğrafı Sen Yükle
@@ -1482,8 +1293,9 @@ export default function AyvalikCasPanel({
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {galleryItems.map(item => (
                   <div
-                    key={item.id}
-                    onClick={() => setSelectedLightboxItem(item)}
+                    key={item.id} role="button" aria-label={item.caption||'Gezi anısını aç'} tabIndex={0}
+                    onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openGalleryItem(item);}}}
+                    onClick={() => openGalleryItem(item)}
                     className="group relative rounded-2xl overflow-hidden bg-slate-900 aspect-square cursor-pointer shadow-sm hover:shadow-xl transition-all border border-slate-200 dark:border-slate-800 hover:scale-[1.02]"
                   >
                     {item.media_type === "video" ? (
@@ -1548,16 +1360,19 @@ export default function AyvalikCasPanel({
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Resmi turizm broşüründe belirtilen T.C. Kimlik kartı, kişisel kulaklık zorunluluğu ve hava durumu uyarılarına göre derlenmiş hazırlık rehberi.
+                Gezi için hazırlık rehberi. Hazırladığın eşyaları kendin işaretle; öğretmeninin güncel listesini de kontrol et.
               </p>
             </div>
 
+            <div className="flex flex-wrap gap-3 items-center"><input aria-label="Çanta listesinde ara" placeholder="Eşya veya kategori ara" value={packingQuery} onChange={e=>setPackingQuery(e.target.value)} className="min-w-0 flex-1 p-3 rounded-xl border bg-white dark:bg-slate-900"/><button aria-pressed={onlyMissing} onClick={()=>setOnlyMissing(v=>!v)} className="p-3 rounded-xl border font-bold">{onlyMissing?'Tüm eşyaları göster':'Yalnızca eksikler'}</button></div>
+            <p role="status" className="text-sm text-slate-500">{packingLoading?'Liste yükleniyor…':packingStatus||'Seçimlerin hesabına kaydedilir.'}</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {DEFAULT_PACKING_ITEMS.map(item => {
+              {DEFAULT_PACKING_ITEMS.filter(i=>(!onlyMissing||!checkedItems.includes(i.id))&&(i.label+' '+i.category).toLocaleLowerCase('tr').includes(packingQuery.toLocaleLowerCase('tr'))).map(item => {
                 const isChecked = checkedItems.includes(item.id);
                 return (
                   <div
-                    key={item.id}
+                    key={item.id} role="checkbox" aria-label={item.label} aria-checked={isChecked} aria-disabled={packingLoading} tabIndex={0}
+                    onKeyDown={e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();toggleChecklistItem(item.id);}}}
                     onClick={() => toggleChecklistItem(item.id)}
                     className={`p-4 sm:p-5 rounded-3xl border transition-all cursor-pointer flex items-start gap-4 select-none ${
                       isChecked
@@ -1565,16 +1380,13 @@ export default function AyvalikCasPanel({
                         : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 shadow-sm"
                     }`}
                   >
-                    <button
-                      type="button"
-                      className="mt-0.5 text-slate-400 hover:text-emerald-500 shrink-0"
-                    >
+                    <span aria-hidden="true" className="mt-0.5 text-slate-400 shrink-0">
                       {isChecked ? (
                         <CheckCircle2 size={22} className="text-emerald-500 fill-emerald-500/20" />
                       ) : (
                         <Circle size={22} />
                       )}
-                    </button>
+                    </span>
 
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -1608,7 +1420,7 @@ export default function AyvalikCasPanel({
         {activeTab === "reflections" && (
           <div className="space-y-6 animate-fade-in">
             <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex flex-wrap min-w-0 items-center gap-2">
                 <BookOpen className="text-emerald-600" size={24} />
                 <span>CAS Değerlendirme & Kazanım Günlüğü (Reflection)</span>
               </h2>
@@ -1662,7 +1474,8 @@ export default function AyvalikCasPanel({
                   Kişisel Değerlendirmeniz & Öğrendikleriniz (Reflection Text)
                 </label>
                 <textarea
-                  value={reflectionText}
+                  aria-label="CAS günlük taslağı"
+                  maxLength={12000} value={reflectionText}
                   onChange={e => setReflectionText(e.target.value)}
                   placeholder="Bugün kardeş okuldaki öğrencilerle nasıl bağ kurdunuz? Karşılaştığınız zorluklar nelerdi? Bu deneyim size ne kattı?..."
                   rows={4}
@@ -1679,6 +1492,8 @@ export default function AyvalikCasPanel({
               </button>
             </form>
 
+            <p className="text-xs text-slate-500">Taslağın bu hesap için bu cihazda otomatik saklanır. Paylaşmak için kaydet düğmesine bas.</p>
+            <button disabled={!reflections.length} onClick={()=>downloadText('ayvalik-cas-gunlugum.txt',reflections.map(r=>`${r.day_number}. Gün · ${r.learning_outcome}\n${r.reflection_text}`).join('\n\n'))} className="p-3 rounded-xl border font-bold disabled:opacity-40">CAS günlüğümü indir</button>
             {/* Saved Reflections List */}
             <div className="space-y-4">
               <h3 className="font-bold text-sm text-slate-700 dark:text-slate-300">
@@ -1694,8 +1509,8 @@ export default function AyvalikCasPanel({
                     key={ref.id}
                     className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap gap-2 items-center justify-between">
+                      <div className="flex flex-wrap min-w-0 items-center gap-2">
                         <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono font-bold text-xs border border-emerald-500/20">
                           {ref.day_number}. GÜN
                         </span>
@@ -1704,11 +1519,11 @@ export default function AyvalikCasPanel({
                         </span>
                       </div>
                       <span className="text-[11px] text-slate-400">
-                        {new Date(ref.created_at).toLocaleDateString("tr-TR")}
+                        {casDateLabel(ref.created_at)}
                       </span>
                     </div>
 
-                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap break-words leading-relaxed">
                       {ref.reflection_text}
                     </p>
                   </div>
@@ -1829,14 +1644,15 @@ export default function AyvalikCasPanel({
 
       {/* Upload Media Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in pointer-events-auto">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 space-y-4">
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Gezi medyası yükle" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in pointer-events-auto">
+          <div className="w-full max-w-lg max-h-[calc(100dvh-32px)] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                 <Image size={20} className="text-emerald-600" />
                 <span>Ayvalık Gezi Medyası Yükle</span>
               </h3>
               <button
+                aria-label="Yükleme penceresini kapat" disabled={isUploadingFiles}
                 onClick={() => setShowUploadModal(false)}
                 className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-sm cursor-pointer"
               >
@@ -1844,16 +1660,17 @@ export default function AyvalikCasPanel({
               </button>
             </div>
 
-            <form onSubmit={handleUploadGalleryFiles} className="space-y-4">
+            {notice&&<p role="alert" className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950 text-sm">{notice}</p>}
+            <form onSubmit={handleUploadGalleryFiles} className="space-y-4"><fieldset disabled={isUploadingFiles} className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                   Fotoğraf veya Video Seçin (Çoklu Seçim Desteklenir)
                 </label>
                 <input
-                  type="file"
+                  type="file" aria-label="Gezi fotoğrafı veya videosu"
                   accept="image/*,video/*"
                   multiple
-                  onChange={e => setSelectedFiles(e.target.files)}
+                  onChange={e => setSelectedFiles(Array.from(e.target.files||[]))}
                   className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
                 />
               </div>
@@ -1902,7 +1719,7 @@ export default function AyvalikCasPanel({
                 </label>
                 <input
                   type="text"
-                  value={uploadCaption}
+                  maxLength={1000} value={uploadCaption}
                   onChange={e => setUploadCaption(e.target.value)}
                   placeholder="Örn: Cunda gün batımı veya Küçükköy robotik çalışması..."
                   className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white"
@@ -1911,8 +1728,8 @@ export default function AyvalikCasPanel({
 
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
-                  type="button"
-                  onClick={() => setShowUploadModal(false)}
+                  type="button" disabled={isUploadingFiles}
+                onClick={() => setShowUploadModal(false)}
                   className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
                 >
                   İptal
@@ -1925,15 +1742,16 @@ export default function AyvalikCasPanel({
                   {isUploadingFiles ? "Yükleniyor..." : "Yükle"}
                 </button>
               </div>
-            </form>
+            </fieldset></form>
           </div>
         </div>
       )}
 
       {/* Lightbox Fullscreen Media Modal */}
       {selectedLightboxItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-fade-in pointer-events-auto">
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Gezi anısı" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-fade-in pointer-events-auto">
           <button
+            aria-label="Fotoğrafı kapat"
             onClick={() => setSelectedLightboxItem(null)}
             className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 text-white flex items-center justify-center text-lg font-bold transition-all z-50 cursor-pointer"
           >
@@ -1943,16 +1761,17 @@ export default function AyvalikCasPanel({
           <div className="max-w-4xl w-full max-h-[90vh] flex flex-col items-center justify-center space-y-4">
             <div className="relative max-h-[75vh] w-full flex items-center justify-center overflow-hidden rounded-3xl bg-black">
               {selectedLightboxItem.media_type === "video" ? (
-                <video src={selectedLightboxItem.media_url} controls autoPlay className="max-h-[75vh] max-w-full rounded-2xl" />
+                <video src={selectedLightboxItem.media_url} controls autoPlay className="max-h-[60dvh] max-w-full rounded-2xl" />
               ) : (
-                <img src={selectedLightboxItem.media_url} alt={selectedLightboxItem.caption || "Ayvalık CAS"} className="max-h-[75vh] max-w-full object-contain rounded-2xl" />
+                <img src={selectedLightboxItem.media_url} alt={selectedLightboxItem.caption || "Ayvalık CAS"} className="max-h-[60dvh] max-w-full object-contain rounded-2xl" />
               )}
             </div>
 
+            {notice&&<p role="alert" className="w-full p-3 rounded-xl bg-amber-950 text-white">{notice}</p>}
             {/* Info Footer */}
-            <div className="w-full flex items-center justify-between text-white p-3 rounded-2xl bg-white/10 backdrop-blur-md">
+            <div className="w-full max-h-[25dvh] overflow-y-auto flex flex-wrap gap-3 items-center justify-between text-white p-3 rounded-2xl bg-white/10 backdrop-blur-md">
               <div>
-                <span className="font-bold text-sm block">{selectedLightboxItem.caption || "Ayvalık CAS Gezi Anısı"}</span>
+                <span className="font-bold text-sm block break-words">{selectedLightboxItem.caption || "Ayvalık CAS Gezi Anısı"}</span>
                 <span className="text-xs text-slate-300">
                   {selectedLightboxItem.day_tag} • {selectedLightboxItem.location_tag} • Yükleyen: {selectedLightboxItem.username}
                 </span>

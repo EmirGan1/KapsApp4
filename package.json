@@ -39,7 +39,10 @@
     "test:strike:audit": "node --import tsx --test tests/kapsstrike.audit1000.test.ts",
     "test:strike:4v4": "node --import tsx --test tests/kapsstrike.4v4.test.ts",
     "test:strike:4v4:network": "node --import tsx tests/kapsstrike.4v4.network.ts",
-    "test:strike:4v4:browser": "node --import tsx tests/kapsstrike.4v4.browser.ts"
+    "test:strike:4v4:browser": "node --import tsx tests/kapsstrike.4v4.browser.ts",
+    "test:ayvalik": "node --import tsx --test tests/ayvalik.test.ts tests/ayvalik.helpers.test.ts tests/ayvalik.safety.test.ts",
+    "test:ayvalik:browser": "node --import tsx tests/ayvalik.browser.ts",
+    "test:ayvalik:companion": "node --import tsx tests/ayvalik.companion.browser.ts"
   },
   "dependencies": {
     "@babylonjs/core": "8.50.2",
