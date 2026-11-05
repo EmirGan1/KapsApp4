@@ -51,6 +51,13 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
  box('b-apron-infill',-25.5,0,38.7,4,2.4,12.6);
  box('b-window-rear-infill',-23.5,0,42.5,8,2.4,5);
  ramp('b-doors-ramp',-24,30,10,4.8,2.4,'x',true);
+ // Short approach: a tall outside wall blocks the exposed cross-angle without roofing the route.
+ // End before the elbow so the 3.3m-wide Catwalk and CT underpass remain connected.
+ box('short-stairs-outside-wall',14.85,0,20,.3,6.5,10,'#c8b99e');
+ for(let i=0;i<32;i++)box('short-stairs-parapet',11.15,0,15+(i+.5)*.25,.3,(i+1)*.1+.9,.255);
+ box('short-landing-parapet',11.15,3.2,24,.3,.9,2);
+ box('short-elbow-parapet',17,3.2,28.85,4,.9,.3);
+ box('short-a-approach-parapet',24.5,3.2,34.15,5,.9,.3);
  // Short stairs lead directly onto the Catwalk slab; no isolated test stairs remain.
  for(let i=0;i<32;i++)box('stair-tread-short',13,0,15+(i+.5)*.25,3.3,(i+1)*.1,.255);
  for(let i=0;i<24;i++)box('tunnel-stair-tread',-27+(i+.5)*.25,0,10,.255,2.4-(i*.1),2.8);
