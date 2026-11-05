@@ -75,6 +75,7 @@ export interface InputCommand {
   interact?: boolean;
 }
 export interface MovementState {
+  spawnPosition?: Vec3;
   position: Vec3;
   velocity: Vec3;
   grounded: boolean;

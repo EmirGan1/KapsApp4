@@ -56,6 +56,7 @@ export function support(map: MapDefinition, p: Vec3, maxY: number) {
 export function newMovement(position: Vec3): MovementState {
   return {
     position: { ...position },
+    spawnPosition: { ...position },
     velocity: { x: 0, y: 0, z: 0 },
     grounded: true,
     stance: "stand",
@@ -71,6 +72,9 @@ export function move(
   map: MapDefinition,
   tick: number,
 ) {
+  if (![m.position.x,m.position.y,m.position.z,m.velocity.x,m.velocity.y,m.velocity.z].every(Number.isFinite) || m.position.y < -10 || m.position.y > 40 || Math.abs(m.position.x)>map.bounds+2 || Math.abs(m.position.z)>map.bounds+2) {
+    Object.assign(m,newMovement(m.spawnPosition||map.spawns[0]));return;
+  }
   const dt = C.dt,
     p = m.position,
     v = m.velocity,
@@ -178,7 +182,7 @@ export function move(
     p.y < -10 ||
     p.y > 40
   ) {
-    Object.assign(m, newMovement(map.spawns[0]));
+    Object.assign(m, newMovement(m.spawnPosition || map.spawns[0]));
   }
 }
 /** Ray/convex-solid intersection, including the actual ramp plane rather than its box. */
