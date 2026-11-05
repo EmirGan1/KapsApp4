@@ -835,7 +835,7 @@ export class StrikeController {
       radar:this.remotePlayerList.filter(r=>r.hp>0&&r.id!==p.id&&this.localTeam!=="none"&&r.team===this.localTeam).map(r=>({...r.position,team:r.team})),
       armor:p.armor||0,
       lootNotice:p.lootNoticeUntil&&p.lootNoticeUntil>s.tick?p.lootNotice:undefined,
-      supplyPrompt:!s.bomb&&s.world?(()=>{const supply=nearestSupply(s.world,MAPS[s.map],p);return supply?`${supply.kind==="dropped"?"Al":"Aç"} · ${supplyLabel(supply,p)}`:undefined;})():undefined,
+      supplyPrompt:s.world?(()=>{const supply=nearestSupply(s.world,MAPS[s.map],p);return supply?`${supply.kind==="dropped"?"Al":"Aç"} · ${supplyLabel(supply,p)}`:undefined;})():undefined,
       hp: p.hp,
       ads: this.touchAds || this.ads || this.down("ads"),
       ammo: w.ammo[w.selected],

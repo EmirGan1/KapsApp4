@@ -1,3 +1,4 @@
+import {useSearchParams} from "react-router-dom";
 import AyvalikRooms from "./AyvalikRooms";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Socket } from "socket.io-client";
@@ -494,7 +495,10 @@ export default function AyvalikCasPanel({
   onBackToMain
 }: AyvalikCasPanelProps) {
   // Tabs: 'schedule' | 'weather' | 'chat' | 'gallery' | 'checklist' | 'reflections' | 'guide'
-  const [activeTab, setActiveTab] = useState<"home" | "rooms" | "schedule" | "weather" | "chat" | "gallery" | "checklist" | "reflections" | "guide">("home");
+  const [sectionParams,setSectionParams]=useSearchParams();
+  const section=sectionParams.get('section');
+  const activeTab=AYVALIK_SECTIONS.some(s=>s.id===section)?(section||'home'):'home';
+  const setActiveTab=(tab:string)=>{const next=new URLSearchParams(sectionParams);if(tab==='home')next.delete('section');else next.set('section',tab);setSectionParams(next,{replace:activeTab!=='home'});};
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | "all">("all");
 
   // 1. LIVE COUNTDOWN TO TRIP (25 Kasım 2026, 06:00)

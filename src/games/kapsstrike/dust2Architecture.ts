@@ -39,6 +39,11 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
  box('a-site-infill',39.5,0,39.5,25,3.2,13);
  ramp('a-ramp-long',47,24.5,8,7,1.6,'z');
  box('a-ramp-corner',47,0,29,3,1.6,2);box('a-ramp-landing',38.5,0,31.5,3,3.2,5);
+ // The old upper-ramp footprint ended at x=47, leaving a sealed ground-level pit beside it.
+ box('a-ramp-apron-infill',49,0,30.5,4,1.6,5);
+ // Keep players out of the inaccessible hotel-back pocket without blocking Long/Short approaches.
+ box('a-rear-parapet',39.5,3.2,46.12,25,.85,.24);
+ box('a-east-parapet',51.95,3.2,39.5,.24,.85,13);
  box('a-ramp-upper-base',43,0,30,8,1.6,5);
  solids.push({id:'district-a-ramp-upper',kind:'ramp',x:43,y:1.6,z:30,w:8,d:5,h:1.6,axis:'x',reverse:true,color:'#bbac91',surface:'stone'});
  ramp('tunnel-entrance-ramp',-38,-4,7,12,2.4,'z');

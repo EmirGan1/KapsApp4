@@ -35,7 +35,7 @@ export function buyBombEquipment(m:BombMatch,id:string,item:string,now:number){
 export function bombView(m:BombMatch,id:string):BombMatch {
  const v=structuredClone(m),me=m.players[id];
  for(const p of Object.values(v.players))if(p.id!==id){
-  p.money=0;p.armor=0;p.kit=false;p.weapons=[];p.holdUntil=0;p.position={x:0,y:0,z:0};
+  delete p.purchase;p.money=0;p.armor=0;p.kit=false;p.weapons=[];p.holdUntil=0;p.position={x:0,y:0,z:0};
  }
  if(me?.team!=='T'&&v.phase!=='planted'&&v.phase!=='result'&&v.phase!=='finished'){
   delete v.carrier;delete v.position;

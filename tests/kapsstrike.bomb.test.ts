@@ -155,3 +155,6 @@ test('A platform has continuous collision support throughout the site',async()=>
  const {MAPS}=await import('../src/games/kapsstrike/maps');const {support}=await import('../src/games/kapsstrike/physics');
  for(let x=28;x<=51;x+=.5)for(let z=34;z<=45;z+=.5)assert.ok(support(MAPS.district,{x,y:3.2,z},3.25)>=3.19,`unsupported A floor ${x},${z}`);
 });
+
+test('planted T win immediately when final CT dies, with one reward',()=>{const m=planted();m.players['1'].alive=false;stepBomb(m,20);assert.equal(m.phase,'result');assert.equal(m.winner,'T');const money=m.players['0'].money;stepBomb(m,20.1);assert.equal(m.scores.T,1);assert.equal(m.players['0'].money,money);});
+test('weapon replacement refunds only this buy phase and never leaves two firearms',()=>{const m=createBombMatch(players(),0),p=m.players['0'];p.money=5000;assert.ok(buyBombEquipment(m,'0','rifle',1));assert.equal(p.money,2300);assert.ok(buyBombEquipment(m,'0','sniper',2));assert.equal(p.money,500);assert.deepEqual(p.weapons,['knife','sniper']);assert.ok(buyBombEquipment(m,'0','smg',3));assert.equal(p.money,3800);m.phase='result';m.scores.T=1;m.deadline=4;stepBomb(m,4);assert.equal(p.purchase,undefined);p.money=200;assert.equal(buyBombEquipment(m,'0','sniper',5),false);assert.deepEqual(p.weapons,['knife','smg']);});
