@@ -899,19 +899,19 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) Seçmeli Matematik Sınavı (2. Ders: 09:00 - 09:40)",
     affectedCourseIds: ["literature"]
   },
-  // 4. Ders: 10:40 - 11:20 -> S. Kimya / Küresel Toplumda İletişim Teknolojileri (Digital Society) / Psikoloji
+  // 7. Ders: 14:00 - 14:40 -> S. Kimya / Küresel Toplumda İletişim Teknolojileri (Digital Society) / Psikoloji
   {
     id: "exam_20261106_chem_digsoc_psych",
     title: "S. Kimya / Küresel Toplumda İletişim Teknolojileri / Psikoloji",
     subject: "Kimya / DigSoc / Psikoloji",
     level: "SL/HL",
     date: "2026-11-06",
-    startTime: "10:40",
-    endTime: "11:20",
+    startTime: "14:00",
+    endTime: "14:40",
     slDurationMinutes: 40,
     hlDurationMinutes: 40,
-    slEndTime: "11:20",
-    hlEndTime: "11:20",
+    slEndTime: "14:40",
+    hlEndTime: "14:40",
     targetRoles: [
       "all",
       "chemistry_sl", "chemistry_hl", "chemistry", "kimya",
@@ -920,10 +920,10 @@ export const OFFICIAL_MOCK_EXAMS: MockExam[] = [
     ],
     targetCourses: ["Chemistry", "Digital Society", "Psychology"],
     room: "12 G (IB) Dersliği / Laboratuvar",
-    paper: "4. Ders Yazılı Sınav",
+    paper: "7. Ders Yazılı Sınav",
     durationMin: 40,
-    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) S. Kimya / Dijital Toplum (Digital Society) / Psikoloji (4. Ders: 10:40 - 11:20)",
-    affectedCourseIds: ["foreign_language"]
+    description: "1. Yarıyıl 1. Sınav Kuşağı • 12 G (IB) S. Kimya / Dijital Toplum (Digital Society) / Psikoloji (7. Ders: 14:00 - 14:40)",
+    affectedCourseIds: ["physics_biology"]
   },
 
   // 09.11.2026 Pazartesi

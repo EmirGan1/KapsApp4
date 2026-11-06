@@ -142,6 +142,8 @@ export class StrikeController {
   private nextBombBeep=0;
   private lastExplosionKey="";
   private bombEquipped=false;
+  private lastDefuseAudioTick=0;
+  private lastActionKind?: 'plant' | 'defuse';
   equipBomb(){this.bombEquipped=!this.bombEquipped;this.clearInput();}
   private previous = { x: 0, y: 0, z: 0 };
   private lastHit?: StrikeHUD["hit"];
@@ -469,8 +471,29 @@ export class StrikeController {
         const oldPosition={...this.state.player.movement.position};
         const oldBomb=this.state.bomb;
         this.state.bomb=snapshot.bomb;
-        if(snapshot.bomb?.phase==='planted'&&oldBomb?.phase!=='planted'){this.audio.play('bombPlant');this.audio.announce('Bomba kuruldu');}
-        if(snapshot.bomb?.reason==='Bomba patladı'&&oldBomb?.reason!=='Bomba patladı')this.audio.play('bombExplode');
+        if(snapshot.bomb?.phase==='planted'&&oldBomb?.phase!=='planted'){
+          this.audio.play('bombPlant', 0, snapshot.bomb.position);
+          this.audio.announce('Bomba kuruldu');
+        }
+        if(snapshot.bomb?.reason==='Bomba patladı'&&oldBomb?.reason!=='Bomba patladı'){
+          this.audio.play('bombExplode', 0, snapshot.bomb.position || snapshot.bomb.explosion?.position);
+        }
+        if(snapshot.bomb?.reason==='Bomba çözüldü'&&oldBomb?.reason!=='Bomba çözüldü'){
+          this.audio.play('bombDefused', 0, snapshot.bomb.position);
+          this.audio.announce('Bomba çözüldü');
+        }
+        // Track defusal progress sounds
+        if(snapshot.bomb?.action?.kind==='defuse'){
+          if(this.lastActionKind!=='defuse'){
+            this.audio.play('bombDefuseStart', 0, snapshot.bomb.position || snapshot.bomb.action.position);
+          }
+          const nowMs=performance.now();
+          if(nowMs-this.lastDefuseAudioTick>380){
+            this.lastDefuseAudioTick=nowMs;
+            this.audio.play('bombDefuseTick', 0, snapshot.bomb.position || snapshot.bomb.action.position);
+          }
+        }
+        this.lastActionKind=snapshot.bomb?.action?.kind;
         if(snapshot.world)this.state.world=snapshot.world;
         this.state.player.hp = myServerState.hp;
         this.state.score = myServerState.score;
@@ -659,15 +682,17 @@ export class StrikeController {
         const expKey=`${bomb.explosion.at}:${bomb.explosion.position.x}:${bomb.explosion.position.z}`;
         if(expKey!==this.lastExplosionKey){
           this.lastExplosionKey=expKey;
-          this.audio.play("bombExplode");
+          this.audio.play("bombExplode", 0, bomb.explosion.position);
         }
       }
       if(bomb?.phase==='planted'&&now>=this.nextBombBeep){
         const left=Math.max(0,bomb.deadline-this.state.tick*C.dt);
         const urgency=clamp(1-left/40,0,1);
-        this.audio.play('bombTick',urgency);
+        this.audio.play('bombTick',urgency,bomb.position);
         this.nextBombBeep=now+(left>20?950:left>10?540:left>5?280:left>2?140:75);
       }
+      // Update 360 audio listener position & yaw
+      this.audio.updateListener(this.state.player.movement.position, this.yaw);
       const decay=Math.exp(-elapsed*16);
       for(const axis of ["x","y","z"] as const)this.correction[axis]*=decay;
       this.renderer.render(
@@ -777,8 +802,12 @@ export class StrikeController {
         )
       )
         return;
-      this.audio.play(e.weapon!);
-      if (!this.isMultiplayer || e.actor === this.state.player.id)
+      // 360 audio: If shooter is local player, pass undefined for direct crisp 2D center;
+      // if remote shooter, pass e.from so sound is panned and distance-attenuated 360 degrees!
+      const isLocal = !this.isMultiplayer || e.actor === this.state.player.id;
+      const soundSource = isLocal ? undefined : e.from;
+      this.audio.play(e.weapon!, 0, soundSource);
+      if (isLocal)
         this.pitch = clamp(this.pitch - WEAPONS[e.weapon!].recoil, -1.48, 1.48);
     }
     if (e.kind === "hit") {
@@ -791,9 +820,12 @@ export class StrikeController {
         head: !!e.head || (sameShot && !!this.lastHit?.head),
         until: this.state.tick + 36,
       };
-      if (!sameShot) this.audio.play("hit");
+      if (!sameShot) this.audio.play(e.head ? "headshot" : "hit");
     }
-    if (e.kind === "reload") this.audio.play("reload");
+    if (e.kind === "reload") {
+      const isLocal = !this.isMultiplayer || e.actor === this.state.player.id;
+      this.audio.play("reload", 0, isLocal ? undefined : e.from);
+    }
     if (e.kind === "damage") {
       this.state.lastDamageTick = this.state.tick;
       this.lastHurt = {
