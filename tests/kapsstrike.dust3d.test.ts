@@ -86,3 +86,30 @@ test('CT Spawn and CT Mid have no direct sightlines onto A Site or B Site',async
  }
 });
 
+
+
+test('A retaining-wall courtyard has no occupiable hidden ground volume',()=>{
+ const core=map.solids.find(s=>s.id.includes('a-retaining-core-infill'))!;
+ assert.ok(core&&!core.detail&&!core.hidden);
+ let checked=0;
+ for(let x=27.2;x<=36.4;x+=.4)for(let z=22.8;z<=33.2;z+=.4){
+  assert.equal(fits(map,{x,y:0,z},1.8),false,`empty A core ${x},${z}`);
+  assert.equal(fits(map,{x,y:3.2,z},1.1),false,`crouch seam ${x},${z}`);
+  assert.equal(support(map,{x,y:7.8,z},7.81),7.8);
+  assert.ok(raySolid({x,y:10,z},{x:0,y:-1,z:0},core,20)<2.21);
+  checked++;
+ }
+ assert.ok(checked>500);
+});
+test('walking or jumping off the A edge cannot enter the former retaining-wall pit',()=>{
+ for(const x of [35.5,35.85,36.2])for(const jump of [false,true])for(const crouch of [false,true]){
+  const m=newMovement({x,y:3.2,z:35.15});
+  assert.ok(fits(map,m.position,m.height));
+  for(let i=0;i<360;i++){
+   move(m,{sequence:i,tick:i,moveX:0,moveZ:1,yaw:Math.PI,pitch:0,jump:jump&&i<25,sprint:true,crouch,fire:false,ads:false,reload:false},map,i);
+   assert.ok(fits(map,m.position,m.height));
+   assert.ok(m.position.z>=33.4,`entered pit: ${JSON.stringify(m.position)}`);
+   assert.ok(m.position.y>=3.19,`fell below A deck: ${JSON.stringify(m.position)}`);
+  }
+ }
+});

@@ -39,6 +39,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Recorded weapon audio and controller footsteps
         run: node --import tsx --test tests/kapsstrike.audio.test.ts && npm run test:strike:audio
+      - name: A retaining-wall seam WebGL regression
+        run: node --import tsx tests/kapsstrike.aVoid.browser.ts
       - name: Desktop and touch bomb flow
         env:
           STRIKE_QA_COMPACT: '1'
@@ -50,5 +52,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dust-bomb-screenshots-${{ github.event_name }}
-          path: /tmp/strike-*.png
+          path: |
+            /tmp/strike-*.png
+            /tmp/dust-a-void-*.png
           if-no-files-found: ignore
