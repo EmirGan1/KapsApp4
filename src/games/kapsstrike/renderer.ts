@@ -83,6 +83,8 @@ export class StrikeRenderer {
   private knifeRig?:KnifeRig;
   private knifeClock=0;
   private knifeDeployTimer = 0;
+  private knifeDrawFlourishTimer = 0;
+  private knifeDrawFlourishDur = 0.88;
   private knifeAttackTimer = 0;
   private knifeAttackType: "slash" | "heavy" = "slash";
   private knifeAttackCombo = 0;
@@ -542,7 +544,7 @@ export class StrikeRenderer {
     }
   }
   debugCombat(value:any){if(!(import.meta as any).env?.DEV||!this.settings.showDebugStats)return;(this.combatOverlay??=new CombatDebug(this.scene)).shot(value);}
-  inspect(){this.inspectTime=this.lastSelectedWeapon==='knife'?knifeTiming(cosmetic(this.settings.cosmeticLoadout?.knife)?.knife||'default').inspect:1.8;}
+  inspect(){this.knifeDrawFlourishTimer=0;this.inspectTime=this.lastSelectedWeapon==='knife'?knifeTiming(cosmetic(this.settings.cosmeticLoadout?.knife)?.knife||'default').inspect:1.8;}
   resetView(){this.inspectTime=0;this.gunKick=0;this.camera.rotationQuaternion=null;this.camera.rotation.set(0,0,0);this.camera.upVector.set(0,1,0);this.camera.cameraRotation.set(0,0);this.camera.cameraDirection.set(0,0,0);}
   updateSettings(next:StrikeSettings){
     const previousScale = this.settings.scale;
@@ -752,100 +754,225 @@ export class StrikeRenderer {
     const near = clamp(1 - wall, 0, 1);
     if (p.weapon.selected !== this.lastSelectedWeapon) {
       if (p.weapon.selected === "knife") {
-        this.knifeDeployTimer = knifeTiming(cosmetic(this.settings.cosmeticLoadout?.knife)?.knife||'default').deploy;
+        const kStyle = cosmetic(this.settings.cosmeticLoadout?.knife)?.knife || "default";
+        this.knifeDeployTimer = knifeTiming(kStyle).deploy;
+        this.knifeDrawFlourishDur = kStyle === "butterfly" ? 0.92 : kStyle === "karambit" ? 0.84 : knifeTiming(kStyle).deploy;
+        this.knifeDrawFlourishTimer = this.knifeDrawFlourishDur;
         this.inspectTime = 0;
       }
       this.lastSelectedWeapon = p.weapon.selected;
     }
 
     const finish = cosmetic(this.settings.cosmeticLoadout?.[p.weapon.selected]);
-    const knifeType = finish?.knife || "default",timing=knifeTiming(knifeType);
-    if(p.weapon.selected==='knife'&&knifeType!==this.lastKnifeStyle){this.lastKnifeStyle=knifeType;this.knifeDeployTimer=timing.deploy;this.inspectTime=0;}
+    const knifeType = finish?.knife || "default", timing = knifeTiming(knifeType);
+    if (p.weapon.selected === "knife" && knifeType !== this.lastKnifeStyle) {
+      this.lastKnifeStyle = knifeType;
+      this.knifeDeployTimer = timing.deploy;
+      this.knifeDrawFlourishDur = knifeType === "butterfly" ? 0.92 : knifeType === "karambit" ? 0.84 : timing.deploy;
+      this.knifeDrawFlourishTimer = this.knifeDrawFlourishDur;
+      this.inspectTime = 0;
+    }
 
     if (p.weapon.selected === "knife") {
-      // Base tactical knife posture
+      // Base CS tactical knife posture
       if (knifeType === "karambit") {
-        this.gunRoot.position.set(0.22, -0.24, .85);
-        this.gunRoot.rotation.set(-0.15, -0.65, -0.45);
+        // CS Reverse Grip: Index ring at top of fist, handle down through palm,
+        // curved hawkbill claw hooking forward and upward/inward from the bottom of the fist
+        this.gunRoot.position.set(0.21, -0.19, 0.78);
+        this.gunRoot.rotation.set(0.06, -0.52, 0.16);
       } else if (knifeType === "butterfly") {
-        this.gunRoot.position.set(0.22, -0.24, .8);
-        this.gunRoot.rotation.set(-0.08, -0.65, -0.15);
+        this.gunRoot.position.set(0.22, -0.23, 0.80);
+        this.gunRoot.rotation.set(-0.08, -0.62, -0.14);
       } else {
         this.gunRoot.position.set(0.25, -0.25, 0.48);
         this.gunRoot.rotation.set(-0.05, 0.10, -0.10);
       }
 
-      // 1. Equip / Deploy animation
       if (this.knifeDeployTimer > 0) {
         this.knifeDeployTimer = Math.max(0, this.knifeDeployTimer - delta);
-        const deployProg = 1 - this.knifeDeployTimer / timing.deploy;
+      }
+      if (this.knifeAttackTimer > 0 || this.inspectTime > 0 || p.hp <= 0) {
+        this.knifeDrawFlourishTimer = 0;
+      }
+      if (this.knifeDrawFlourishTimer > 0) {
+        this.knifeDrawFlourishTimer = Math.max(0, this.knifeDrawFlourishTimer - delta);
+      }
+
+      const drawActive = this.knifeDrawFlourishTimer > 0 || this.knifeDeployTimer > 0;
+      const drawProg =
+        knifeType === "karambit" || knifeType === "butterfly"
+          ? this.knifeDrawFlourishTimer > 0
+            ? 1 - this.knifeDrawFlourishTimer / Math.max(0.01, this.knifeDrawFlourishDur)
+            : this.knifeDeployTimer > 0
+              ? 1 - this.knifeDeployTimer / timing.deploy
+              : -1
+          : this.knifeDeployTimer > 0
+            ? 1 - this.knifeDeployTimer / timing.deploy
+            : -1;
+
+      // 1. Equip / Draw Wrist Choreography (CS 1-to-1)
+      if (drawActive && drawProg >= 0) {
         if (knifeType === "karambit") {
-          this.gunRoot.position.y -= (1-deployProg)*.22;
-          this.gunRoot.rotation.z += Math.sin(deployProg*Math.PI)*.35;
+          // Rise from lower-right -> upward launch flick -> steady spin hover -> palm slap recoil
+          const rise = Math.pow(Math.max(0, 1 - drawProg / 0.28), 2);
+          const launchFlick = Math.sin(clamp(drawProg / 0.34, 0, 1) * Math.PI);
+          const catchPulse = Math.sin(clamp((drawProg - 0.70) / 0.24, 0, 1) * Math.PI);
+          this.gunRoot.position.y -= rise * 0.24 - launchFlick * 0.045 + catchPulse * 0.032;
+          this.gunRoot.position.x += rise * 0.08 - launchFlick * 0.035 + catchPulse * 0.022;
+          this.gunRoot.position.z -= catchPulse * 0.035;
+          this.gunRoot.rotation.x += rise * 0.35 - launchFlick * 0.24 + catchPulse * 0.18;
+          this.gunRoot.rotation.y += launchFlick * 0.22 - catchPulse * 0.12;
+          this.gunRoot.rotation.z += launchFlick * 0.32 - catchPulse * 0.20;
         } else if (knifeType === "butterfly") {
-          this.gunRoot.position.y -= (1-deployProg)*.20;
-          this.gunRoot.rotation.z -= Math.sin(deployProg*Math.PI)*.35;
+          // Rise -> upward unlatch toss -> knuckle rollover dip -> closing whip -> handle clack snap
+          const rise = Math.pow(Math.max(0, 1 - drawProg / 0.24), 2);
+          const toss1 = Math.sin(clamp(drawProg / 0.36, 0, 1) * Math.PI);
+          const toss2 = Math.sin(clamp((drawProg - 0.38) / 0.40, 0, 1) * Math.PI);
+          const clack = Math.sin(clamp((drawProg - 0.78) / 0.20, 0, 1) * Math.PI);
+          this.gunRoot.position.y -= rise * 0.22 - toss1 * 0.05 + toss2 * 0.035 + clack * 0.028;
+          this.gunRoot.position.x += rise * 0.07 - toss1 * 0.04 + clack * 0.018;
+          this.gunRoot.rotation.x += rise * 0.28 - toss1 * 0.26 + toss2 * 0.20 + clack * 0.14;
+          this.gunRoot.rotation.y += toss1 * 0.18 - toss2 * 0.16;
+          this.gunRoot.rotation.z -= toss1 * 0.28 - toss2 * 0.24 + clack * 0.16;
         } else {
-          this.gunRoot.position.y -= (1 - deployProg) * 0.26;
-          this.gunRoot.rotation.z -= (1-deployProg)*(knifeType==='tanto'?.8:1.5);
-          this.gunRoot.rotation.y += (1-deployProg)*(knifeType==='tanto'?1.1:.6);
+          this.gunRoot.position.y -= (1 - drawProg) * 0.26;
+          this.gunRoot.rotation.z -= (1 - drawProg) * (knifeType === "tanto" ? 0.8 : 1.5);
+          this.gunRoot.rotation.y += (1 - drawProg) * (knifeType === "tanto" ? 1.1 : 0.6);
         }
       }
 
-      // 2. Attack / Slash animation
+      // 2. Attack / Slash & Heavy Backstab Choreography
+      let attackProg = -1;
       if (this.knifeAttackTimer > 0) {
         this.knifeAttackTimer = Math.max(0, this.knifeAttackTimer - delta);
         const dur = this.knifeAttackType === "heavy" ? 0.48 : 0.28;
-        const attackProg = 1 - this.knifeAttackTimer / dur;
+        attackProg = 1 - this.knifeAttackTimer / dur;
         const strike = Math.sin(attackProg * Math.PI);
 
         if (this.knifeAttackType === "heavy") {
-          this.gunRoot.position.z += strike * 0.36;
-          this.gunRoot.position.y -= strike * 0.16;
-          this.gunRoot.position.x -= strike * 0.10;
-          this.gunRoot.rotation.x += strike * 0.75;
-          this.gunRoot.rotation.z -= strike * 0.45;
+          if (knifeType === "karambit") {
+            // CS Karambit Heavy Backstab / Reverse-Grip Talon Rip
+            const windup = Math.sin(clamp(attackProg / 0.26, 0, 1) * Math.PI);
+            const lunge = Math.sin(clamp((attackProg - 0.16) / 0.84, 0, 1) * Math.PI);
+            this.gunRoot.position.z += lunge * 0.38 - windup * 0.06;
+            this.gunRoot.position.y += lunge * 0.08 - windup * 0.09;
+            this.gunRoot.position.x -= lunge * 0.16 - windup * 0.05;
+            this.gunRoot.rotation.x -= lunge * 0.65 - windup * 0.25;
+            this.gunRoot.rotation.y += lunge * 0.55;
+            this.gunRoot.rotation.z += lunge * 0.68;
+          } else if (knifeType === "butterfly") {
+            // CS Butterfly Heavy Forward Thrust + Wrist Snap
+            const lunge = Math.sin(attackProg * Math.PI);
+            this.gunRoot.position.z += lunge * 0.40;
+            this.gunRoot.position.y -= lunge * 0.08;
+            this.gunRoot.position.x -= lunge * 0.12;
+            this.gunRoot.rotation.x += lunge * 0.58;
+            this.gunRoot.rotation.y += lunge * 0.32;
+            this.gunRoot.rotation.z -= lunge * 0.36;
+          } else {
+            this.gunRoot.position.z += strike * 0.36;
+            this.gunRoot.position.y -= strike * 0.16;
+            this.gunRoot.position.x -= strike * 0.10;
+            this.gunRoot.rotation.x += strike * 0.75;
+            this.gunRoot.rotation.z -= strike * 0.45;
+          }
           this.camera.fov -= strike * 0.025;
         } else {
           const dir = this.knifeAttackCombo === 0 ? 1 : -1;
-          this.gunRoot.position.x += dir * strike * 0.26;
-          this.gunRoot.position.y += Math.cos(attackProg * Math.PI) * 0.09;
-          this.gunRoot.position.z += strike * 0.20;
-          this.gunRoot.rotation.z += dir * strike * 1.45;
-          this.gunRoot.rotation.y += dir * strike * 0.55;
-          this.gunRoot.rotation.x -= strike * 0.35;
+          if (knifeType === "karambit") {
+            // CS Karambit Curved Claw Hook Slash
+            this.gunRoot.position.x += dir * strike * 0.29;
+            this.gunRoot.position.y += Math.cos(attackProg * Math.PI) * 0.085;
+            this.gunRoot.position.z += strike * 0.24;
+            this.gunRoot.rotation.z += dir * strike * 1.55;
+            this.gunRoot.rotation.y += dir * strike * 0.68;
+            this.gunRoot.rotation.x -= strike * 0.42;
+          } else if (knifeType === "butterfly") {
+            // CS Butterfly Fast Figure-8 Balisong Slash
+            this.gunRoot.position.x += dir * strike * 0.27;
+            this.gunRoot.position.y += Math.sin(attackProg * Math.PI * 2) * 0.055;
+            this.gunRoot.position.z += strike * 0.22;
+            this.gunRoot.rotation.z += dir * strike * 1.38;
+            this.gunRoot.rotation.y += dir * strike * 0.62;
+            this.gunRoot.rotation.x -= strike * 0.28;
+          } else {
+            this.gunRoot.position.x += dir * strike * 0.26;
+            this.gunRoot.position.y += Math.cos(attackProg * Math.PI) * 0.09;
+            this.gunRoot.position.z += strike * 0.20;
+            this.gunRoot.rotation.z += dir * strike * 1.45;
+            this.gunRoot.rotation.y += dir * strike * 0.55;
+            this.gunRoot.rotation.x -= strike * 0.35;
+          }
           this.camera.fov -= strike * 0.012;
         }
       }
 
-      // 3. Inspect animation
+      // 3. Inspect Wrist Choreography (CS 1-to-1)
       if (this.inspectTime > 0) {
         this.inspectTime = Math.max(0, this.inspectTime - delta);
         const inspectProg = 1 - this.inspectTime / timing.inspect;
         if (knifeType === "karambit") {
-          const wave=Math.sin(inspectProg*Math.PI)**2;
-          this.gunRoot.position.y+=wave*.08;
-          this.gunRoot.rotation.y+=wave*.35;
-          this.gunRoot.rotation.z+=Math.sin(inspectProg*Math.PI*2)*.16;
+          // Hand tilts toward screen centre, pumps rhythmically 3 times to drive the
+          // 3 index-finger ring revolutions, and absorbs the final palm-slap catch
+          const env = Math.sin(inspectProg * Math.PI) ** 1.4;
+          const spinPump =
+            inspectProg >= 0.13 && inspectProg < 0.82
+              ? Math.sin(((inspectProg - 0.13) / 0.69) * Math.PI * 6)
+              : 0;
+          const catchSnap = Math.sin(clamp((inspectProg - 0.82) / 0.16, 0, 1) * Math.PI);
+          this.gunRoot.position.x -= env * 0.055 - catchSnap * 0.02;
+          this.gunRoot.position.y += env * 0.072 + spinPump * 0.016 * env - catchSnap * 0.032;
+          this.gunRoot.position.z -= env * 0.03 + catchSnap * 0.025;
+          this.gunRoot.rotation.x += env * 0.16 + spinPump * 0.09 * env + catchSnap * 0.18;
+          this.gunRoot.rotation.y += env * 0.38 - catchSnap * 0.14;
+          this.gunRoot.rotation.z += Math.sin(inspectProg * Math.PI * 3) * 0.14 * env - catchSnap * 0.18;
         } else if (knifeType === "butterfly") {
-          const wave=Math.sin(inspectProg*Math.PI)**2;
-          this.gunRoot.position.y+=wave*.06;
-          this.gunRoot.rotation.z+=Math.sin(inspectProg*Math.PI*2)*.3;
-          this.gunRoot.rotation.y+=wave*.25;
+          // Continuous, silky-smooth figure-8 wrist wave synchronized with the
+          // 4-revolution high-speed balisong twirl and final handle clack
+          const env = Math.sin(inspectProg * Math.PI);
+          const spinWave = Math.sin(inspectProg * Math.PI * 8);
+          const cosWave = Math.cos(inspectProg * Math.PI * 8);
+          const clackSnap =
+            inspectProg > 0.88
+              ? Math.sin(((inspectProg - 0.88) / 0.12) * Math.PI)
+              : 0;
+          this.gunRoot.position.x -= env * 0.055 + cosWave * 0.014 * env;
+          this.gunRoot.position.y += env * 0.062 + spinWave * 0.022 * env - clackSnap * 0.026;
+          this.gunRoot.position.z -= env * 0.025;
+          this.gunRoot.rotation.x -= spinWave * 0.18 * env + clackSnap * 0.14;
+          this.gunRoot.rotation.y += env * 0.30 + cosWave * 0.14 * env;
+          this.gunRoot.rotation.z += spinWave * 0.26 * env - clackSnap * 0.15;
         } else {
-          const wave=Math.sin(inspectProg*Math.PI)**2;
-          this.gunRoot.position.y+=wave*.10;this.gunRoot.position.x-=wave*.08;
-          if(knifeType==='tanto'){this.gunRoot.rotation.y+=wave*1.1;this.gunRoot.rotation.z+=wave*.8;this.gunRoot.rotation.x+=Math.sin(inspectProg*Math.PI*2)*.3;}
-          else {const t=inspectProg*inspectProg*(3-2*inspectProg);this.gunRoot.rotation.z+=t*Math.PI*2;this.gunRoot.rotation.y+=wave*.35;}
+          const wave = Math.sin(inspectProg * Math.PI) ** 2;
+          this.gunRoot.position.y += wave * 0.10;
+          this.gunRoot.position.x -= wave * 0.08;
+          if (knifeType === "tanto") {
+            this.gunRoot.rotation.y += wave * 1.1;
+            this.gunRoot.rotation.z += wave * 0.8;
+            this.gunRoot.rotation.x += Math.sin(inspectProg * Math.PI * 2) * 0.3;
+          } else {
+            const t = inspectProg * inspectProg * (3 - 2 * inspectProg);
+            this.gunRoot.rotation.z += t * Math.PI * 2;
+            this.gunRoot.rotation.y += wave * 0.35;
+          }
         }
       }
 
-      this.knifeClock+=delta;
-      if(this.knifeAttackTimer>0||p.hp<=0)this.inspectTime=0;
-      this.knifeRig?.update(knifeType,this.knifeDeployTimer>0?1-this.knifeDeployTimer/timing.deploy:-1,this.inspectTime>0?1-this.inspectTime/timing.inspect:-1,this.knifeClock,delta);
-      const speed=Math.min(1,Math.hypot(p.movement.velocity.x,p.movement.velocity.z)/6.7);
-      this.gunRoot.position.y+=Math.sin(this.knifeClock*8)*.009*speed+Math.sin(this.knifeClock*1.8)*.003;
-      this.gunRoot.rotation.z+=Math.sin(this.knifeClock*4)*.018*speed;
+      this.knifeClock += delta;
+      if (this.knifeAttackTimer > 0 || p.hp <= 0) this.inspectTime = 0;
+      this.knifeRig?.update(
+        knifeType,
+        drawActive ? drawProg : -1,
+        this.inspectTime > 0 ? 1 - this.inspectTime / timing.inspect : -1,
+        this.knifeClock,
+        delta,
+        attackProg,
+        this.knifeAttackType === "heavy",
+        this.knifeAttackCombo,
+      );
+      const speed = Math.min(1, Math.hypot(p.movement.velocity.x, p.movement.velocity.z) / 6.7);
+      this.gunRoot.position.y += Math.sin(this.knifeClock * 8) * 0.009 * speed + Math.sin(this.knifeClock * 1.8) * 0.003;
+      this.gunRoot.rotation.z += Math.sin(this.knifeClock * 4) * 0.018 * speed;
     } else {
       // Firearm viewmodel animations
       this.gunRoot.position.set(
