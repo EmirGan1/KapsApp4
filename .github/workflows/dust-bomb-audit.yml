@@ -6,6 +6,7 @@ on:
       - 'src/components/games/kapsstrike/**'
       - 'src/server/kapsstrikeServer.ts'
       - 'tests/kapsstrike*'
+      - 'public/assets/kapsstrike/audio/**'
       - '.github/workflows/dust-bomb-audit.yml'
 permissions:
   contents: read
@@ -36,6 +37,8 @@ jobs:
       - run: npm run build
       - name: Install test browser
         run: npx playwright install --with-deps chromium
+      - name: Recorded weapon audio and controller footsteps
+        run: node --import tsx --test tests/kapsstrike.audio.test.ts && npm run test:strike:audio
       - name: Desktop and touch bomb flow
         env:
           STRIKE_QA_COMPACT: '1'
