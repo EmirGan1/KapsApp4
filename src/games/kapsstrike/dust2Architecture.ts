@@ -15,10 +15,15 @@ export function carvedOpening(x:number,z:number){
     (x>7&&x<27&&z>31&&z<35)||
     (x>23&&x<27&&z>19&&z<35)||
     (x>23&&x<49&&z>19&&z<23)||
+    (x>26.5&&x<38.5&&z>22.5&&z<43.5)||
+    (x>22.5&&x<25&&z>43&&z<46)||
     (x>-43&&x<-26&&z>1.5&&z<12.5)||
+    (x>-26.5&&x<-24.5&&z>5&&z<8.5)||
     (x>-47.4&&x<-42.6&&z>12&&z<32)||
     (x>-30&&x<-20&&z>37&&z<40)||
     (x>-30&&x<-18&&z>27&&z<33)||
+    (x>-29&&x<-25.5&&z>33&&z<44)||
+    (x>-3&&x<7.5&&z>33.8&&z<35.8)||
     (x>-23&&x<-9&&z>6&&z<13)||
     (x>-10&&x<-4&&z>8.3&&z<11.7)||
     (Math.abs(x-13)<2&&z>15&&z<27)||
@@ -45,7 +50,7 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
     return s;
   };
   const ramp=(name:string,x:number,z:number,w:number,d:number,h:number,axis:'x'|'z',reverse=false)=>
-    solids.push({id:'district-'+name,kind:'ramp',x,y:0,z,w,d,h,axis,reverse,color:'#bbac91',surface:'stone'});
+    solids.push({id:'district-'+name,kind:'ramp',x,y:0,z,w,d,h,axis,reverse,color:'#ccb99b',surface:'stone'});
 
   // Floors follow the existing footprint; no new terrain is painted over buildings.
   const cell=.89408;
@@ -72,6 +77,7 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
 
   // ============================================================================
   // 1. A SITE PLATFORM, A LONG RAMP & GOOSE ARCHITECTURE
+  //    Open sightline from A Long to A Site (no tall blocking walls).
   // ============================================================================
   box('a-site-infill',39.5,0,39.5,25,3.2,13);
   ramp('a-ramp-long',47,24.5,8,7,1.6,'z');
@@ -81,94 +87,67 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   box('a-rear-parapet',39.5,3.2,46.12,25,.85,.24);
   box('a-east-parapet',51.95,3.2,39.5,.24,.85,13);
   box('a-ramp-upper-base',43,0,30,8,1.6,5);
-  solids.push({id:'district-a-ramp-upper',kind:'ramp',x:43,y:1.6,z:30,w:8,d:5,h:1.6,axis:'x',reverse:true,color:'#bbac91',surface:'stone'});
+  solids.push({id:'district-a-ramp-upper',kind:'ramp',x:43,y:1.6,z:30,w:8,d:5,h:1.6,axis:'x',reverse:true,color:'#ccb99b',surface:'stone'});
 
-  // Goose back corner architecture & stepped sandbag wall at northeast A site
+  // Goose back corner architecture at northeast A site
   box('a-goose-backwall',43.5,3.2,45.8,8.5,4.2,.45,'#d8c7ab',false,'plaster');
   const gooseSign=box('a-goose-sign',43.5,5.1,45.52,2.6,.95,.08,'#8f3d2b',true,'plaster');
   gooseSign.label='GOOSE';
 
   // ============================================================================
-  // 2. CT SPAWN, CT UNDERPASS & A-SITE SIGHTLINE ISOLATION WALLS
-  //    Blocks direct sightlines from CT Spawn / CT Mid onto A Site while keeping
-  //    CT Underpass -> A Long and Short / Catwalk -> A Site 100% walkable.
+  // 2. CT UNDERPASS BRIDGE & LOW A-SITE TERRACE
+  //    Naturally blocks ground-level CT Spawn (y=0) from seeing A Site (y=3.2)
+  //    via the Catwalk bridge arch & waist-high parapet (max y=4.25m) while
+  //    keeping A Long -> A Site and Catwalk -> A Site completely open.
   // ============================================================================
-  // North boundary wall of CT Spawn & CT Mid (blocks any direct look north from CT Spawn)
-  box('ct-spawn-north-wall',2.0,0,35.6,34.0,7.8,.45,'#c6b394',false,'stone');
-  // Ground-level north wall of CT Underpass beneath the Catwalk deck (y=0..2.92)
-  box('ct-underpass-north-lower-wall',23.0,0,35.2,8.0,2.92,.4,'#b8a587',false,'stone');
-  // East retaining wall along CT-to-Long connector (separates x=25 underpass corridor from A Site)
-  box('ct-long-east-retaining-wall',26.85,0,27.8,.45,7.8,11.6,'#c2ae90',false,'stone');
-  // North retaining wall of CT-to-Long corridor (blocks diagonal views from z=20.5 up to A Site)
-  box('ct-long-north-retaining-wall',34.8,0,22.4,16.2,7.8,.45,'#c2ae90',false,'stone');
-  // West retaining wall along A-Ramp upper landing (x=36.8, z=22.4..33.4)
-  box('a-ramp-west-retaining-wall',36.8,0,27.9,.45,7.8,11.0,'#c2ae90',false,'stone');
-  // South retaining & overhang wall along A Site facing CT Spawn (x=26.8..35.4, z=33.2)
-  box('a-site-south-overhang-wall',31.1,0,33.2,8.6,7.8,.45,'#c8b698',false,'stone');
-  // The retaining walls surround an unused ground-level cavity. A narrow seam
-  // beside the overhang allowed falls from A into a courtyard with no exit.
-  // Fill the wall core to the existing roofline; CT connector, Long ramp and
-  // the elevated Short portal remain outside this solid on all three sides.
-  box('a-retaining-core-infill',31.8,0,27.8,10,7.8,11.2,'#c2ae90',false,'stone');
-  // West retaining wall of A Site north of Catwalk entrance (x=26.85, z=38.2..46.2)
-  box('a-site-west-retaining-wall',26.85,0,42.2,.45,7.8,8.0,'#c8b698',false,'stone');
+  // Solid terrace deck between Catwalk, CT-to-Long, and A Site at platform height (y=0..3.2m)
+  box('a-retaining-core-infill',31.8,0,27.8,10,3.2,11.2,'#c8b698',false,'stone');
+  // Low outer parapet along south edge of the 3.2m terrace (keeps A Long -> A Site sightline 100% open)
+  box('a-terrace-south-parapet',31.8,3.2,22.4,10,.95,.4,'#d2c0a2',false,'stone');
 
-  // Elevated Catwalk & Short A corridor walls (y=3.2..7.8, preserving full headroom below for CT Underpass)
-  box('catwalk-west-high-wall',19.1,3.2,37.4,.35,4.6,17.2,'#cbb89a',false,'plaster');
-  box('catwalk-north-high-wall',23.0,3.2,38.2,8.0,4.6,.4,'#c4b193',false,'plaster');
-  box('catwalk-east-high-wall',22.9,3.2,29.5,.35,4.6,9.0,'#cbb89a',false,'plaster');
-  box('a-short-south-high-wall',29.1,3.2,34.0,12.4,4.6,.35,'#cbb89a',false,'plaster');
-  // Catwalk-to-A Portal overhead arch lintel & Ninja double-box screen
-  box('catwalk-portal-lintel',26.85,5.35,36.1,.5,2.45,4.2,'#bfa989',false,'stone');
+  // CT Underpass bridge deck, arch beam (y=2.48..3.20m) & north bridge pier (y=0..4.25m)
+  box('ct-underpass-roof',21.0,2.92,33.1,4.2,.28,4.6,'#b8a78b');
+  box('ct-underpass-arch-beam',19.0,2.48,33.1,.4,.72,4.6,'#bfa989',false,'stone');
+  box('ct-underpass-north-pier',19.0,0,37.8,.45,4.25,5.2,'#c4b193',false,'stone');
+  box('ct-underpass-north-lower-wall',23.0,0,35.2,7.6,3.2,.4,'#b8a587',false,'stone');
+
+  // Ninja double-box cover at Short-to-A entrance
   box('a-short-ninja-crate',28.6,3.2,39.4,1.7,2.9,2.2,'#a8987c',false,'wood');
   box('a-short-ninja-tarp',28.6,6.1,39.4,1.8,.08,2.3,'#5c8785',true,'fabric');
 
-  // CT Underpass ceiling & fascia beam
-  box('ct-underpass-roof',22.5,2.92,33.2,8.6,.28,4.8,'#b8a78b');
-  box('ct-underpass-fascia',18.3,2.25,33.2,.35,.95,4.8,'#a99578');
-
   // ============================================================================
-  // 3. B SITE FORTRESS, B DOORS, B WINDOW & CT-MID SIGHTLINE ISOLATION
-  //    Seals B Site into an authentic walled courtyard with B Doors & B Window
-  //    chokepoints so CT Spawn / CT Mid cannot see into B Site.
+  // 3. CLEAN CS:GO B-SITE ENTRANCE (B DOORS & B WINDOW)
+  //    Simple, readable L-shaped perimeter wall: B Doors on the left (x=-28.8)
+  //    and B Window breach on the right (z=38.0), with zero corridor baffles.
   // ============================================================================
   ramp('tunnel-entrance-ramp',-38,-4,7,12,2.4,'z');
   box('b-apron-infill',-25.5,0,38.7,4,2.4,12.6);
   box('b-window-rear-infill',-23.5,0,42.5,8,2.4,5);
   ramp('b-doors-ramp',-24,30,10,4.8,2.4,'x',true);
 
-  // East perimeter wall sealing B Window stairwell & B Site from CT Mid / CT Spawn (x=-19.8, z=32.5..48.0)
-  box('b-window-east-perimeter-wall',-19.8,0,40.25,.45,7.8,15.5,'#c4b092',false,'stone');
-  // South perimeter wall of B Doors ramp & B Site (z=27.2, x=-42.2..-19.8)
-  box('b-site-south-perimeter-wall',-31.0,0,27.2,22.4,7.8,.45,'#c4b092',false,'stone');
-  // West wall of B Window chute & B-Doors-to-Window divider (x=-23.8, z=32.5..36.4, y=2.4..7.8)
-  box('b-window-west-divider-wall',-23.8,2.4,34.45,.4,5.4,3.9,'#c8b698',false,'stone');
-  // B-Site South-East Fortress Wall separating B Doors apron from B Site core (x=-27.6, z=36.2, y=2.4..7.8)
-  box('b-site-se-fortress-wall',-27.6,2.4,36.2,7.6,5.4,.45,'#bfa988',false,'stone');
+  // South outer wall of B Site (z=27.2, x=-42.2..-28.8)
+  box('b-site-south-perimeter-wall',-35.5,0,27.2,13.4,5.8,.45,'#c4b092',false,'stone');
 
-  // B Doors Archway & Jamba Walls at top of B-Doors ramp (x=-28.8)
-  box('b-doors-south-jamb-wall',-28.8,0,27.85,.45,7.6,1.5,'#bda888',false,'stone');
-  box('b-doors-north-jamb-wall',-28.8,2.4,34.35,.45,5.2,3.9,'#bda888',false,'stone');
-  box('b-doors-arch-lintel',-28.8,5.1,30.5,.5,2.5,3.8,'#cdb99a',false,'stone');
+  // B Doors Wall (x=-28.8, z=27.2..38.0) with central doorway & double doors
+  box('b-doors-south-jamb-wall',-28.8,0,27.95,.45,5.8,1.5,'#cbb89a',false,'stone');
+  box('b-doors-north-jamb-wall',-28.8,2.4,35.15,.45,3.4,5.7,'#cbb89a',false,'stone');
+  box('b-doors-arch-lintel',-28.8,4.9,30.5,.45,.9,3.6,'#d6c4a6',false,'stone');
   for(const side of [-1,1]){
-    box('b-doors-leaf',-28.55,2.4,30.5+side*1.45,.18,2.7,.65,'#797367',false,'wood');
+    box('b-doors-leaf',-28.55,2.4,30.5+side*1.45,.18,2.5,.65,'#797367',false,'wood');
   }
 
-  // Iconic B-Doors interior Double-Stack Sanctuary Crates (blocks straight sightlines through B Doors into B Site)
+  // B Window Wall (z=38.0, x=-28.8..-19.5) with raised window opening at x=-22
+  box('b-window-west-flank',-26.2,2.4,38.0,5.2,3.4,.45,'#cbb89a',false,'stone');
+  box('b-window-sill',-22.0,2.2,38.0,3.2,.2,.45);
+  for(const side of [-1,1])box('b-window-jamb',-22+side*1.65,2.4,38.0,.3,2.5,.45);
+  box('b-window-lintel',-22.0,4.9,38.0,3.6,.9,.45);
+  box('b-window-east-flank',-19.85,0,38.0,.7,5.8,.45,'#cbb89a',false,'stone');
+  // East side wall of B Window stairs & back-pocket (x=-19.5, z=34.5..44.0)
+  box('b-window-east-alcove-wall',-19.5,0,39.25,.45,5.8,9.5,'#c4b092',false,'stone');
+
+  // Iconic B-Site interior cover crates (blocks deep cross-map sightlines into B plant zone)
   box('b-doors-sanctuary-crate',-36.4,2.4,29.8,1.5,3.2,4.4,'#a8987c',false,'wood');
   box('b-doors-sanctuary-tarp',-36.4,5.6,29.8,1.6,.08,4.5,'#689c9a',true,'fabric');
-
-  // CT-Mid & B-Slope staggered baffle walls (prevents CT Spawn / CT Mid from looking down B Doors ramp)
-  box('ct-mid-arch-baffle',2.2,0,30.1,.5,7.4,4.2,'#c8b698',false,'stone');
-  box('b-slope-entry-baffle',-14.5,0,29.2,.5,7.4,4.6,'#c8b698',false,'stone');
-
-  // B Window raised breach opening (x=-22, z=38) with full flanking masonry walls
-  box('b-window-sill',-22,2.2,38,3,.2,.4);
-  for(const side of [-1,1])box('b-window-jamb',-22+side*1.65,2.4,38,.3,2.8,.5);
-  box('b-window-lintel',-22,5.2,38,3.6,.35,.5);
-  box('b-window-east-flank',-20.1,2.4,38,1.0,5.2,.45,'#c4b092',false,'stone');
-  box('b-window-west-flank',-26.2,2.4,38,5.2,5.2,.45,'#c4b092',false,'stone');
-  // Interior B-Window screen crate on B back-plat (blocks deep sightlines while allowing window breach)
   box('b-window-backplat-crate',-22.0,2.4,42.2,2.4,2.8,1.4,'#b1a58b',false,'wood');
 
   // ============================================================================
