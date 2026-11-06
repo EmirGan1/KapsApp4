@@ -105,6 +105,11 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   box('a-ramp-west-retaining-wall',36.8,0,27.9,.45,7.8,11.0,'#c2ae90',false,'stone');
   // South retaining & overhang wall along A Site facing CT Spawn (x=26.8..35.4, z=33.2)
   box('a-site-south-overhang-wall',31.1,0,33.2,8.6,7.8,.45,'#c8b698',false,'stone');
+  // The retaining walls surround an unused ground-level cavity. A narrow seam
+  // beside the overhang allowed falls from A into a courtyard with no exit.
+  // Fill the wall core to the existing roofline; CT connector, Long ramp and
+  // the elevated Short portal remain outside this solid on all three sides.
+  box('a-retaining-core-infill',31.8,0,27.8,10,7.8,11.2,'#c2ae90',false,'stone');
   // West retaining wall of A Site north of Catwalk entrance (x=26.85, z=38.2..46.2)
   box('a-site-west-retaining-wall',26.85,0,42.2,.45,7.8,8.0,'#c8b698',false,'stone');
 
