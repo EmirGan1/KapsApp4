@@ -117,79 +117,48 @@ export function createKnifeRig(
   };
 
   // ============================================================================
-  // 1. KARAMBIT RIG (True CS Reverse-Grip: Ring at Top on Index Finger,
-  //    Grip Going Down Through Palm, Hawkbill Blade Sweeping Forward & Upward)
+  // 1. KARAMBIT RIG (Seamless Unbroken Silhouette: Ring -> Sculpted Grip ->
+  //    Upward-Curving Hawkbill Claw Blade Along One Continuous Axis)
   // ============================================================================
-  // IMPORTANT: karambit-integrated-ring sits at local (0,0,0) of karambit-ring-pivot
-  // (body.position + ring.position === 0) so the ring centre remains 100% pinned in
-  // world space around the top index finger at every rotation phase.
   const karambit = new TransformNode('karambit-ring-pivot', scene);
   karambit.parent = root;
-  karambit.position.set(0, 0.052, -0.035);
+  karambit.position.set(0, 0.005, -0.23);
 
   const body = new TransformNode('karambit-body', scene);
   body.parent = karambit;
-  body.position.set(0, -0.052, 0.035);
+  body.position.set(0, -0.005, 0.23);
 
-  // Curved ergonomic Karambit grip running DOWNWARD from the top index-finger ring
-  // through the palm to the bottom bolster where the blade emerges
+  // Seamless sculpted grip aligned directly between ring (z = -0.23) and blade (z = 0)
   const grip = Array.from({ length: 21 }, (_, i) => {
     const t = i / 20;
     const arc = Math.sin(t * Math.PI);
-    const choil = Math.pow(Math.sin(t * 3 * Math.PI), 2) * 0.0042;
     return {
-      z: -0.095 + t * 0.19,
+      z: -0.18 + t * 0.215,
       x: 0,
-      y: 0.004 + arc * 0.015,
-      w: 0.017 + arc * 0.009,
-      h: 0.023 + arc * 0.013 - choil,
+      y: -0.008 - arc * 0.012,
+      w: 0.018 + arc * 0.009,
+      h: 0.023 + arc * 0.013 - Math.pow(Math.sin(t * 3 * Math.PI), 2) * 0.003,
     };
   });
-  const gripMesh = attach(
+  attach(
     loft(scene, 'karambit-sculpted-grip', grip, 12),
     body,
     'karambit',
     'handle',
-    '#1f2933',
+    '#23313b',
   );
-  gripMesh.position.set(0, -0.048, 0.002);
-  gripMesh.rotation.x = 1.22;
 
-  // Sculpted G10 side scale inlays on the Karambit grip
-  const gripInlay = Array.from({ length: 13 }, (_, i) => {
-    const t = i / 12;
-    const arc = Math.sin(t * Math.PI);
-    return {
-      z: -0.072 + t * 0.144,
-      x: 0,
-      y: 0.005 + arc * 0.014,
-      w: 0.0205 + arc * 0.008,
-      h: 0.0135 + arc * 0.0075,
-    };
-  });
-  const gripInlayMesh = attach(
-    loft(scene, 'karambit-grip-scales', gripInlay, 8),
-    body,
-    'karambit',
-    'handle',
-    '#111820',
-  );
-  gripInlayMesh.position.set(0, -0.048, 0.002);
-  gripInlayMesh.rotation.x = 1.22;
-
-  // True CS Reverse-Grip Hawkbill Tiger-Claw blade:
-  // Emerges from the BOTTOM of the grip (below the pinky finger) and hooks
-  // FORWARD (+Z) and UPWARD (+Y) in front of the knuckles!
+  // Seamless Hawkbill Tiger-Claw blade curving smoothly upward (+Y) from the grip
   const profile = [
-    [0.028, -0.136, 0.0085, 0.034],
-    [0.062, -0.144, 0.0095, 0.042],
-    [0.102, -0.138, 0.0095, 0.048],
-    [0.142, -0.118, 0.0085, 0.050],
-    [0.178, -0.086, 0.0075, 0.046],
-    [0.208, -0.046, 0.0062, 0.036],
-    [0.232, -0.004, 0.0045, 0.023],
-    [0.248, 0.028, 0.0024, 0.010],
-    [0.256, 0.046, 0.0003, 0.0004],
+    [-0.005, -0.014, 0.008, 0.031],
+    [0.025, -0.022, 0.009, 0.038],
+    [0.06, -0.027, 0.009, 0.044],
+    [0.10, -0.026, 0.008, 0.047],
+    [0.14, -0.011, 0.007, 0.048],
+    [0.175, 0.014, 0.006, 0.042],
+    [0.20, 0.047, 0.005, 0.033],
+    [0.218, 0.082, 0.003, 0.019],
+    [0.225, 0.112, 0.0003, 0.0005],
   ];
   attach(
     loft(
@@ -204,29 +173,11 @@ export function createKnifeRig(
     '#d8e3e9',
   );
 
-  // Spine jimping notches along the lower bolster curve of the Karambit blade
-  for (let i = 0; i < 5; i++) {
-    const notch = attach(
-      MeshBuilder.CreateBox(
-        'karambit-jimping-' + i,
-        { width: 0.015, height: 0.007, depth: 0.007 },
-        scene,
-      ),
-      body,
-      'karambit',
-      'ring',
-      '#64748b',
-    );
-    notch.position.set(0, -0.168 - i * 0.001, 0.042 + i * 0.013);
-    notch.rotation.x = -0.22;
-  }
-
-  // Integrated index-finger safety ring at the TOP of the grip
-  // (pinned at karambit-ring-pivot origin: body.position + ring.position === 0)
+  // Integrated index-finger safety ring (pinned at karambit-ring-pivot origin)
   const ring = attach(
     MeshBuilder.CreateTorus(
       'karambit-integrated-ring',
-      { diameter: 0.104, thickness: 0.0165, tessellation: 40 },
+      { diameter: 0.108, thickness: 0.017, tessellation: 40 },
       scene,
     ),
     body,
@@ -234,18 +185,14 @@ export function createKnifeRig(
     'ring',
     '#9baeba',
   );
-  ring.position.set(0, 0.052, -0.035);
+  ring.position.set(0, 0.005, -0.23);
   ring.rotation.z = Math.PI / 2;
 
-  for (const [dy, dz] of [
-    [-0.012, -0.012],
-    [-0.052, 0.004],
-    [-0.092, 0.02],
-  ]) {
+  for (const z of [-0.15, -0.05]) {
     const pin = attach(
       MeshBuilder.CreateCylinder(
         'karambit-flush-pin',
-        { diameter: 0.013, height: 0.054, tessellation: 12 },
+        { diameter: 0.014, height: 0.056, tessellation: 12 },
         scene,
       ),
       body,
@@ -253,7 +200,7 @@ export function createKnifeRig(
       'ring',
       '#81939e',
     );
-    pin.position.set(0, dy, dz);
+    pin.position.set(0, -0.018, z);
     pin.rotation.z = Math.PI / 2;
   }
 
@@ -424,11 +371,9 @@ export function createKnifeRig(
   > = {};
 
   for (const style of ['karambit', 'butterfly']) {
-    const isKarambit = style === 'karambit';
     const palmNode = new TransformNode(style + '-hand-palm-node', scene);
     palmNode.parent = root;
-    // For Karambit reverse grip, the palm sits behind the vertical grip below the ring
-    palmNode.position.set(0, isKarambit ? -0.055 : -0.058, isKarambit ? -0.042 : -0.125);
+    palmNode.position.set(0, -0.058, -0.125);
 
     const palm = attach(
       MeshBuilder.CreateSphere(style + '-glove-palm', { diameter: 0.112, segments: 12 }, scene),
@@ -437,7 +382,7 @@ export function createKnifeRig(
       'handle',
       '#182630',
     );
-    palm.scaling.set(0.65, isKarambit ? 0.95 : 0.62, isKarambit ? 0.85 : 1.22);
+    palm.scaling.set(0.65, 0.62, 1.22);
 
     const wrist = attach(
       MeshBuilder.CreateCapsule(
@@ -450,14 +395,14 @@ export function createKnifeRig(
       'handle',
       '#142029',
     );
-    wrist.rotation.x = isKarambit ? Math.PI / 2.4 : Math.PI / 2;
-    wrist.position.set(0, isKarambit ? -0.055 : -0.018, -0.115);
+    wrist.rotation.x = Math.PI / 2;
+    wrist.position.set(0, -0.018, -0.12);
 
     const fingersNode = new TransformNode(style + '-hand-fingers-pivot', scene);
     fingersNode.parent = palmNode;
-    fingersNode.position.set(-0.022, isKarambit ? 0.01 : 0.026, isKarambit ? 0.038 : 0.015);
+    fingersNode.position.set(-0.022, 0.026, 0.015);
 
-    for (const [idx, offset] of [0.032, 0.0, -0.032].entries()) {
+    for (const [idx, z] of [0.04, 0.0, -0.04].entries()) {
       const finger = attach(
         MeshBuilder.CreateCapsule(
           style + '-glove-finger-' + idx,
@@ -470,17 +415,12 @@ export function createKnifeRig(
         '#283b45',
       );
       finger.rotation.z = Math.PI / 2;
-      if (isKarambit) {
-        // Middle, ring, and pinky stack vertically down the front of the Karambit grip
-        finger.position.set(0.022, offset * 1.15, (1 - idx) * 0.012);
-      } else {
-        finger.position.set(0.022, 0.004, offset);
-      }
+      finger.position.set(0.022, 0.004, z);
     }
 
     const thumbNode = new TransformNode(style + '-hand-thumb-pivot', scene);
     thumbNode.parent = palmNode;
-    thumbNode.position.set(0.032, isKarambit ? 0.055 : 0.028, 0.022);
+    thumbNode.position.set(0.032, 0.028, 0.025);
     const thumb = attach(
       MeshBuilder.CreateCapsule(
         style + '-glove-thumb',
@@ -494,8 +434,7 @@ export function createKnifeRig(
     );
     thumb.rotation.set(0.35, 0.25, 0.55);
 
-    if (isKarambit) {
-      // Index finger sits at the TOP of the fist directly inside karambit-integrated-ring
+    if (style === 'karambit') {
       const ringFinger = attach(
         MeshBuilder.CreateCapsule(
           'karambit-ring-finger',
@@ -508,7 +447,7 @@ export function createKnifeRig(
         '#283b45',
       );
       ringFinger.rotation.z = Math.PI / 2;
-      ringFinger.position.set(0, 0.052, -0.035);
+      ringFinger.position.set(0, 0.005, -0.23);
     }
 
     handNodes[style] = { palm: palmNode, fingers: fingersNode, thumb: thumbNode };
@@ -538,17 +477,14 @@ export function createKnifeRig(
 
       if (style === 'karambit') {
         if (deploy >= 0) {
-          // CS Karambit Draw:
-          // Lower 3 fingers open, Karambit whips forward and up around the top
-          // index-finger ring pivot, then slaps back down into the reverse-grip palm!
           const [spin, cantY, cantZ, open] = keysN(
             deploy,
             [
-              [0.0, -T * 1.05, -0.28, 0.24, 0.85],
-              [0.16, -T * 0.88, -0.22, 0.18, 1.0],
-              [0.48, -T * 0.32, 0.16, -0.14, 0.95],
-              [0.76, 0.16, 0.05, -0.06, 0.22], // Crisp palm slap overshoot
-              [0.89, -0.04, -0.02, 0.02, 0.0], // Micro rebound
+              [0.0, T * 1.05, -0.28, 0.24, 0.85],
+              [0.16, T * 0.88, -0.22, 0.18, 1.0],
+              [0.48, T * 0.32, 0.16, -0.14, 0.95],
+              [0.76, -0.16, 0.05, -0.06, 0.22],
+              [0.89, 0.04, -0.02, 0.02, 0.0],
               [1.0, 0.0, 0.0, 0.0, 0.0],
             ],
             whip,
@@ -558,26 +494,20 @@ export function createKnifeRig(
           kz = cantZ;
           kFingerOpen = open;
         } else if (inspect >= 0) {
-          // CS Karambit Inspect (F):
-          // Continuous, fluid 3-revolution index-finger ring spin with zero stops
-          // between revolutions, followed by a crisp palm-slap catch at the end.
           if (inspect < 0.86) {
             const p = inspect / 0.86;
-            // Smooth ramp-up into continuous high-speed angular velocity
             const continuousPhase = 0.22 * p + 0.78 * smooth(p);
             const totalAngle = continuousPhase * 3 * T;
-            // Subtle gravity whip modulation (never stops, always positive d/dt)
             const whipMod = Math.sin(totalAngle) * 0.18 * Math.sin(p * Math.PI);
-            kx = -(totalAngle + whipMod);
+            kx = totalAngle + whipMod;
             const env = Math.sin(p * Math.PI);
             ky = 0.20 * env + Math.sin(totalAngle) * 0.16 * env;
             kz = -0.14 * env + Math.cos(totalAngle) * 0.14 * env;
             kFingerOpen = clamp01(Math.sin(p * Math.PI) * 1.35);
           } else {
             const catchPhase = (inspect - 0.86) / 0.14;
-            // Damped spring slap into reverse-grip palm
             const slap = Math.sin(catchPhase * Math.PI * 2) * Math.exp(-catchPhase * 4.5) * 0.18;
-            kx = -3 * T + slap;
+            kx = 3 * T - slap;
             ky = 0;
             kz = 0;
             kFingerOpen = Math.max(0, 1 - catchPhase * 3);
@@ -585,12 +515,12 @@ export function createKnifeRig(
         } else if (attack >= 0) {
           const s = Math.sin(attack * Math.PI);
           if (heavy) {
-            kx = s * 0.46;
+            kx = -s * 0.46;
             ky = s * 0.22;
             kz = -s * 0.24;
           } else {
             const dir = combo === 0 ? 1 : -1;
-            kx = s * 0.34;
+            kx = -s * 0.34;
             ky = dir * s * 0.28;
             kz = dir * s * 0.22;
           }
@@ -647,7 +577,6 @@ export function createKnifeRig(
 
       if (style === 'butterfly') {
         if (deploy >= 0) {
-          // CS Butterfly Draw (kept intact as praised by user)
           const [bladeX, biteX, wristX, wristY, wristZ, safePitch, lSwing, fOpen] = keysN(
             deploy,
             [
@@ -670,27 +599,19 @@ export function createKnifeRig(
           latchSwing = lSwing;
           bFingerOpen = fOpen;
         } else if (inspect >= 0) {
-          // ULTRA-FLUID, HIGH-SPEED CONTINUOUS CS BUTTERFLY INSPECT (eAgyDNX2GhI):
-          // Zero piecewise stops! Uses a single C^2-continuous angular momentum
-          // carrier wave across 4 full high-RPM revolutions (8*PI radians) with
-          // continuous figure-8 wrist fanning and centrifugal bite-handle whip lag.
           if (inspect < 0.88) {
             const p = inspect / 0.88;
-            // Fast initial wrist flick (0.38 linear + 0.62 smooth) so velocity never drops to 0
             const carrier = 0.38 * p + 0.62 * smooth(p);
             const env = Math.sin(p * Math.PI);
-            const spinTurns = 4; // 4 fast, seamless full revolutions
+            const spinTurns = 4;
             const baseTheta = carrier * spinTurns * T;
 
-            // Continuous harmonic whip: blade leads, bite handle counter-scissors and chases
-            // At inspect = 0.20 (p = 0.227), baseTheta ≈ 3.76 rad (> 1) and h ≈ 2.85 rad (> 1)
             b = baseTheta + Math.sin(p * Math.PI * 6) * 0.68 * env;
             h =
               baseTheta +
               Math.sin(p * Math.PI * 8 - 0.45) * 1.35 * env +
               Math.sin(p * Math.PI) * 0.55;
 
-            // Continuous 3-turn axial wrist fanning (Thumb Chaplin + Figure-8 Roll)
             wz = carrier * 3 * T + Math.sin(p * Math.PI * 4) * 0.35 * env;
             wx = Math.sin(p * Math.PI * 6) * 0.34 * env;
             wy = Math.cos(p * Math.PI * 6) * 0.26 * env;
@@ -698,7 +619,6 @@ export function createKnifeRig(
             latchSwing = (1.15 + Math.sin(p * Math.PI * 10) * 0.35) * env;
             bFingerOpen = clamp01(env * 1.4);
           } else {
-            // Final 12%: Crisp high-speed handle clack & damped metallic spring lock
             const tail = (inspect - 0.88) / 0.12;
             const clack = Math.sin(tail * Math.PI * 2) * Math.exp(-tail * 5.0);
             b = 4 * T - clack * 0.12;
