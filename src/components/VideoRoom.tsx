@@ -57,6 +57,8 @@ interface VideoTileProps {
   isSpotlight?: boolean;
   aspectRatioMode?: VideoAspectRatioMode;
   fitMode?: VideoFitMode;
+  userVolume?: number;
+  onVolumeChange?: (userId: number, socketId: string, volume: number) => void;
   onKick?: (userId: number) => void;
   onForceMute?: (userId: number) => void;
   onForceCameraOff?: (userId: number) => void;
@@ -75,14 +77,20 @@ export const VideoTile = React.memo(({
   isSpotlight = false,
   aspectRatioMode = 'auto',
   fitMode = 'cover',
+  userVolume,
+  onVolumeChange,
   onKick,
   onForceMute,
   onForceCameraOff,
   onUserClick
 }: VideoTileProps) => {
   const [showMenu, setShowMenu] = useState(false);
+  const [showVolumePopup, setShowVolumePopup] = useState(false);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const volumePopupRef = useRef<HTMLDivElement>(null);
+
+  const currentVolume = userVolume ?? 100;
 
   // Check if stream has active video track
   const videoTrack = stream ? stream.getVideoTracks()[0] : null;
@@ -100,14 +108,17 @@ export const VideoTile = React.memo(({
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowMenu(false);
       }
+      if (volumePopupRef.current && !volumePopupRef.current.contains(e.target as Node)) {
+        setShowVolumePopup(false);
+      }
     };
-    if (showMenu) {
+    if (showMenu || showVolumePopup) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showMenu]);
+  }, [showMenu, showVolumePopup]);
 
   const showVideo = Boolean(hasLiveVideoTrack || (isSharingActive && stream));
 
@@ -206,52 +217,173 @@ export const VideoTile = React.memo(({
           )}
         </div>
 
-        {/* Host Control Actions Dropdown */}
-        {isCurrentRoomHost && !isSelf && (
+        {/* Remote Participant Volume Control Button & Popover */}
+        {!isSelf && (
+          <div className="relative pointer-events-auto flex items-center gap-1.5" ref={volumePopupRef}>
+            <button
+              onClick={() => setShowVolumePopup((prev) => !prev)}
+              aria-label={`${participant.username} sesini ayarla`}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1 backdrop-blur-sm transition-all border shadow-sm cursor-pointer select-none ${
+                currentVolume === 0
+                  ? 'bg-rose-950/85 text-rose-300 border-rose-500/50 hover:bg-rose-900'
+                  : currentVolume > 100
+                  ? 'bg-purple-950/85 text-purple-200 border-purple-500/50 hover:bg-purple-900'
+                  : 'bg-black/60 text-white/90 border-white/10 hover:bg-black/80'
+              }`}
+              title={`Bireysel Ses Seviyesi: %${currentVolume}`}
+            >
+              {currentVolume === 0 ? (
+                <VolumeX size={12} className="text-rose-400 shrink-0" />
+              ) : currentVolume <= 50 ? (
+                <Volume1 size={12} className="shrink-0" />
+              ) : (
+                <Volume2 size={12} className={`shrink-0 ${currentVolume > 100 ? 'text-purple-300' : ''}`} />
+              )}
+              <span>%{currentVolume}</span>
+            </button>
+
+            {showVolumePopup && (
+              <div className="absolute right-0 top-full mt-1.5 w-56 p-3 bg-slate-900/95 backdrop-blur-md text-slate-100 rounded-xl shadow-2xl border border-slate-700/80 z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5 truncate">
+                    <Volume2 size={13} className="text-blue-400 shrink-0" />
+                    <span className="truncate">{participant.username} Sesi</span>
+                  </span>
+                  <span className={`text-[11px] font-black px-1.5 py-0.5 rounded ${
+                    currentVolume === 0 ? 'bg-rose-900/60 text-rose-300' :
+                    currentVolume > 100 ? 'bg-purple-900/60 text-purple-300' :
+                    'bg-blue-900/60 text-blue-300'
+                  }`}>
+                    %{currentVolume}
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={200}
+                  step={5}
+                  value={currentVolume}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    onVolumeChange && onVolumeChange(participant.id, participant.socketId, val);
+                  }}
+                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+
+                <div className="grid grid-cols-4 gap-1 mt-2.5">
+                  <button
+                    onClick={() => onVolumeChange && onVolumeChange(participant.id, participant.socketId, 0)}
+                    className={`px-1 py-1 text-[10px] font-bold rounded transition-colors text-center cursor-pointer ${
+                      currentVolume === 0 ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                    }`}
+                    title="Sustur"
+                  >
+                    %0
+                  </button>
+                  <button
+                    onClick={() => onVolumeChange && onVolumeChange(participant.id, participant.socketId, 50)}
+                    className={`px-1 py-1 text-[10px] font-bold rounded transition-colors text-center cursor-pointer ${
+                      currentVolume === 50 ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                    }`}
+                  >
+                    %50
+                  </button>
+                  <button
+                    onClick={() => onVolumeChange && onVolumeChange(participant.id, participant.socketId, 100)}
+                    className={`px-1 py-1 text-[10px] font-bold rounded transition-colors text-center cursor-pointer ${
+                      currentVolume === 100 ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                    }`}
+                  >
+                    %100
+                  </button>
+                  <button
+                    onClick={() => onVolumeChange && onVolumeChange(participant.id, participant.socketId, 200)}
+                    className={`px-1 py-1 text-[10px] font-bold rounded transition-colors text-center cursor-pointer ${
+                      currentVolume === 200 ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                    }`}
+                    title="Maksimum Güçlendirici"
+                  >
+                    %200 ⚡
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Participant Actions / Host Controls Dropdown */}
+        {!isSelf && (isCurrentRoomHost || onKick || onForceMute) && (
           <div className="relative pointer-events-auto" ref={menuRef}>
             <button
               onClick={() => setShowMenu((prev) => !prev)}
-              aria-label="Yönetici İşlemleri"
+              aria-label="Kullanıcı Seçenekleri"
               className="w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 text-white/80 hover:text-white flex items-center justify-center backdrop-blur-sm transition-colors border border-white/10 cursor-pointer"
             >
               <MoreVertical size={14} />
             </button>
 
             {showMenu && (
-              <div className="absolute right-0 top-full mt-1.5 w-48 bg-slate-900 text-slate-100 rounded-xl shadow-2xl border border-slate-700 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100">
-                <div className="px-3 py-1 text-[11px] font-bold text-slate-400 border-b border-slate-800 truncate">
-                  {participant.username}
+              <div className="absolute right-0 top-full mt-1.5 w-52 bg-slate-900 text-slate-100 rounded-xl shadow-2xl border border-slate-700 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-3 py-1.5 text-[11px] font-bold text-slate-300 border-b border-slate-800 truncate flex items-center justify-between">
+                  <span className="truncate">{participant.username}</span>
+                  <span className="text-[10px] text-blue-400 font-black">%{currentVolume}</span>
                 </div>
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    onForceMute && onForceMute(participant.id);
-                  }}
-                  className="w-full px-3 py-2 text-left text-xs font-semibold text-amber-400 hover:bg-amber-950/40 flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <MicOff size={13} />
-                  <span>Sustur (Mute)</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    onForceCameraOff && onForceCameraOff(participant.id);
-                  }}
-                  className="w-full px-3 py-2 text-left text-xs font-semibold text-blue-400 hover:bg-blue-950/40 flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <CameraOff size={13} />
-                  <span>Kamerayı Kapatmaya Zorla</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    onKick && onKick(participant.id);
-                  }}
-                  className="w-full px-3 py-2 text-left text-xs font-semibold text-rose-400 hover:bg-rose-950/40 flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <X size={13} />
-                  <span>Odadan At (Kick)</span>
-                </button>
+
+                {/* Inline Volume Control */}
+                <div className="px-3 py-2 border-b border-slate-800/80">
+                  <div className="flex items-center justify-between text-[10px] font-bold mb-1 text-slate-400">
+                    <span>Ses Düzeyi</span>
+                    <span>%{currentVolume}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={5}
+                    value={currentVolume}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      onVolumeChange && onVolumeChange(participant.id, participant.socketId, val);
+                    }}
+                    className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {isCurrentRoomHost && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        onForceMute && onForceMute(participant.id);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold text-amber-400 hover:bg-amber-950/40 flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <MicOff size={13} />
+                      <span>Sustur (Mute)</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        onForceCameraOff && onForceCameraOff(participant.id);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold text-blue-400 hover:bg-blue-950/40 flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <CameraOff size={13} />
+                      <span>Kamerayı Kapatmaya Zorla</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        onKick && onKick(participant.id);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold text-rose-400 hover:bg-rose-950/40 flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <X size={13} />
+                      <span>Odadan At (Kick)</span>
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -321,6 +453,8 @@ interface VideoRoomViewProps {
   onForceMuteUser?: (userId: number) => void;
   onForceCameraOffUser?: (userId: number) => void;
   onUserClick?: (userId: number) => void;
+  userVolumes?: Record<number, number>;
+  onVolumeChange?: (userId: number, socketId: string, volume: number) => void;
 }
 
 export function VideoRoomView({
@@ -364,7 +498,9 @@ export function VideoRoomView({
   onKickUser,
   onForceMuteUser,
   onForceCameraOffUser,
-  onUserClick
+  onUserClick,
+  userVolumes,
+  onVolumeChange
 }: VideoRoomViewProps) {
   const count = participants.length;
 
@@ -630,6 +766,8 @@ export function VideoRoomView({
                     isSpotlight={true}
                     aspectRatioMode={aspectRatioMode}
                     fitMode={fitMode}
+                    userVolume={userVolumes ? (userVolumes[screenSharer.id] ?? 100) : 100}
+                    onVolumeChange={onVolumeChange}
                     onKick={onKickUser}
                     onForceMute={onForceMuteUser}
                     onForceCameraOff={onForceCameraOffUser}
@@ -659,6 +797,8 @@ export function VideoRoomView({
                           isScreenSharing={false}
                           aspectRatioMode={aspectRatioMode}
                           fitMode={fitMode}
+                          userVolume={userVolumes ? (userVolumes[participant.id] ?? 100) : 100}
+                          onVolumeChange={onVolumeChange}
                           onKick={onKickUser}
                           onForceMute={onForceMuteUser}
                           onForceCameraOff={onForceCameraOffUser}
@@ -693,6 +833,8 @@ export function VideoRoomView({
                       isScreenSharing={isSelf ? isScreenSharing : Boolean(participant.isScreenSharing)}
                       aspectRatioMode={aspectRatioMode}
                       fitMode={fitMode}
+                      userVolume={userVolumes ? (userVolumes[participant.id] ?? 100) : 100}
+                      onVolumeChange={onVolumeChange}
                       onKick={onKickUser}
                       onForceMute={onForceMuteUser}
                       onForceCameraOff={onForceCameraOffUser}

@@ -10346,6 +10346,7 @@ async function startServer() {
         isMuted: false,
         isSpeaking: false,
         isDeafened: false,
+        isVideoOff: true,
         joinedAt: new Date().toISOString()
       };
 
@@ -10413,6 +10414,7 @@ async function startServer() {
         isMuted: false,
         isSpeaking: false,
         isDeafened: false,
+        isVideoOff: true,
         joinedAt: new Date().toISOString()
       };
 

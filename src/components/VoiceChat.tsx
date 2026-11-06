@@ -179,7 +179,9 @@ export default function VoiceChat({
     initiateOfferToPeer,
     removePeerConnection,
     handleRemoteForceMute,
-    handleRemoteForceCameraOff
+    handleRemoteForceCameraOff,
+    userVolumes,
+    setParticipantVolume
   } = useWebRTC({
     socket,
     currentUserId,
@@ -359,7 +361,7 @@ export default function VoiceChat({
           setCurrentRoom(res.room);
           setShowCreateModal(false);
           setNewRoomName('');
-          await setupLocalMedia(true);
+          await setupLocalMedia(false);
         } else {
           alert(res?.message || 'Oda oluşturulamadı.');
         }
@@ -370,7 +372,7 @@ export default function VoiceChat({
   // Join Room Handler with batched peer initiation
   const handleJoinRoom = async (roomId: string) => {
     if (!socket) return;
-    await setupLocalMedia(true);
+    await setupLocalMedia(false);
 
     socket.emit('join_voice_room', { roomId }, async (res: any) => {
       if (res && res.success && res.room) {
@@ -498,6 +500,8 @@ export default function VoiceChat({
           onForceMuteUser={handleForceMuteUser}
           onForceCameraOffUser={handleForceCameraOffUser}
           onUserClick={onUserClick}
+          userVolumes={userVolumes}
+          onVolumeChange={setParticipantVolume}
         />
       ) : (
         /* View 2: Voice & Video Rooms Lobby */

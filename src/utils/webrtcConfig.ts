@@ -200,21 +200,18 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
     return null;
   }
 
-  const isMobile = isMobileOrTablet();
   let stream: MediaStream | null = null;
 
+  // Ultra-high quality screen sharing constraints (Full 60fps, up to 4K native capture without downscaling)
   const displayConstraints = {
     video: {
-      width: { ideal: 1920, max: 1920 },
-      height: { ideal: 1080, max: 1080 },
+      width: { ideal: 3840, max: 3840 },
+      height: { ideal: 2160, max: 2160 },
       frameRate: { ideal: 60, max: 60 },
-      // @ts-ignore
-      displaySurface: 'browser',
       // @ts-ignore
       cursor: 'always'
     },
     ...screenAudioOptions(withAudio, Boolean((navigator.mediaDevices?.getSupportedConstraints?.() as any)?.restrictOwnAudio))
-
   };
 
   try {
@@ -222,15 +219,35 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
       stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints as DisplayMediaStreamOptions);
     }
   } catch (err1: any) {
-    console.warn('[ScreenShare] High-quality attempt failed:', err1?.name, err1?.message);
+    console.warn('[ScreenShare] Ultra-high quality attempt notice:', err1?.name, err1?.message);
     
-    // Fallback to basic if high quality rejected but not by user
+    // Fallback to 1080p 60fps or standard video if ultra-high 4K rejected
     if (err1?.name !== 'NotAllowedError' && err1?.name !== 'AbortError') {
       try {
-        stream = await navigator.mediaDevices.getDisplayMedia({ ...displayConstraints, video: true } as DisplayMediaStreamOptions);
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: 1920, max: 1920 },
+            height: { ideal: 1080, max: 1080 },
+            frameRate: { ideal: 60, max: 60 }
+          },
+          ...screenAudioOptions(withAudio, false)
+        } as DisplayMediaStreamOptions);
       } catch (err2) {
-        console.warn('[ScreenShare] Fallback failed:', err2);
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true } as DisplayMediaStreamOptions);
+        } catch (err3) {
+          console.warn('[ScreenShare] Fallback failed:', err3);
+        }
       }
+    }
+  }
+
+  if (stream) {
+    const vTrack = stream.getVideoTracks()[0];
+    if (vTrack && 'contentHint' in vTrack) {
+      try {
+        (vTrack as any).contentHint = 'detail';
+      } catch (e) {}
     }
   }
 
@@ -259,14 +276,14 @@ export async function applySenderBitrateLimit(
   let maxFps = 30;
 
   if (isScreenShare) {
-    // High-quality screen sharing: 5 Mbps target for 1080p/60fps
-    targetBitrateBps = 5_000_000;
+    // Ultra-high quality screen sharing: 10-12 Mbps target for crystal clear 1080p/4K 60fps
+    targetBitrateBps = 10_000_000;
     maxFps = 60;
     
-    // Apply contentHint for sharpness
+    // Apply contentHint = 'detail' for razor-sharp text and graphics
     if ('contentHint' in sender.track) {
       try {
-        (sender.track as any).contentHint = 'motion';
+        (sender.track as any).contentHint = 'detail';
       } catch (e) {}
     }
   } else {
@@ -302,6 +319,10 @@ export async function applySenderBitrateLimit(
     
     params.encodings[0].maxBitrate = targetBitrateBps;
     params.encodings[0].maxFramerate = maxFps;
+    if (isScreenShare) {
+      params.encodings[0].scaleResolutionDownBy = 1;
+      params.degradationPreference = 'maintain-resolution';
+    }
     params.encodings[0].priority = isScreenShare ? 'high' : 'medium';
     params.encodings[0].networkPriority = isScreenShare ? 'high' : 'medium';
 
