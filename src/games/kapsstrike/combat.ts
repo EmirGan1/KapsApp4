@@ -1,3 +1,4 @@
+import {spreadSpawn} from "./spawns";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from './world';
 import { MELEE } from "./config";
 import {
@@ -244,6 +245,7 @@ export function simulate(s: TrainingState, input: InputCommand, training = true)
         sequence = s.lastSequence,
         fresh = createTraining(s.map, p.id);
       s.player = fresh.player;
+      s.player.movement=newMovement(spreadSpawn(MAPS[s.map],s.tick));
       s.player.protectedUntil = s.tick + C.protectionTicks;
       s.eventId = serial;
       s.score = score;

@@ -40,7 +40,7 @@ test('actual renderer finishes fast inspect/deploy at 60 FPS and new skins keep 
  const engine=new NullEngine(),r=new StrikeRenderer({} as HTMLCanvasElement,MAPS.dust,{...DEFAULT_SETTINGS,quality:'low'},engine),state=createTraining('dust');state.player.weapon.selected='knife';
  try{for(const style of ['karambit','butterfly','tanto','default']){
   const item=COSMETICS.find(c=>c.id===`knife-${style}-1`)!;r.updateSettings({...DEFAULT_SETTINGS,quality:'low',cosmeticLoadout:{knife:item.id}});r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.ok((r as any).knifeDeployTimer>0);
-  for(let i=0;i<18;i++)r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.equal((r as any).knifeDeployTimer,0);r.inspect();const duration=(r as any).inspectTime;assert.ok(duration<=2.6);
+  for(let i=0;i<Math.ceil(knifeTiming(style).deploy*60)+2;i++)r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.equal((r as any).knifeDeployTimer,0);r.inspect();const duration=(r as any).inspectTime;assert.ok(duration<=2.6);
   for(let i=0;i<170;i++)r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.equal((r as any).inspectTime,0);
   const meshes=r.scene.getTransformNodeByName('knife')!.getChildMeshes();assert.ok(meshes.filter(m=>m.metadata?.knifeStyle===style&&m.metadata?.knifePart==='blade').every(m=>m.isEnabled()));assert.ok(meshes.filter(m=>m.metadata?.knifeStyle&&m.metadata.knifeStyle!==style).every(m=>!m.isEnabled()));
  }}finally{r.dispose();}

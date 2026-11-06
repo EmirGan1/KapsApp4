@@ -1457,3 +1457,10 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
  .ks-bomb-score>div{line-height:16px}.ks-bomb-score strong{font-size:16px;line-height:16px}
  .ks-bomb-score>small{display:block;line-height:8px}
 }
+
+/* Large, gradual injury feedback keeps the aiming centre readable. */
+.ks-hurt-vignette {background:radial-gradient(ellipse at center,transparent 25%,rgba(158,0,5,.3) 58%,rgba(205,0,8,.78) 100%);box-shadow:inset 0 0 160px 45px rgba(200,0,8,.9);border:3px solid rgba(255,55,55,.8);}
+.ks-critical-health {position:absolute;inset:0;pointer-events:none;z-index:3;background:radial-gradient(ellipse at center,transparent 15%,rgba(150,0,5,.28) 43%,rgba(185,0,7,.88) 100%);box-shadow:inset 0 0 160px 55px rgba(185,0,8,.8);animation:ks-critical-pulse 1.6s ease-in-out infinite;}
+.ks-critical-health-severe {background:radial-gradient(ellipse at center,transparent 8%,rgba(165,0,8,.4) 35%,rgba(210,0,10,.94) 100%);}
+@keyframes ks-critical-pulse {0%,100%{opacity:.46}50%{opacity:.94}}
+@media(prefers-reduced-motion:reduce){.ks-critical-health {animation:none;opacity:.65;}}

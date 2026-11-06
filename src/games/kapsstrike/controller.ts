@@ -780,6 +780,7 @@ export class StrikeController {
         skin: p2.skin,
         weaponSkin:p2.weaponSkin,
         hp: p2.hp,
+        protectedUntil:p2.protectedUntil,
         velocity:p2.velocity,
         stance: p2.stance,
         selectedWeapon: p2.selectedWeapon,
