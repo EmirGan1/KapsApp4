@@ -1,3 +1,6 @@
+import {StrikeSampleBank, type SampleId} from "./audioSamples";
+import type {StepSurface} from "./footsteps";
+import {WEAPONS} from "./config";
 import { WeaponId, Vec3 } from "./types";
 
 export type AudioKind =
@@ -16,14 +19,49 @@ export type AudioKind =
   | "footstep";
 
 /**
- * High-fidelity CS-style procedural audio synthesizer with true 360-degree HRTF-inspired
- * spatial panning (azimuth angle + elevation + distance attenuation + air absorption filter).
+ * Recorded firearm/foley samples with bounded voices and spatial stereo panning.
+ * Procedural combat cues remain available while the sample bank loads.
  */
 export class StrikeAudio {
   private ctx: AudioContext | null = null;
   private voices = new Set<{ stop: () => void }>();
   private masterGain: GainNode | null = null;
-  volume = 0.45;
+  private samples = new StrikeSampleBank();
+  private reloadVoices = new Set<{stop:()=>void}>();
+  private _volume = 0.45;
+  get volume(){return this._volume;}
+  set volume(value:number){
+    this._volume=Number.isFinite(value)?Math.max(0,Math.min(1,value)):0;
+    if(this.masterGain&&this.ctx)this.masterGain.gain.setValueAtTime(this._volume>0?1:0,this.ctx.currentTime);
+    if(this._volume===0)this.cancelReload();
+  }
+  private stepIndex = 0;
+  cancelReload(){for(const voice of this.reloadVoices)voice.stop();this.reloadVoices.clear();}
+  reload(weapon:WeaponId,duration=WEAPONS[weapon].reload){
+    this.cancelReload();
+    if(weapon==='knife'||!this.ctx||this.ctx.state!=='running'||this.volume<=0)return;
+    const parts=[['reload-out',.02],['reload-in',.58],['reload-bolt',.86]] as const;
+    if(!parts.every(([id])=>this.samples.get(id))){this.play('reload');return;}
+    for(const [id,fraction]of parts)this.sample(id,undefined,.65,1,this.ctx.currentTime+Math.max(0,Math.min(Math.max(.3,duration)*fraction,duration-.3)),true);
+  }
+  footstep(material:StepSurface='concrete',loudness=.65,position?:Vec3){
+    const id=`step-${material}-${this.stepIndex++%4}` as SampleId;
+    if(this.voices.size>=24)return;
+    if(!this.sample(id,position,.28*loudness,.96+Math.random()*.08))this.play('footstep',0,position);
+  }
+  private sample(id:SampleId,position?:Vec3,level=1,rate=1,when?:number,reload=false){
+    const ctx=this.ctx,clip=this.samples.get(id);
+    if(!ctx||ctx.state!=='running'||this.volume<=0||this.voices.size>=32||!clip)return false;
+    const spatial=this.create3DNode(position),source=ctx.createBufferSource(),gain=ctx.createGain();
+    source.buffer=clip.buffer;source.playbackRate.value=rate;
+    gain.gain.value=this.volume*level;source.connect(gain);gain.connect(spatial.input);
+    let ended=false;
+    const entry={stop:()=>{try{source.stop();}catch{}finish();}};
+    const finish=()=>{if(ended)return;ended=true;this.voices.delete(entry);this.reloadVoices.delete(entry);source.disconnect();gain.disconnect();spatial.cleanup();};
+    source.onended=finish;this.voices.add(entry);if(reload)this.reloadVoices.add(entry);
+    source.start(when??ctx.currentTime,clip.offset,clip.duration);
+    return true;
+  }
   private announcements = new Set<SpeechSynthesisUtterance>();
 
   // Current listener pose for 360 spatial calculation
@@ -54,11 +92,14 @@ export class StrikeAudio {
         const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         this.ctx = new AudioCtx();
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.setValueAtTime(1, this.ctx.currentTime);
-        this.masterGain.connect(this.ctx.destination);
+        this.masterGain.gain.setValueAtTime(this.volume>0?1:0, this.ctx.currentTime);
+        const limiter=this.ctx.createDynamicsCompressor();
+        limiter.threshold.value=-6;limiter.knee.value=12;limiter.ratio.value=6;limiter.attack.value=.003;limiter.release.value=.12;
+        this.masterGain.connect(limiter);limiter.connect(this.ctx.destination);
       }
+      void this.samples.load(this.ctx);
       if (this.ctx.state === "suspended") {
-        void this.ctx.resume();
+        void this.ctx.resume().catch(()=>{});
       }
     } catch {}
   }
@@ -147,6 +188,12 @@ export class StrikeAudio {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== "running" || this.volume === 0 || this.voices.size >= 32) return;
 
+    const profiles:Partial<Record<AudioKind,[SampleId,number,number]>>={
+      rifle:['rifle',.85,1],carbine:['carbine',.85,1],smg:['smg',.72,1.05],pistol:['pistol',.8,1],
+      sniper:['sniper',1,.94],shotgun:['shotgun',1,1],lmg:['rifle',.95,.88],railgun:['sniper',1,.82]
+    };
+    const profile=profiles[kind];
+    if(profile&&this.sample(profile[0],sourcePos,profile[1],profile[2]*(.985+Math.random()*.03)))return;
     const t0 = ctx.currentTime;
     const { input, distGain, cleanup } = this.create3DNode(sourcePos);
     if (distGain < 0.01) {
@@ -546,6 +593,8 @@ export class StrikeAudio {
   }
 
   dispose() {
+    this.cancelReload();
+    this.samples.dispose();
     for (const speech of this.announcements) speech.volume = 0;
     this.announcements.clear();
     for (const v of this.voices) {
@@ -554,7 +603,7 @@ export class StrikeAudio {
       } catch {}
     }
     this.voices.clear();
-    void this.ctx?.close();
+    void this.ctx?.close().catch(()=>{});
     this.ctx = null;
   }
 }

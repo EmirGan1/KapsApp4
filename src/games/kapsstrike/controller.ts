@@ -1,3 +1,4 @@
+import {FootstepTracker,stepSurface} from "./footsteps";
 import {touchAimFriction} from './aimAssist';
 import {TeamSpectator} from './spectator';
 import {nearestSupply,supplyLabel} from './world';
@@ -22,7 +23,7 @@ import { MAPS } from "./maps";
 import {touchControls,currentInputDevice} from '../../utils/gameInput';
 import { createTraining, simulate } from "./combat";
 import { PHYSICS as C, WEAPONS, WEAPON_ORDER, ownsWeapon } from "./config";
-import { clamp, fits } from "./physics";
+import { clamp, fits, support } from "./physics";
 
 export interface StrikeHUD {
   bombEquipped?:boolean;
@@ -97,6 +98,8 @@ export class StrikeController {
   readonly state: TrainingState;
   readonly renderer: StrikeRenderer;
   readonly audio = new StrikeAudio();
+  private footsteps = new FootstepTracker();
+  private audioReloadWeapon?:WeaponId;
   private keys = new Set<string>();
   private bindings: Bindings;
   private callbacks?: MultiplayerOptions;
@@ -692,7 +695,15 @@ export class StrikeController {
         this.nextBombBeep=now+(left>20?950:left>10?540:left>5?280:left>2?140:75);
       }
       // Update 360 audio listener position & yaw
-      this.audio.updateListener(this.state.player.movement.position, this.yaw);
+      this.audio.updateListener(this.spectator?.position||this.state.player.movement.position, this.spectator?.yaw??this.yaw);
+      const player=this.state.player,movement=player.movement;
+      if(!this.menuOverlay&&player.hp>0&&!this.spectator){
+        const level=this.footsteps.step('local',movement.position,movement.grounded,movement.stance,now);
+        if(level)this.audio.footstep(stepSurface(MAPS[this.state.map],movement.position),level);
+      }else this.footsteps.reset('local');
+      if(this.audioReloadWeapon&&(this.menuOverlay||player.hp<=0||player.weapon.selected!==this.audioReloadWeapon||player.weapon.reloadUntil<=this.state.tick)){
+        this.audio.cancelReload();this.audioReloadWeapon=undefined;
+      }
       const decay=Math.exp(-elapsed*16);
       for(const axis of ["x","y","z"] as const)this.correction[axis]*=decay;
       this.renderer.render(
@@ -769,6 +780,7 @@ export class StrikeController {
         skin: p2.skin,
         weaponSkin:p2.weaponSkin,
         hp: p2.hp,
+        velocity:p2.velocity,
         stance: p2.stance,
         selectedWeapon: p2.selectedWeapon,
         yaw: p1.yaw + Math.atan2(Math.sin(p2.yaw-p1.yaw),Math.cos(p2.yaw-p1.yaw)) * alpha,
@@ -783,9 +795,21 @@ export class StrikeController {
       };
     });
 
+    if(!this.menuOverlay){
+      const map=MAPS[this.state.map];
+      for(const p of interpolatedPlayers){
+        if(p.id===myId||p.hp<=0||now-newer!.time>350){this.footsteps.reset(p.id);continue;}
+        const grounded=Math.abs(p.position.y-support(map,p.position,p.position.y+.12))<.16&&Math.abs(p.velocity.y)<1;
+        const level=this.footsteps.step(p.id,p.position,grounded,p.stance,now);
+        if(level&&Math.hypot(p.position.x-this.audioListenerPosition().x,p.position.z-this.audioListenerPosition().z)<28)
+          this.audio.footstep(stepSurface(map,p.position),level,p.id===this.spectator?.id?undefined:p.position);
+      }
+    }
     this.refreshSpectator(interpolatedPlayers);
     this.renderer.renderRemotePlayers(interpolatedPlayers.filter(p=>p.id!==this.spectator?.id), myId, this.localTeam);
   }
+
+  private audioListenerPosition(){return this.spectator?.position||this.state.player.movement.position;}
 
   private feedback(e: CombatEvent, predicted=false) {
     if(!predicted)this.processed = Math.max(this.processed,e.id);
@@ -824,7 +848,11 @@ export class StrikeController {
     }
     if (e.kind === "reload") {
       const isLocal = !this.isMultiplayer || e.actor === this.state.player.id;
-      this.audio.play("reload", 0, isLocal ? undefined : e.from);
+      if(isLocal){
+        const weapon=e.weapon||this.state.player.weapon.selected;
+        this.audioReloadWeapon=weapon;
+        this.audio.reload(weapon,WEAPONS[weapon].reload);
+      }
     }
     if (e.kind === "damage") {
       this.state.lastDamageTick = this.state.tick;
@@ -1043,7 +1071,7 @@ export class StrikeController {
   }
 
   setMenuOverlay(open:boolean){
-    this.menuOverlay=open;this.clearInput();
+    this.menuOverlay=open;this.clearInput();if(open){this.audio.cancelReload();this.footsteps.reset();}
     if(open&&document.pointerLockElement===this.canvas)document.exitPointerLock();
     if(!open&&this.active&&!this.isTouchDevice)this.start();
   }
@@ -1051,6 +1079,7 @@ export class StrikeController {
   pause(reason?: string) {
     if (!this.active) return;
     this.active = false;
+    this.audio.cancelReload();this.footsteps.reset();
     this.clearInput();
     this.renderer.engine.stopRenderLoop(this.loop);
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
