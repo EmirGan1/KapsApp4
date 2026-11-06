@@ -776,10 +776,10 @@ export class StrikeRenderer {
     if (p.weapon.selected === "knife") {
       // Base CS tactical knife posture
       if (knifeType === "karambit") {
-        // CS Reverse Grip: ~80% horizontal, ~20% vertical cant (more parallel to screen,
-        // hawkbill claw gracefully sweeping across the bottom-right viewmodel)
-        this.gunRoot.position.set(0.23, -0.21, 0.76);
-        this.gunRoot.rotation.set(-0.32, -0.38, 0.68);
+        // CS Reverse Grip: Flat horizontal posture (pointing across the bottom-right of screen,
+        // ring to the right and curved blade sweeping flatly forward-left)
+        this.gunRoot.position.set(0.24, -0.24, 0.74);
+        this.gunRoot.rotation.set(-1.08, -0.28, 1.35);
       } else if (knifeType === "butterfly") {
         this.gunRoot.position.set(0.22, -0.23, 0.80);
         this.gunRoot.rotation.set(-0.08, -0.62, -0.14);
