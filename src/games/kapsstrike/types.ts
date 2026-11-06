@@ -131,7 +131,7 @@ export interface CombatEvent {
   tick: number;
   actor: string;
   shotId?:string;
-  kind: "shot" | "hit" | "reload" | "death" | "respawn" | "damage";
+  kind: "shot" | "hit" | "reload" | "death" | "respawn" | "damage" | "defuse";
   weapon?: WeaponId;
   from?: Vec3;
   to?: Vec3;

@@ -8,10 +8,22 @@ import {
   CombatEvent,
   Vec3,
   WeaponId,
+  WeaponState,
 } from "./types";
 import { PHYSICS as C, ownsWeapon, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "./config";
 import { MAPS } from "./maps";
-import { newMovement, move, clamp, rayBox, raySolid, fits } from "./physics";
+import { newMovement, move, clamp, rayBox, raySolid, fits, collisionSolids } from "./physics";
+
+export function shouldAutoReload(w: WeaponState, tick: number): boolean {
+  const cur = w.selected;
+  return (
+    cur !== "knife" &&
+    WEAPONS[cur].capacity > 0 &&
+    w.ammo[cur] <= 0 &&
+    !w.reloadUntil &&
+    tick >= w.switchUntil
+  );
+}
 export function createTraining(
   map: TrainingState["map"],
   id = "local-player",
@@ -155,9 +167,8 @@ export function shoot(s: TrainingState, ads: boolean) {
   for (let pellet = 0; pellet < def.pellets; pellet++) {
     const dir = shotDirection(p,w.shotIndex,pellet,ads);
     let nearest = def.range;
-    for (const solid of MAPS[s.map].solids)
-      if (!solid.detail)
-        nearest = Math.min(nearest, raySolid(origin, dir, solid, def.range));
+    for (const solid of collisionSolids(MAPS[s.map]))
+      nearest = Math.min(nearest, raySolid(origin, dir, solid, def.range));
     let hit: TrainingState["targets"][number] | undefined,
       head = false;
     for (const t of s.targets) {
@@ -286,7 +297,7 @@ export function simulate(s: TrainingState, input: InputCommand, training = true)
     w.reloadUntil = 0;
   }
   if (
-    input.reload &&
+    (input.reload || shouldAutoReload(w, s.tick)) &&
     !w.reloadUntil &&
     w.ammo[w.selected] < WEAPONS[w.selected].capacity
   ) {
@@ -296,6 +307,11 @@ export function simulate(s: TrainingState, input: InputCommand, training = true)
   move(p.movement, { ...input, weapon: w.selected }, MAPS[s.map], s.tick);
   const d = WEAPONS[w.selected];
   if (input.fire && (d.automatic || !w.triggerHeld)) shoot(s, input.ads);
+  if (shouldAutoReload(w, s.tick)) {
+    w.reloadUntil = s.tick + Math.ceil(d.reload / C.dt);
+    event(s, { kind: "reload", weapon: w.selected });
+    input.reload = true;
+  }
   w.triggerHeld = input.fire;
   const hazard = MAPS[s.map].hazard,
     pos = p.movement.position;
@@ -319,8 +335,8 @@ export function simulate(s: TrainingState, input: InputCommand, training = true)
           z: (to.z - from.z) / len,
         };
       if (
-        !MAPS[s.map].solids.some(
-          (g) => !g.detail && raySolid(from, dir, g, len) < len,
+        !collisionSolids(MAPS[s.map]).some(
+          (g) => raySolid(from, dir, g, len) < len,
         )
       )
         takeDamage(s, 14, from);

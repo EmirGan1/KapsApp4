@@ -32,8 +32,44 @@ import {
 } from "../games/kapsstrike/types";
 import { MAPS } from "../games/kapsstrike/maps";
 import { PHYSICS as C, ownsWeapon, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "../games/kapsstrike/config";
-import { newMovement, move, fits, clamp, raySolid, rayBox } from "../games/kapsstrike/physics";
-import { aimDirection, eye, fireDelay, spreadFor, weaponDamage, shotDirection } from "../games/kapsstrike/combat";
+import { newMovement, move, fits, clamp, raySolid, rayBox, collisionSolids } from "../games/kapsstrike/physics";
+import { aimDirection, eye, fireDelay, spreadFor, weaponDamage, shotDirection, shouldAutoReload } from "../games/kapsstrike/combat";
+
+function clonePlayerState(s: PlayerState): PlayerState {
+  return {
+    ...s,
+    movement: {
+      ...s.movement,
+      position: { ...s.movement.position },
+      velocity: { ...s.movement.velocity },
+      spawnPosition: s.movement.spawnPosition ? { ...s.movement.spawnPosition } : undefined,
+      lastSafePosition: s.movement.lastSafePosition ? { ...s.movement.lastSafePosition } : undefined,
+    },
+    weapon: {
+      ...s.weapon,
+      ammo: { ...s.weapon.ammo },
+      inventory: s.weapon.inventory ? [...s.weapon.inventory] : undefined,
+    },
+  };
+}
+
+function cloneWorld(w: StrikeWorld): StrikeWorld {
+  return {
+    ...w,
+    pickups: w.pickups.map((p) => ({
+      ...p,
+      position: { ...p.position },
+      weapons: p.weapons ? [...p.weapons] : undefined,
+    })),
+    drop: w.drop ? { ...w.drop, position: { ...w.drop.position } } : undefined,
+    respawns: w.respawns
+      ? w.respawns.map((r) => ({
+          at: r.at,
+          pickup: { ...r.pickup, position: { ...r.pickup.position }, weapons: r.pickup.weapons ? [...r.pickup.weapons] : undefined },
+        }))
+      : undefined,
+  };
+}
 
 export interface StrikeServerConfig {
   tickRate: number; // 60 Hz
@@ -284,22 +320,19 @@ export class StrikeRoom {
     };
   }
 
-  getSnapshotForPlayer(playerSocketId: string): StrikeSnapshot {
-    const targetPlayer = this.players.get(playerSocketId);
-    const ackSequence = targetPlayer ? targetPlayer.lastSequence : 0;
-
+  buildSharedSnapshotBase() {
     const playerSnapshots: PlayerSnapshot[] = Array.from(this.players.values()).map((p) => ({
       connected: !p.isDisconnected,
       id: p.id,
       userId: p.userId,
       username: p.username,
       skin: p.skin,
-      weaponSkin:p.cosmeticLoadout[p.state.weapon.selected],
+      weaponSkin: p.cosmeticLoadout[p.state.weapon.selected],
       team: p.team,
       color: p.color,
       hp: p.state.hp,
-      position: p.state.movement.position,
-      velocity: p.state.movement.velocity,
+      position: { ...p.state.movement.position },
+      velocity: { ...p.state.movement.velocity },
       yaw: p.state.yaw,
       pitch: p.state.pitch,
       stance: p.state.movement.stance,
@@ -309,22 +342,41 @@ export class StrikeRoom {
       kills: p.kills,
       deaths: p.deaths,
       score: p.score,
-      assists:p.assists, damage:p.damage, headshots:p.headshots,
+      assists: p.assists,
+      damage: p.damage,
+      headshots: p.headshots,
       ping: p.ping,
     }));
 
     return {
       tick: this.tick,
-      roomCode:this.roomCode,
-      world: structuredClone(this.world),
-      localState: targetPlayer ? structuredClone(targetPlayer.state) : undefined,
+      roomCode: this.roomCode,
+      world: cloneWorld(this.world),
       serverTime: Date.now(),
-      ackSequence,
-      bomb:this.bomb?bombView(this.bomb,playerSocketId):undefined,
       players: playerSnapshots,
       teamScores: this.mode !== "ffa" ? { ...this.teamScores } : undefined,
       timeLeft: this.timeLeft,
       events: [...this.events],
+    };
+  }
+
+  getSnapshotForPlayer(playerSocketId: string, sharedBase?: ReturnType<StrikeRoom["buildSharedSnapshotBase"]>): StrikeSnapshot {
+    const targetPlayer = this.players.get(playerSocketId);
+    const ackSequence = targetPlayer ? targetPlayer.lastSequence : 0;
+    const base = sharedBase ?? this.buildSharedSnapshotBase();
+
+    return {
+      tick: base.tick,
+      roomCode: base.roomCode,
+      world: sharedBase ? cloneWorld(this.world) : base.world,
+      localState: targetPlayer ? clonePlayerState(targetPlayer.state) : undefined,
+      serverTime: base.serverTime,
+      ackSequence,
+      bomb: this.bomb ? bombView(this.bomb, playerSocketId) : undefined,
+      players: base.players,
+      teamScores: base.teamScores ? { ...base.teamScores } : undefined,
+      timeLeft: base.timeLeft,
+      events: base.events,
     };
   }
 
@@ -1031,16 +1083,18 @@ export class KapsStrikeServerManager {
           }
         }
 
-        // Handle reload request
+        // Handle reload request (manual or bot auto-reload)
         const curWeapon = player.state.weapon.selected;
         const wDef = WEAPONS[curWeapon];
-        if (input.reload && !player.state.weapon.reloadUntil) {
+        const botAutoReload = player.id.startsWith("bot-") && shouldAutoReload(player.state.weapon, room.tick);
+        if ((input.reload || botAutoReload) && !player.state.weapon.reloadUntil) {
           if (player.state.weapon.ammo[curWeapon] < wDef.capacity) {
             player.state.weapon.reloadUntil = room.tick + Math.ceil(wDef.reload / C.dt);
             room.addEvent({
               actor: player.id,
               kind: "reload",
               weapon: curWeapon,
+              from: { ...player.state.movement.position },
             });
           }
         }
@@ -1070,6 +1124,16 @@ export class KapsStrikeServerManager {
           player.activeCommand=originalCommand;player.activeReceive=originalReceive;player.state.yaw=yaw;player.state.pitch=pitch;
           if(buffered&&weaponState.shotIndex>=buffered.index)player.pendingFire=undefined;
         }
+        // If input.reload was set on the same command that fired the last bullet, initiate reload immediately
+        if ((input.reload || (player.id.startsWith("bot-") && shouldAutoReload(weaponState, room.tick))) && !weaponState.reloadUntil && weaponState.ammo[curWeapon] < wDef.capacity) {
+          weaponState.reloadUntil = room.tick + Math.ceil(wDef.reload / C.dt);
+          room.addEvent({
+            actor: player.id,
+            kind: "reload",
+            weapon: curWeapon,
+            from: { ...player.state.movement.position },
+          });
+        }
         if (queued) player.state.weapon.triggerHeld = input.fire;
       }
     });
@@ -1078,10 +1142,12 @@ export class KapsStrikeServerManager {
     for(const hit of pendingHits)hit();
     this.checkMatchEndConditions(room);
 
-    // 2. Broadcast snapshots at snapshotRate (30 Hz)
+    // 2. Broadcast snapshots at snapshotRate (30 Hz) using shared precomputed room base
     if (room.tick % Math.round(1 / C.dt / SERVER_CONFIG.snapshotRate) === 0) {
+      const sharedBase = room.buildSharedSnapshotBase();
       room.players.forEach((p) => {
-        const snapshot = room.getSnapshotForPlayer(p.id);
+        if (p.isDisconnected || p.id.startsWith("bot-")) return;
+        const snapshot = room.getSnapshotForPlayer(p.id, sharedBase);
         this.io.to(p.id).emit("strike:snapshot", snapshot);
       });
       if (room.events.length > 32) {
@@ -1164,12 +1230,10 @@ export class KapsStrikeServerManager {
 
     for (let pellet = 0; pellet < def.pellets; pellet++) {
       const dir=shotDirection(pState,wState.shotIndex,pellet,ads);
-      // 1. Raycast against solid map cover
+      // 1. Raycast against solid map cover (pre-filtered collisionSolids skips decorative facades)
       let nearest = def.range,blockedBy:string|undefined;
-      for (const solid of mapDef.solids) {
-        if (!solid.detail) {
-          const distance=raySolid(origin,dir,solid,def.range);if(distance<nearest){nearest=distance;blockedBy=solid.id;}
-        }
+      for (const solid of collisionSolids(mapDef)) {
+        const distance=raySolid(origin,dir,solid,def.range);if(distance<nearest){nearest=distance;blockedBy=solid.id;}
       }
 
       if(nearest<def.range&&receipt.outcome==='miss')receipt.outcome='world';
@@ -1510,11 +1574,20 @@ export class KapsStrikeServerManager {
           const from=eye(player.state),to={...b.position,y:b.position.y+.15};
           const distance=Math.hypot(to.x-from.x,to.y-from.y,to.z-from.z);
           const dir={x:(to.x-from.x)/distance,y:(to.y-from.y)/distance,z:(to.z-from.z)/distance};
-          if(distance>0&&MAPS[room.map].solids.some(s=>!s.detail&&raySolid(from,dir,s,distance)<distance-.05)){
+          if(distance>0&&collisionSolids(MAPS[room.map]).some(s=>raySolid(from,dir,s,distance)<distance-.05)){
             bombInteract(b,socket.id,false,now);reply(false,'Bombaya ulaşmak için engelin etrafından geç.');return;
           }
         }
-        reply(bombInteract(b,socket.id,request.held,now));return;
+        const wasDefusing = b.action?.kind === 'defuse';
+        const ok = bombInteract(b,socket.id,request.held,now);
+        if (ok && !wasDefusing && b.action?.kind === 'defuse') {
+          room.addEvent({
+            actor: socket.id,
+            kind: 'defuse',
+            from: b.position ? { ...b.position } : { ...player.state.movement.position },
+          });
+        }
+        reply(ok);return;
       }
       reply(false,'Geçersiz işlem.');
     });

@@ -52,3 +52,37 @@ test('straight blade attacks interrupt deployment instead of blending two wrist 
  const r=new StrikeRenderer({} as HTMLCanvasElement,MAPS.warehouse,{...DEFAULT_SETTINGS,quality:'low'},new NullEngine()),state=createTraining('warehouse');state.player.weapon.selected='knife';
  try{for(const style of ['tanto','default']){r.updateSettings({...DEFAULT_SETTINGS,quality:'low',cosmeticLoadout:{knife:`knife-${style}-1`}});r.render(state,0,0,false,1,state.player.movement.position,1/60);(r as any).knifeDeployTimer=.4;(r as any).knifeAttackTimer=.28;r.render(state,0,0,false,1,state.player.movement.position,1/60);assert.equal((r as any).knifeDeployTimer,0);}}finally{r.dispose();}
 });
+
+test('auto-reload triggers automatically on empty magazine, High PBR materials freeze, and static shadow maps render once',async()=>{
+ const {simulate,shouldAutoReload}=await import('../src/games/kapsstrike/combat');
+ const {PHYSICS:C,DEFAULT_SETTINGS}=await import('../src/games/kapsstrike/config');
+ const s=createTraining('dust');
+ s.player.weapon.selected='rifle';
+ s.player.weapon.ammo.rifle=1;
+ s.player.weapon.nextFire=0;
+ s.player.weapon.switchUntil=0;
+ const cmd={sequence:1,tick:s.tick,moveX:0,moveZ:0,yaw:0,pitch:0,jump:false,sprint:false,crouch:false,fire:true,ads:false,reload:false};
+ simulate(s,cmd,true);
+ assert.equal(s.player.weapon.ammo.rifle,0);
+ assert.ok(s.player.weapon.reloadUntil>s.tick,'auto-reload must start immediately upon firing the last round');
+ assert.equal(cmd.reload,true,'auto-reload sets cmd.reload for server synchronization');
+ assert.ok(s.events.some(e=>e.kind==='reload'&&e.weapon==='rifle'));
+ const reloadTicks=Math.ceil(WEAPONS.rifle.reload/C.dt)+2;
+ for(let i=0;i<reloadTicks;i++){
+  simulate(s,{sequence:i+2,tick:s.tick,moveX:0,moveZ:0,yaw:0,pitch:0,jump:false,sprint:false,crouch:false,fire:false,ads:false,reload:shouldAutoReload(s.player.weapon,s.tick)},true);
+ }
+ assert.equal(s.player.weapon.ammo.rifle,WEAPONS.rifle.capacity,'magazine refills after auto-reload completes');
+
+ const {NullEngine}=await import('@babylonjs/core/Engines/nullEngine');
+ const {StrikeRenderer}=await import('../src/games/kapsstrike/renderer');
+ const {RenderTargetTexture}=await import('@babylonjs/core/Materials/Textures/renderTargetTexture');
+ const r=new StrikeRenderer({} as HTMLCanvasElement,MAPS.district,{...DEFAULT_SETTINGS,quality:'high'},new NullEngine());
+ try{
+  const mpState=createTraining('district');mpState.targets=[];
+  r.render(mpState,0,0,false,1,mpState.player.movement.position,1/60);
+  assert.equal((r as any).shadow.getShadowMap().getSize().width,2048);
+  assert.equal((r as any).shadow.getShadowMap().refreshRate,RenderTargetTexture.REFRESHRATE_RENDER_ONCE);
+  assert.ok([...(r as any).terrainMaterials.values()].every((m:any)=>m.isFrozen));
+ }finally{r.dispose();}
+});
+

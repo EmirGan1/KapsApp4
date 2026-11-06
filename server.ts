@@ -1366,6 +1366,10 @@ async function startServer() {
 
 
   const httpServer = createServer(app);
+  httpServer.on("connection", (socket) => {
+    socket.setNoDelay(true);
+    socket.setKeepAlive(true, 15000);
+  });
   const io = new Server(httpServer, {
     cors: { 
       origin: (origin, callback) => {
@@ -1384,9 +1388,7 @@ async function startServer() {
       methods: ["GET", "POST"],
       credentials: true 
     },
-    perMessageDeflate: {
-      threshold: 1024
-    },
+    perMessageDeflate: false,
     pingTimeout: 20000,
     pingInterval: 10000,
     maxHttpBufferSize: 2e6 // 2 MB limit for balanced memory usage under 1GB RAM ceiling

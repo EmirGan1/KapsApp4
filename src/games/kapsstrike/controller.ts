@@ -17,13 +17,32 @@ import {
   CombatEvent,
   StrikeSnapshot,
   PlayerSnapshot,
+  PlayerState,
   StrikeTeam,
 } from "./types";
 import { MAPS } from "./maps";
 import {touchControls,currentInputDevice} from '../../utils/gameInput';
-import { createTraining, simulate } from "./combat";
+import { createTraining, simulate, shouldAutoReload } from "./combat";
 import { PHYSICS as C, WEAPONS, WEAPON_ORDER, ownsWeapon } from "./config";
 import { clamp, fits, support } from "./physics";
+
+function cloneLocalState(s: PlayerState): PlayerState {
+  return {
+    ...s,
+    movement: {
+      ...s.movement,
+      position: { ...s.movement.position },
+      velocity: { ...s.movement.velocity },
+      spawnPosition: s.movement.spawnPosition ? { ...s.movement.spawnPosition } : undefined,
+      lastSafePosition: s.movement.lastSafePosition ? { ...s.movement.lastSafePosition } : undefined,
+    },
+    weapon: {
+      ...s.weapon,
+      ammo: { ...s.weapon.ammo },
+      inventory: s.weapon.inventory ? [...s.weapon.inventory] : undefined,
+    },
+  };
+}
 
 export interface StrikeHUD {
   bombEquipped?:boolean;
@@ -514,7 +533,7 @@ export class StrikeController {
         // unacknowledged commands. Replaying with the old lastSequence rejects every input.
         if (snapshot.localState) {
           if(this.state.player.weapon.selected!==snapshot.localState.weapon.selected)this.bombEquipped=false;
-          this.state.player = structuredClone(snapshot.localState);
+          this.state.player = cloneLocalState(snapshot.localState);
           this.state.tick = snapshot.tick;
           this.state.lastSequence = ackSeq;
           for (const cmd of this.unacknowledgedInputs) {
@@ -550,16 +569,21 @@ export class StrikeController {
     socket.on("strike:snapshot", handleSnapshot);
     this.removers.push(() => socket.off("strike:snapshot", handleSnapshot));
 
-    // 2. Ping-pong RTT tracking
-    this.pingInterval = setInterval(() => {
-      if (this.active && socket.connected) {
+    // 2. High-precision EWMA Ping-pong RTT tracking (1s cadence + immediate probe)
+    const measurePing = () => {
+      if (socket.connected) {
         const start = Date.now();
         this.lastPingSent = start;
         socket.emit("strike:ping", start, (ackTs: number) => {
-          this.ping = Math.max(1, Date.now() - ackTs);
+          const rtt = Math.max(1, Date.now() - ackTs);
+          this.ping = this.ping > 0 ? Math.round(this.ping * 0.65 + rtt * 0.35) : rtt;
         });
       }
-    }, 2000);
+    };
+    measurePing();
+    this.pingInterval = setInterval(() => {
+      if (this.active) measurePing();
+    }, 1000);
     this.removers.push(() => clearInterval(this.pingInterval));
   }
 
@@ -595,7 +619,7 @@ export class StrikeController {
             this.down("crouch") || this.down("slide"),
           fire: this.touchFire || this.mouseFire || this.down("fire") || (this.state.player.weapon.selected === "knife" && (this.touchAds || this.ads || this.down("ads"))),
           ads: this.touchAds || this.ads || this.down("ads"),
-          reload: this.pendingReload,
+          reload: this.pendingReload || shouldAutoReload(this.state.player.weapon, this.state.tick),
           weapon: this.pendingWeapon,
           interact:this.pendingInteract,
         };
@@ -744,7 +768,9 @@ export class StrikeController {
 
     const myId = this.socket?.id;
     const now = performance.now();
-    const renderTime = now - clamp(70+this.jitter*2,70,150);
+    // Adaptive low-latency interpolation buffer (scales down to ~42ms on low jitter instead of rigid 70ms floor)
+    const baseDelay = this.ping > 0 ? clamp(this.ping * 0.45, 38, 62) : 45;
+    const renderTime = now - clamp(baseDelay + this.jitter * 1.6, 38, 135);
 
     // Find two snapshots surrounding renderTime
     let older: BufferedSnapshot | null = null;
@@ -813,8 +839,19 @@ export class StrikeController {
   private audioListenerPosition(){return this.spectator?.position||this.state.player.movement.position;}
 
   private feedback(e: CombatEvent, predicted=false) {
-    if(!predicted)this.processed = Math.max(this.processed,e.id);
-    if (this.isMultiplayer && e.actor !== this.state.player.id && e.kind !== "shot") return;
+    if (!predicted) this.processed = Math.max(this.processed, e.id);
+    if (
+      this.isMultiplayer &&
+      e.actor !== this.state.player.id &&
+      e.kind !== "shot" &&
+      e.kind !== "reload" &&
+      e.kind !== "defuse"
+    )
+      return;
+    if (e.kind === "defuse") {
+      this.audio.play("bombDefuseStart", 0, e.from || this.state.bomb?.position);
+      return;
+    }
     if (e.kind === "shot") {
       if (this.shotSounds.get(e.actor) === e.tick) return;
       this.shotSounds.set(e.actor,e.tick);
@@ -853,6 +890,8 @@ export class StrikeController {
         const weapon=e.weapon||this.state.player.weapon.selected;
         this.audioReloadWeapon=weapon;
         this.audio.reload(weapon,WEAPONS[weapon].reload);
+      } else if (e.from) {
+        this.audio.play("reload", 0, e.from);
       }
     }
     if (e.kind === "damage") {

@@ -24,6 +24,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
@@ -99,6 +100,8 @@ export class StrikeRenderer {
   private falling?:Mesh;
   private smoke:Mesh[]=[];
   private bombMesh?:Mesh;
+  private bombIndicator?:Mesh;
+  private bombBeaconRing?:Mesh;
   private blast?:BombEffects;
   private blastFlash?:Mesh;
   private heldBomb?:Mesh;
@@ -115,6 +118,13 @@ export class StrikeRenderer {
   private scaleTimer=performance.now();
   private slowSamples=0;
   private fastSamples=0;
+  private readonly scratchFrom = new Vector3();
+  private readonly scratchTo = new Vector3();
+  private readonly scratchMid = new Vector3();
+  private readonly hasMovingTargets: boolean;
+  private knifeChildMeshes: Mesh[] = [];
+  private appliedKnifeVisibility = "";
+  private shadowTick = 0;
   constructor(
     readonly canvas: HTMLCanvasElement,
     readonly map: MapDefinition,
@@ -122,6 +132,7 @@ export class StrikeRenderer {
     injectedEngine?: Engine,
   ) {
     this.settings = settings;
+    this.hasMovingTargets = Array.isArray(map.targets) && map.targets.some((t) => !!t.moving);
     const effectiveQuality = settings.quality === "auto" ? detectAutoQuality() : settings.quality;
     this.engine =
       injectedEngine ||
@@ -181,9 +192,13 @@ export class StrikeRenderer {
       ground.material = this.terrainMaterial(map.floor,false,map.id==='dust'?'plaster':'concrete');
       this.worldUV(ground);
       ground.receiveShadows = true;
+      ground.isPickable = false;
+      ground.freezeWorldMatrix();
+      ground.doNotSyncBoundingInfo = true;
       if(map.id==='district')for(const site of BOMB_SITES){
         const ring=MeshBuilder.CreateTorus('plant-zone-'+site.id,{diameter:site.radius*2,thickness:.12,tessellation:64},this.scene);
         ring.position.set(site.x,site.y+.14,site.z);ring.material=this.material('#ffd078',true);ring.isPickable=false;
+        ring.freezeWorldMatrix();ring.doNotSyncBoundingInfo=true;
       }
       const batches = new Map<string, Mesh[]>();
       for (const s of map.solids) {
@@ -255,7 +270,7 @@ export class StrikeRenderer {
         const material=meshes[0].material as StandardMaterial;
         const batch=Mesh.MergeMeshes(meshes,true,true)!;
         batch.name="district-"+key;batch.metadata={detail:key.endsWith("|detail")};batch.material=material;
-        batch.receiveShadows=true;batch.isPickable=false;batch.freezeWorldMatrix();
+        batch.receiveShadows=true;batch.isPickable=false;batch.freezeWorldMatrix();batch.doNotSyncBoundingInfo=true;
         this.shadow?.addShadowCaster(batch);
       }
       // Large framed photos are separate from collision and are batched by their shared frame material.
@@ -274,11 +289,11 @@ export class StrikeRenderer {
             photoMaterial=new StandardMaterial('map-photo-'+frame.id,this.scene);
             photoMaterial.diffuseTexture=texture;photoMaterial.emissiveTexture=texture;photoMaterial.disableLighting=true;photoMaterial.diffuseColor=Color3.White();
             photoMaterial.emissiveColor=Color3.White();photoMaterial.specularColor=Color3.Black();
-            photoMaterial.backFaceCulling=false;photoMaterials.set(frame.image,photoMaterial);
+            photoMaterial.backFaceCulling=false;photoMaterial.freeze();photoMaterials.set(frame.image,photoMaterial);
           }
           const plane=MeshBuilder.CreatePlane(frame.id,{width:frame.width,height:frame.height,sideOrientation:Mesh.DOUBLESIDE},this.scene);
           plane.position.set(frame.x,frame.y,frame.z);plane.rotation.y=frame.rotationY;
-          plane.material=photoMaterial;plane.isPickable=false;plane.receiveShadows=false;
+          plane.material=photoMaterial;plane.isPickable=false;plane.receiveShadows=false;plane.freezeWorldMatrix();plane.doNotSyncBoundingInfo=true;
           const theta=frame.rotationY,t=.18,depth=.14;
           const addBar=(name:string,width:number,height:number,localX:number,localY:number)=>{
             const bar=MeshBuilder.CreateBox(name,{width,height,depth},this.scene);
@@ -293,7 +308,7 @@ export class StrikeRenderer {
         }
         if(frameBars.length){
           const frameBatch=Mesh.MergeMeshes(frameBars,true,true);
-          if(frameBatch){frameBatch.name='map-photo-frames';frameBatch.material=frameMaterial;frameBatch.isPickable=false;frameBatch.freezeWorldMatrix();}
+          if(frameBatch){frameBatch.name='map-photo-frames';frameBatch.material=frameMaterial;frameBatch.isPickable=false;frameBatch.freezeWorldMatrix();frameBatch.doNotSyncBoundingInfo=true;}
         }
       }
       const hazard = MeshBuilder.CreateCylinder(
@@ -303,6 +318,9 @@ export class StrikeRenderer {
       );
       hazard.position.set(map.hazard.x, 0.025, map.hazard.z);
       hazard.material = this.material("#dd643f", true);
+      hazard.isPickable = false;
+      hazard.freezeWorldMatrix();
+      hazard.doNotSyncBoundingInfo = true;
       for (const t of map.targets) {
         const root = new TransformNode(t.id, this.scene);
         const body = MeshBuilder.CreateBox(
@@ -402,6 +420,7 @@ export class StrikeRenderer {
           }
 
           this.knifeRig=createKnifeRig(this.scene,root,(color,metal)=>this.material(color,false,metal?'metal':undefined));
+          this.knifeChildMeshes = root.getChildMeshes() as Mesh[];
 
           this.weapons.set(id, root);
           continue;
@@ -501,6 +520,7 @@ export class StrikeRenderer {
         this.impactPool.push({ mesh: impact, until: 0 });
       }
       if(effectiveQuality==='high'&&this.engine.getClassName()!=='NullEngine')this.fxaa=new FxaaPostProcess('high-fxaa',1,this.camera);
+      this.configureShadowRefresh();
       this.qualityApplied=effectiveQuality;
       for(const mesh of this.scene.meshes)if(mesh.name.startsWith("district-"))mesh.setEnabled(effectiveQuality!=="low"||!mesh.metadata?.detail);
       if (!injectedEngine) {
@@ -542,6 +562,7 @@ export class StrikeRenderer {
         return material;
   }
   private applyCosmetics(){
+    this.appliedKnifeVisibility = "";
     for(const [weapon,root] of this.weapons){
       const finish=cosmetic(this.settings.cosmeticLoadout?.[weapon]);
       let material:StandardMaterial|undefined;
@@ -580,7 +601,7 @@ export class StrikeRenderer {
       const sun=this.scene.getLightByName('sun') as DirectionalLight;
       sun.intensity=this.map.id==='district'?(q==='high'?1.35:.65):this.map.id==='neon'?.45:.65;
       this.scene.getLightByName('sky')!.intensity=this.map.id==='district'?(q==='high'?.85:.65):this.map.id==='neon'?.5:.6;
-      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(2048,sun);this.shadow.usePoissonSampling=true;this.shadow.bias=.003;this.shadow.normalBias=.06;for(const m of this.scene.meshes)if(m.receiveShadows && m.name !== 'ground')this.shadow.addShadowCaster(m);}
+      if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(2048,sun);this.shadow.usePoissonSampling=true;this.shadow.bias=.003;this.shadow.normalBias=.06;for(const m of this.scene.meshes)if(m.receiveShadows && m.name !== 'ground')this.shadow.addShadowCaster(m);this.configureShadowRefresh();}
       if(q!=='high'&&this.shadow){this.shadow.dispose();this.shadow=undefined;}
       // Retain shared PBR textures until scene disposal. Several batches reference
       // each texture, and high quality reuses them without network/GPU reuploads.
@@ -650,9 +671,15 @@ export class StrikeRenderer {
         const t=surfaceTexture(this.scene,key+'-pbr',color,surface,undefined,color===this.map.floor?512:256);
         if(t){m.albedoTexture=t;m.albedoColor=Color3.White();}
       }
-      m.metadata={color,surface,emissive,label};this.terrainMaterials.set(key,m);
+      m.metadata={color,surface,emissive,label};m.freeze();this.terrainMaterials.set(key,m);
     }
     return m;
+  }
+  private configureShadowRefresh(){
+    const sm=this.shadow?.getShadowMap();
+    if(!sm)return;
+    // Static map geometry never moves; render 2048x2048 shadow map once unless moving practice dummies are active.
+    sm.refreshRate=this.hasMovingTargets?RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYTWOFRAMES:RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
   }
   private material(color: string, emissive = false, surface?:Solid['surface'],label?:string) {
     const key = color + emissive + (surface||'') + (label||'') + (surface ? ':' + this.quality() : '');
@@ -700,10 +727,11 @@ export class StrikeRenderer {
         if(e.weapon==="knife")continue;
         const item = this.tracerPool[this.poolIndex % GRAPHICS[this.quality()].tracers],
           impact = this.impactPool[this.poolIndex++ % GRAPHICS[this.quality()].tracers];
-        const from=new Vector3(e.from.x,e.from.y,e.from.z),to=new Vector3(e.to.x,e.to.y,e.to.z);
+        const from=this.scratchFrom.set(e.from.x,e.from.y,e.from.z),to=this.scratchTo.set(e.to.x,e.to.y,e.to.z);
         const distance=Vector3.Distance(from,to);
         if(distance<.01)continue;
-        item.mesh.position.copyFrom(from.add(to).scale(.5));item.mesh.scaling.z=distance;
+        this.scratchMid.copyFrom(from).addInPlace(to).scaleInPlace(.5);
+        item.mesh.position.copyFrom(this.scratchMid);item.mesh.scaling.z=distance;
         item.mesh.lookAt(to);item.mesh.visibility=1;
         item.mesh.setEnabled(true);
         item.until = performance.now() + (localActor&&e.actor!==localActor?220:140);
@@ -994,10 +1022,21 @@ export class StrikeRenderer {
     for (const [id, mesh] of this.weapons) {
       const isSelected = id === p.weapon.selected;
       mesh.setEnabled(isSelected);
-      if (id === "knife" && isSelected) {
-        for (const child of mesh.getChildMeshes()) {
+      if (id === "knife" && isSelected && this.appliedKnifeVisibility !== knifeType) {
+        this.appliedKnifeVisibility = knifeType;
+        for (const child of this.knifeChildMeshes) {
           child.setEnabled(child.metadata?.knifeStyle === knifeType);
         }
+      }
+    }
+    if (this.shadow) {
+      const sm = this.shadow.getShadowMap();
+      if (sm) {
+        const hasLiveMoving = this.hasMovingTargets && state.targets.length > 0;
+        const desiredRate = hasLiveMoving
+          ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYTWOFRAMES
+          : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+        if (sm.refreshRate !== desiredRate) sm.refreshRate = desiredRate;
       }
     }
     for (const [id, target] of this.targetMeshes) {
@@ -1014,12 +1053,13 @@ export class StrikeRenderer {
     }
     this.muzzle.position.z = WEAPONS[p.weapon.selected].length * 0.65 + 0.04;
     this.muzzle.setEnabled(p.weapon.selected !== "knife" && this.gunKick > 0.045);
+    const nowPerf = performance.now();
     for (const a of this.tracerPool){
-      if(a.until<performance.now())a.mesh.setEnabled(false);
-      else a.mesh.visibility=Math.min(1,(a.until-performance.now())/100);
+      if(a.until<nowPerf)a.mesh.setEnabled(false);
+      else a.mesh.visibility=Math.min(1,(a.until-nowPerf)/100);
     }
     for (const a of this.impactPool)
-      if (a.until < performance.now()) a.mesh.setEnabled(false);
+      if (a.until < nowPerf) a.mesh.setEnabled(false);
     if(!this.localShield)this.localShield=this.spawnShield('local');
     this.localShield.position.set(m.position.x,m.position.y+(m.stance==='stand'?.9:.6),m.position.z);
     this.localShield.scaling.y=m.stance==='stand'?1:.75;
@@ -1047,17 +1087,19 @@ export class StrikeRenderer {
         light.parent=this.bombMesh;light.position.set(.12,.12,.06);
         const lmat=this.material('#ff2a2a',true).clone('bomb-indicator-mat')!;
         lmat.disableLighting=true;light.material=lmat;light.isPickable=false;
+        this.bombIndicator=light;
         const ring=MeshBuilder.CreateTorus('bomb-beacon-ring',{diameter:.9,thickness:.035,tessellation:32},this.scene);
         ring.parent=this.bombMesh;ring.position.y=-.06;ring.isPickable=false;
         const rmat=this.material('#ff3838',true).clone('bomb-beacon-mat')!;
         rmat.disableLighting=true;rmat.alpha=.55;ring.material=rmat;
+        this.bombBeaconRing=ring;
       }
       const visible=!!b.position&&(b.phase==='active'||b.phase==='planted');
       this.bombMesh.setEnabled(visible);
       if(visible&&b.position){
         this.bombMesh.position.set(b.position.x,b.position.y+.15,b.position.z);
-        const indicator=this.scene.getMeshByName('bomb-indicator');
-        const beaconRing=this.scene.getMeshByName('bomb-beacon-ring');
+        const indicator=this.bombIndicator;
+        const beaconRing=this.bombBeaconRing;
         if(b.phase==='planted'){
           const left=Math.max(0,b.deadline-state.tick*C.dt);
           const freq=left>20?1.3:left>10?2.4:left>5?4.8:left>2?9.5:18;
