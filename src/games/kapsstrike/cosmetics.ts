@@ -14,6 +14,14 @@ const neonFinishes = [
  {name:'Güneş Tutulması',rarity:'legendary',color:'#171124',accent:'#ffb52b',pattern:2}
 ] as const;
 for(const weapon of guns) for(const [i,f] of neonFinishes.entries()) COSMETICS.push({...f,id:`${weapon}-neon-${i}`,weapon});
+const expeditionFinishes=[
+ {name:'Kontur Operasyonu',rarity:'uncommon',color:'#133b36',accent:'#b1e879',pattern:7},
+ {name:'Kaplan Çeliği',rarity:'rare',color:'#231b19',accent:'#ff963d',pattern:4},
+ {name:'Porselen Kırığı',rarity:'epic',color:'#e5f2fc',accent:'#2459db',pattern:6},
+ {name:'Foton Peteği',rarity:'legendary',color:'#17162f',accent:'#f456ff',pattern:5}
+] as const;
+for(const weapon of guns)for(const [i,f]of expeditionFinishes.entries())COSMETICS.push({...f,id:`${weapon}-expedition-${i}`,weapon});
+for(const [style,name]of [['tanto','Tanto'],['default','Savaş Bıçağı']] as const)for(const [i,f]of expeditionFinishes.entries())COSMETICS.push({...f,id:`knife-${style}-expedition-${i}`,name:`${name} · ${f.name}`,weapon:'knife',rarity:'knife',knife:style});
 export const CASES=[{id:'frontline',name:'Cephe Kasası',color:'#4ade80',weapon:'rifle'},{id:'velocity',name:'Hız Kasası',color:'#60a5fa',weapon:'smg'},{id:'horizon',name:'Ufuk Kasası',color:'#c084fc',weapon:'sniper'},{id:'breach',name:'Kuşatma Kasası',color:'#fb7185',weapon:'shotgun'},{id:'sidearm',name:'Düello Kasası',color:'#fbbf24',weapon:'pistol'},{id:'arsenal',name:'Arsenal Kasası',color:'#67e8f9',weapon:null}] as const;
 export function cosmetic(id:unknown){return typeof id==='string'?COSMETICS.find(c=>c.id===id):undefined;}
 export function caseRewards(id:string):{item:Cosmetic;chance:number}[]{
@@ -25,7 +33,14 @@ export function caseRewards(id:string):{item:Cosmetic;chance:number}[]{
  return pool.map(item=>({item,chance:weights[item.rarity]/pool.filter(c=>c.rarity===item.rarity).length}));
 }
 /** Roll is supplied by cryptographic server RNG, never by the client. */
-export function rollCase(id:string,roll:number){const pool=caseRewards(id);if(!pool.length||!Number.isFinite(roll)||roll<0||roll>=1)throw new Error('Geçersiz kasa.');let n=roll*100;for(const r of pool){n-=r.chance;if(n<0)return r.item;}return pool[pool.length-1].item;}
+export function rollCase(id:string,roll:number){
+ const pool=caseRewards(id);if(!pool.length||!Number.isFinite(roll)||roll<0||roll>=1)throw new Error('Geçersiz kasa.');
+ // Choose a fixed rarity bucket first, so adding finishes cannot shift its advertised odds.
+ const buckets:[Rarity,number][]=[['uncommon',40],['rare',70],['epic',90],['legendary',95],['knife',100]];
+ let previous=0;const value=roll*100;
+ for(const [rarity,end]of buckets){if(value<end){const items=pool.filter(r=>r.item.rarity===rarity);const index=Math.min(items.length-1,Math.floor((value-previous)/(end-previous)*items.length));return items[index].item;}previous=end;}
+ return pool[pool.length-1].item;
+}
 export interface Inventory {hiddenWeapons?:WeaponId[];owned:Record<string,number>;equipped:Partial<Record<WeaponId,string>>;opened:number;lastOpenedAt?:number;credits?:number;freeCases?:Record<string,boolean>}
 export function emptyInventory():Inventory{return {owned:{},equipped:{},opened:0,credits:0,freeCases:{}};}
 export function cleanLoadout(value:unknown):Inventory['equipped']{const out:Inventory['equipped']={};if(value&&typeof value==='object')for(const [weapon,id] of Object.entries(value)){const c=cosmetic(id);if(c&&c.weapon===weapon)out[c.weapon]=c.id;}return out;}

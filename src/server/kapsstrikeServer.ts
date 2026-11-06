@@ -1,5 +1,5 @@
 import {dropBombWeapon,pickupBombWeapon} from '../games/kapsstrike/bombWeapons';
-import {safeSpawn} from "../games/kapsstrike/spawns";
+import {safeSpawn,spreadSpawn} from "../games/kapsstrike/spawns";
 import {tracePlayer} from '../games/kapsstrike/hitboxes';
 import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
@@ -330,12 +330,12 @@ export class StrikeRoom {
 
   getSpawnPosition(team: StrikeTeam, playerIndex: number, occupied: readonly Vec3[] = [...this.players.values()].filter(p=>p.state.hp>0).map(p=>p.state.movement.position)): Vec3 {
     const mapDef = MAPS[this.map];
-    if (this.mode !== "ffa") {
+    if (this.mode === "bomb") {
       const half = Math.max(1, Math.floor(mapDef.spawns.length / 2));
       const pool = team === "red" ? mapDef.spawns.slice(0, half) : mapDef.spawns.slice(half);
       return safeSpawn(mapDef,pool,playerIndex,occupied);
     }
-    return safeSpawn(mapDef,mapDef.spawns,playerIndex,occupied);
+    return spreadSpawn(mapDef,playerIndex,occupied);
   }
 }
 
@@ -951,7 +951,7 @@ export class KapsStrikeServerManager {
           p.team=bp.team==='T'?'red':'blue';p.originalTeam=p.team;p.color=p.team==='red'?'#ef4444':'#3b82f6';
           const spawn=room.getSpawnPosition(p.team,counts[p.team]++,occupied);occupied.push(spawn);
           p.state.movement=newMovement(spawn);bp.position={...spawn};
-          p.state.hp=100;p.state.armor=bp.armor;p.state.deadUntil=0;p.state.protectedUntil=0;p.damageCredits.clear();
+          p.state.hp=100;p.state.armor=bp.armor;p.state.deadUntil=0;p.state.protectedUntil=room.tick+C.protectionTicks;p.damageCredits.clear();
           p.state.weapon.inventory=[...bp.weapons];p.state.weapon.switchUntil=0;
           p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;
           p.inputQueue=[];p.receivedInputs.clear();p.heldInput=undefined;p.lastInputTick=room.tick;
@@ -982,7 +982,7 @@ export class KapsStrikeServerManager {
       // Handle respawn when dead
       if (player.state.hp <= 0) {
         if (!room.bomb && room.tick >= player.state.deadUntil) {
-          const spawnPos = room.getSpawnPosition(player.team, Math.floor(Math.random() * 10));
+          const spawnPos = room.getSpawnPosition(player.team, Math.floor(Math.random() * 100000));
           player.state.movement = newMovement(spawnPos);
           player.damageCredits.clear();
           player.state.yaw=0;player.state.pitch=0;

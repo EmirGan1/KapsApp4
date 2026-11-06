@@ -1,3 +1,4 @@
+import {straightKnifeMotion} from "./knifeMotion";
 import {finishAppearance,finishTextureUrl} from "./finishAppearance";
 import {BombEffects} from './bombEffects';
 import {FxaaPostProcess} from '@babylonjs/core/PostProcesses/fxaaPostProcess';
@@ -68,6 +69,7 @@ export class StrikeRenderer {
       gun?: Mesh;
       tagTex?: DynamicTexture;
       tagMat?: StandardMaterial;
+      shield?:Mesh;
     }
   >();
   private flashes = new Map<string, number>();
@@ -75,6 +77,9 @@ export class StrikeRenderer {
   private weapons = new Map<WeaponId, TransformNode>();
   private tracerPool: { mesh: Mesh; until: number }[] = [];
   private impactPool: { mesh: Mesh; until: number }[] = [];
+  private visualTick=0;
+  private localShield?:Mesh;
+  private shieldMat?:StandardMaterial;
   private poolIndex = 0;
   private gunKick = 0;
   private inspectTime = 0;
@@ -384,6 +389,18 @@ export class StrikeRenderer {
           const tantoTip = stylePart('tanto', 'blade-chisel-point', 0, 0.008, 0.31, 0.008, 0.042, 0.07, '#e2e8f0', 'blade');
           tantoTip.rotation.x = -0.32;
 
+          // Separate grips for the straight blades; existing ring/balisong rigs stay untouched.
+          for(const style of ['default','tanto']){
+            const glove=(name:string,x:number,y:number,z:number,diameter:number)=>{
+              const mesh=MeshBuilder.CreateSphere(style+'-'+name,{diameter,segments:8},this.scene);
+              mesh.parent=root;mesh.position.set(x,y,z);mesh.material=this.material('#1b2936');mesh.renderingGroupId=2;mesh.isPickable=false;mesh.metadata={knifeStyle:style,knifePart:'handle'};return mesh;
+            };
+            const palm=glove('tactical-glove',.025,-.045,-.105,.115);palm.scaling.set(.85,.78,1.3);
+            const wrist=glove('tactical-wrist',.045,-.065,-.23,.11);wrist.scaling.set(.85,.85,2);
+            for(let finger=0;finger<4;finger++){const grip=glove('grip-finger-'+finger,-.018,-.015,-.17+finger*.035,.044);grip.scaling.set(1.4,.85,.7);}
+            const thumb=glove('grip-thumb',.046,.006,-.08,.047);thumb.scaling.set(.7,1.1,1.6);
+          }
+
           this.knifeRig=createKnifeRig(this.scene,root,(color,metal)=>this.material(color,false,metal?'metal':undefined));
 
           this.weapons.set(id, root);
@@ -467,12 +484,8 @@ export class StrikeRenderer {
       this.muzzle.renderingGroupId = 2;
       this.muzzle.setEnabled(false);
       for (let i = 0; i < 48; i++) {
-        const mesh = MeshBuilder.CreateLines(
-          "tracer" + i,
-          { points: [Vector3.Zero(), new Vector3(0, 0, 1)], updatable: true },
-          this.scene,
-        );
-        mesh.color = new Color3(1, 0.82, 0.45);
+        const mesh = MeshBuilder.CreateBox('tracer'+i,{width:.035,height:.035,depth:1},this.scene);
+        mesh.material=this.material('#ffdc78',true);
         mesh.alwaysSelectAsActiveMesh = true;
         mesh.isPickable = false;
         mesh.setEnabled(false);
@@ -544,6 +557,9 @@ export class StrikeRenderer {
     }
   }
   debugCombat(value:any){if(!(import.meta as any).env?.DEV||!this.settings.showDebugStats)return;(this.combatOverlay??=new CombatDebug(this.scene)).shot(value);}
+  private straightKnife(style:string,phase:'draw'|'inspect'|'attack',progress:number,heavy=false,combo=0){
+    const k=straightKnifeMotion(style,phase,progress,heavy,combo);this.gunRoot.position.addInPlaceFromFloats(k.x,k.y,k.z);this.gunRoot.rotation.addInPlaceFromFloats(k.rx,k.ry,k.rz);
+  }
   inspect(){this.knifeDrawFlourishTimer=0;this.inspectTime=this.lastSelectedWeapon==='knife'?knifeTiming(cosmetic(this.settings.cosmeticLoadout?.knife)?.knife||'default').inspect:1.8;}
   resetView(){this.inspectTime=0;this.gunKick=0;this.camera.rotationQuaternion=null;this.camera.rotation.set(0,0,0);this.camera.upVector.set(0,1,0);this.camera.cameraRotation.set(0,0);this.camera.cameraDirection.set(0,0,0);}
   updateSettings(next:StrikeSettings){
@@ -684,24 +700,16 @@ export class StrikeRenderer {
         if(e.weapon==="knife")continue;
         const item = this.tracerPool[this.poolIndex % GRAPHICS[this.quality()].tracers],
           impact = this.impactPool[this.poolIndex++ % GRAPHICS[this.quality()].tracers];
-        const positions = new Float32Array([
-          e.from.x,
-          e.from.y,
-          e.from.z,
-          e.to.x,
-          e.to.y,
-          e.to.z,
-        ]);
-        item.mesh.updateVerticesData(
-          VertexBuffer.PositionKind,
-          positions,
-          true,
-        );
+        const from=new Vector3(e.from.x,e.from.y,e.from.z),to=new Vector3(e.to.x,e.to.y,e.to.z);
+        const distance=Vector3.Distance(from,to);
+        if(distance<.01)continue;
+        item.mesh.position.copyFrom(from.add(to).scale(.5));item.mesh.scaling.z=distance;
+        item.mesh.lookAt(to);item.mesh.visibility=1;
         item.mesh.setEnabled(true);
-        item.until = e.tick + 7;
+        item.until = performance.now() + (localActor&&e.actor!==localActor?220:140);
         impact.mesh.position.set(e.to.x, e.to.y, e.to.z);
         impact.mesh.setEnabled(true);
-        impact.until = e.tick + 12;
+        impact.until = performance.now() + 150;
         if (!localActor || e.actor === localActor) this.muzzle.setEnabled(true);
       }
       if (e.kind === "reload" && (!localActor || e.actor === localActor)) this.reloadAt = e.tick;
@@ -719,6 +727,7 @@ export class StrikeRenderer {
     spectator?:{position:Vec3;yaw:number;pitch:number;stance:string},
     bombEquipped=false,
   ) {
+    this.visualTick=state.tick;
     const p = state.player,
       m = p.movement;
     this.camera.position.set(
@@ -792,6 +801,7 @@ export class StrikeRenderer {
       }
       if (this.knifeAttackTimer > 0 || this.inspectTime > 0 || p.hp <= 0) {
         this.knifeDrawFlourishTimer = 0;
+        if(knifeType!=='karambit'&&knifeType!=='butterfly')this.knifeDeployTimer=0;
       }
       if (this.knifeDrawFlourishTimer > 0) {
         this.knifeDrawFlourishTimer = Math.max(0, this.knifeDrawFlourishTimer - delta);
@@ -834,9 +844,7 @@ export class StrikeRenderer {
           this.gunRoot.rotation.y += toss1 * 0.18 - toss2 * 0.16;
           this.gunRoot.rotation.z -= toss1 * 0.28 - toss2 * 0.24 + clack * 0.16;
         } else {
-          this.gunRoot.position.y -= (1 - drawProg) * 0.26;
-          this.gunRoot.rotation.z -= (1 - drawProg) * (knifeType === "tanto" ? 0.8 : 1.5);
-          this.gunRoot.rotation.y += (1 - drawProg) * (knifeType === "tanto" ? 1.1 : 0.6);
+          this.straightKnife(knifeType,'draw',drawProg);
         }
       }
 
@@ -869,11 +877,7 @@ export class StrikeRenderer {
             this.gunRoot.rotation.y += lunge * 0.32;
             this.gunRoot.rotation.z -= lunge * 0.36;
           } else {
-            this.gunRoot.position.z += strike * 0.36;
-            this.gunRoot.position.y -= strike * 0.16;
-            this.gunRoot.position.x -= strike * 0.10;
-            this.gunRoot.rotation.x += strike * 0.75;
-            this.gunRoot.rotation.z -= strike * 0.45;
+            this.straightKnife(knifeType,'attack',attackProg,true,this.knifeAttackCombo);
           }
           this.camera.fov -= strike * 0.025;
         } else {
@@ -895,12 +899,7 @@ export class StrikeRenderer {
             this.gunRoot.rotation.y += dir * strike * 0.62;
             this.gunRoot.rotation.x -= strike * 0.28;
           } else {
-            this.gunRoot.position.x += dir * strike * 0.26;
-            this.gunRoot.position.y += Math.cos(attackProg * Math.PI) * 0.09;
-            this.gunRoot.position.z += strike * 0.20;
-            this.gunRoot.rotation.z += dir * strike * 1.45;
-            this.gunRoot.rotation.y += dir * strike * 0.55;
-            this.gunRoot.rotation.x -= strike * 0.35;
+            this.straightKnife(knifeType,'attack',attackProg,false,this.knifeAttackCombo);
           }
           this.camera.fov -= strike * 0.012;
         }
@@ -942,18 +941,7 @@ export class StrikeRenderer {
           this.gunRoot.rotation.y += env * 0.30 + cosWave * 0.14 * env;
           this.gunRoot.rotation.z += spinWave * 0.26 * env - clackSnap * 0.15;
         } else {
-          const wave = Math.sin(inspectProg * Math.PI) ** 2;
-          this.gunRoot.position.y += wave * 0.10;
-          this.gunRoot.position.x -= wave * 0.08;
-          if (knifeType === "tanto") {
-            this.gunRoot.rotation.y += wave * 1.1;
-            this.gunRoot.rotation.z += wave * 0.8;
-            this.gunRoot.rotation.x += Math.sin(inspectProg * Math.PI * 2) * 0.3;
-          } else {
-            const t = inspectProg * inspectProg * (3 - 2 * inspectProg);
-            this.gunRoot.rotation.z += t * Math.PI * 2;
-            this.gunRoot.rotation.y += wave * 0.35;
-          }
+          this.straightKnife(knifeType,'inspect',inspectProg);
         }
       }
 
@@ -1026,10 +1014,16 @@ export class StrikeRenderer {
     }
     this.muzzle.position.z = WEAPONS[p.weapon.selected].length * 0.65 + 0.04;
     this.muzzle.setEnabled(p.weapon.selected !== "knife" && this.gunKick > 0.045);
-    for (const a of this.tracerPool)
-      if (a.until < state.tick) a.mesh.setEnabled(false);
+    for (const a of this.tracerPool){
+      if(a.until<performance.now())a.mesh.setEnabled(false);
+      else a.mesh.visibility=Math.min(1,(a.until-performance.now())/100);
+    }
     for (const a of this.impactPool)
-      if (a.until < state.tick) a.mesh.setEnabled(false);
+      if (a.until < performance.now()) a.mesh.setEnabled(false);
+    if(!this.localShield)this.localShield=this.spawnShield('local');
+    this.localShield.position.set(m.position.x,m.position.y+(m.stance==='stand'?.9:.6),m.position.z);
+    this.localShield.scaling.y=m.stance==='stand'?1:.75;
+    this.localShield.setEnabled(p.hp>0&&p.protectedUntil>state.tick&&!spectator);
     if(!state.bomb)this.renderSupplies(state);
     const isPlanting=!!(state.bomb?.action?.kind==='plant'&&state.bomb.action.player===p.id);
     const showHeldBomb=(bombEquipped||isPlanting)&&p.hp>0;
@@ -1138,6 +1132,10 @@ export class StrikeRenderer {
     this.frameDrawCalls = Math.max(0, draws - this.previousDrawCalls);
     this.previousDrawCalls = draws;
   }
+  private spawnShield(id:string){
+    if(!this.shieldMat){const mat=new StandardMaterial('spawn-shield-gold',this.scene);mat.diffuseColor=Color3.FromHexString('#ffe155');mat.emissiveColor=Color3.FromHexString('#d4a620');mat.alpha=.17;mat.backFaceCulling=false;mat.disableDepthWrite=true;this.shieldMat=mat;}
+    const shield=MeshBuilder.CreateSphere('spawn-shield-'+id,{diameter:2.4,segments:12},this.scene);shield.material=this.shieldMat;shield.isPickable=false;shield.setEnabled(false);return shield;
+  }
   renderRemotePlayers(
     players: Array<{
       id: string;
@@ -1152,6 +1150,7 @@ export class StrikeRenderer {
       selectedWeapon?: WeaponId;
       skin?: string;
       weaponSkin?:string;
+      protectedUntil?:number;
     }>,
     localPlayerId?: string,
     localTeam?: string
@@ -1218,12 +1217,15 @@ export class StrikeRenderer {
         gun.parent = root;
         gun.material = this.material("#1e293b");
 
-        item = { model, skin:cleanSkin(p.skin), team:p.team || "none", root, body, head, tagPlane, gun, tagTex, tagMat };
+        const shield=this.spawnShield(p.id);shield.parent=root;shield.position.y=.9;
+        item = { shield,model, skin:cleanSkin(p.skin), team:p.team || "none", root, body, head, tagPlane, gun, tagTex, tagMat };
         this.remotePlayerMeshes.set(p.id, item);
       }
 
       item.model.flash((this.flashes.get(p.id) || 0) > performance.now());
       const isAlive = p.hp > 0;
+      item.shield?.setEnabled(isAlive&&(p.protectedUntil||0)>this.visualTick);
+      if(item.shield){item.shield.scaling.y=p.stance==='crouch'?.75:1;item.shield.position.y=p.stance==='crouch'?.6:.9;}
       item.root.setEnabled(isAlive);
       if (isAlive) {
         item.root.position.set(p.position.x, p.position.y, p.position.z);

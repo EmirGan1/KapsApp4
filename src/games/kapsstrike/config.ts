@@ -23,7 +23,7 @@ export const PHYSICS = {
   slideFriction: 1.3,
   slideTicks: 85,
   respawnTicks: 240,
-  protectionTicks: 240,
+  protectionTicks: 480,
 };
 export interface WeaponDefinition {
   id: WeaponId;
