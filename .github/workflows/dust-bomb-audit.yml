@@ -42,7 +42,7 @@ jobs:
       - name: A retaining-wall seam WebGL regression
         run: node --import tsx tests/kapsstrike.aVoid.browser.ts
       - name: Spawn, cosmetic and combat feedback regressions
-        run: node --import tsx --test tests/kapsstrike.presence.test.ts tests/kapsstrike.inventory.test.ts tests/kapsstrike.knife.test.ts && npm run test:strike:presence
+        run: node --import tsx --test tests/kapsstrike.presence.test.ts tests/kapsstrike.inventory.test.ts tests/kapsstrike.knife.test.ts tests/kapsstrike.features.test.ts && npm run test:strike:presence
       - name: Desktop and touch bomb flow
         env:
           STRIKE_QA_COMPACT: '1'

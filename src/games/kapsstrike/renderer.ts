@@ -801,6 +801,7 @@ export class StrikeRenderer {
       }
       if (this.knifeAttackTimer > 0 || this.inspectTime > 0 || p.hp <= 0) {
         this.knifeDrawFlourishTimer = 0;
+        if(knifeType!=='karambit'&&knifeType!=='butterfly')this.knifeDeployTimer=0;
       }
       if (this.knifeDrawFlourishTimer > 0) {
         this.knifeDrawFlourishTimer = Math.max(0, this.knifeDrawFlourishTimer - delta);
