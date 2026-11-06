@@ -477,14 +477,15 @@ export function createKnifeRig(
 
       if (style === 'karambit') {
         if (deploy >= 0) {
+          // CS Karambit Draw (reverse spin into palm)
           const [spin, cantY, cantZ, open] = keysN(
             deploy,
             [
-              [0.0, T * 1.05, -0.28, 0.24, 0.85],
-              [0.16, T * 0.88, -0.22, 0.18, 1.0],
-              [0.48, T * 0.32, 0.16, -0.14, 0.95],
-              [0.76, -0.16, 0.05, -0.06, 0.22],
-              [0.89, 0.04, -0.02, 0.02, 0.0],
+              [0.0, -T * 1.05, 0.28, -0.24, 0.85],
+              [0.16, -T * 0.88, 0.22, -0.18, 1.0],
+              [0.48, -T * 0.32, -0.16, 0.14, 0.95],
+              [0.76, 0.16, -0.05, 0.06, 0.22],
+              [0.89, -0.04, 0.02, -0.02, 0.0],
               [1.0, 0.0, 0.0, 0.0, 0.0],
             ],
             whip,
@@ -494,20 +495,23 @@ export function createKnifeRig(
           kz = cantZ;
           kFingerOpen = open;
         } else if (inspect >= 0) {
+          // CS Karambit Inspect: Spin in reversed direction (counter-clockwise around finger ring)
+          // Punchy, continuous, silky-smooth rotation with snappy momentum
           if (inspect < 0.86) {
             const p = inspect / 0.86;
-            const continuousPhase = 0.22 * p + 0.78 * smooth(p);
+            // High initial flick velocity then smooth continuous high-RPM roll across 3 full turns
+            const continuousPhase = 0.35 * p + 0.65 * smooth(p);
             const totalAngle = continuousPhase * 3 * T;
-            const whipMod = Math.sin(totalAngle) * 0.18 * Math.sin(p * Math.PI);
-            kx = totalAngle + whipMod;
+            const whipMod = Math.sin(totalAngle) * 0.24 * Math.sin(p * Math.PI);
+            kx = -(totalAngle + whipMod);
             const env = Math.sin(p * Math.PI);
-            ky = 0.20 * env + Math.sin(totalAngle) * 0.16 * env;
-            kz = -0.14 * env + Math.cos(totalAngle) * 0.14 * env;
-            kFingerOpen = clamp01(Math.sin(p * Math.PI) * 1.35);
+            ky = -0.22 * env - Math.sin(totalAngle) * 0.18 * env;
+            kz = 0.16 * env - Math.cos(totalAngle) * 0.16 * env;
+            kFingerOpen = clamp01(Math.sin(p * Math.PI) * 1.4);
           } else {
             const catchPhase = (inspect - 0.86) / 0.14;
-            const slap = Math.sin(catchPhase * Math.PI * 2) * Math.exp(-catchPhase * 4.5) * 0.18;
-            kx = 3 * T - slap;
+            const slap = Math.sin(catchPhase * Math.PI * 2) * Math.exp(-catchPhase * 5.0) * 0.22;
+            kx = -3 * T + slap;
             ky = 0;
             kz = 0;
             kFingerOpen = Math.max(0, 1 - catchPhase * 3);

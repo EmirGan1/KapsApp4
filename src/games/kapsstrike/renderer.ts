@@ -911,20 +911,20 @@ export class StrikeRenderer {
         this.inspectTime = Math.max(0, this.inspectTime - delta);
         const inspectProg = 1 - this.inspectTime / timing.inspect;
         if (knifeType === "karambit") {
-          // Hand tilts toward screen centre, pumps rhythmically 3 times to drive the
-          // 3 index-finger ring revolutions, and absorbs the final palm-slap catch
-          const env = Math.sin(inspectProg * Math.PI) ** 1.4;
+          // Hand tilts slightly and pumps rhythmically with each counter-clockwise revolution,
+          // then snaps into palm catch
+          const env = Math.sin(inspectProg * Math.PI) ** 1.3;
           const spinPump =
-            inspectProg >= 0.13 && inspectProg < 0.82
-              ? Math.sin(((inspectProg - 0.13) / 0.69) * Math.PI * 6)
+            inspectProg >= 0.08 && inspectProg < 0.86
+              ? Math.sin(((inspectProg - 0.08) / 0.78) * Math.PI * 6)
               : 0;
-          const catchSnap = Math.sin(clamp((inspectProg - 0.82) / 0.16, 0, 1) * Math.PI);
-          this.gunRoot.position.x -= env * 0.055 - catchSnap * 0.02;
-          this.gunRoot.position.y += env * 0.072 + spinPump * 0.016 * env - catchSnap * 0.032;
-          this.gunRoot.position.z -= env * 0.03 + catchSnap * 0.025;
-          this.gunRoot.rotation.x += env * 0.16 + spinPump * 0.09 * env + catchSnap * 0.18;
-          this.gunRoot.rotation.y += env * 0.38 - catchSnap * 0.14;
-          this.gunRoot.rotation.z += Math.sin(inspectProg * Math.PI * 3) * 0.14 * env - catchSnap * 0.18;
+          const catchSnap = Math.sin(clamp((inspectProg - 0.86) / 0.14, 0, 1) * Math.PI);
+          this.gunRoot.position.x -= env * 0.045 - catchSnap * 0.02;
+          this.gunRoot.position.y += env * 0.058 + spinPump * 0.018 * env - catchSnap * 0.035;
+          this.gunRoot.position.z -= env * 0.025 + catchSnap * 0.025;
+          this.gunRoot.rotation.x -= env * 0.18 + spinPump * 0.10 * env + catchSnap * 0.16;
+          this.gunRoot.rotation.y += env * 0.25 - catchSnap * 0.12;
+          this.gunRoot.rotation.z -= Math.sin(inspectProg * Math.PI * 3) * 0.16 * env - catchSnap * 0.20;
         } else if (knifeType === "butterfly") {
           // Continuous, silky-smooth figure-8 wrist wave synchronized with the
           // 4-revolution high-speed balisong twirl and final handle clack
