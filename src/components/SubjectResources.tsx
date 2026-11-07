@@ -18,7 +18,8 @@ type Entry = {
 };
 type Listing = { defaultMaximum?: number; entries: Entry[]; breadcrumbs: { id: number; name: string; score?: Entry["score"] }[] };
 type Preview = { name: string; url: string; mime: string };
-const button = "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800";
+const buttonBase = "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold disabled:opacity-50";
+const button = `${buttonBase} border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700`;
 
 export function subjectResourcesLink(subject: string, collection?: Collection, folder?: number) {
   const query = new URLSearchParams({ kaynak: collection ?? "sec" });
@@ -186,6 +187,10 @@ export default function SubjectResources({ subject, collection, folder }: {
     });
   }
 
+  function canPreview(entry: Entry) {
+    return RESOURCE_PREVIEW_TYPES.some(type => type === entry.mime_type);
+  }
+
   function openFile(entry: Entry, inline: boolean) {
     void run(async signal => {
       const response = await request(`${base}/${entry.id}/file${inline ? "?preview=1" : ""}`, { signal });
@@ -210,10 +215,10 @@ export default function SubjectResources({ subject, collection, folder }: {
   );
 
   return (
-    <div className="relative flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950">
+    <div className="relative flex-1 min-h-0 overflow-y-auto bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <SubjectDecor subject={subject} />
       <main className="relative mx-auto max-w-6xl space-y-5 px-4 py-5 sm:px-8">
-        <header className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-5 dark:border-indigo-900 dark:from-indigo-950/60 dark:to-slate-900">
+        <header className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-5 dark:border-indigo-800 dark:from-indigo-950 dark:to-slate-900">
           <Link to={`/dersler/${encodeURIComponent(subject)}`} className="inline-flex items-center gap-2 text-sm font-medium text-indigo-700 dark:text-indigo-300"><ArrowLeft size={16} /> {subject} dersine dön</Link>
           <h1 className="mt-2 text-2xl font-black">IA/EE Kaynakları</h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Örnek çalışmalar, kılavuzlar ve araştırma dosyaları</p>
@@ -223,14 +228,14 @@ export default function SubjectResources({ subject, collection, folder }: {
           {(["ia", "ee"] as const).map(kind => (
             <Link key={kind} to={subjectResourcesLink(subject, kind)} aria-current={collection === kind ? "page" : undefined}
               className={`flex items-center justify-between gap-3 rounded-xl border p-3 hover:border-indigo-400 ${collection === kind ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/60" : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"}`}>
-              <span><strong>{kind.toUpperCase()}</strong><span className="ml-2 text-sm text-slate-500 dark:text-slate-400">{kind === "ia" ? "Internal Assessment" : "Extended Essay"}</span></span>
+              <span><strong>{kind.toUpperCase()}</strong><span className="ml-2 text-sm text-slate-600 dark:text-slate-400">{kind === "ia" ? "Internal Assessment" : "Extended Essay"}</span></span>
               <ArrowRight size={16} />
             </Link>
           ))}
         </nav>
 
         {collection && (
-          <section aria-label={`${collection.toUpperCase()} dosyaları`} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+          <section aria-label={`${collection.toUpperCase()} dosyaları`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-5">
             <nav aria-label="Klasör yolu" className="mb-4 flex flex-wrap items-center gap-2 text-sm">
               <Link className="font-semibold text-indigo-700 dark:text-indigo-300" to={subjectResourcesLink(subject, collection)}>{collection.toUpperCase()} ana klasörü</Link>
               {listing?.breadcrumbs.map(crumb => (
@@ -243,10 +248,10 @@ export default function SubjectResources({ subject, collection, folder }: {
             <div className="flex flex-wrap items-center gap-2">
               <label className="flex min-h-10 min-w-44 flex-1 items-center gap-2 rounded-xl border border-slate-200 px-3 dark:border-slate-700">
                 <Search size={16} />
-                <input aria-label="Dosya veya yükleyen ara" placeholder="Dosya veya yükleyen ara…" className="w-full bg-transparent py-2 text-sm" value={search} onChange={event => setSearch(event.target.value)} />
+                <input aria-label="Dosya veya yükleyen ara" placeholder="Dosya veya yükleyen ara…" className="w-full bg-transparent py-2 text-sm placeholder:text-slate-500 dark:placeholder:text-slate-400" value={search} onChange={event => setSearch(event.target.value)} />
               </label>
               <button type="button" className={button} disabled={busy || !listing} onClick={() => setEditor({ name: "", points: inheritedScore ? String(inheritedScore.points) : "", maximum: String(inheritedScore?.maximum ?? defaultMaximum) })}><FolderPlus size={16} /> Yeni klasör</button>
-              <button type="button" className={`${button} border-blue-700 bg-blue-700 text-white hover:bg-blue-800 dark:hover:bg-blue-800`} disabled={busy || !listing} onClick={() => fileInput.current?.click()}><Upload size={16} /> Dosya yükle</button>
+              <button type="button" className={`${buttonBase} border-blue-700 bg-blue-700 text-white hover:bg-blue-800 dark:border-blue-500 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500`} disabled={busy || !listing} onClick={() => fileInput.current?.click()}><Upload size={16} /> Dosya yükle</button>
               <input ref={fileInput} type="file" hidden onChange={event => {
                 const file = event.target.files?.[0];
                 if (file) upload(file);
@@ -261,7 +266,7 @@ export default function SubjectResources({ subject, collection, folder }: {
                   if (file) importZip(file);
                   event.target.value = "";
                 }} />
-                {importProgress && <span role="status" className="text-sm text-slate-500">{importProgress}</span>}
+                {importProgress && <span role="status" className="text-sm text-slate-600 dark:text-slate-400">{importProgress}</span>}
               </div>
             )}
             {gradedUpload && (
@@ -271,10 +276,10 @@ export default function SubjectResources({ subject, collection, folder }: {
               }}>
                 <p className="w-full break-words text-sm font-semibold">{gradedUpload.file.name}</p>
                 <label className="text-xs font-semibold">IA puanı
-                  <input autoFocus required type="number" min={0} max={gradedUpload.maximum || 999} step={1} className="mt-1 block w-28 rounded-lg border bg-transparent px-2 py-2" value={gradedUpload.points} onChange={event => setGradedUpload({ ...gradedUpload, points: event.target.value })} />
+                  <input autoFocus required type="number" min={0} max={gradedUpload.maximum || 999} step={1} className="mt-1 block w-28 rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950" value={gradedUpload.points} onChange={event => setGradedUpload({ ...gradedUpload, points: event.target.value })} />
                 </label>
                 <label className="text-xs font-semibold">Maksimum puan
-                  <input required type="number" min={1} max={999} step={1} className="mt-1 block w-28 rounded-lg border bg-transparent px-2 py-2" value={gradedUpload.maximum} onChange={event => setGradedUpload({ ...gradedUpload, maximum: event.target.value })} />
+                  <input required type="number" min={1} max={999} step={1} className="mt-1 block w-28 rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950" value={gradedUpload.maximum} onChange={event => setGradedUpload({ ...gradedUpload, maximum: event.target.value })} />
                 </label>
                 <button className={button} disabled={busy}>Puanla ve yükle</button>
                 <button type="button" className={button} disabled={busy} onClick={() => setGradedUpload(null)}>Vazgeç</button>
@@ -300,10 +305,10 @@ export default function SubjectResources({ subject, collection, folder }: {
                 {!editor.id && collection === "ia" && (
                   <>
                     <label className="text-xs font-semibold">Klasör puanı (isteğe bağlı)
-                      <input type="number" min={0} max={editor.maximum || 999} step={1} className="mt-1 block w-28 rounded-lg border bg-transparent px-2 py-2" value={editor.points ?? ""} onChange={event => setEditor({ ...editor, points: event.target.value })} />
+                      <input type="number" min={0} max={editor.maximum || 999} step={1} className="mt-1 block w-28 rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950" value={editor.points ?? ""} onChange={event => setEditor({ ...editor, points: event.target.value })} />
                     </label>
                     <label className="text-xs font-semibold">Maksimum puan
-                      <input type="number" required={Boolean(editor.points)} min={1} max={999} step={1} className="mt-1 block w-28 rounded-lg border bg-transparent px-2 py-2" value={editor.maximum ?? ""} onChange={event => setEditor({ ...editor, maximum: event.target.value })} />
+                      <input type="number" required={Boolean(editor.points)} min={1} max={999} step={1} className="mt-1 block w-28 rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 dark:border-slate-700 dark:bg-slate-950" value={editor.maximum ?? ""} onChange={event => setEditor({ ...editor, maximum: event.target.value })} />
                     </label>
                   </>
                 )}
@@ -312,15 +317,15 @@ export default function SubjectResources({ subject, collection, folder }: {
               </form>
             )}
             {error && <div role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{error} {!listing && <button className="underline" onClick={() => { setError(""); setRevision(value => value + 1); }}>Tekrar dene</button>}</div>}
-            {busy && <p role="status" className="mt-3 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> İşleniyor…</p>}
-            {!listing && !error && <p role="status" className="py-8 text-center text-sm text-slate-500">Kaynaklar yükleniyor…</p>}
-            {entries?.length === 0 && <p className="py-10 text-center text-sm text-slate-500">{query ? "Aramana uygun kaynak bulunamadı." : "Bu klasör boş. Bir klasör oluşturabilir veya ilk dosyayı yükleyebilirsin."}</p>}
-            <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
+            {busy && <p role="status" className="mt-3 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"><Loader2 size={16} className="animate-spin" /> İşleniyor…</p>}
+            {!listing && !error && <p role="status" className="py-8 text-center text-sm text-slate-600 dark:text-slate-400">Kaynaklar yükleniyor…</p>}
+            {entries?.length === 0 && <p className="py-10 text-center text-sm text-slate-600 dark:text-slate-400">{query ? "Aramana uygun kaynak bulunamadı." : "Bu klasör boş. Bir klasör oluşturabilir veya ilk dosyayı yükleyebilirsin."}</p>}
+            <ul className="mt-3 divide-y divide-slate-200 dark:divide-slate-700">
               {entries?.map(entry => (
                 <li key={entry.id} className={`flex flex-wrap items-center gap-2 px-2 py-3 ${entry.is_folder && entry.score && entry.score.points === entry.score.maximum ? "rounded-xl bg-gradient-to-r from-amber-100 via-yellow-50 to-amber-100 ring-1 ring-inset ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.3)] dark:from-amber-950 dark:via-yellow-900/50 dark:to-amber-950" : ""}`}>
                   {entry.is_folder ? <Folder size={19} className="text-amber-500" /> : <FileText size={19} className="text-indigo-500" />}
                   <div className="min-w-36 flex-1">
-                    {entry.is_folder ? <Link className="block break-words text-sm font-semibold hover:underline" to={subjectResourcesLink(subject, collection, entry.id)}>{entry.name}</Link> : <p className="break-words text-sm font-semibold">{displayName(entry)}</p>}
+                    {entry.is_folder ? <Link className="block break-words text-sm font-semibold hover:underline" to={subjectResourcesLink(subject, collection, entry.id)}>{entry.name}</Link> : <button type="button" className="block max-w-full break-words text-left text-sm font-semibold text-indigo-700 hover:underline disabled:opacity-50 dark:text-indigo-300" disabled={busy} onClick={() => openFile(entry, canPreview(entry))}>{displayName(entry)}</button>}
                     <p className="break-all text-xs text-slate-500 dark:text-slate-400">{entry.is_folder ? "Oluşturan" : "Yükleyen"} @{entry.uploader}{entry.size != null && ` · ${(entry.size / 1024 / 1024).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} MB`}</p>
                   </div>
                   {entry.score && (
@@ -328,7 +333,7 @@ export default function SubjectResources({ subject, collection, folder }: {
                       {entry.score.points}/{entry.score.maximum}{entry.score.points === entry.score.maximum ? " · Tam puan" : ""}
                     </span>
                   )}
-                  {!entry.is_folder && RESOURCE_PREVIEW_TYPES.some(type => type === entry.mime_type) && <button className={button} disabled={busy} onClick={() => openFile(entry, true)}><Eye size={16} /> Önizle</button>}
+                  {!entry.is_folder && canPreview(entry) && <button className={button} disabled={busy} onClick={() => openFile(entry, true)}><Eye size={16} /> Önizle</button>}
                   {!entry.is_folder && <button className={button} disabled={busy} onClick={() => openFile(entry, false)}><Download size={16} /> İndir</button>}
                   {entry.canRename && <button className={button} disabled={busy} onClick={() => setEditor({ id: entry.id, name: entry.name })}><Pencil size={16} /> Adını değiştir</button>}
                   {entry.canRename && <button type="button" className={button} disabled={busy} onClick={() => setDeleteEntry(entry)}><Trash2 size={16} /> Sil</button>}

@@ -442,12 +442,9 @@ export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem("lan_theme") === "dark");
 
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("lan_theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    document.documentElement.classList.toggle("dark", darkMode);
+    localStorage.setItem("lan_theme", darkMode ? "dark" : "light");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", darkMode ? "#020617" : "#f8fafc");
   }, [darkMode]);
 
   const handleNotificationClick = (notif: any) => {

@@ -1,6 +1,11 @@
 <!doctype html>
 <html lang="tr">
   <head>
+    <script>
+      try {
+        document.documentElement.classList.toggle("dark", localStorage.getItem("lan_theme") === "dark");
+      } catch {}
+    </script>
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-SHHXG4QYDE"></script>
     <script>

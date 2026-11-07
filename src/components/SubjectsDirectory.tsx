@@ -173,23 +173,23 @@ export default function SubjectsDirectory({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
-      <div className="max-w-3xl mx-auto px-4 py-5 sm:py-7 pb-28">
+      <div className="max-w-5xl mx-auto px-4 py-5 sm:py-7 pb-28">
         {/* ========================================================= */}
         {/* DERS KLASÖRLERİ HERO SECTION & KLASÖRLER LİSTESİ          */}
         {/* ========================================================= */}
-        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 sm:p-8 text-white shadow-xl mb-6 relative overflow-hidden">
+        <div className="border border-indigo-200 dark:border-indigo-800 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950 dark:to-slate-900 rounded-3xl p-6 sm:p-8 shadow-sm mb-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 -mr-8 -mt-8 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none" />
           <div className="absolute bottom-0 right-12 w-32 h-32 bg-indigo-400/20 rounded-full blur-xl pointer-events-none" />
           
           <div className="relative z-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-xs font-semibold text-blue-100 mb-3 border border-white/20">
-              <Layers size={13} className="text-blue-200" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900 text-xs font-semibold text-indigo-800 dark:text-indigo-200 mb-3 border border-indigo-200 dark:border-indigo-700">
+              <Layers size={13} className="text-indigo-600 dark:text-indigo-300" />
               <span>Ders & İçerik Klasörleri</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-2">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100 mb-2">
               Ders Klasörleri & Arşiv
             </h1>
-            <p className="text-blue-100/90 text-sm sm:text-base max-w-lg leading-relaxed">
+            <p className="text-slate-600 dark:text-slate-300 text-sm sm:text-base max-w-lg leading-relaxed">
               İlgilendiğin dersi seçerek paylaşılan tüm fotoğraf, video, soru çözümleri ve notlara ulaşabilirsin.
             </p>
           </div>
@@ -272,7 +272,7 @@ export default function SubjectsDirectory({
                 </div>
 
                 {/* Bottom Action Footer */}
-                <div className="relative z-10 pt-3.5 mt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
+                <div className="relative z-10 pt-3.5 mt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
                   <div className="flex items-center gap-1 text-[11px]">
                     <FileText size={13} />
                     <span>Paylaşımları Gör</span>

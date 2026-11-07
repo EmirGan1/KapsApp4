@@ -1,6 +1,29 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    color-scheme: light;
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  :root.dark {
+    color-scheme: dark;
+    background: #020617;
+    color: #e2e8f0;
+  }
+
+  :focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+
+  .dark :focus-visible {
+    outline-color: #93c5fd;
+  }
+}
 
 html, body, #root {
   width: 100%;
