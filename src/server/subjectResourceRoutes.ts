@@ -42,9 +42,11 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
           }
         }
       }
-      await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_subject_resource_score_folder
+      await db.execute("DROP INDEX IF EXISTS idx_subject_resource_score_folder");
+      await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_subject_resource_auto_score_folder
         ON subject_resource_entries(subject, collection, ia_points, ia_maximum)
-        WHERE parent_id IS NULL AND storage_key IS NULL AND ia_points IS NOT NULL`);
+        WHERE parent_id IS NULL AND storage_key IS NULL AND ia_points IS NOT NULL
+          AND name = ia_points || '_' || ia_maximum`);
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_subject_resource_scope
         ON subject_resource_entries(subject, collection, parent_id)`);
     })().catch(error => { schema = undefined; throw error; });
@@ -97,9 +99,10 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
   app.get(route, handle(async (req, res, ctx) => {
     const parent = await getParent(req, ctx);
     if (parent === undefined) return res.status(404).json({ error: "Klasör bulunamadı." });
-    const breadcrumbs: { id: number; name: string }[] = [];
+    const breadcrumbs: { id: number; name: string; score: { points: number; maximum: number } | null }[] = [];
     for (let folder = parent; folder; folder = await find(ctx, folder.parent_id)) {
-      breadcrumbs.unshift({ id: folder.id, name: folder.name });
+      breadcrumbs.unshift({ id: folder.id, name: folder.name, score: folder.ia_maximum == null
+        ? readIaScoreName(folder.name) : { points: Number(folder.ia_points), maximum: Number(folder.ia_maximum) } });
     }
     const result = await db.execute({
       sql: `SELECT id, name, storage_key IS NULL AS is_folder, mime_type, size, owner_id, uploader, created_at
@@ -117,7 +120,7 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
           SELECT child.id, tree.root_id, child.name, child.storage_key, child.ia_points, child.ia_maximum
             FROM subject_resource_entries child JOIN tree ON child.parent_id = tree.id
             WHERE child.subject = ? AND child.collection = 'ia'
-        ) SELECT * FROM tree WHERE ia_maximum IS NOT NULL OR (id = root_id AND storage_key IS NULL)`,
+        ) SELECT * FROM tree WHERE ia_maximum IS NOT NULL OR storage_key IS NULL`,
         args: [ctx.subject, parent?.id ?? null, ctx.subject],
       });
       for (const row of descendants.rows) {
@@ -145,19 +148,34 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
     if (parent === undefined) return res.status(404).json({ error: "Klasör bulunamadı." });
     const name = cleanName(req.body?.name);
     if (!name) return res.status(400).json({ error: "Geçerli bir klasör adı girin (en fazla 240 karakter)." });
-    await db.execute({
-      sql: "INSERT INTO subject_resource_entries (subject, collection, parent_id, name, owner_id, uploader) VALUES (?, ?, ?, ?, ?, ?)",
-      args: [ctx.subject, ctx.collection, parent?.id ?? null, name, ctx.user.id, ctx.user.username],
+    const points = ctx.collection === "ia" ? req.body?.points ?? null : null;
+    const maximum = points === null ? null : req.body?.maximum;
+    if (points !== null && (!Number.isInteger(points) || !Number.isInteger(maximum) || points < 0 || maximum < 1 || maximum > 999 || points > maximum)) {
+      return res.status(400).json({ error: "Geçerli bir klasör puanı girin." });
+    }
+    const result = await db.execute({
+      sql: `INSERT INTO subject_resource_entries
+            (subject, collection, parent_id, name, owner_id, uploader, ia_points, ia_maximum)
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM subject_resource_entries WHERE id = ?)`,
+      args: [ctx.subject, ctx.collection, parent?.id ?? null, name, ctx.user.id, ctx.user.username, points, maximum, parent?.id ?? null, parent?.id ?? null],
     });
+    if (!result.rowsAffected) return res.status(404).json({ error: "Klasör bulunamadı." });
     res.sendStatus(201);
   }));
 
   app.post(`${route}/files`, handle(async (req, res, ctx) => {
     const parent = await getParent(req, ctx);
     if (parent === undefined) return res.status(404).json({ error: "Klasör bulunamadı." });
-    const points = ctx.collection === "ia" && typeof req.query.points === "string" && /^\d{1,3}$/.test(req.query.points)
+    let points = ctx.collection === "ia" && typeof req.query.points === "string" && /^\d{1,3}$/.test(req.query.points)
       ? Number(req.query.points) : null;
-    const maximum = ctx.collection === "ia" ? parseId(req.query.maximum) : null;
+    let maximum = ctx.collection === "ia" ? parseId(req.query.maximum) : null;
+    if (ctx.collection === "ia" && parent && req.query.points === undefined && req.query.maximum === undefined) {
+      const inherited = parent.ia_maximum == null ? readIaScoreName(parent.name)
+        : { points: Number(parent.ia_points), maximum: Number(parent.ia_maximum) };
+      points = inherited?.points ?? null;
+      maximum = inherited?.maximum ?? null;
+    }
     if (ctx.collection === "ia" && (points === null || maximum === null || maximum > 999 || points > maximum)) {
       return res.status(400).json({ error: "IA puanını ve geçerli bir maksimum puan girin." });
     }
@@ -199,12 +217,14 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
           parentId = created.rows[0].id;
         }
       }
-      await db.execute({
+      const result = await db.execute({
         sql: `INSERT INTO subject_resource_entries
               (subject, collection, parent_id, name, storage_key, mime_type, size, owner_id, uploader, ia_points, ia_maximum)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [ctx.subject, ctx.collection, parentId, name, file.filename, file.mimetype, file.size, ctx.user.id, ctx.user.username, points, maximum],
+              SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+              WHERE ? IS NULL OR EXISTS (SELECT 1 FROM subject_resource_entries WHERE id = ?)`,
+        args: [ctx.subject, ctx.collection, parentId, name, file.filename, file.mimetype, file.size, ctx.user.id, ctx.user.username, points, maximum, parentId, parentId],
       });
+      if (!result.rowsAffected) return res.status(404).json({ error: "Klasör bulunamadı." });
       saved = true;
       res.sendStatus(201);
     } finally {
@@ -221,6 +241,35 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
     const name = cleanName(req.body?.name);
     if (!name) return res.status(400).json({ error: "Geçerli bir ad girin (en fazla 240 karakter)." });
     await db.execute({ sql: "UPDATE subject_resource_entries SET name = ? WHERE id = ?", args: [name, entry.id] });
+    res.sendStatus(204);
+  }));
+
+  app.delete(`${route}/:id`, handle(async (req, res, ctx) => {
+    const entry = await find(ctx, parseId(req.params.id));
+    if (!entry) return res.status(404).json({ error: "Kaynak bulunamadı." });
+    const result = await db.execute({
+      sql: `WITH RECURSIVE branch(id, owner_id) AS (
+        SELECT id, owner_id FROM subject_resource_entries WHERE id = ?
+        UNION ALL
+        SELECT child.id, child.owner_id FROM subject_resource_entries child
+          JOIN branch ON child.parent_id = branch.id
+          WHERE child.subject = ? AND child.collection = ?
+      )
+      DELETE FROM subject_resource_entries
+      WHERE id IN (SELECT id FROM branch)
+        AND (? = 1 OR NOT EXISTS (SELECT 1 FROM branch WHERE owner_id <> ?))
+      RETURNING storage_key`,
+      args: [entry.id, ctx.subject, ctx.collection, Number(ctx.admin), ctx.user.id],
+    });
+    if (!result.rows.length) {
+      return res.status(403).json({ error: "Bu kaynağı veya içindeki diğer kullanıcılara ait kaynakları silme yetkiniz yok." });
+    }
+    await Promise.all(result.rows.map(async ({ storage_key }: { storage_key: string | null }) => {
+      if (!storage_key) return;
+      await unlink(path.join(storage, storage_key)).catch(error => {
+        if (error.code !== "ENOENT") console.error("Subject resource file cleanup:", error);
+      });
+    }));
     res.sendStatus(204);
   }));
 
