@@ -4,7 +4,7 @@ import path from "node:path";
 import type { Express, Request, Response } from "express";
 import multer from "multer";
 import { getAuthUserFromRequest, isEmirganOrRootAdmin } from "./courseController";
-import { RESOURCE_FILE_LIMIT_MB, RESOURCE_PREVIEW_TYPES, SUBJECTS } from "../utils/subjectResources";
+import { RESOURCE_FILE_LIMIT_MB, RESOURCE_PREVIEW_TYPES, SUBJECTS, SUBJECT_IA_MAX, readIaScoreName } from "../utils/subjectResources";
 
 const route = "/api/courses/:subject/resources/:collection";
 const storage = path.resolve(process.env.SUBJECT_RESOURCES_DIR || "subject-resources-data");
@@ -32,6 +32,19 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
         owner_id INTEGER NOT NULL, uploader TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`);
+      const columns = (await db.execute("PRAGMA table_info(subject_resource_entries)")).rows;
+      for (const column of ["ia_points", "ia_maximum"]) {
+        if (!columns.some((row: { name: string }) => row.name === column)) {
+          try {
+            await db.execute(`ALTER TABLE subject_resource_entries ADD COLUMN ${column} INTEGER`);
+          } catch (error) {
+            if (!/duplicate column name/i.test(String(error))) throw error;
+          }
+        }
+      }
+      await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_subject_resource_score_folder
+        ON subject_resource_entries(subject, collection, ia_points, ia_maximum)
+        WHERE parent_id IS NULL AND storage_key IS NULL AND ia_points IS NOT NULL`);
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_subject_resource_scope
         ON subject_resource_entries(subject, collection, parent_id)`);
     })().catch(error => { schema = undefined; throw error; });
@@ -94,12 +107,37 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
             ORDER BY is_folder DESC, name COLLATE NOCASE, id`,
       args: [ctx.subject, ctx.collection, parent?.id ?? null],
     });
-    res.json({
-      breadcrumbs,
-      entries: result.rows.map(({ owner_id, ...entry }: any) => ({
-        ...entry, canRename: ctx.admin || Number(owner_id) === Number(ctx.user.id),
-      })),
-    });
+    const scores = new Map<number, { points: number; maximum: number }>();
+    if (ctx.collection === "ia") {
+      const descendants = await db.execute({
+        sql: `WITH RECURSIVE tree(id, root_id, name, storage_key, ia_points, ia_maximum) AS (
+          SELECT id, id, name, storage_key, ia_points, ia_maximum
+            FROM subject_resource_entries WHERE subject = ? AND collection = 'ia' AND parent_id IS ?
+          UNION ALL
+          SELECT child.id, tree.root_id, child.name, child.storage_key, child.ia_points, child.ia_maximum
+            FROM subject_resource_entries child JOIN tree ON child.parent_id = tree.id
+            WHERE child.subject = ? AND child.collection = 'ia'
+        ) SELECT * FROM tree WHERE ia_maximum IS NOT NULL OR (id = root_id AND storage_key IS NULL)`,
+        args: [ctx.subject, parent?.id ?? null, ctx.subject],
+      });
+      for (const row of descendants.rows) {
+        const score = row.ia_maximum == null ? readIaScoreName(row.name)
+          : { points: Number(row.ia_points), maximum: Number(row.ia_maximum) };
+        if (!score) continue;
+        const previous = scores.get(row.root_id);
+        if (!previous || score.points * previous.maximum > previous.points * score.maximum) scores.set(row.root_id, score);
+      }
+    }
+    const entries = result.rows.map(({ owner_id, ...entry }: any) => ({
+        ...entry, score: scores.get(entry.id) ?? null,
+        canRename: ctx.admin || Number(owner_id) === Number(ctx.user.id),
+      }));
+    if (ctx.collection === "ia") {
+      const rank = (entry: { score: { points: number; maximum: number } | null }) =>
+        entry.score ? entry.score.points / entry.score.maximum : -1;
+      entries.sort((a: any, b: any) => rank(b) - rank(a));
+    }
+    res.json({ breadcrumbs, entries, defaultMaximum: SUBJECT_IA_MAX[ctx.subject] });
   }));
 
   app.post(`${route}/folders`, handle(async (req, res, ctx) => {
@@ -117,6 +155,12 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
   app.post(`${route}/files`, handle(async (req, res, ctx) => {
     const parent = await getParent(req, ctx);
     if (parent === undefined) return res.status(404).json({ error: "Klasör bulunamadı." });
+    const points = ctx.collection === "ia" && typeof req.query.points === "string" && /^\d{1,3}$/.test(req.query.points)
+      ? Number(req.query.points) : null;
+    const maximum = ctx.collection === "ia" ? parseId(req.query.maximum) : null;
+    if (ctx.collection === "ia" && (points === null || maximum === null || maximum > 999 || points > maximum)) {
+      return res.status(400).json({ error: "IA puanını ve geçerli bir maksimum puan girin." });
+    }
     try {
       await new Promise<void>((resolve, reject) => upload(req, res, error => error ? reject(error) : resolve()));
     } catch (error) {
@@ -129,11 +173,37 @@ export function registerSubjectResourceRoutes(app: Express, db: any) {
     try {
       const name = cleanName(Buffer.from(file.originalname, "latin1").toString("utf8"));
       if (!name) return res.status(400).json({ error: "Dosya adı geçersiz." });
+      let parentId = parent?.id ?? null;
+      if (parentId === null && points !== null && maximum !== null) {
+        const folders = await db.execute({
+          sql: "SELECT id, name, ia_points, ia_maximum FROM subject_resource_entries WHERE subject = ? AND collection = 'ia' AND parent_id IS NULL AND storage_key IS NULL ORDER BY id",
+          args: [ctx.subject],
+        });
+        const matching = folders.rows.find((row: any) => {
+          const score = row.ia_maximum == null ? readIaScoreName(row.name) : { points: row.ia_points, maximum: row.ia_maximum };
+          return score?.points === points && score.maximum === maximum;
+        });
+        if (matching) {
+          parentId = matching.id;
+        } else {
+          await db.execute({
+            sql: `INSERT OR IGNORE INTO subject_resource_entries
+                  (subject, collection, name, owner_id, uploader, ia_points, ia_maximum)
+                  VALUES (?, 'ia', ?, ?, ?, ?, ?)`,
+            args: [ctx.subject, `${points}_${maximum}`, ctx.user.id, ctx.user.username, points, maximum],
+          });
+          const created = await db.execute({
+            sql: "SELECT id FROM subject_resource_entries WHERE subject = ? AND collection = 'ia' AND parent_id IS NULL AND storage_key IS NULL AND ia_points = ? AND ia_maximum = ?",
+            args: [ctx.subject, points, maximum],
+          });
+          parentId = created.rows[0].id;
+        }
+      }
       await db.execute({
         sql: `INSERT INTO subject_resource_entries
-              (subject, collection, parent_id, name, storage_key, mime_type, size, owner_id, uploader)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [ctx.subject, ctx.collection, parent?.id ?? null, name, file.filename, file.mimetype, file.size, ctx.user.id, ctx.user.username],
+              (subject, collection, parent_id, name, storage_key, mime_type, size, owner_id, uploader, ia_points, ia_maximum)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [ctx.subject, ctx.collection, parentId, name, file.filename, file.mimetype, file.size, ctx.user.id, ctx.user.username, points, maximum],
       });
       saved = true;
       res.sendStatus(201);
