@@ -15,6 +15,23 @@ export function collisionSolids(map:MapDefinition):Solid[]{
   }
   return result.solids;
 }
+const spatialCache=new WeakMap<MapDefinition,{solids:Solid[];cells:Map<string,Solid[]>}>();
+const CELL=8;
+/** Broad phase only: preserve authored order and the exact capsule/ramp narrow phase. */
+export function nearbyCollisionSolids(map:MapDefinition,p:Vec3):Solid[]{
+ const solids=collisionSolids(map);
+ if(!Number.isFinite(p.x)||!Number.isFinite(p.z))return solids;
+ let index=spatialCache.get(map);
+ if(!index||index.solids!==solids){
+  const cells=new Map<string,Solid[]>();
+  for(const s of solids)for(let x=Math.floor((s.x-s.w/2-C.radius)/CELL);x<=Math.floor((s.x+s.w/2+C.radius)/CELL);x++)for(let z=Math.floor((s.z-s.d/2-C.radius)/CELL);z<=Math.floor((s.z+s.d/2+C.radius)/CELL);z++){
+   const key=x+','+z;let list=cells.get(key);if(!list){list=[];cells.set(key,list);}list.push(s);
+  }
+  index={solids,cells};spatialCache.set(map,index);
+ }
+ return index.cells.get(Math.floor(p.x/CELL)+','+Math.floor(p.z/CELL))??EMPTY_SOLIDS;
+}
+const EMPTY_SOLIDS:Solid[]=[];
 export const clamp = (n: number, a: number, b: number) =>
   Math.max(a, Math.min(b, n));
 export function surface(s:Solid,x:number,z:number){
@@ -28,7 +45,7 @@ export function overlaps(s: Solid, p: Vec3, r = C.radius) {
   return dx * dx + dz * dz < r * r - 1e-8;
 }
 export function fits(map: MapDefinition, p: Vec3, height: number) {
-  return !collisionSolids(map).some((s) => {
+  return !nearbyCollisionSolids(map,p).some((s) => {
     if (s.detail) return false;
     if (s.kind === "ramp")
       return (
@@ -46,7 +63,7 @@ export function fits(map: MapDefinition, p: Vec3, height: number) {
 }
 export function support(map: MapDefinition, p: Vec3, maxY: number) {
   let y = 0;
-  for (const s of collisionSolids(map)) {
+  for (const s of nearbyCollisionSolids(map,p)) {
     if (s.detail || !overlaps(s, p, C.radius)) continue;
     const top = surface(s, p.x, p.z);
     if (top <= maxY + 0.001) y = Math.max(y, top);

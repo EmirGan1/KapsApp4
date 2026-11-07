@@ -26,6 +26,28 @@ export function finishTextureUrl(item: Cosmetic): string {
   for(let i=0;i<30;i++){const x=(i*73)%256,y=(i*47)%256;detail+=`<path d="M${x} ${y}l${18+i%5*7} -14l-9 47Z" fill="${accent}" opacity="${.25+i%3*.2}"/>`;}
  }else if(item.pattern===7){
   for(let i=0;i<13;i++)detail+=`<ellipse cx="108" cy="134" rx="${18+i*13}" ry="${9+i*9}" fill="none" stroke="${accent}" stroke-width="2" transform="rotate(-28 108 134)" opacity=".75"/>`;
+ }else if(item.pattern>=8 && item.pattern<=19){
+  const variant=item.variant??0, phase=variant*13;
+  for(let i=0;i<12;i++){
+   const x=(i*43+phase)%256,y=(i*67+phase*2)%256;
+   const motifs=[
+    `<path d="M${x} 0l80 256m-64-256l80 256"/>`,
+    `<path d="M0 ${y}h${x}v18h${256-x}"/>`,
+    `<path d="M0 ${y}h70l12-20l18 40l12-20h144"/>`,
+    `<path d="M${x} ${y}h32v32h-24v-24h16v16"/>`,
+    `<path d="M0 ${y}q64-36 128 0t128 0"/>`,
+    `<ellipse cx="128" cy="128" rx="${20+i*9}" ry="${10+i*5}" transform="rotate(${phase+35} 128 128)"/>`,
+    `<path d="M${x} ${y}q-25-30 0-20q25-10 0 20q30-5 20 15q-20 15-20-15q-25 20-20 0Z"/>`,
+    `<path d="M0 ${y}l40-12l32 20l50-30l50 30l40-15l44 7"/>`,
+    `<path d="M${x} ${y}l-24-18l8 26l16 12l16-12l8-26Z"/>`,
+    `<path d="M${x} ${y}c-40-40-40 40 0 0s40 40 0 0"/>`,
+    `<path d="M${x} ${y}q16 32 32 0q-16 10-32 0Z"/>`,
+    `<path d="M${x} ${y}l-18-24l14 8l4-20l4 20l14-8l-18 24Z"/>`
+   ];
+   detail+=`<g fill="none" stroke="${accent}" stroke-width="${i%3===0?3:1.4}" opacity="${.35+i%3*.25}">${motifs[item.pattern-8]}</g>`;
+  }
+  // A different signature/orientation for each firearm and blade, shared by inventory and game.
+  detail=`<g transform="rotate(${variant*17} 128 128)">${detail}</g><path d="M${16+variant*7} 232h38" stroke="${accent}" stroke-width="5"/>`;
  }else{
   detail=`<ellipse cx="140" cy="110" rx="100" ry="60" fill="${accent}" opacity=".24"/>`;
   for(let i=0;i<38;i++)detail+=`<circle cx="${(i*83+17)%256}" cy="${(i*127+29)%256}" r="${i%7===0?2:1}" fill="#ffffff" opacity=".8"/>`;

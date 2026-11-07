@@ -1,3 +1,4 @@
+import {advanceReload} from '../games/kapsstrike/reload';
 import {dropBombWeapon,pickupBombWeapon} from '../games/kapsstrike/bombWeapons';
 import {safeSpawn,spreadSpawn} from "../games/kapsstrike/spawns";
 import {tracePlayer} from '../games/kapsstrike/hitboxes';
@@ -33,7 +34,7 @@ import {
 import { MAPS } from "../games/kapsstrike/maps";
 import { PHYSICS as C, ownsWeapon, WEAPONS, WEAPON_ORDER, TARGET_HITBOXES } from "../games/kapsstrike/config";
 import { newMovement, move, fits, clamp, raySolid, rayBox, collisionSolids } from "../games/kapsstrike/physics";
-import { aimDirection, eye, fireDelay, spreadFor, weaponDamage, shotDirection, shouldAutoReload } from "../games/kapsstrike/combat";
+import { aimDirection, eye, fireDelay, spreadFor, weaponDamage, shotDirection } from "../games/kapsstrike/combat";
 
 function clonePlayerState(s: PlayerState): PlayerState {
   return {
@@ -72,13 +73,13 @@ function cloneWorld(w: StrikeWorld): StrikeWorld {
 }
 
 export interface StrikeServerConfig {
-  tickRate: number; // 60 Hz
+  tickRate: number; // Poll at the 120 Hz physics cadence; no extra simulation steps.
   snapshotRate: number; // 30 Hz, independent of 120 Hz physics
   maxLagCompTicks: number; // 60 shared physics ticks = 500ms
 }
 
 export const SERVER_CONFIG: StrikeServerConfig = {
-  tickRate: 60,
+  tickRate: 120,
   snapshotRate: 30,
   maxLagCompTicks: 60,
 };
@@ -283,8 +284,8 @@ export class StrikeRoom {
       ready: p.ready,
       isAlive: p.state.hp > 0,
       hp: p.state.hp,
-      position: p.state.movement.position,
-      velocity: p.state.movement.velocity,
+      position: {...p.state.movement.position},
+      velocity: {...p.state.movement.velocity},
       yaw: p.state.yaw,
       pitch: p.state.pitch,
       stance: p.state.movement.stance,
@@ -368,7 +369,7 @@ export class StrikeRoom {
     return {
       tick: base.tick,
       roomCode: base.roomCode,
-      world: sharedBase ? cloneWorld(this.world) : base.world,
+      world: base.world,
       localState: targetPlayer ? clonePlayerState(targetPlayer.state) : undefined,
       serverTime: base.serverTime,
       ackSequence,
@@ -1083,26 +1084,11 @@ export class KapsStrikeServerManager {
           }
         }
 
-        // Handle reload request (manual or bot auto-reload)
-        const curWeapon = player.state.weapon.selected;
-        const wDef = WEAPONS[curWeapon];
-        const botAutoReload = player.id.startsWith("bot-") && shouldAutoReload(player.state.weapon, room.tick);
-        if ((input.reload || botAutoReload) && !player.state.weapon.reloadUntil) {
-          if (player.state.weapon.ammo[curWeapon] < wDef.capacity) {
-            player.state.weapon.reloadUntil = room.tick + Math.ceil(wDef.reload / C.dt);
-            room.addEvent({
-              actor: player.id,
-              kind: "reload",
-              weapon: curWeapon,
-              from: { ...player.state.movement.position },
-            });
-          }
-        }
-
-        // Finish active reload if timer reached
-        if (player.state.weapon.reloadUntil && room.tick >= player.state.weapon.reloadUntil) {
-          player.state.weapon.ammo[curWeapon] = wDef.capacity;
-          player.state.weapon.reloadUntil = 0;
+        // Shared prediction/authority timing, including empty magazines and bot weapons.
+        const curWeapon=player.state.weapon.selected,wDef=WEAPONS[curWeapon];
+        const allowReload=!room.bomb||['active','planted'].includes(room.bomb.phase);
+        if(advanceReload(player.state.weapon,room.tick,input.reload,allowReload)){
+          room.addEvent({actor:player.id,kind:'reload',weapon:curWeapon,from:{...player.state.movement.position}});
         }
 
         // Apply movement physics using authored map geometry
@@ -1124,15 +1110,9 @@ export class KapsStrikeServerManager {
           player.activeCommand=originalCommand;player.activeReceive=originalReceive;player.state.yaw=yaw;player.state.pitch=pitch;
           if(buffered&&weaponState.shotIndex>=buffered.index)player.pendingFire=undefined;
         }
-        // If input.reload was set on the same command that fired the last bullet, initiate reload immediately
-        if ((input.reload || (player.id.startsWith("bot-") && shouldAutoReload(weaponState, room.tick))) && !weaponState.reloadUntil && weaponState.ammo[curWeapon] < wDef.capacity) {
-          weaponState.reloadUntil = room.tick + Math.ceil(wDef.reload / C.dt);
-          room.addEvent({
-            actor: player.id,
-            kind: "reload",
-            weapon: curWeapon,
-            from: { ...player.state.movement.position },
-          });
+        // Begin after the last accepted shot, without rewriting the firing command as manual reload.
+        if(advanceReload(weaponState,room.tick,false,allowReload)){
+          room.addEvent({actor:player.id,kind:'reload',weapon:curWeapon,from:{...player.state.movement.position}});
         }
         if (queued) player.state.weapon.triggerHeld = input.fire;
       }
