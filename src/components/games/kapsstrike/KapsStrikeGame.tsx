@@ -1219,7 +1219,7 @@ export default function KapsStrikeGame({
               </div>
               <div className="text-right">
                 <span className="text-sm font-mono font-bold text-slate-300">
-                  {hud?.ping ? `${Math.round(hud.ping)} ms` : "0 ms"}
+                  {hud?.ping ? `${Math.round(hud.ping)} ms` : "—"}
                 </span>
                 <span className="text-xs block text-slate-500">TAB ile kapat</span>
               </div>
@@ -1409,10 +1409,17 @@ export default function KapsStrikeGame({
               {Math.round(hud.fps)} FPS · {hud.drawCalls} çizim ·{" "}
               {hud.activeMeshes}/{hud.meshes} mesh ·{" "}
               {hud.isMultiplayer
-                ? `Multiplayer (${hud.remotePlayerCount || 0} oyuncu) · Ping: ${Math.round(
-                    hud.ping || 0
-                  )} ms · TAB Skor`
+                ? `Multiplayer (${hud.remotePlayerCount || 0} oyuncu) · Ping: ${hud.ping ? `${Math.round(hud.ping)} ms` : "ölçülüyor"} · TAB Skor`
                 : "Yerel antrenman"}
+              {settings.showDebugStats && hud.networkSample && (
+                <span>
+                  {" · "}{hud.networkSample.transport}
+                  {" · Ham RTT "}{hud.networkSample.rawRttMs} ms
+                  {" · Kare aralığı (maks.) "}{hud.networkSample.frameGapMaxMs} ms
+                  {hud.networkSample.serverLoopMaxMs !== undefined &&
+                    ` · Sunucu döngü örneği (maks.) ${hud.networkSample.serverLoopMaxMs} ms`}
+                </span>
+              )}
               {" · ESC Menü"}
             </div>
           )}

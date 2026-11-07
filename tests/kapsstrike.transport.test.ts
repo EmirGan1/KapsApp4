@@ -29,9 +29,21 @@ for (const count of [8,10]) test(`${count} actual socket clients: latency/jitter
   assert.ok(room.players.has(replacement.id!),'old disconnect must preserve new membership');
   assert.equal(room.players.get(replacement.id!)!.state.id,replacement.id);
   assert.ok((await ack(host,'strike:start_game')).success);
+  const ping = await new Promise<{ echoed: number; details: { inputBatch: boolean } }>((resolve, reject) => {
+   host.timeout(3000).emit('strike:ping', 123, (error: Error | null, echoed: number, details: { inputBatch: boolean }) => {
+    if (error) reject(error);
+    else resolve({ echoed, details });
+   });
+  });
+  assert.equal(ping.echoed, 123);
+  assert.equal(ping.details.inputBatch, true);
+  const input = {tick:room.tick,moveX:0,moveZ:0,yaw:0,pitch:0,jump:false,sprint:false,crouch:false,fire:false,ads:false,reload:false};
+  host.emit('strike:input_batch', [{...input,sequence:1},{...input,sequence:2}]);
+  for (let i = 0; i < 100 && room.players.get(host.id!)!.lastSequence < 2; i++) await wait(10);
+  assert.equal(room.players.get(host.id!)!.lastSequence, 2);
   const active=clients.filter(c=>c.connected&&room.players.has(c.id!));
   const counts=new Map<string,number>();for(const c of active)c.on('strike:snapshot',()=>counts.set(c.id!,1+(counts.get(c.id!)||0)));
-  const sequences=new Map<string,number>(),starts=new Map([...room.players.values()].map(p=>[p.id,{...p.state.movement.position}]));
+  const sequences=new Map<string,number>([[host.id!,2]]),starts=new Map([...room.players.values()].map(p=>[p.id,{...p.state.movement.position}]));
   const durations:number[]=[];const original=manager.tickSimulation.bind(manager);manager.tickSimulation=(r)=>{const start=performance.now();original(r);durations.push(performance.now()-start);};
   let frame=0;
   load=setInterval(()=>{frame++;for(const [index,c] of active.entries()){
