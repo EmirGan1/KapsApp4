@@ -4,6 +4,7 @@
  */
 
 export const MAX_ROOM_USERS = 20;
+export const SCREEN_SHARE_MAX_BITRATE = 6_000_000;
 
 export const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
@@ -202,11 +203,11 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
 
   let stream: MediaStream | null = null;
 
-  // Ultra-high quality screen sharing constraints (Full 60fps, up to 4K native capture without downscaling)
+  // Request up to 1080p at 60 fps while allowing lower capture settings.
   const displayConstraints = {
     video: {
-      width: { ideal: 3840, max: 3840 },
-      height: { ideal: 2160, max: 2160 },
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
       frameRate: { ideal: 60, max: 60 },
       // @ts-ignore
       cursor: 'always'
@@ -219,20 +220,17 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
       stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints as DisplayMediaStreamOptions);
     }
   } catch (err1: any) {
-    console.warn('[ScreenShare] Ultra-high quality attempt notice:', err1?.name, err1?.message);
+    console.warn('[ScreenShare] Preferred capture settings failed:', err1?.name, err1?.message);
     
-    // Fallback to 1080p 60fps or standard video if ultra-high 4K rejected
+    // Relax video constraints before falling back to silent capture.
     if (err1?.name !== 'NotAllowedError' && err1?.name !== 'AbortError') {
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            width: { ideal: 1920, max: 1920 },
-            height: { ideal: 1080, max: 1080 },
-            frameRate: { ideal: 60, max: 60 }
-          },
+          video: true,
           ...screenAudioOptions(withAudio, false)
         } as DisplayMediaStreamOptions);
       } catch (err2) {
+        if (err2 instanceof DOMException && (err2.name === 'NotAllowedError' || err2.name === 'AbortError')) return null;
         try {
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true } as DisplayMediaStreamOptions);
         } catch (err3) {
@@ -276,8 +274,7 @@ export async function applySenderBitrateLimit(
   let maxFps = 30;
 
   if (isScreenShare) {
-    // Ultra-high quality screen sharing: 10-12 Mbps target for crystal clear 1080p/4K 60fps
-    targetBitrateBps = 10_000_000;
+    targetBitrateBps = SCREEN_SHARE_MAX_BITRATE;
     maxFps = 60;
     
     // Apply contentHint = 'detail' for razor-sharp text and graphics
@@ -314,6 +311,7 @@ export async function applySenderBitrateLimit(
   try {
     const params = sender.getParameters();
     if (!params.encodings || params.encodings.length === 0) {
+      if (isScreenShare) return;
       params.encodings = [{}];
     }
     

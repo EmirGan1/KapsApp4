@@ -1,3 +1,5 @@
+import { SCREEN_SHARE_MAX_BITRATE } from "./webrtcConfig";
+
 /** Per-connection adaptation: voice retains priority over both video tracks. */
 export interface LinkSample {available:number;loss:number;rtt:number;cpu?:boolean}
 export function chooseVideoBudget(sample:LinkSample,peers:number,sharing:boolean){
@@ -6,7 +8,8 @@ export function chooseVideoBudget(sample:LinkSample,peers:number,sharing:boolean
  if(sample.loss>.08||sample.rtt>.7)budget=Math.min(budget,600_000);
  else if(sample.loss>.03||sample.rtt>.35)budget=Math.min(budget,1_800_000);
  const level=budget<500_000?0:budget<1_200_000?1:budget<3_000_000?2:3;
- return {camera:Math.round(budget*(sharing?.2:1)),screen:Math.max(6_000_000,Math.round(budget*.9)),scale:Math.max(sample.cpu?2:1,[3,2,1,1][level]),fps:60,cameraFps:sample.cpu?20:30};
+ const screen = Math.min(SCREEN_SHARE_MAX_BITRATE, Math.floor(budget * 0.8));
+ return {camera:Math.round(budget*(sharing?.2:1)),screen,scale:Math.max(sample.cpu?2:1,[3,2,1,1][level]),fps:sample.cpu?30:60,cameraFps:sample.cpu?20:30};
 }
 export async function tuneConnection(pc:RTCPeerConnection,camera:RTCRtpSender|undefined,screen:RTCRtpSender|undefined,peers:number,state:{budget?:number;good?:number;quality?:number}){
  const stats=await pc.getStats();let available=6_000_000,loss=0,rtt=0,cpu=false;
@@ -23,10 +26,9 @@ export async function tuneConnection(pc:RTCPeerConnection,camera:RTCRtpSender|un
    const p=sender.getParameters();
    if(!p.encodings?.length)continue;
    const scale = isScreen ? 1 : target.scale;
-   const fps = isScreen ? 60 : target.cameraFps;
-   const br = isScreen ? Math.max(8_000_000, bitrate) : bitrate;
+   const fps = isScreen ? target.fps : target.cameraFps;
    for(const e of p.encodings){
-    e.maxBitrate=br;
+    e.maxBitrate=bitrate;
     e.maxFramerate=fps;
     e.scaleResolutionDownBy=scale;
     e.priority=isScreen?'high':'medium';

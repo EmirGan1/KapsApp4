@@ -8,6 +8,7 @@ import {
   getVideoConstraints, 
   getVideoConstraintsForResolution,
   getAudioTrackConstraints,
+  SCREEN_SHARE_MAX_BITRATE,
   applySenderBitrateLimit, 
   tuneSdpForAudioOpus,
   checkCanScreenShare,
@@ -874,7 +875,11 @@ export function useWebRTC({
     if (isScreenSharingRef.current && screenStreamRef.current) {
       const screenTrack = screenStreamRef.current.getVideoTracks()[0];
       if (screenTrack) {
-        const sender = pc.addTransceiver(screenTrack, {direction:'sendonly', streams:[screenStreamRef.current]}).sender;
+        const sender = pc.addTransceiver(screenTrack, {
+          direction: 'sendonly',
+          streams: [screenStreamRef.current],
+          sendEncodings: [{ maxBitrate: SCREEN_SHARE_MAX_BITRATE, maxFramerate: 60 }]
+        }).sender;
         screenSendersRef.current.set(remoteSocketId, sender);
         applySenderBitrateLimit(sender, participantCountRef.current, 'auto', true);
       }
@@ -1389,7 +1394,11 @@ export function useWebRTC({
       // 3. Add Screen Track to all active RTCPeerConnections & Renegotiation
       for (const [sId, pc] of peerConnectionsRef.current.entries()) {
         try {
-          const sender = pc.addTransceiver(screenVideoTrack, {direction:'sendonly', streams:[screenStream]}).sender;
+          const sender = pc.addTransceiver(screenVideoTrack, {
+            direction: 'sendonly',
+            streams: [screenStream],
+            sendEncodings: [{ maxBitrate: SCREEN_SHARE_MAX_BITRATE, maxFramerate: 60 }]
+          }).sender;
           screenSendersRef.current.set(sId, sender);
           applySenderBitrateLimit(sender, participantCountRef.current, 'auto', true);
         } catch (addTrackErr) {
