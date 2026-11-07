@@ -73,20 +73,86 @@ function cloneWorld(w: StrikeWorld): StrikeWorld {
   };
 }
 
-let loopDelay: ReturnType<typeof monitorEventLoopDelay> | undefined;
-let recentLoopDelayMs: number | undefined;
+export interface ServerLoopDiagnostics {
+  serverLoopMaxMs?: number;
+  serverLoopP50Ms?: number;
+  serverLoopP95Ms?: number;
+  serverCpuPercent?: number;
+  serverTickP95Ms?: number;
+  serverTickMaxMs?: number;
+}
 
-function gameLoopDelayMs(): number | undefined {
+let loopDelay: ReturnType<typeof monitorEventLoopDelay> | undefined;
+let lastWindowDiagnostics: { maxMs?: number; p50Ms?: number; p95Ms?: number } = {};
+let lastCpuUsage = process.cpuUsage();
+let lastCpuSampleAt = performance.now();
+let recentCpuPercent = 0;
+const recentTickDurationsMs: number[] = [];
+
+function recordTickDurationMs(ms: number): void {
+  if (!Number.isFinite(ms) || ms < 0) return;
+  recentTickDurationsMs.push(ms);
+  if (recentTickDurationsMs.length > 240) recentTickDurationsMs.shift();
+}
+
+export function gameLoopDiagnostics(): ServerLoopDiagnostics {
   if (!loopDelay) {
     const histogram = monitorEventLoopDelay({ resolution: 10 });
     histogram.enable();
     loopDelay = histogram;
     setInterval(() => {
-      recentLoopDelayMs = histogram.count ? Math.round(histogram.max / 1e6) : undefined;
+      if (histogram.count > 0) {
+        lastWindowDiagnostics = {
+          maxMs: Math.max(0, Math.round(histogram.max / 1e6 - 10)),
+          p50Ms: Math.max(0, Math.round(histogram.percentile(50) / 1e6 - 10)),
+          p95Ms: Math.max(0, Math.round(histogram.percentile(95) / 1e6 - 10)),
+        };
+      }
       histogram.reset();
     }, 5000).unref();
   }
-  return recentLoopDelayMs;
+
+  const now = performance.now();
+  const elapsedMs = now - lastCpuSampleAt;
+  if (elapsedMs >= 500) {
+    const diff = process.cpuUsage(lastCpuUsage);
+    lastCpuUsage = process.cpuUsage();
+    lastCpuSampleAt = now;
+    const totalCpuMs = (diff.user + diff.system) / 1000;
+    recentCpuPercent = Math.min(1000, Math.round((totalCpuMs / elapsedMs) * 1000) / 10);
+  }
+
+  const liveCount = loopDelay.count;
+  const serverLoopMaxMs = liveCount > 0
+    ? Math.max(0, Math.round(loopDelay.max / 1e6 - 10), lastWindowDiagnostics.maxMs ?? 0)
+    : lastWindowDiagnostics.maxMs;
+  const serverLoopP50Ms = liveCount > 0
+    ? Math.max(0, Math.round(loopDelay.percentile(50) / 1e6 - 10))
+    : lastWindowDiagnostics.p50Ms;
+  const serverLoopP95Ms = liveCount > 0
+    ? Math.max(0, Math.round(loopDelay.percentile(95) / 1e6 - 10), lastWindowDiagnostics.p95Ms ?? 0)
+    : lastWindowDiagnostics.p95Ms;
+
+  let serverTickP95Ms: number | undefined;
+  let serverTickMaxMs: number | undefined;
+  if (recentTickDurationsMs.length > 0) {
+    const sorted = [...recentTickDurationsMs].sort((a, b) => a - b);
+    serverTickP95Ms = Math.round(sorted[Math.floor(sorted.length * 0.95)] * 100) / 100;
+    serverTickMaxMs = Math.round(sorted[sorted.length - 1] * 100) / 100;
+  }
+
+  return {
+    serverLoopMaxMs,
+    serverLoopP50Ms,
+    serverLoopP95Ms,
+    serverCpuPercent: recentCpuPercent,
+    serverTickP95Ms,
+    serverTickMaxMs,
+  };
+}
+
+function gameLoopDelayMs(): number | undefined {
+  return gameLoopDiagnostics().serverLoopMaxMs;
 }
 
 export interface StrikeServerConfig {
@@ -1173,7 +1239,9 @@ export class KapsStrikeServerManager {
         last = now;
         let steps = 0;
         while (accumulator >= C.dt && steps++ < 18 && room.status === "in_progress") {
+          const tickStart = performance.now();
           this.tickSimulation(room);
+          recordTickDurationMs(performance.now() - tickStart);
           accumulator -= C.dt;
         }
       } catch (err) {
@@ -1591,10 +1659,19 @@ export class KapsStrikeServerManager {
     const applyProfile = (skin: SkinId) => {
       const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
       const player = room?.players.get(socket.id);
-      if (player && room) {player.skin=skin;this.broadcastRoomState(room);}
+      if (player && room && player.skin !== skin) {player.skin=skin;this.broadcastRoomState(room);}
     };
     void this.profiles.get(userIdNum).then(applyProfile).catch(() => {});
-    const applyInventory=(state:import('../games/kapsstrike/cosmetics').Inventory)=>{const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const player=room?.players.get(socket.id);if(player&&room){player.cosmeticLoadout=state.equipped;this.broadcastRoomState(room);}};
+    const applyInventory=(state:import('../games/kapsstrike/cosmetics').Inventory)=>{
+      const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');
+      const player=room?.players.get(socket.id);
+      if(player&&room){
+        const prev=JSON.stringify(player.cosmeticLoadout||{});
+        const next=JSON.stringify(state.equipped||{});
+        player.cosmeticLoadout=state.equipped;
+        if(prev!==next)this.broadcastRoomState(room);
+      }
+    };
     const isEmirgan = String(user.username || '').trim().toLowerCase() === 'emirgan';
     if (isEmirgan) {
       void this.inventory.grantAll(userIdNum).then(s => applyInventory(s)).catch(() => {});
@@ -1837,19 +1914,62 @@ export class KapsStrikeServerManager {
 
     socket.on("strike:input_batch", (commands: unknown) => {
       if (!Array.isArray(commands) || commands.length < 1 || commands.length > 8) return;
-      for (const command of commands) this.processPlayerInput(socket.id, command);
+      let prevSeq = -1;
+      for (const command of commands) {
+        if (!command || typeof command !== "object") continue;
+        const seq = (command as InputCommand).sequence;
+        if (!Number.isSafeInteger(seq) || seq <= prevSeq) continue;
+        prevSeq = seq;
+        this.processPlayerInput(socket.id, command as InputCommand);
+      }
     });
 
-    const rttTimer=setInterval(()=>{const current=this.rooms.get(this.socketToRoom.get(socket.id)||'');if(current?.status!=='in_progress')return;const start=performance.now();socket.timeout(3000).emit('strike:rtt',(error:unknown)=>{if(error)return;const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const p=room?.players.get(socket.id);if(p)p.ping=clamp(Math.round(performance.now()-start),0,999);});},2000);
-    rttTimer.unref?.();socket.once('disconnect',()=>clearInterval(rttTimer));
-    // 11. Client HUD RTT echo; authority uses only its own challenge timer.
-    socket.on("strike:ping", (ts: number, cb?: (ts: number, details?: { inputBatch: boolean; serverLoopMaxMs?: number }) => void) => {
-      if (typeof cb !== "function" || !Number.isFinite(ts)) return;
-      const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
-      cb(ts, room?.status === "in_progress"
-        ? { inputBatch: true, serverLoopMaxMs: gameLoopDelayMs() }
-        : undefined);
-    });
+    let rttPending = false;
+    const rttTimer = setInterval(() => {
+      const current = this.rooms.get(this.socketToRoom.get(socket.id) || "");
+      if (current?.status !== "in_progress" || rttPending) return;
+      rttPending = true;
+      const start = performance.now();
+      socket.timeout(2500).emit("strike:rtt", (error: unknown) => {
+        rttPending = false;
+        if (error) return;
+        const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
+        const p = room?.players.get(socket.id);
+        if (!p) return;
+        const sample = clamp(Math.round(performance.now() - start), 1, 999);
+        // Smooth out single-frame client shader/scene stalls while preserving responsive RTT authority
+        if (p.ping > 0) {
+          const cappedSample = sample > p.ping * 3 && p.ping < 60 ? Math.round(p.ping * 1.5 + sample * 0.25) : sample;
+          p.ping = clamp(Math.round(p.ping * 0.65 + cappedSample * 0.35), 1, 999);
+        } else {
+          p.ping = sample;
+        }
+        p.lastPingTime = Date.now();
+      });
+    }, 2000);
+    rttTimer.unref?.();
+    socket.once("disconnect", () => clearInterval(rttTimer));
+
+    // 11. Client HUD RTT echo; authority uses its own challenge timer for lag compensation.
+    socket.on(
+      "strike:ping",
+      (
+        ts: number,
+        cb?: (
+          ts: number,
+          details?: ServerLoopDiagnostics & { inputBatch: boolean; serverTime: number }
+        ) => void
+      ) => {
+        if (typeof cb !== "function" || !Number.isFinite(ts)) return;
+        const diag = gameLoopDiagnostics();
+        cb(ts, {
+          inputBatch: true,
+          ...diag,
+          serverLoopMaxMs: diag.serverLoopMaxMs,
+          serverTime: Date.now(),
+        });
+      }
+    );
 
     // 12. Voice chat speaking indicator sync
     socket.on("strike:voice_status", (data: { isSpeaking?: boolean; isMuted?: boolean }) => {

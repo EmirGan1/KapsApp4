@@ -44,11 +44,21 @@ function cloneLocalState(s: PlayerState): PlayerState {
   };
 }
 
-interface StrikeNetworkSample {
+export interface StrikeNetworkSample {
   transport: string;
-  rawRttMs: number;
+  status: "ok" | "measuring" | "timeout" | "disconnected" | "background";
+  rawRttMs?: number;
+  filteredRttMs?: number;
+  probeFrameGapMs?: number;
   frameGapMaxMs: number;
+  lastSampleAgeMs?: number;
+  timeoutCount: number;
   serverLoopMaxMs?: number;
+  serverLoopP50Ms?: number;
+  serverLoopP95Ms?: number;
+  serverCpuPercent?: number;
+  serverTickP95Ms?: number;
+  serverTickMaxMs?: number;
 }
 
 export interface StrikeHUD {
@@ -192,6 +202,10 @@ export class StrikeController {
   private notifiedReady = false;
   private supportsInputBatch = false;
   private lastPingSampleAt = -Infinity;
+  private pingTimeoutCount = 0;
+  private lastPingTimedOut = false;
+  private probeInFlight = false;
+  private probeFrameGapMaxMs = 0;
   private frameGapMaxMs = 0;
   private networkSample?: StrikeNetworkSample;
   private pingInterval: any = null;
@@ -580,37 +594,143 @@ export class StrikeController {
     socket.on("strike:snapshot", handleSnapshot);
     this.removers.push(() => socket.off("strike:snapshot", handleSnapshot));
 
-    let probePending = false;
-    const measurePing = () => {
-      if (!socket.connected || probePending) return;
-      const start = performance.now();
-      probePending = true;
-      const probe = socket.io.engine.transport.name === "websocket" ? socket.volatile : socket;
-      probe.timeout(1800).emit("strike:ping", start, (
-        error: Error | null,
-        echoed: number,
-        details?: { inputBatch?: boolean; serverLoopMaxMs?: number },
-      ) => {
-        probePending = false;
-        if (error || this.disposed || echoed !== start) return;
-        const end = performance.now();
-        const rtt = end - start;
-        const fresh = end - this.lastPingSampleAt < 3500;
-        this.ping = fresh ? this.ping * 0.65 + rtt * 0.35 : rtt;
-        this.lastPingSampleAt = end;
-        this.supportsInputBatch = details?.inputBatch === true;
-        this.networkSample = {
-          transport: socket.io.engine.transport.name,
-          rawRttMs: Math.round(rtt),
-          frameGapMaxMs: Math.round(this.frameGapMaxMs),
-          serverLoopMaxMs: details?.serverLoopMaxMs,
-        };
-        this.frameGapMaxMs = 0;
-      });
+    let probeSeq = 0;
+    const getTransportName = (): string => {
+      try {
+        return socket.io?.engine?.transport?.name || (socket.connected ? "websocket" : "disconnected");
+      } catch {
+        return "unknown";
+      }
     };
-    measurePing();
+
+    const measurePing = () => {
+      if (this.disposed) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        if (this.networkSample) {
+          this.networkSample = { ...this.networkSample, status: "background", transport: getTransportName() };
+        }
+        return;
+      }
+      if (!socket.connected) {
+        this.probeInFlight = false;
+        this.networkSample = {
+          ...(this.networkSample || { frameGapMaxMs: Math.round(this.frameGapMaxMs), timeoutCount: this.pingTimeoutCount }),
+          transport: getTransportName(),
+          status: "disconnected",
+        };
+        return;
+      }
+      if (this.probeInFlight) return;
+
+      const currentProbeId = ++probeSeq;
+      const start = performance.now();
+      this.probeInFlight = true;
+      this.probeFrameGapMaxMs = 0;
+
+      // Never use .volatile for RTT probes with ack callbacks: if Engine.IO is flushing
+      // a packet batch, .volatile silently drops the probe and forces a false 1800ms timeout.
+      socket.timeout(1800).emit(
+        "strike:ping",
+        start,
+        (
+          error: Error | null,
+          echoed: number,
+          details?: {
+            inputBatch?: boolean;
+            serverLoopMaxMs?: number;
+            serverLoopP50Ms?: number;
+            serverLoopP95Ms?: number;
+            serverCpuPercent?: number;
+            serverTickP95Ms?: number;
+            serverTickMaxMs?: number;
+          }
+        ) => {
+          if (currentProbeId === probeSeq) {
+            this.probeInFlight = false;
+          }
+          if (this.disposed) return;
+          const now = performance.now();
+          const transport = getTransportName();
+
+          if (error || echoed !== start) {
+            this.pingTimeoutCount++;
+            this.lastPingTimedOut = true;
+            const ageMs = Number.isFinite(this.lastPingSampleAt) ? Math.max(0, Math.round(now - this.lastPingSampleAt)) : undefined;
+            this.networkSample = {
+              transport,
+              status: socket.connected ? "timeout" : "disconnected",
+              rawRttMs: this.networkSample?.rawRttMs,
+              filteredRttMs: undefined,
+              probeFrameGapMs: Math.round(this.probeFrameGapMaxMs),
+              frameGapMaxMs: Math.round(this.frameGapMaxMs),
+              lastSampleAgeMs: ageMs,
+              timeoutCount: this.pingTimeoutCount,
+              serverLoopMaxMs: this.networkSample?.serverLoopMaxMs,
+              serverLoopP50Ms: this.networkSample?.serverLoopP50Ms,
+              serverLoopP95Ms: this.networkSample?.serverLoopP95Ms,
+              serverCpuPercent: this.networkSample?.serverCpuPercent,
+              serverTickP95Ms: this.networkSample?.serverTickP95Ms,
+              serverTickMaxMs: this.networkSample?.serverTickMaxMs,
+            };
+            return;
+          }
+
+          if (typeof document !== "undefined" && document.hidden) return;
+
+          const rawRtt = Math.max(0.5, now - start);
+          const probeFrameGap = this.probeFrameGapMaxMs;
+          // Isolate client main-thread frame stalls (e.g. shader compilation or heavy frame > 24ms)
+          // so main-thread rendering blocks do not masquerade as network RTT in the filtered ping,
+          // while keeping rawRttMs and frameGapMaxMs completely unadjusted for diagnostics.
+          const clientStallPenalty = probeFrameGap > 24 ? Math.max(0, probeFrameGap - 16.7) : 0;
+          const adjustedSample = Math.max(1, rawRtt - Math.min(rawRtt * 0.75, clientStallPenalty));
+
+          const fresh = now - this.lastPingSampleAt < 3500 && !this.lastPingTimedOut && this.ping > 0;
+          if (!fresh) {
+            this.ping = adjustedSample;
+          } else if (adjustedSample < this.ping) {
+            // Recover quickly from transient spikes
+            this.ping = this.ping * 0.55 + adjustedSample * 0.45;
+          } else {
+            this.ping = this.ping * 0.7 + adjustedSample * 0.3;
+          }
+
+          this.lastPingTimedOut = false;
+          this.lastPingSampleAt = now;
+          if (details?.inputBatch !== undefined) {
+            this.supportsInputBatch = details.inputBatch === true;
+          }
+          this.networkSample = {
+            transport,
+            status: "ok",
+            rawRttMs: Math.round(rawRtt),
+            filteredRttMs: Math.round(this.ping),
+            probeFrameGapMs: Math.round(probeFrameGap),
+            frameGapMaxMs: Math.round(Math.max(this.frameGapMaxMs, probeFrameGap)),
+            lastSampleAgeMs: 0,
+            timeoutCount: this.pingTimeoutCount,
+            serverLoopMaxMs: details?.serverLoopMaxMs,
+            serverLoopP50Ms: details?.serverLoopP50Ms,
+            serverLoopP95Ms: details?.serverLoopP95Ms,
+            serverCpuPercent: details?.serverCpuPercent,
+            serverTickP95Ms: details?.serverTickP95Ms,
+            serverTickMaxMs: details?.serverTickMaxMs,
+          };
+          this.frameGapMaxMs = 0;
+        }
+      );
+    };
+
+    // Defer initial ping probe until after synchronous scene/shader construction finishes
+    // so main-thread initialization does not artificially inflate the first RTT sample to ~120ms+.
+    const initialProbeTimer = setTimeout(() => {
+      if (!this.disposed) measurePing();
+    }, 120);
+    this.removers.push(() => clearTimeout(initialProbeTimer));
+
+    // Keep measuring RTT whenever the socket is connected and tab is visible (including pause/scoreboard overlay).
     this.pingInterval = setInterval(() => {
-      if (this.active) measurePing();
+      measurePing();
     }, 1000);
     this.removers.push(() => clearInterval(this.pingInterval));
   }
@@ -625,6 +745,9 @@ export class StrikeController {
       const now = performance.now();
       const frameGapMs = now - this.last;
       this.frameGapMaxMs = Math.max(this.frameGapMaxMs, frameGapMs);
+      if (this.probeInFlight) {
+        this.probeFrameGapMaxMs = Math.max(this.probeFrameGapMaxMs, frameGapMs);
+      }
       const elapsed = Math.min(0.1, frameGapMs / 1000);
       this.last = now;
       this.accumulator += elapsed;
@@ -965,6 +1088,49 @@ export class StrikeController {
       w = p.weapon,
       stats = this.renderer.stats();
 
+    const nowMs = performance.now();
+    const sampleAgeMs = Number.isFinite(this.lastPingSampleAt)
+      ? Math.max(0, Math.round(nowMs - this.lastPingSampleAt))
+      : undefined;
+    const isFreshSample =
+      this.isMultiplayer &&
+      !!this.socket?.connected &&
+      !this.lastPingTimedOut &&
+      sampleAgeMs !== undefined &&
+      sampleAgeMs < 3500 &&
+      this.ping > 0;
+    const transportName = (() => {
+      try {
+        return this.socket?.io?.engine?.transport?.name || (this.socket?.connected ? "websocket" : "disconnected");
+      } catch {
+        return "unknown";
+      }
+    })();
+    const liveNetworkSample: StrikeNetworkSample | undefined = this.isMultiplayer
+      ? {
+          transport: this.networkSample?.transport || transportName,
+          status: !this.socket?.connected
+            ? "disconnected"
+            : this.lastPingTimedOut
+            ? "timeout"
+            : isFreshSample
+            ? "ok"
+            : "measuring",
+          rawRttMs: this.networkSample?.rawRttMs,
+          filteredRttMs: isFreshSample ? Math.round(this.ping) : undefined,
+          probeFrameGapMs: this.networkSample?.probeFrameGapMs,
+          frameGapMaxMs: this.networkSample?.frameGapMaxMs ?? Math.round(this.frameGapMaxMs),
+          lastSampleAgeMs: sampleAgeMs,
+          timeoutCount: this.pingTimeoutCount,
+          serverLoopMaxMs: this.networkSample?.serverLoopMaxMs,
+          serverLoopP50Ms: this.networkSample?.serverLoopP50Ms,
+          serverLoopP95Ms: this.networkSample?.serverLoopP95Ms,
+          serverCpuPercent: this.networkSample?.serverCpuPercent,
+          serverTickP95Ms: this.networkSample?.serverTickP95Ms,
+          serverTickMaxMs: this.networkSample?.serverTickMaxMs,
+        }
+      : undefined;
+
     this.onHUD({
       bombEquipped:this.bombEquipped&&s.bomb?.carrier===this.socket?.id,
       spectating:this.spectator?.username,
@@ -999,8 +1165,8 @@ export class StrikeController {
       protection: Math.max(0, (p.protectedUntil - s.tick) * C.dt),
       tick: s.tick,
       dropped: this.dropped,
-      ping: performance.now() - this.lastPingSampleAt < 3500 ? this.ping : 0,
-      networkSample: performance.now() - this.lastPingSampleAt < 3500 ? this.networkSample : undefined,
+      ping: isFreshSample ? this.ping : undefined,
+      networkSample: liveNetworkSample,
       jitter: this.jitter,
       isMultiplayer: this.isMultiplayer,
       team: this.localTeam,

@@ -125,11 +125,14 @@ export default function KapsStrikeGame({
   const [rooms, setRooms] = useState<StrikeRoomSummary[]>([]);
   const [currentRoom, setCurrentRoom] = useState<StrikeRoomState | null>(null);
   const currentRoomRef = useRef<StrikeRoomState | null>(null);
+  const lastStoredRoomCodeRef = useRef<string | null>(null);
   const updateCurrentRoom = useCallback((r: StrikeRoomState | null) => {
     currentRoomRef.current = r;
     setCurrentRoom(r);
-    if (r?.roomCode) {
-      try { sessionStorage.setItem("kapsstrike_active_room", r.roomCode); } catch {}
+    const nextCode = r?.roomCode || null;
+    if (nextCode && nextCode !== lastStoredRoomCodeRef.current) {
+      lastStoredRoomCodeRef.current = nextCode;
+      try { sessionStorage.setItem("kapsstrike_active_room", nextCode); } catch {}
     }
   }, []);
   const [roomFilter, setRoomFilter] = useState("");
@@ -242,12 +245,30 @@ export default function KapsStrikeGame({
     let lastScoresAt=0;
     const onScores=(snapshot:StrikeSnapshot)=>{
       const room=currentRoomRef.current;
-      if(!room || room.status!=="in_progress" || (snapshot.roomCode && snapshot.roomCode!==room.roomCode) || !Array.isArray(snapshot.players) || performance.now()-lastScoresAt<250)return;
+      if(!room || room.status!=="in_progress" || (snapshot.roomCode && snapshot.roomCode!==room.roomCode) || !Array.isArray(snapshot.players) || performance.now()-lastScoresAt<500)return;
       lastScoresAt=performance.now();
-      updateCurrentRoom({...room,timeLeft:snapshot.timeLeft,teamScores:snapshot.teamScores || room.teamScores,players:room.players.map(player=>{
-        const current=snapshot.players.find(p=>p.userId===player.userId);
-        return current ? {...player,...current,isAlive:current.hp>0} : player;
-      })});
+      const updated: StrikeRoomState = {
+        ...room,
+        timeLeft: snapshot.timeLeft,
+        teamScores: snapshot.teamScores || room.teamScores,
+        players: room.players.map(player => {
+          const current = snapshot.players.find(p => p.userId === player.userId);
+          return current ? { ...player, ...current, isAlive: current.hp > 0 } : player;
+        }),
+      };
+      currentRoomRef.current = updated;
+      // Avoid 4 Hz full-tree React re-renders during active 3D gameplay unless scoreboard/pause is open
+      // or team scores / integer seconds / alive counts actually changed.
+      const prevScores = room.teamScores;
+      const nextScores = updated.teamScores;
+      const summaryChanged =
+        Math.floor(room.timeLeft ?? 0) !== Math.floor(updated.timeLeft ?? 0) ||
+        prevScores?.red !== nextScores?.red ||
+        prevScores?.blue !== nextScores?.blue ||
+        room.players.some((p, idx) => p.isAlive !== updated.players[idx]?.isAlive || p.kills !== updated.players[idx]?.kills || p.deaths !== updated.players[idx]?.deaths);
+      if (viewRef.current !== "play" || summaryChanged) {
+        setCurrentRoom(updated);
+      }
     };
     const onRoomsList = (list: StrikeRoomSummary[]) => {
       if (Array.isArray(list)) {
@@ -1219,7 +1240,13 @@ export default function KapsStrikeGame({
               </div>
               <div className="text-right">
                 <span className="text-sm font-mono font-bold text-slate-300">
-                  {hud?.ping ? `${Math.round(hud.ping)} ms` : "—"}
+                  {hud?.ping !== undefined && hud.ping > 0
+                    ? `${Math.round(hud.ping)} ms`
+                    : hud?.networkSample?.status === "disconnected"
+                    ? "bağlantı yok"
+                    : hud?.networkSample?.status === "timeout"
+                    ? "zaman aşımı"
+                    : "ölçülüyor"}
                 </span>
                 <span className="text-xs block text-slate-500">TAB ile kapat</span>
               </div>
@@ -1297,7 +1324,11 @@ export default function KapsStrikeGame({
                       )}
                     </td>
                     <td className="font-mono text-xs text-slate-400">
-                      {p.ping || 0} ms
+                      {p.userId === currentUserId && hud?.ping !== undefined && hud.ping > 0
+                        ? `${Math.round(hud.ping)} ms`
+                        : p.ping && p.ping > 0
+                        ? `${Math.round(p.ping)} ms`
+                        : "ölçülüyor"}
                     </td>
                   </tr>
                 ))}
@@ -1409,15 +1440,30 @@ export default function KapsStrikeGame({
               {Math.round(hud.fps)} FPS · {hud.drawCalls} çizim ·{" "}
               {hud.activeMeshes}/{hud.meshes} mesh ·{" "}
               {hud.isMultiplayer
-                ? `Multiplayer (${hud.remotePlayerCount || 0} oyuncu) · Ping: ${hud.ping ? `${Math.round(hud.ping)} ms` : "ölçülüyor"} · TAB Skor`
+                ? `Multiplayer (${hud.remotePlayerCount || 0} oyuncu) · Ping: ${
+                    hud.ping !== undefined && hud.ping > 0
+                      ? `${Math.round(hud.ping)} ms`
+                      : hud.networkSample?.status === "disconnected"
+                      ? "bağlantı yok"
+                      : hud.networkSample?.status === "timeout"
+                      ? "zaman aşımı"
+                      : "ölçülüyor"
+                  } · TAB Skor`
                 : "Yerel antrenman"}
               {settings.showDebugStats && hud.networkSample && (
                 <span>
-                  {" · "}{hud.networkSample.transport}
-                  {" · Ham RTT "}{hud.networkSample.rawRttMs} ms
-                  {" · Kare aralığı (maks.) "}{hud.networkSample.frameGapMaxMs} ms
+                  {" · Transport: "}{hud.networkSample.transport}
+                  {" · Ham RTT: "}{hud.networkSample.rawRttMs !== undefined ? `${hud.networkSample.rawRttMs} ms` : "—"}
+                  {" · Filtreli RTT: "}{hud.networkSample.filteredRttMs !== undefined ? `${hud.networkSample.filteredRttMs} ms` : "—"}
+                  {" · Son örnek: "}{hud.networkSample.lastSampleAgeMs !== undefined ? `${hud.networkSample.lastSampleAgeMs} ms önce` : "yok"}
+                  {" · Timeout: "}{hud.networkSample.timeoutCount}
+                  {" · Kare aralığı (maks.): "}{hud.networkSample.frameGapMaxMs} ms
                   {hud.networkSample.serverLoopMaxMs !== undefined &&
-                    ` · Sunucu döngü örneği (maks.) ${hud.networkSample.serverLoopMaxMs} ms`}
+                    ` · Sunucu döngü (p95/maks.): ${hud.networkSample.serverLoopP95Ms ?? 0}/${hud.networkSample.serverLoopMaxMs} ms`}
+                  {hud.networkSample.serverTickP95Ms !== undefined &&
+                    ` · Tick (p95): ${hud.networkSample.serverTickP95Ms} ms`}
+                  {hud.networkSample.serverCpuPercent !== undefined &&
+                    ` · Sunucu CPU: %${hud.networkSample.serverCpuPercent}`}
                 </span>
               )}
               {" · ESC Menü"}

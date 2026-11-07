@@ -107,6 +107,10 @@ export class StrikeInventory {
  }
 
  async grantAll(id: number) {
+  const cached = this.cache.get(id);
+  if (cached && COSMETICS.every(item => (cached.owned[item.id] || 0) >= 1)) {
+   return cached;
+  }
   return this.run(id, () =>
    this.mutate(id, state => {
     for (const item of COSMETICS) state.owned[item.id] = Math.max(1, state.owned[item.id] || 0);

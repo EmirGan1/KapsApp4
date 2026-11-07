@@ -80,3 +80,130 @@ for (const count of [8,10]) test(`${count} actual socket clients: latency/jitter
   await new Promise<void>(r=>io.close(()=>r()));if(http.listening)await new Promise<void>(r=>http.close(()=>r()));
  }
 });
+
+test('transport diagnostics: websocket & polling fallback, strike:ping telemetry, batch vs legacy input, malformed/oversized batches, and sequence ordering', async () => {
+  const http = createServer(), io = new Server(http), manager = new KapsStrikeServerManager(io);
+  const clients: Socket[] = [];
+  io.on('connection', socket => {
+    const id = Number(socket.handshake.auth.testUser);
+    manager.register(socket, { id, username: `Diag ${id}` });
+    socket.on('disconnect', () => manager.handleDisconnect(socket, id));
+  });
+  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${(http.address() as any).port}`;
+
+  const openWithTransports = async (id: number, transports: ('websocket' | 'polling')[]) => {
+    const c = connect(url, { auth: { testUser: id }, transports, forceNew: true });
+    clients.push(c);
+    await new Promise<void>((r, j) => {
+      c.once('connect', () => r());
+      c.once('connect_error', j);
+    });
+    return c;
+  };
+
+  try {
+    // 1. WebSocket client + Polling-only client in the same match
+    const wsClient = await openWithTransports(201, ['websocket']);
+    const pollingClient = await openWithTransports(202, ['polling']);
+    assert.equal(wsClient.io.engine.transport.name, 'websocket');
+    assert.equal(pollingClient.io.engine.transport.name, 'polling');
+
+    // Verify strike:ping works in lobby BEFORE match starts and reports full diagnostics
+    const lobbyPing = await new Promise<{ echoed: number; details: any }>((resolve, reject) => {
+      wsClient.timeout(2000).emit('strike:ping', 42.5, (err: Error | null, echoed: number, details: any) => {
+        if (err) reject(err);
+        else resolve({ echoed, details });
+      });
+    });
+    assert.equal(lobbyPing.echoed, 42.5);
+    assert.equal(lobbyPing.details?.inputBatch, true);
+    assert.equal(typeof lobbyPing.details?.serverCpuPercent, 'number');
+    assert.equal(typeof lobbyPing.details?.serverTime, 'number');
+
+    const created = await ack(wsClient, 'strike:create_room', { map: 'dust', mode: 'tdm', maxPlayers: 8 });
+    assert.ok(created.success);
+    const code = created.room.roomCode;
+    const room = manager.rooms.get(code)!;
+
+    const joined = await ack(pollingClient, 'strike:join_room', { roomCode: code });
+    assert.ok(joined.success);
+    assert.ok((await ack(wsClient, 'strike:start_game')).success);
+
+    await wait(60);
+
+    // 2. Verify strike:ping over both WebSocket and HTTP polling during active simulation
+    for (const [label, client] of [['websocket', wsClient], ['polling', pollingClient]] as const) {
+      const t0 = performance.now();
+      const probe = await new Promise<{ echoed: number; details: any; rtt: number }>((resolve, reject) => {
+        client.timeout(2000).emit('strike:ping', t0, (err: Error | null, echoed: number, details: any) => {
+          if (err) reject(err);
+          else resolve({ echoed, details, rtt: performance.now() - t0 });
+        });
+      });
+      assert.equal(probe.echoed, t0, `${label} must echo exact monotonic timestamp`);
+      assert.equal(probe.details.inputBatch, true);
+      assert.ok(probe.rtt >= 0 && probe.rtt < 500);
+      assert.ok(
+        probe.details.serverLoopMaxMs === undefined || typeof probe.details.serverLoopMaxMs === 'number',
+        'serverLoopMaxMs must be number or undefined'
+      );
+      assert.ok(
+        probe.details.serverTickP95Ms === undefined || typeof probe.details.serverTickP95Ms === 'number',
+        'serverTickP95Ms must be number or undefined'
+      );
+    }
+
+    // 3. Batch vs legacy single input + sequence validation + malformed/oversized rejection
+    const baseCmd = {
+      tick: room.tick,
+      moveX: 0,
+      moveZ: 1,
+      yaw: 0,
+      pitch: 0,
+      jump: false,
+      sprint: true,
+      crouch: false,
+      fire: false,
+      ads: false,
+      reload: false,
+    };
+
+    // Oversized batch (> 8 commands) must be rejected completely
+    wsClient.emit('strike:input_batch', Array.from({ length: 9 }, (_, i) => ({ ...baseCmd, sequence: i + 1 })));
+    await wait(30);
+    assert.equal(room.players.get(wsClient.id!)!.lastSequence, -1, 'oversized batch (>8) must be rejected');
+
+    // Empty or non-array batch must be ignored safely
+    wsClient.emit('strike:input_batch', []);
+    wsClient.emit('strike:input_batch', null);
+    wsClient.emit('strike:input_batch', 'invalid');
+    await wait(20);
+    assert.equal(room.players.get(wsClient.id!)!.lastSequence, -1);
+
+    // Batch with valid commands mixed with out-of-order/duplicate/malformed entries:
+    // valid ascending commands (1, 2, 4) should be accepted while duplicate (2), regression (1), and null are skipped
+    wsClient.emit('strike:input_batch', [
+      { ...baseCmd, sequence: 1 },
+      { ...baseCmd, sequence: 2 },
+      { ...baseCmd, sequence: 2 }, // duplicate in batch
+      { ...baseCmd, sequence: 1 }, // regression in batch
+      null,
+      { ...baseCmd, sequence: 4 },
+    ]);
+    for (let i = 0; i < 60 && room.players.get(wsClient.id!)!.lastSequence < 4; i++) await wait(10);
+    assert.equal(room.players.get(wsClient.id!)!.lastSequence, 4);
+
+    // Legacy single strike:input compatibility after batch
+    wsClient.emit('strike:input', { ...baseCmd, sequence: 3 }); // stale sequence < 4 must be ignored
+    wsClient.emit('strike:input', { ...baseCmd, sequence: 5 }); // newer sequence 5 must be accepted
+    for (let i = 0; i < 60 && room.players.get(wsClient.id!)!.lastSequence < 5; i++) await wait(10);
+    assert.equal(room.players.get(wsClient.id!)!.lastSequence, 5);
+  } finally {
+    for (const c of clients) c.close();
+    for (const r of manager.rooms.values()) manager.stopRoomSimulationLoop(r);
+    await new Promise<void>(r => io.close(() => r()));
+    if (http.listening) await new Promise<void>(r => http.close(() => r()));
+  }
+});
+
