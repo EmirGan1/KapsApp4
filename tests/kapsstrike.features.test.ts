@@ -65,7 +65,7 @@ test('auto-reload triggers automatically on empty magazine, High PBR materials f
  simulate(s,cmd,true);
  assert.equal(s.player.weapon.ammo.rifle,0);
  assert.ok(s.player.weapon.reloadUntil>s.tick,'auto-reload must start immediately upon firing the last round');
- assert.equal(cmd.reload,true,'auto-reload sets cmd.reload for server synchronization');
+ assert.equal(cmd.reload,false,'last-shot input stays a firing command; authority independently starts reload after accepting it');
  assert.ok(s.events.some(e=>e.kind==='reload'&&e.weapon==='rifle'));
  const reloadTicks=Math.ceil(WEAPONS.rifle.reload/C.dt)+2;
  for(let i=0;i<reloadTicks;i++){

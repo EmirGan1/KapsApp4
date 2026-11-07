@@ -1,3 +1,4 @@
+import {advanceReload} from './reload';
 import {spreadSpawn} from "./spawns";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from './world';
 import { MELEE } from "./config";
@@ -292,25 +293,14 @@ export function simulate(s: TrainingState, input: InputCommand, training = true)
     w.switchUntil = s.tick + 24;
     w.triggerHeld = input.fire;
   }
-  if (w.reloadUntil && s.tick >= w.reloadUntil) {
-    w.ammo[w.selected] = WEAPONS[w.selected].capacity;
-    w.reloadUntil = 0;
-  }
-  if (
-    (input.reload || shouldAutoReload(w, s.tick)) &&
-    !w.reloadUntil &&
-    w.ammo[w.selected] < WEAPONS[w.selected].capacity
-  ) {
-    w.reloadUntil = s.tick + Math.ceil(WEAPONS[w.selected].reload / C.dt);
+  if (advanceReload(w,s.tick,input.reload,!s.bomb||['active','planted'].includes(s.bomb.phase))) {
     event(s, { kind: "reload", weapon: w.selected });
   }
   move(p.movement, { ...input, weapon: w.selected }, MAPS[s.map], s.tick);
   const d = WEAPONS[w.selected];
   if (input.fire && (d.automatic || !w.triggerHeld)) shoot(s, input.ads);
-  if (shouldAutoReload(w, s.tick)) {
-    w.reloadUntil = s.tick + Math.ceil(d.reload / C.dt);
+  if (advanceReload(w,s.tick,false,!s.bomb||['active','planted'].includes(s.bomb.phase))) {
     event(s, { kind: "reload", weapon: w.selected });
-    input.reload = true;
   }
   w.triggerHeld = input.fire;
   const hazard = MAPS[s.map].hazard,

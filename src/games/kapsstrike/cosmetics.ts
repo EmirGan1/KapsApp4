@@ -1,7 +1,7 @@
 import type {WeaponId} from './types';
 export type Rarity='uncommon'|'rare'|'epic'|'legendary'|'knife';
 export const RARITIES:Record<Rarity,{name:string;color:string}>={uncommon:{name:'Sıra dışı',color:'#4ade80'},rare:{name:'Nadir',color:'#60a5fa'},epic:{name:'Destansı',color:'#c084fc'},legendary:{name:'Efsanevi',color:'#fb7185'},knife:{name:'Özel bıçak',color:'#fbbf24'}};
-export interface Cosmetic {id:string;name:string;weapon:WeaponId;rarity:Rarity;color:string;accent:string;pattern:number;knife?:'butterfly'|'karambit'|'tanto'|'default'}
+export interface Cosmetic {id:string;name:string;weapon:WeaponId;rarity:Rarity;color:string;accent:string;pattern:number;variant?:number;knife?:'butterfly'|'karambit'|'tanto'|'default'}
 const guns:WeaponId[]=['rifle','smg','sniper','shotgun','pistol','carbine','lmg','railgun'];
 const finishes=[{name:'Orman Kamuflajı',rarity:'uncommon',color:'#316850',accent:'#a3cf7b'},{name:'Buzul Akımı',rarity:'rare',color:'#225d9c',accent:'#8ee9ff'},{name:'Mor Yıldırım',rarity:'epic',color:'#592e92',accent:'#f0abfc'},{name:'Kızıl Süpernova',rarity:'legendary',color:'#a52542',accent:'#ffcb76'}] as const;
 export const COSMETICS:Cosmetic[]=guns.flatMap(weapon=>finishes.map((f,i)=>({...f,id:weapon+'-'+i,weapon,pattern:i})));
@@ -22,13 +22,31 @@ const expeditionFinishes=[
 ] as const;
 for(const weapon of guns)for(const [i,f]of expeditionFinishes.entries())COSMETICS.push({...f,id:`${weapon}-expedition-${i}`,weapon});
 for(const [style,name]of [['tanto','Tanto'],['default','Savaş Bıçağı']] as const)for(const [i,f]of expeditionFinishes.entries())COSMETICS.push({...f,id:`knife-${style}-expedition-${i}`,name:`${name} · ${f.name}`,weapon:'knife',rarity:'knife',knife:style});
-export const CASES=[{id:'frontline',name:'Cephe Kasası',color:'#4ade80',weapon:'rifle'},{id:'velocity',name:'Hız Kasası',color:'#60a5fa',weapon:'smg'},{id:'horizon',name:'Ufuk Kasası',color:'#c084fc',weapon:'sniper'},{id:'breach',name:'Kuşatma Kasası',color:'#fb7185',weapon:'shotgun'},{id:'sidearm',name:'Düello Kasası',color:'#fbbf24',weapon:'pistol'},{id:'arsenal',name:'Arsenal Kasası',color:'#67e8f9',weapon:null}] as const;
+// Twelve authored motifs; each weapon gets its own atlas orientation and detailing.
+const prismFinishes = [
+ {name:'Lazer Örgüsü',rarity:'uncommon',color:'#12392f',accent:'#93ffc4',pattern:8},
+ {name:'Bakır Frekans',rarity:'uncommon',color:'#392218',accent:'#ffb273',pattern:9},
+ {name:'Kutup Nabzı',rarity:'rare',color:'#102d55',accent:'#94eaff',pattern:10},
+ {name:'Kobalt Labirent',rarity:'rare',color:'#17254b',accent:'#8dafff',pattern:11},
+ {name:'Mercan Akıntısı',rarity:'rare',color:'#39152c',accent:'#ff879e',pattern:12},
+ {name:'Opal Yörünge',rarity:'epic',color:'#403266',accent:'#a4ffe6',pattern:13},
+ {name:'Dijital Sakura',rarity:'epic',color:'#30213e',accent:'#ffa6dd',pattern:14},
+ {name:'Mor Sismik',rarity:'epic',color:'#251342',accent:'#c18aff',pattern:15},
+ {name:'Altın Seraf',rarity:'legendary',color:'#513516',accent:'#ffe69c',pattern:16},
+ {name:'Kızıl Sonsuzluk',rarity:'legendary',color:'#43121d',accent:'#ff637a',pattern:17},
+ {name:'Prizma Ejderi',rarity:'legendary',color:'#123a42',accent:'#78fff1',pattern:18},
+ {name:'Gece Tacı',rarity:'legendary',color:'#211b42',accent:'#f0ceff',pattern:19}
+] as const;
+for(const [variant,weapon] of guns.entries())for(const [i,f]of prismFinishes.entries())COSMETICS.push({...f,id:`${weapon}-prism-${i}`,weapon,variant});
+for(const [variant,[style,name]]of ([['default','Savaş Bıçağı'],['tanto','Tanto'],['karambit','Karambit'],['butterfly','Kelebek']] as const).entries())for(const [i,f]of prismFinishes.entries())COSMETICS.push({...f,id:`knife-${style}-prism-${i}`,name:`${name} · ${f.name}`,weapon:'knife',rarity:'knife',knife:style,variant:variant+8});
+export const CASES=[{id:'frontline',name:'Cephe Kasası',color:'#4ade80',weapon:'rifle'},{id:'velocity',name:'Hız Kasası',color:'#60a5fa',weapon:'smg'},{id:'horizon',name:'Ufuk Kasası',color:'#c084fc',weapon:'sniper'},{id:'breach',name:'Kuşatma Kasası',color:'#fb7185',weapon:'shotgun'},{id:'sidearm',name:'Düello Kasası',color:'#fbbf24',weapon:'pistol'},{id:'arsenal',name:'Arsenal Kasası',color:'#67e8f9',weapon:null},{id:'prism',name:'Prizma Kasası',color:'#a4ffe6',weapon:null},{id:'sakura',name:'Sakura Kasası',color:'#ffa6dd',weapon:null},{id:'sovereign',name:'Hükümdar Kasası',color:'#ffe69c',weapon:null}] as const;
 export function cosmetic(id:unknown){return typeof id==='string'?COSMETICS.find(c=>c.id===id):undefined;}
 export function caseRewards(id:string):{item:Cosmetic;chance:number}[]{
  const box=CASES.find(c=>c.id===id);if(!box)return [];
- const themes:Record<string,WeaponId[]>={frontline:['rifle','carbine','pistol'],velocity:['smg','rifle','shotgun'],horizon:['sniper','railgun','pistol'],breach:['shotgun','lmg','smg'],sidearm:['pistol','carbine','sniper'],arsenal:guns};
+ const themes:Record<string,WeaponId[]>={frontline:['rifle','carbine','pistol'],velocity:['smg','rifle','shotgun'],horizon:['sniper','railgun','pistol'],breach:['shotgun','lmg','smg'],sidearm:['pistol','carbine','sniper'],arsenal:guns,prism:guns,sakura:guns,sovereign:guns};
+ const prismGroups=[0,1,0,2,1,0,1,1,2,2,0,2];
  const caseIndex=CASES.findIndex(c=>c.id===id);
- const pool=COSMETICS.filter(c=>c.weapon==='knife'||(themes[id].includes(c.weapon)&&(!c.id.includes('-neon-')||((Number(c.id.split('-').at(-1))+guns.indexOf(c.weapon))%3===caseIndex%3))));
+ const pool=COSMETICS.filter(c=>(!c.id.includes('-prism-')||prismGroups[Number(c.id.split('-').at(-1))]===caseIndex%3)&&(c.weapon==='knife'||(themes[id].includes(c.weapon)&&(!c.id.includes('-neon-')||((Number(c.id.split('-').at(-1))+guns.indexOf(c.weapon))%3===caseIndex%3)))));
  const weights:Record<Rarity,number>={uncommon:40,rare:30,epic:20,legendary:5,knife:5};
  return pool.map(item=>({item,chance:weights[item.rarity]/pool.filter(c=>c.rarity===item.rarity).length}));
 }

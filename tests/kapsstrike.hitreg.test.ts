@@ -45,16 +45,17 @@ for(const id of WEAPON_ORDER)test(`${id}: shared deterministic direction, fire r
   assert.ok(weaponDamage(id,5,true,false)>=weaponDamage(id,5,false,false));
  }assert.ok(counts.every(n=>n===counts[0]),JSON.stringify({id,counts}));
 });
-test('each full magazine is processed exactly once under 0/30/60/100/150/200ms delivery delay and jitter',()=>clearWorld(()=>{
+test('automatic reload preserves magazine accounting and unique shots under delivery delay and jitter',()=>clearWorld(()=>{
  for(const delay of [0,30,60,100,150,200])for(const id of ['rifle','smg','carbine','lmg'] as WeaponId[]){const {manager,room,a,b,events}=fixture();a.state.weapon.selected=id;a.state.weapon.inventory=WEAPON_ORDER;b.state.hp=100000;a.ping=delay*2;
-  const pending:{at:number;cmd:InputCommand}[]=[];for(let i=0;i<1200;i++){
+  let completedReloads=0;const pending:{at:number;cmd:InputCommand}[]=[];for(let i=0;i<1200;i++){
    if(i<1000){const latency=Math.ceil(delay/1000/C.dt)+(i%12===0?2:0);pending.push({at:i+latency,cmd:input(i+1,room.tick,true)});}
    // TCP preserves message order even under jitter; head-of-line blocking, not artificial reordering.
    while(pending.length&&pending[0].at<=i)manager.processPlayerInput('a',pending.shift()!.cmd);
+   if(a.state.weapon.reloadUntil&&room.tick+1>=a.state.weapon.reloadUntil)completedReloads++;
    manager.tickSimulation(room);
   }
   const shots=events.filter(e=>e.name==='strike:shot_ack'&&e.value.accepted);
-  assert.equal(shots.length,WEAPONS[id].capacity,JSON.stringify({delay,id,shots:shots.length}));assert.equal(a.state.weapon.ammo[id],0);assert.equal(new Set(shots.map(s=>s.value.shotId)).size,shots.length);
+  assert.ok(shots.length>=WEAPONS[id].capacity);assert.equal(shots.length+a.state.weapon.ammo[id],WEAPONS[id].capacity*(1+completedReloads),JSON.stringify({delay,id,shots:shots.length,completedReloads}));if(id==='rifle'||id==='smg')assert.ok(completedReloads>0);assert.equal(new Set(shots.map(s=>s.value.shotId)).size,shots.length);
  }
 }));
 

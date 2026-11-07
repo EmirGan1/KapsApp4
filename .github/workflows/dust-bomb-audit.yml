@@ -26,6 +26,8 @@ jobs:
       - name: Install (repository lockfile predates Babylon and Playwright)
         run: npm install --no-audit --no-fund
       - run: npm run lint
+      - name: Auto reload, spatial parity, shared snapshots and new cases
+        run: node --import tsx --test tests/kapsstrike.optimization.test.ts
       - name: 1000 geometry and bomb scenarios
         run: npm run test:strike:audit
       - name: Existing bomb and route regressions
@@ -39,6 +41,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Recorded weapon audio and controller footsteps
         run: node --import tsx --test tests/kapsstrike.audio.test.ts && npm run test:strike:audio
+      - name: All inventory and in-game finish textures
+        run: node --import tsx tests/kapsstrike.finish.browser.ts
       - name: A retaining-wall seam WebGL regression
         run: node --import tsx tests/kapsstrike.aVoid.browser.ts
       - name: Spawn, cosmetic and combat feedback regressions
