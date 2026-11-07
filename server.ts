@@ -12,6 +12,7 @@ import fs from "fs";
 import os from "os";
 import { createClient } from "@libsql/client";
 import dotenv from "dotenv";
+import { registerSubjectResourceRoutes } from "./src/server/subjectResourceRoutes";
 import { registerCourseRoutes } from "./src/server/courseController";
 import { registerPostRoutes } from "./src/server/postsController";
 import { registerAdminController } from "./src/server/adminController";
@@ -1797,6 +1798,7 @@ async function startServer() {
 
   // Course / Subject Files Endpoints (PDF, DOCX, PPTX, XLSX, ZIP, etc.)
   registerCourseRoutes(app, client, upload, io, deleteUploadedFile);
+  registerSubjectResourceRoutes(app, client);
   registerPostRoutes(app, client, io);
 
   // REST Message Pagination Route (beforeId, limit)
