@@ -501,7 +501,7 @@ export default function App() {
         reconnectionDelayMax: 5000,
         timeout: 20000
       };
-      const newSocket = io(socketUrl, socketOptions);
+      const newSocket = io("https://ws.kapsapp.online", socketOptions);
       
       const onConnect = () => {
         setSocket(newSocket);
