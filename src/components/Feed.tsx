@@ -28,6 +28,9 @@ import AdminModerationMenu from "./AdminModerationMenu";
 import PostMediaFrame from "./PostMediaFrame";
 import MultiMediaPostViewer, { extractPostMediaItems } from "./MultiMediaPostViewer";
 import CourseFilesManager from "./CourseFilesManager";
+import { Link } from "react-router-dom";
+import { SubjectDecor } from "./SubjectDecor";
+import { subjectResourcesLink } from "./SubjectResources";
 import LikesModal from "./LikesModal";
 import PostCard from "./PostCard";
 import { getApiUrl, getAuthHeaders } from "../utils/api";
@@ -819,8 +822,9 @@ export default function Feed({
   const mediaPosts = posts.filter(p => !!p.image);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
-      <div className={`mx-auto pb-24 transition-all duration-200 ${activeSubject ? 'w-full max-w-6xl xl:max-w-7xl px-3 sm:px-6 lg:px-8 py-4 space-y-6' : 'max-w-xl'}`}>
+    <div className="relative flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
+      {activeSubject && <SubjectDecor subject={activeSubject} />}
+      <div className={`relative mx-auto pb-24 transition-all duration-200 ${activeSubject ? 'w-full max-w-6xl px-3 sm:px-6 lg:px-8 py-4 space-y-6' : 'max-w-xl'}`}>
         
         {/* Subject Header & Folder Gallery Switch */}
         {activeSubject && (
@@ -1063,6 +1067,17 @@ export default function Feed({
             </div>
           </form>
         </div>
+
+        {activeSubject && (
+          <Link to={subjectResourcesLink(activeSubject)} className="flex w-full items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-indigo-950 hover:border-indigo-400 focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-100">
+            <Layers size={19} className="shrink-0 text-indigo-500" />
+            <span className="min-w-0 flex-1">
+              <strong className="block text-sm">IA/EE Kaynakları</strong>
+              <span className="block text-xs text-indigo-700 dark:text-indigo-300">Örnekler, kılavuzlar ve araştırma dosyaları</span>
+            </span>
+            <ChevronRight size={17} className="shrink-0" />
+          </Link>
+        )}
 
         {/* Course Files / PDF & Document Repository for Active Subject */}
         {activeSubject && (

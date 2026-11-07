@@ -18,9 +18,12 @@ import {
   FileText
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
+import { sortRolesByPosition } from "../types";
+import { SUBJECT_ROLE_GROUPS } from "../utils/subjectResources";
 
 interface SubjectsDirectoryProps {
   subjects: string[];
+  userRoles: string[];
   onSelectSubject: (subject: string) => void;
   socket?: Socket | null;
 }
@@ -130,6 +133,7 @@ const SUBJECT_METADATA: Record<string, SubjectMeta> = {
 
 export default function SubjectsDirectory({
   subjects,
+  userRoles,
   onSelectSubject,
   socket
 }: SubjectsDirectoryProps) {
@@ -153,6 +157,8 @@ export default function SubjectsDirectory({
     });
   }, [subjects]);
 
+  const groups = new Set(sortRolesByPosition(userRoles).map(role => role.subjectGroup ?? role.id));
+  const isMySubject = (subject: string) => groups.has(SUBJECT_ROLE_GROUPS[subject]);
   const filteredSubjects = subjects.filter((s) => {
     const meta = SUBJECT_METADATA[s];
     const q = searchQuery.toLowerCase().trim();
@@ -163,7 +169,7 @@ export default function SubjectsDirectory({
       (meta?.desc && meta.desc.toLowerCase().includes(q)) ||
       (meta?.tag && meta.tag.toLowerCase().includes(q))
     );
-  });
+  }).sort((a, b) => Number(isMySubject(b)) - Number(isMySubject(a)));
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
@@ -227,8 +233,16 @@ export default function SubjectsDirectory({
             return (
               <div
                 key={subjectKey}
+                role="button"
+                tabIndex={0}
+                onKeyDown={event => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelectSubject(subjectKey);
+                  }
+                }}
                 onClick={() => onSelectSubject(subjectKey)}
-                className={`group relative bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4.5 sm:p-5 shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-between ${meta.borderHover} active:scale-[0.985]`}
+                className={`group relative bg-white dark:bg-slate-900 border rounded-2xl p-4.5 sm:p-5 shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-between ${isMySubject(subjectKey) ? "border-amber-400 ring-1 ring-amber-400/60 shadow-[0_0_16px_rgba(251,191,36,0.25)]" : `border-slate-200/80 dark:border-slate-800 ${meta.borderHover}`} active:scale-[0.985]`}
               >
                 {/* Background Ambient Gradient */}
                 <div className={`absolute inset-0 bg-gradient-to-br ${meta.gradient} opacity-50 group-hover:opacity-100 transition-opacity pointer-events-none`} />
@@ -247,6 +261,7 @@ export default function SubjectsDirectory({
                   {/* Titles */}
                   <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center gap-1.5">
                     <span>{subjectKey}</span>
+                    {isMySubject(subjectKey) && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-900 dark:bg-amber-400/20 dark:text-amber-300">Dersiniz</span>}
                   </h3>
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
                     {meta.trName}

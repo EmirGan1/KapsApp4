@@ -67,7 +67,8 @@ import { getCachedHardwareFingerprint, getHardwareFingerprint } from "./utils/de
 import { isVisibleToUser } from "./types";
 import { getCachedWeather, fetchWeatherForecast, DEFAULT_ISTANBUL_LOCATION, getWeatherMeta, WeatherData } from "./utils/weatherService";
 
-const SUBJECTS = ["Turkish", "Mathematics", "Physics", "Digital Society", "English", "Chemistry", "Biology", "TITC"];
+import { SUBJECTS } from "./utils/subjectResources";
+import SubjectResources from "./components/SubjectResources";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("lan_token"));
@@ -89,6 +90,9 @@ export default function App() {
   });
   
   const location = useLocation();
+  const resourceParams = new URLSearchParams(location.search);
+  const resourceView = resourceParams.get("kaynak");
+  const resourceFolder = resourceParams.get("klasor") ?? undefined;
   const navigate = useNavigate();
 
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -1265,7 +1269,8 @@ export default function App() {
         {activeTab === 'feed' && <Feed socket={socket} currentUserId={currentUserId} currentUsername={username} onUserClick={handleUserClick} />}
         {activeTab === 'folders' && (
           <SubjectsDirectory 
-            subjects={SUBJECTS} 
+            subjects={SUBJECTS}
+            userRoles={currentUserRoles}
             onSelectSubject={handleSubjectClick} 
             socket={socket} 
           />
@@ -1292,6 +1297,13 @@ export default function App() {
                 </button>
               </div>
             </div>
+          ) : resourceView === "sec" || resourceView === "ia" || resourceView === "ee" ? (
+            <SubjectResources
+              key={JSON.stringify([activeSubject, resourceView, resourceFolder])}
+              subject={activeSubject}
+              collection={resourceView === "sec" ? undefined : resourceView}
+              folder={resourceFolder}
+            />
           ) : (
             <Feed 
               socket={socket} 

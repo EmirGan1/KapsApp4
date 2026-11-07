@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { defineConfig } from 'vite';
+import { defineConfig, normalizePath } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +17,13 @@ export default defineConfig(() => {
     },
     server: {
       host: true,
+      fs: {
+        deny: [
+          '.env', '.env.*', '*.{crt,pem}', '**/.git/**',
+          '**/subject-resources-data/**',
+          `${normalizePath(path.resolve(process.env.SUBJECT_RESOURCES_DIR || 'subject-resources-data'))}/**`,
+        ],
+      },
       allowedHosts: true as const,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
