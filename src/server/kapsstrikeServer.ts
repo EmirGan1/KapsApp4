@@ -1,3 +1,4 @@
+import { monitorEventLoopDelay } from "node:perf_hooks";
 import {advanceReload} from '../games/kapsstrike/reload';
 import {dropBombWeapon,pickupBombWeapon} from '../games/kapsstrike/bombWeapons';
 import {safeSpawn,spreadSpawn} from "../games/kapsstrike/spawns";
@@ -70,6 +71,22 @@ function cloneWorld(w: StrikeWorld): StrikeWorld {
         }))
       : undefined,
   };
+}
+
+let loopDelay: ReturnType<typeof monitorEventLoopDelay> | undefined;
+let recentLoopDelayMs: number | undefined;
+
+function gameLoopDelayMs(): number | undefined {
+  if (!loopDelay) {
+    const histogram = monitorEventLoopDelay({ resolution: 10 });
+    histogram.enable();
+    loopDelay = histogram;
+    setInterval(() => {
+      recentLoopDelayMs = histogram.count ? Math.round(histogram.max / 1e6) : undefined;
+      histogram.reset();
+    }, 5000).unref();
+  }
+  return recentLoopDelayMs;
 }
 
 export interface StrikeServerConfig {
@@ -1818,11 +1835,20 @@ export class KapsStrikeServerManager {
       this.processPlayerInput(socket.id, input);
     });
 
-    const rttTimer=setInterval(()=>{const current=this.rooms.get(this.socketToRoom.get(socket.id)||'');if(current?.status!=='in_progress')return;const start=Date.now();socket.timeout(3000).emit('strike:rtt',(error:unknown)=>{if(error)return;const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const p=room?.players.get(socket.id);if(p)p.ping=clamp(Date.now()-start,0,999);});},2000);
+    socket.on("strike:input_batch", (commands: unknown) => {
+      if (!Array.isArray(commands) || commands.length < 1 || commands.length > 8) return;
+      for (const command of commands) this.processPlayerInput(socket.id, command);
+    });
+
+    const rttTimer=setInterval(()=>{const current=this.rooms.get(this.socketToRoom.get(socket.id)||'');if(current?.status!=='in_progress')return;const start=performance.now();socket.timeout(3000).emit('strike:rtt',(error:unknown)=>{if(error)return;const room=this.rooms.get(this.socketToRoom.get(socket.id)||'');const p=room?.players.get(socket.id);if(p)p.ping=clamp(Math.round(performance.now()-start),0,999);});},2000);
     rttTimer.unref?.();socket.once('disconnect',()=>clearInterval(rttTimer));
     // 11. Client HUD RTT echo; authority uses only its own challenge timer.
-    socket.on("strike:ping", (ts: number, cb?: (ts: number) => void) => {
-      if (typeof cb === "function") cb(ts);
+    socket.on("strike:ping", (ts: number, cb?: (ts: number, details?: { inputBatch: boolean; serverLoopMaxMs?: number }) => void) => {
+      if (typeof cb !== "function" || !Number.isFinite(ts)) return;
+      const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
+      cb(ts, room?.status === "in_progress"
+        ? { inputBatch: true, serverLoopMaxMs: gameLoopDelayMs() }
+        : undefined);
     });
 
     // 12. Voice chat speaking indicator sync
