@@ -44,6 +44,13 @@ function cloneLocalState(s: PlayerState): PlayerState {
   };
 }
 
+interface StrikeNetworkSample {
+  transport: string;
+  rawRttMs: number;
+  frameGapMaxMs: number;
+  serverLoopMaxMs?: number;
+}
+
 export interface StrikeHUD {
   bombEquipped?:boolean;
   spectating?:string;
@@ -81,6 +88,7 @@ export interface StrikeHUD {
   dropped: number;
   activeMeshes: number;
   ping?: number;
+  networkSample?: StrikeNetworkSample;
   jitter?: number;
   isMultiplayer?: boolean;
   team?: StrikeTeam;
@@ -182,7 +190,10 @@ export class StrikeController {
   private snapshotArrival = 0;
   private receivedInitialState = false;
   private notifiedReady = false;
-  private lastPingSent = 0;
+  private supportsInputBatch = false;
+  private lastPingSampleAt = -Infinity;
+  private frameGapMaxMs = 0;
+  private networkSample?: StrikeNetworkSample;
   private pingInterval: any = null;
   private unacknowledgedInputs: InputCommand[] = [];
   private remoteSnapshots: BufferedSnapshot[] = [];
@@ -569,16 +580,33 @@ export class StrikeController {
     socket.on("strike:snapshot", handleSnapshot);
     this.removers.push(() => socket.off("strike:snapshot", handleSnapshot));
 
-    // 2. High-precision EWMA Ping-pong RTT tracking (1s cadence + immediate probe)
+    let probePending = false;
     const measurePing = () => {
-      if (socket.connected) {
-        const start = Date.now();
-        this.lastPingSent = start;
-        socket.emit("strike:ping", start, (ackTs: number) => {
-          const rtt = Math.max(1, Date.now() - ackTs);
-          this.ping = this.ping > 0 ? Math.round(this.ping * 0.65 + rtt * 0.35) : rtt;
-        });
-      }
+      if (!socket.connected || probePending) return;
+      const start = performance.now();
+      probePending = true;
+      const probe = socket.io.engine.transport.name === "websocket" ? socket.volatile : socket;
+      probe.timeout(1800).emit("strike:ping", start, (
+        error: Error | null,
+        echoed: number,
+        details?: { inputBatch?: boolean; serverLoopMaxMs?: number },
+      ) => {
+        probePending = false;
+        if (error || this.disposed || echoed !== start) return;
+        const end = performance.now();
+        const rtt = end - start;
+        const fresh = end - this.lastPingSampleAt < 3500;
+        this.ping = fresh ? this.ping * 0.65 + rtt * 0.35 : rtt;
+        this.lastPingSampleAt = end;
+        this.supportsInputBatch = details?.inputBatch === true;
+        this.networkSample = {
+          transport: socket.io.engine.transport.name,
+          rawRttMs: Math.round(rtt),
+          frameGapMaxMs: Math.round(this.frameGapMaxMs),
+          serverLoopMaxMs: details?.serverLoopMaxMs,
+        };
+        this.frameGapMaxMs = 0;
+      });
     };
     measurePing();
     this.pingInterval = setInterval(() => {
@@ -595,10 +623,18 @@ export class StrikeController {
     }
     try {
       const now = performance.now();
-      const elapsed = Math.min(0.1, (now - this.last) / 1000);
+      const frameGapMs = now - this.last;
+      this.frameGapMaxMs = Math.max(this.frameGapMaxMs, frameGapMs);
+      const elapsed = Math.min(0.1, frameGapMs / 1000);
       this.last = now;
       this.accumulator += elapsed;
       let steps = 0;
+      const inputBatch: InputCommand[] = [];
+      const sendInput = (command: InputCommand) => {
+        if (!this.socket?.connected) return;
+        if (this.supportsInputBatch) inputBatch.push(command);
+        else this.socket.emit("strike:input", command);
+      };
 
       while (this.accumulator >= C.dt && steps < 8) {
         this.previous = { ...this.state.player.movement.position };
@@ -636,7 +672,7 @@ export class StrikeController {
         if(frozen&&this.state.bomb?.phase==='buy'){
           cmd.moveX=0;cmd.moveZ=0;cmd.fire=false;cmd.reload=false;cmd.jump=false;cmd.interact=false;
           if(cmd.weapon&&owned?.includes(cmd.weapon))this.state.player.weapon.selected=cmd.weapon;
-          if(this.isMultiplayer&&this.socket&&this.state.player.hp>0)this.socket.emit('strike:input',cmd);
+          if(this.isMultiplayer&&this.socket&&this.state.player.hp>0)sendInput(cmd);
         }
         // Client prediction uses the same round gate as the authoritative server.
         const beforeEvent=this.state.eventId;
@@ -651,7 +687,7 @@ export class StrikeController {
           this.unacknowledgedInputs.push({ ...cmd });
           if (this.unacknowledgedInputs.length > 240) this.unacknowledgedInputs.shift();
           this.sentCommands.set(cmd.sequence,performance.now());if(this.sentCommands.size>256)this.sentCommands.delete(this.sentCommands.keys().next().value!);
-          this.socket.emit("strike:input", cmd);
+          sendInput(cmd);
         }
 
         this.keys.delete("WheelUp");
@@ -661,6 +697,10 @@ export class StrikeController {
         this.pendingWeapon = undefined;
         this.accumulator -= C.dt;
         steps++;
+      }
+
+      if (inputBatch.length && this.socket?.connected) {
+        this.socket.emit("strike:input_batch", inputBatch);
       }
 
       if (this.accumulator >= C.dt) {
@@ -959,7 +999,8 @@ export class StrikeController {
       protection: Math.max(0, (p.protectedUntil - s.tick) * C.dt),
       tick: s.tick,
       dropped: this.dropped,
-      ping: this.ping,
+      ping: performance.now() - this.lastPingSampleAt < 3500 ? this.ping : 0,
+      networkSample: performance.now() - this.lastPingSampleAt < 3500 ? this.networkSample : undefined,
       jitter: this.jitter,
       isMultiplayer: this.isMultiplayer,
       team: this.localTeam,
