@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Download, Eye, FileText, Folder, FolderPlus, Loader2, Pencil, Search, Upload } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getApiUrl } from "../utils/api";
-import { RESOURCE_FILE_LIMIT_MB, RESOURCE_PREVIEW_TYPES } from "../utils/subjectResources";
+import { RESOURCE_FILE_LIMIT_MB, RESOURCE_PREVIEW_TYPES, SUBJECT_IA_MAX, readIaScoreName } from "../utils/subjectResources";
 import { SubjectDecor } from "./SubjectDecor";
 
 type Collection = "ia" | "ee";
@@ -14,8 +14,9 @@ type Entry = {
   mime_type: string | null;
   size: number | null;
   canRename: boolean;
+  score: { points: number; maximum: number } | null;
 };
-type Listing = { entries: Entry[]; breadcrumbs: { id: number; name: string }[] };
+type Listing = { defaultMaximum?: number; entries: Entry[]; breadcrumbs: { id: number; name: string }[] };
 type Preview = { name: string; url: string; mime: string };
 const button = "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800";
 
@@ -52,6 +53,7 @@ export default function SubjectResources({ subject, collection, folder }: {
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [editor, setEditor] = useState<{ id?: number; name: string } | null>(null);
+  const [gradedUpload, setGradedUpload] = useState<{ file: File; points: string; maximum: string } | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const previewDialog = useRef<HTMLDialogElement>(null);
@@ -91,15 +93,30 @@ export default function SubjectResources({ subject, collection, folder }: {
     }
   }
 
-  function upload(file: File) {
+  function upload(file: File, score?: { points: string; maximum: string }) {
     if (file.size > RESOURCE_FILE_LIMIT_MB * 1024 * 1024) {
       setError(`Dosya en fazla ${RESOURCE_FILE_LIMIT_MB} MB olabilir.`);
+      return;
+    }
+    if (collection === "ia" && !score) {
+      const inherited = listing?.breadcrumbs.map(crumb => readIaScoreName(crumb.name)).filter(Boolean).at(-1);
+      setGradedUpload({
+        file,
+        points: inherited ? String(inherited.points) : "",
+        maximum: String(inherited?.maximum ?? listing?.defaultMaximum ?? SUBJECT_IA_MAX[subject] ?? ""),
+      });
       return;
     }
     void run(async signal => {
       const body = new FormData();
       body.append("file", file);
-      await request(`${base}/files${scope}`, { method: "POST", body, signal });
+      const params = new URLSearchParams(scope);
+      if (score) {
+        params.set("points", score.points);
+        params.set("maximum", score.maximum);
+      }
+      await request(`${base}/files?${params}`, { method: "POST", body, signal });
+      setGradedUpload(null);
       setRevision(value => value + 1);
     });
   }
@@ -171,6 +188,23 @@ export default function SubjectResources({ subject, collection, folder }: {
                 if (file) upload(file);
               }} />
             </div>
+            {gradedUpload && (
+              <form className="my-3 flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 p-3 dark:border-indigo-900" onSubmit={event => {
+                event.preventDefault();
+                upload(gradedUpload.file, gradedUpload);
+              }}>
+                <p className="w-full break-words text-sm font-semibold">{gradedUpload.file.name}</p>
+                <label className="text-xs font-semibold">IA puanı
+                  <input autoFocus required type="number" min={0} max={gradedUpload.maximum || 999} step={1} className="mt-1 block w-28 rounded-lg border bg-transparent px-2 py-2" value={gradedUpload.points} onChange={event => setGradedUpload({ ...gradedUpload, points: event.target.value })} />
+                </label>
+                <label className="text-xs font-semibold">Maksimum puan
+                  <input required type="number" min={1} max={999} step={1} className="mt-1 block w-28 rounded-lg border bg-transparent px-2 py-2" value={gradedUpload.maximum} onChange={event => setGradedUpload({ ...gradedUpload, maximum: event.target.value })} />
+                </label>
+                <button className={button} disabled={busy}>Puanla ve yükle</button>
+                <button type="button" className={button} disabled={busy} onClick={() => setGradedUpload(null)}>Vazgeç</button>
+                {!folder && <p className="w-full text-xs text-slate-500">Dosya bu puana ait klasöre eklenir. Klasör yoksa otomatik oluşturulur.</p>}
+              </form>
+            )}
             {editor && (
               <form className="my-3 flex flex-wrap items-end gap-2" onSubmit={event => {
                 event.preventDefault();
@@ -196,12 +230,17 @@ export default function SubjectResources({ subject, collection, folder }: {
             {entries?.length === 0 && <p className="py-10 text-center text-sm text-slate-500">{query ? "Aramana uygun kaynak bulunamadı." : "Bu klasör boş. Bir klasör oluşturabilir veya ilk dosyayı yükleyebilirsin."}</p>}
             <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
               {entries?.map(entry => (
-                <li key={entry.id} className="flex flex-wrap items-center gap-2 py-3">
+                <li key={entry.id} className={`flex flex-wrap items-center gap-2 px-2 py-3 ${entry.is_folder && entry.score && entry.score.points === entry.score.maximum ? "rounded-xl bg-gradient-to-r from-amber-100 via-yellow-50 to-amber-100 ring-1 ring-inset ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.3)] dark:from-amber-950 dark:via-yellow-900/50 dark:to-amber-950" : ""}`}>
                   {entry.is_folder ? <Folder size={19} className="text-amber-500" /> : <FileText size={19} className="text-indigo-500" />}
                   <div className="min-w-36 flex-1">
                     {entry.is_folder ? <Link className="block break-words text-sm font-semibold hover:underline" to={subjectResourcesLink(subject, collection, entry.id)}>{entry.name}</Link> : <p className="break-words text-sm font-semibold">{entry.name}</p>}
                     <p className="break-all text-xs text-slate-500 dark:text-slate-400">{entry.is_folder ? "Oluşturan" : "Yükleyen"} @{entry.uploader}{entry.size != null && ` · ${(entry.size / 1024 / 1024).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} MB`}</p>
                   </div>
+                  {entry.score && (
+                    <span className={`rounded-full px-2 py-1 text-xs font-bold ${entry.score.points === entry.score.maximum ? "bg-amber-200 text-amber-950" : "bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200"}`}>
+                      {entry.score.points}/{entry.score.maximum}{entry.score.points === entry.score.maximum ? " · Tam puan" : ""}
+                    </span>
+                  )}
                   {!entry.is_folder && RESOURCE_PREVIEW_TYPES.some(type => type === entry.mime_type) && <button className={button} disabled={busy} onClick={() => openFile(entry, true)}><Eye size={16} /> Önizle</button>}
                   {!entry.is_folder && <button className={button} disabled={busy} onClick={() => openFile(entry, false)}><Download size={16} /> İndir</button>}
                   {entry.canRename && <button className={button} disabled={busy} onClick={() => setEditor({ id: entry.id, name: entry.name })}><Pencil size={16} /> Adını değiştir</button>}
