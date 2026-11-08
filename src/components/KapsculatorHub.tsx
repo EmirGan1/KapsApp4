@@ -50,7 +50,7 @@ export default function KapsculatorHub({ currentUserRoles = [] }: KapsculatorHub
 
   // --- KAPSCULATOR HUB HOMEPAGE ---
   return (
-    <div className="flex-1 flex flex-col w-full h-full min-h-0 bg-slate-950 text-slate-100 overflow-y-auto">
+    <div className="flex-1 w-full min-h-0 bg-slate-950 text-slate-100 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain">
       
       {/* Background Ambience Glow */}
       <div className="relative overflow-hidden w-full">

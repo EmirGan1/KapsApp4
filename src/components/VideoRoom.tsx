@@ -511,6 +511,39 @@ export function VideoRoomView({
   });
 
   const isSpotlightMode = Boolean(screenSharer);
+  const viewer = useRef<HTMLDialogElement>(null);
+  const viewerVideo = useRef<HTMLVideoElement>(null);
+  const watchedScreen = screenSharer && screenSharer.id !== currentUserId
+    ? remoteStreams.get(`${screenSharer.socketId}-screen`) ?? remoteStreams.get(screenSharer.socketId)
+    : undefined;
+
+  useEffect(() => {
+    const video = viewerVideo.current;
+    if (video) video.srcObject = watchedScreen ?? null;
+    if (!watchedScreen && viewer.current?.open) viewer.current.close();
+  }, [watchedScreen]);
+
+  useEffect(() => {
+    const dialog = viewer.current;
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement && dialog?.dataset.native === 'true') dialog.close();
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  const openScreenViewer = () => {
+    const dialog = viewer.current;
+    if (!dialog || dialog.open) return;
+    dialog.showModal();
+    if (dialog.requestFullscreen) {
+      dialog.requestFullscreen().then(() => {
+        if (dialog.open) dialog.dataset.native = 'true';
+        else if (document.fullscreenElement === dialog) void document.exitFullscreen().catch(() => {});
+      }).catch(() => {});
+    }
+  };
+
   const [isStartingShare, setIsStartingShare] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -741,7 +774,13 @@ export function VideoRoomView({
           <div className="w-full h-full max-w-6xl mx-auto flex flex-col gap-3 justify-center items-center">
             
             {/* Featured Large Screen Share Tile */}
-            <div className="w-full flex-1 min-h-[220px] max-h-[62vh] sm:max-h-[66vh] rounded-2xl overflow-hidden shadow-2xl">
+            <div className="w-full flex-1 relative min-h-[220px] max-h-[62vh] sm:max-h-[66vh] rounded-2xl overflow-hidden shadow-2xl">
+              {watchedScreen?.getVideoTracks().some(track => track.readyState === 'live') && (
+                <button type="button" onClick={openScreenViewer}
+                  className="absolute bottom-3 right-3 z-20 inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-950/90 px-3 text-sm font-semibold text-white hover:bg-slate-800">
+                  <Maximize2 size={17} /> Tam ekran
+                </button>
+              )}
               {(() => {
                 const isSelf = screenSharer.id === currentUserId;
                 const stream = isSelf 
@@ -1052,6 +1091,36 @@ export function VideoRoomView({
       />
 
       {/* Screen Share Configuration Modal (PC Audio Choice) */}
+      <dialog ref={viewer} aria-label="Paylaşılan ekran" onClose={() => {
+        const dialog = viewer.current;
+        if (!dialog) return;
+        delete dialog.dataset.native;
+        if (document.fullscreenElement === dialog) void document.exitFullscreen().catch(() => {});
+      }} className="fixed inset-0 m-0 h-[100dvh] w-full max-h-none max-w-none overflow-hidden bg-black text-white backdrop:bg-black open:flex open:flex-col">
+        <header className="flex shrink-0 items-center justify-between gap-3 bg-slate-950 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+          <span className="truncate text-sm font-semibold">{screenSharer?.username} · Ekran paylaşımı</span>
+          <button type="button" autoFocus aria-label="Tam ekrandan çık" title="Tam ekrandan çık"
+            onClick={() => viewer.current?.close()} className="grid size-11 shrink-0 place-items-center rounded-xl bg-slate-800 hover:bg-slate-700">
+            <X size={20} />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1">
+          <video ref={viewerVideo} autoPlay muted playsInline className="h-full w-full object-contain" />
+        </div>
+        <footer className="flex shrink-0 flex-wrap justify-center gap-2 bg-slate-950 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <button type="button" onClick={onToggleMute} aria-pressed={!isMuted}
+            className="flex min-h-11 items-center gap-2 rounded-xl bg-slate-800 px-3 text-sm hover:bg-slate-700">
+            {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+            {isMuted ? 'Mikrofonu aç' : 'Mikrofonu kapat'}
+          </button>
+          <button type="button" onClick={onToggleVideo} aria-pressed={!isVideoOff}
+            className="flex min-h-11 items-center gap-2 rounded-xl bg-slate-800 px-3 text-sm hover:bg-slate-700">
+            {isVideoOff ? <VideoOff size={18} /> : <Video size={18} />}
+            {isVideoOff ? 'Kamerayı aç' : 'Kamerayı kapat'}
+          </button>
+        </footer>
+      </dialog>
+
       <ScreenShareModal
         isOpen={showScreenShareModal}
         onClose={() => setShowScreenShareModal(false)}
