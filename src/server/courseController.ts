@@ -616,19 +616,17 @@ export function registerCourseRoutes(
   );
 
   // POST: Upload file for course with multi-topic support
-  app.post(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], (req: Request, res: Response) => {
+  app.post(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], async (req: Request, res: Response) => {
+    const authUser = await getAuthUserFromRequest(req, client);
+    if (!authUser) return res.status(401).json({ error: "Giriş yapmalısınız." });
     upload.single("file")(req, res, async (err: any) => {
       if (err) {
-        if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {
-          return res.status(413).json({ error: "Dosya boyutu çok büyük (Maksimum 300MB)." });
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(413).json({ code: "UPLOAD_FILE_LIMIT", error: "Bir dosya en fazla 300 MB olabilir." });
         }
         return res.status(400).json({ error: err.message || "Dosya yüklenemedi." });
       }
       try {
-        const authUser = await getAuthUserFromRequest(req, client);
-
-        if (!authUser) return res.status(401).json({ error: "Giriş yapmalısınız." });
-
         if (!req.file) return res.status(400).json({ error: "Dosya seçilmedi." });
         const folderId = req.params.courseId;
         const filename = req.file.filename;

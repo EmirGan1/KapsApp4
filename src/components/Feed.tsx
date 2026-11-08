@@ -1,3 +1,4 @@
+import { getUploadError, uploadErrorMessage } from "../utils/uploadErrors";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Socket } from "socket.io-client";
 import { Post, Story, MediaModalData } from "../types";
@@ -401,16 +402,10 @@ export default function Feed({
             } catch {
               resolve(xhr.responseText);
             }
-          } else if (xhr.status === 413) {
-            console.error('[HATA NEREDE - Feed.tsx:uploadWithProgress] Sunucu veya Nginx HTTP 413 (Payload Too Large) döndürdü! İstek boyutu sunucu proxy sınırına takıldı.');
-            reject(new Error("Dosya boyutu çok büyük (Maksimum 300MB)."));
           } else {
-            try {
-              const err = JSON.parse(xhr.responseText);
-              reject(new Error(err.error || `Yükleme hatası (${xhr.status})`));
-            } catch {
-              reject(new Error(`Yükleme hatası (${xhr.status})`));
-            }
+            let body: unknown;
+            try { body = JSON.parse(xhr.responseText); } catch {}
+            reject(new Error(uploadErrorMessage(xhr.status, body)));
           }
         };
         xhr.onerror = () => reject(new Error("Ağ hatası veya dosya yüklenemedi."));
@@ -576,8 +571,7 @@ export default function Feed({
       const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) {
         if (res.status === 413) {
-          console.error('[HATA NEREDE - Feed.tsx:handleStoryUpload] Sunucu/Nginx HTTP 413 döndürdü.');
-          alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+          alert(await getUploadError(res));
         } else {
           const errData = await res.json().catch(() => ({}));
           alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB\nHata: ${errData.error || `Yüklenemedi (${res.status})`}`);

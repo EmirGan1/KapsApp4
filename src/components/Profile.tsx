@@ -1,3 +1,4 @@
+import { getUploadError } from "../utils/uploadErrors";
 import React, { useState, useEffect } from "react";
 import { Socket } from "socket.io-client";
 import { 
@@ -230,8 +231,7 @@ export default function Profile({
       const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) {
         if (res.status === 413) {
-          console.error('[HATA NEREDE - Profile.tsx:handleAvatarChange] Sunucu/Nginx HTTP 413 döndürdü.');
-          alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+          alert(await getUploadError(res));
         } else {
           const errData = await res.json().catch(() => ({}));
           alert(`Seçilen Dosya: ${file.name}\nTip: ${file.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB\nHata: ${errData.error || `Profil resmi yüklenemedi (${res.status})`}`);

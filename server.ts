@@ -1684,8 +1684,8 @@ async function startServer() {
     (upload.single("file") as any)(req, res, async (err: any) => {
       if (err) {
         console.error("Upload single error:", err);
-        if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {
-          return res.status(413).json({ error: "Dosya boyutu çok büyük (Maksimum 300MB)." });
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(413).json({ code: "UPLOAD_FILE_LIMIT", error: "Bir dosya en fazla 300 MB olabilir." });
         }
         return res.status(400).json({ error: err.message || "Dosya yüklenirken hata oluştu." });
       }
@@ -1739,8 +1739,8 @@ async function startServer() {
     (upload.array("files", 50) as any)(req, res, async (err: any) => {
       if (err) {
         console.error("Upload multiple error:", err);
-        if (err.code === "LIMIT_FILE_SIZE" || err.code === "LIMIT_FIELD_VALUE") {
-          return res.status(413).json({ error: "Dosya boyutu çok büyük (Maksimum 300MB)." });
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(413).json({ code: "UPLOAD_FILE_LIMIT", error: "Bir dosya en fazla 300 MB olabilir." });
         }
         return res.status(400).json({ error: err.message || "Dosyalar yüklenirken hata oluştu." });
       }

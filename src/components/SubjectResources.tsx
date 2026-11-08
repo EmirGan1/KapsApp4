@@ -1,3 +1,4 @@
+import { uploadErrorMessage } from "../utils/uploadErrors";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Download, Eye, FileText, Folder, FolderPlus, Loader2, Pencil, Search, Trash2, Upload } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -34,7 +35,7 @@ async function request(path: string, options?: RequestInit) {
   const response = await fetch(getApiUrl(path), { ...options, headers });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.error || "İşlem tamamlanamadı. Tekrar deneyin.");
+    throw new Error(uploadErrorMessage(response.status, body));
   }
   return response;
 }

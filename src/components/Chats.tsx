@@ -1,3 +1,4 @@
+import { getUploadError } from "../utils/uploadErrors";
 import { formatMessageDate } from "../utils/messageDate";
 import { useState, useEffect, useRef } from "react";
 import { Socket } from "socket.io-client";
@@ -591,8 +592,7 @@ export default function Chats({
       const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) {
         if (res.status === 413) {
-          console.error('[HATA NEREDE - Chats.tsx:handleFileUpload] Sunucu/Nginx HTTP 413 (Payload Too Large) döndürdü.');
-          alert("Dosya boyutu çok büyük (Maksimum 300MB).");
+          alert(await getUploadError(res));
         } else {
           const errData = await res.json().catch(() => ({}));
           alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB\nHata: ${errData.error || `Dosya yüklenemedi (${res.status})`}`);
