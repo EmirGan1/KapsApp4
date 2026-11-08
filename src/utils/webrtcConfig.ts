@@ -5,6 +5,21 @@
 
 export const MAX_ROOM_USERS = 20;
 export const SCREEN_SHARE_MAX_BITRATE = 6_000_000;
+export const OPUS_MAX_BITRATE = 128_000;
+export type ScreenShareFps = 30 | 60;
+
+const screenCaptureFps = new WeakMap<MediaStreamTrack, ScreenShareFps>();
+
+export function getScreenShareProfile(track: MediaStreamTrack) {
+  const maxFramerate = screenCaptureFps.get(track) ?? 30;
+  return {
+    maxFramerate,
+    maxBitrate: maxFramerate === 60 ? SCREEN_SHARE_MAX_BITRATE : 3_500_000,
+    degradationPreference: maxFramerate === 60
+      ? 'maintain-framerate' as const
+      : 'maintain-resolution' as const,
+  };
+}
 
 export const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
@@ -73,8 +88,8 @@ export function getAudioTrackConstraints(mode: NoiseSuppressionMode = 'standard'
     googNoiseSuppression: { ideal: false },
     // @ts-ignore
     googHighpassFilter: { ideal: true },
-    sampleRate: 48000,
-    channelCount: 1
+    sampleRate: { ideal: 48000 },
+    channelCount: { ideal: 2 }
   };
 }
 
@@ -196,7 +211,7 @@ export function screenAudioOptions(withAudio: boolean, canRestrictOwnAudio: bool
   };
 }
 
-export async function requestScreenStream(withAudio: boolean = false): Promise<MediaStream | null> {
+export async function requestScreenStream(withAudio = false, targetFps: ScreenShareFps = 30): Promise<MediaStream | null> {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
     return null;
   }
@@ -208,7 +223,7 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
     video: {
       width: { ideal: 1920, max: 1920 },
       height: { ideal: 1080, max: 1080 },
-      frameRate: { ideal: 60, max: 60 },
+      frameRate: { ideal: targetFps, max: targetFps },
       // @ts-ignore
       cursor: 'always'
     },
@@ -242,10 +257,22 @@ export async function requestScreenStream(withAudio: boolean = false): Promise<M
 
   if (stream) {
     const vTrack = stream.getVideoTracks()[0];
-    if (vTrack && 'contentHint' in vTrack) {
-      try {
-        (vTrack as any).contentHint = 'detail';
-      } catch (e) {}
+    if (!vTrack || vTrack.readyState !== 'live') {
+      stream.getTracks().forEach(track => track.stop());
+      return null;
+    }
+    screenCaptureFps.set(vTrack, targetFps);
+    try {
+      vTrack.contentHint = targetFps === 60 ? 'motion' : 'detail';
+    } catch {}
+    try {
+      await vTrack.applyConstraints({ frameRate: { ideal: targetFps, max: targetFps } });
+    } catch (error) {
+      console.debug('[ScreenShare] Using browser capture settings:', error);
+    }
+    if (vTrack.readyState !== 'live') {
+      stream.getTracks().forEach(track => track.stop());
+      return null;
     }
   }
 
@@ -274,15 +301,9 @@ export async function applySenderBitrateLimit(
   let maxFps = 30;
 
   if (isScreenShare) {
-    targetBitrateBps = SCREEN_SHARE_MAX_BITRATE;
-    maxFps = 60;
-    
-    // Apply contentHint = 'detail' for razor-sharp text and graphics
-    if ('contentHint' in sender.track) {
-      try {
-        (sender.track as any).contentHint = 'detail';
-      } catch (e) {}
-    }
+    const profile = getScreenShareProfile(sender.track);
+    targetBitrateBps = profile.maxBitrate;
+    maxFps = profile.maxFramerate;
   } else {
     if (resolution === '1080p') {
       targetBitrateBps = 2_500_000;
@@ -319,7 +340,7 @@ export async function applySenderBitrateLimit(
     params.encodings[0].maxFramerate = maxFps;
     if (isScreenShare) {
       params.encodings[0].scaleResolutionDownBy = 1;
-      params.degradationPreference = 'maintain-resolution';
+      params.degradationPreference = getScreenShareProfile(sender.track).degradationPreference;
     }
     params.encodings[0].priority = isScreenShare ? 'high' : 'medium';
     params.encodings[0].networkPriority = isScreenShare ? 'high' : 'medium';

@@ -1,3 +1,4 @@
+import type { ScreenShareFps } from '../utils/webrtcConfig';
 import React, { useState } from 'react';
 import { 
   Monitor, 
@@ -13,7 +14,7 @@ import {
 interface ScreenShareModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (withAudio: boolean) => void;
+  onConfirm: (withAudio: boolean, targetFps: ScreenShareFps) => void;
   isStarting?: boolean;
 }
 
@@ -25,12 +26,14 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 }) => {
   const [shareAudio, setShareAudio] = useState<boolean>(true);
 
+  const [targetFps, setTargetFps] = useState<ScreenShareFps>(30);
+
   if (!isOpen) return null;
 
   return (
     <div className="mobile-window fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className="w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
+        className="w-full max-w-md max-h-[95dvh] bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         
@@ -56,8 +59,20 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 space-y-4 text-slate-200">
+        <div className="min-h-0 overflow-y-auto p-5 space-y-4 text-slate-200">
           
+          <fieldset className="grid grid-cols-2 gap-2" disabled={isStarting}>
+            <legend className="mb-2 text-xs font-bold">Kare hızı</legend>
+            {([30, 60] as const).map(fps => (
+              <label key={fps} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-600 p-2 text-xs">
+                <input type="radio" name="screen-share-fps" checked={targetFps === fps}
+                  onChange={() => setTargetFps(fps)} />
+                <span><strong className="block">{fps} FPS</strong>
+                  {fps === 30 ? 'Metin ve okuma · Dengeli' : 'Oyun ve video · Akıcı'}
+                </span>
+              </label>
+            ))}
+          </fieldset>
           <div className="space-y-1">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
               Ses Paylaşım Seçeneği
@@ -152,7 +167,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 
           <button
             type="button"
-            onClick={() => onConfirm(shareAudio)}
+            onClick={() => onConfirm(shareAudio, targetFps)}
             disabled={isStarting}
             className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-50"
           >

@@ -1,3 +1,4 @@
+import type { ScreenShareFps } from '../utils/webrtcConfig';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -42,7 +43,6 @@ import {
   NoiseSuppressionMode, 
   VideoAspectRatioMode, 
   VideoFitMode,
-  isMobileOrTablet
 } from '../utils/webrtcConfig';
 
 interface VideoTileProps {
@@ -441,8 +441,8 @@ interface VideoRoomViewProps {
   onChangeNoiseSuppression?: (level: NoiseSuppressionMode) => void;
   onToggleMute: () => void;
   onToggleVideo: () => void;
-  onToggleScreenShare?: (withAudio?: boolean) => void;
-  onStartScreenShare?: (withAudio: boolean) => void;
+  onToggleScreenShare?: (withAudio?: boolean, targetFps?: ScreenShareFps) => void;
+  onStartScreenShare?: (withAudio: boolean, targetFps: ScreenShareFps) => void | Promise<boolean>;
   onStopScreenShare?: () => void;
   onToggleDeafen: () => void;
   onToggleAudioOutput?: () => void;
@@ -588,13 +588,13 @@ export function VideoRoomView({
   const [showScreenShareModal, setShowScreenShareModal] = useState(false);
 
   // Invoke screen share with specified audio setting
-  const startSharingProcess = useCallback(async (withAudio: boolean = false) => {
+  const startSharingProcess = useCallback(async (withAudio = false, targetFps: ScreenShareFps = 30) => {
     setIsStartingShare(true);
     try {
       if (onStartScreenShare) {
-        await onStartScreenShare(withAudio);
+        await onStartScreenShare(withAudio, targetFps);
       } else if (onToggleScreenShare) {
-        await onToggleScreenShare(withAudio);
+        await onToggleScreenShare(withAudio, targetFps);
       }
     } catch (triggerErr) {
       console.warn('[ScreenShare] Start trigger error:', triggerErr);
@@ -622,20 +622,13 @@ export function VideoRoomView({
         onToggleScreenShare();
       }
     } else {
-      const isMobile = isMobileOrTablet();
-      if (isMobile) {
-        // Mobile browsers cannot capture system audio via getDisplayMedia
-        startSharingProcess(false);
-      } else {
-        // On PC / Desktop: open modal to let user choose screen sound!
-        setShowScreenShareModal(true);
-      }
+      setShowScreenShareModal(true);
     }
   }, [isScreenSharing, onStopScreenShare, onToggleScreenShare, startSharingProcess]);
 
-  const handleConfirmScreenShare = useCallback(async (withAudio: boolean) => {
+  const handleConfirmScreenShare = useCallback(async (withAudio: boolean, targetFps: ScreenShareFps) => {
     setShowScreenShareModal(false);
-    await startSharingProcess(withAudio);
+    await startSharingProcess(withAudio, targetFps);
   }, [startSharingProcess]);
 
   return (
