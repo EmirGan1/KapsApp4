@@ -8,7 +8,8 @@ import {
   getVideoConstraints, 
   getVideoConstraintsForResolution,
   getAudioTrackConstraints,
-  SCREEN_SHARE_MAX_BITRATE,
+  getScreenShareProfile,
+  type ScreenShareFps,
   applySenderBitrateLimit, 
   tuneSdpForAudioOpus,
   checkCanScreenShare,
@@ -878,7 +879,7 @@ export function useWebRTC({
         const sender = pc.addTransceiver(screenTrack, {
           direction: 'sendonly',
           streams: [screenStreamRef.current],
-          sendEncodings: [{ maxBitrate: SCREEN_SHARE_MAX_BITRATE, maxFramerate: 60 }]
+          sendEncodings: [getScreenShareProfile(screenTrack)]
         }).sender;
         screenSendersRef.current.set(remoteSocketId, sender);
         applySenderBitrateLimit(sender, participantCountRef.current, 'auto', true);
@@ -906,7 +907,7 @@ export function useWebRTC({
       const isScreenTrack = track.kind === 'video' && (
         (screenTrackId && track.id === screenTrackId) ||
         (screenStreamId && stream.id === screenStreamId) ||
-        track.contentHint === 'detail' ||
+        (track.contentHint === 'detail' || track.contentHint === 'motion') ||
         (track.label && (track.label.toLowerCase().includes('screen') || track.label.toLowerCase().includes('monitor') || track.label.toLowerCase().includes('display') || track.label.toLowerCase().includes('window'))) ||
         (stream.id && stream.id.toLowerCase().includes('screen'))
       );
@@ -1308,10 +1309,10 @@ export function useWebRTC({
   }, [socket]);
 
   // Start Screen Share with progressive fallback & Web Audio API mixing (Cross-platform Android, iOS, iPad, Tablet & Desktop)
-  const startScreenShare = useCallback(async (withAudio: boolean = false): Promise<boolean> => {
+  const startScreenShare = useCallback(async (withAudio = false, targetFps: ScreenShareFps = 30): Promise<boolean> => {
     try {
       // 1. Evrensel Kademeli Ekran Yakalama Motoru (requestScreenStream)
-      const screenStream = await requestScreenStream(withAudio);
+      const screenStream = await requestScreenStream(withAudio, targetFps);
 
       if (!screenStream) {
         return false;
@@ -1325,9 +1326,6 @@ export function useWebRTC({
 
       // Track'in kesinlikle aktif ve enabled olduğundan emin ol
       screenVideoTrack.enabled = true;
-      try {
-        (screenVideoTrack as any).contentHint = 'detail';
-      } catch (e) {}
 
       // Save previous camera track if it was active
       const existingCamTrack = localStreamRef.current?.getVideoTracks()[0];
@@ -1397,7 +1395,7 @@ export function useWebRTC({
           const sender = pc.addTransceiver(screenVideoTrack, {
             direction: 'sendonly',
             streams: [screenStream],
-            sendEncodings: [{ maxBitrate: SCREEN_SHARE_MAX_BITRATE, maxFramerate: 60 }]
+            sendEncodings: [getScreenShareProfile(screenVideoTrack)]
           }).sender;
           screenSendersRef.current.set(sId, sender);
           applySenderBitrateLimit(sender, participantCountRef.current, 'auto', true);
@@ -1482,11 +1480,11 @@ export function useWebRTC({
   }, [socket, stopScreenShare]);
 
   // Toggle Screen Share (defaults to false or accepts boolean)
-  const toggleScreenShare = useCallback(async (withAudio: boolean = false) => {
+  const toggleScreenShare = useCallback(async (withAudio = false, targetFps: ScreenShareFps = 30) => {
     if (isScreenSharingRef.current) {
       await stopScreenShare();
     } else {
-      await startScreenShare(withAudio);
+      await startScreenShare(withAudio, targetFps);
     }
   }, [startScreenShare, stopScreenShare]);
 
