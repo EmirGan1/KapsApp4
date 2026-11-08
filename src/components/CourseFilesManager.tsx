@@ -1,3 +1,4 @@
+import { getUploadError } from "../utils/uploadErrors";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -293,11 +294,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
       });
 
       if (!res.ok) {
-        if (res.status === 413) {
-          throw new Error("Dosya boyutu çok büyük (Maksimum 300MB).");
-        }
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Dosya yüklenemedi (${res.status}).`);
+        throw new Error(await getUploadError(res));
       }
 
       const data = await res.json();
