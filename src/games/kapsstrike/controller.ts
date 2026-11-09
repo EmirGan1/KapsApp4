@@ -1,5 +1,5 @@
 import {FootstepTracker,stepSurface} from "./footsteps";
-import {touchAimFriction} from './aimAssist';
+import {tabletAimDelta,touchAimFriction} from './aimAssist';
 import {TeamSpectator} from './spectator';
 import {nearestSupply,supplyLabel} from './world';
 import { cleanBindings, held, Bindings, Action } from "./controls";
@@ -1234,14 +1234,20 @@ export class StrikeController {
     const clampedY = clamp(deltaY, -30, 30);
     const p=this.state.player,m=p.movement,eye={...m.position,y:m.position.y+(m.stance==='stand'?C.eye:C.crouchEye)};
     const targets=this.isMultiplayer?this.remotePlayerList.filter(r=>r.id!==p.id&&r.id!==this.socket?.id).map(r=>({position:r.position,hp:r.hp,friendly:this.localTeam!=='none'&&r.team===this.localTeam})):this.state.targets;
-    const friction=this.isTouchDevice&&this.settings.touchAimAssist!==false&&p.hp>0&&p.weapon.selected!=='knife'?touchAimFriction(eye,this.yaw,this.pitch,targets,MAPS[this.state.map],this.touchAds||this.ads):1;
-    const sens = (this.settings.mobileSensitivity || this.settings.sensitivity) * 0.003*friction;
-    this.yaw += clampedX * sens;
-    this.pitch = clamp(
-      this.pitch + clampedY * sens * (this.settings.invertY ? -1 : 1),
-      -1.48,
-      1.48
-    );
+    const sensitivity = (this.settings.mobileSensitivity || this.settings.sensitivity) * .003;
+    let delta = { yaw: clampedX * sensitivity, pitch: clampedY * sensitivity * (this.settings.invertY ? -1 : 1) };
+    if (this.isTouchDevice && this.settings.touchAimAssist !== false && p.hp > 0 && p.weapon.selected !== 'knife') {
+      const aiming = this.touchAds || this.ads;
+      const tablet = navigator.maxTouchPoints > 0 && Math.min(window.screen.width, window.screen.height) >= 600;
+      if (tablet) {
+        delta = tabletAimDelta(eye, this.yaw, this.pitch, delta, targets, MAPS[this.state.map], aiming);
+      } else {
+        const friction = touchAimFriction(eye, this.yaw, this.pitch, targets, MAPS[this.state.map], aiming);
+        delta = { yaw: delta.yaw * friction, pitch: delta.pitch * friction };
+      }
+    }
+    this.yaw += delta.yaw;
+    this.pitch = clamp(this.pitch + delta.pitch, -1.48, 1.48);
   }
 
   public addGyroDelta(deltaYaw: number, deltaPitch: number) {
