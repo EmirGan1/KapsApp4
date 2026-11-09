@@ -1,3 +1,6 @@
+import { useLocation } from 'react-router-dom';
+import { InvitePlayer } from './ActivityInvites';
+import { isActivity } from '../utils/activityInvites';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { 
   Gamepad2, Users, ChevronRight, Trophy, Sparkles, Bot, ShieldCheck, 
@@ -57,15 +60,29 @@ interface LeaderboardUser {
 type GameCategory = 'all' | 'cards' | 'arcade' | 'strategy' | 'active_lobbies';
 type SelectedGameType = 'hub' | 'okey' | 'okey101' | 'uno' | 'drawguess' | 'blackjack' | 'batak' | 'poker' | 'battleroyale' | 'party' | 'billiards' | 'kapstorial' | 'dungeon' | 'kapsstrike' | 'gece-nobeti';
 
-export default function Games({
-  socket,
-  currentUserId,
-  username,
-  avatar,
-  color,
-  onUserClick
-}: GamesProps) {
-  const [selectedGame, setSelectedGame] = useState<SelectedGameType>(() => new URLSearchParams(window.location.search).get('oyun') === 'gece-nobeti' ? 'gece-nobeti' : new URLSearchParams(window.location.search).get('oyun') === 'kapsstrike' ? 'kapsstrike' : new URLSearchParams(window.location.search).get('oyun') === 'dungeon' ? 'dungeon' : 'hub');
+export default function Games(props: GamesProps) {
+  const location = useLocation();
+  const gameFromUrl = (search: string): SelectedGameType | undefined => {
+    const value = new URLSearchParams(search).get('oyun');
+    return isActivity(value) && value !== 'ayvalik-games' && value !== 'ayvalik-rooms' ? value : undefined;
+  };
+  const [selectedGame, setSelectedGame] = useState<SelectedGameType>(() => gameFromUrl(location.search) ?? 'hub');
+  useEffect(() => {
+    if (location.pathname !== '/oyunlar') return;
+    const game = gameFromUrl(location.search);
+    if (game) setSelectedGame(game);
+  }, [location.key, location.pathname, location.search]);
+  return <>
+    <GamesContent {...props} selectedGame={selectedGame} setSelectedGame={setSelectedGame} />
+    {selectedGame !== 'hub' && <div className="absolute bottom-16 left-3 z-40 max-w-[calc(100%-1.5rem)] rounded-xl bg-white p-1 text-slate-900 shadow dark:bg-slate-950 dark:text-white">
+      <InvitePlayer key={selectedGame} socket={props.socket} activity={selectedGame} userId={props.currentUserId} />
+    </div>}
+  </>;
+}
+
+function GamesContent({
+  socket, currentUserId, username, avatar, color, onUserClick, selectedGame, setSelectedGame
+}: GamesProps & { selectedGame: SelectedGameType; setSelectedGame: (game: SelectedGameType) => void }) {
   const [activeCategory, setActiveCategory] = useState<GameCategory>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 

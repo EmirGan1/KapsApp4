@@ -1,3 +1,6 @@
+import { DEFAULT_PACKING_ITEMS } from "../utils/ayvalikPacking";
+import TripGames from "./ayvalik/TripGames";
+import PackingOverview from "./ayvalik/PackingOverview";
 import AyvalikWeather from "./ayvalik/AyvalikWeather";
 import {usePackingList} from "./ayvalik/usePackingList";
 import {activityId,casDateLabel,readStringList,readReflectionDraft,downloadText,programCalendar} from "../utils/ayvalik";
@@ -18,6 +21,8 @@ import { getApiUrl, getAuthHeaders } from "../utils/api";
 
 const AYVALIK_SECTIONS = [
  {id:'schedule',title:'Gezi programı',description:'Üç günün etkinlikleri, buluşma saatleri ve rotaları.',icon:CalendarDays},
+ {id:'games',title:'Gezi oyunları',description:'Köstebek ve İkilem için oda kur, arkadaşlarını davet et.',icon:Sparkles},
+ {id:'field',title:'Gezi günü rehberi',description:'Buluşma, çevrimdışı hazırlık ve kısa gezi görevleri.',icon:MapPin},
  {id:'rooms',title:'Oda seçimi',description:'2–3 kişilik odaları gör, oda aç ve arkadaşlarını davet et.',icon:Users},
  {id:'chat',title:'Gezi sohbeti',description:'Arkadaşlarınla haberleş, fotoğraf ve mesaj paylaş.',icon:MessageSquare},
  {id:'weather',title:'Hava ve giyim',description:'Gezi günleri için hava ve kıyafet rehberi.',icon:CloudRain},
@@ -423,20 +428,7 @@ export const AYVALIK_CLOTHING_GUIDE = [
 ];
 
 // Interactive Packing Checklist items from brochure recommendations
-export const DEFAULT_PACKING_ITEMS = [
-  { id: "id_card", label: "T.C. Kimlik Kartı / Nüfus Cüzdanı", category: "Zorunlu", note: "Kimlik kontrolleri için kolay ulaşabileceğin yerde bulundur", required: true },
-  { id: "personal_headphones", label: "Kişisel Kablolu/Kablosuz Kulaklık", category: "Zorunlu", note: "Yolculukta kişisel dinleme için", required: true },
-  { id: "raincoat", label: "Kapüşonlu Yağmurluk / Rüzgarlık Mont", category: "Giyim", note: "Açık hava etkinliklerinde hava değişimine hazırlık için", required: true },
-  { id: "boots", label: "Dayanıklı Spor Ayakkabı ve Su Geçirmez Bot", category: "Giyim", note: "Hasat ve arazi çalışmalarında zemine uygun ayakkabı seç", required: true },
-  { id: "spare_clothes", label: "Yedek Çorap, Tişört ve Rahat Pantolon", category: "Giyim", note: "Saha spor atölyeleri ve hasat sonrası değişim için", required: true },
-  { id: "fleece", label: "Kalın Polar / Sweatshirt / Bere", category: "Giyim", note: "Şeytan Sofrası yüksek tepesi oldukça soğuk ve rüzgarlıdır", required: true },
-  { id: "powerbank", label: "Powerbank (Taşınabilir Şarj Cihazı)", category: "Elektronik", note: "Otobüste priz vardır ancak arazi için tavsiye edilir", required: false },
-  { id: "chargers", label: "Telefon & Tablet Şarj Kabloları", category: "Elektronik", note: "Otel ve otobüs kullanımı için", required: true },
-  { id: "medicines", label: "Kişisel İlaçlar & Düzenli Vitaminler", category: "Sağlık", note: "Rehber öğretmene bilgi verilmelidir", required: false },
-  { id: "notebook", label: "CAS Not Defteri ve Tükenmez Kalem", category: "Akademik", note: "Reflection toplantıları ve saha gözlemleri için", required: true },
-  { id: "water_bottle", label: "Yeniden Doldurulabilir Su Matarası", category: "Kişisel", note: "Sürdürülebilirlik ve atölye süreçleri için", required: false },
-  { id: "return_clothes", label: "Dönüş Yolculuğu İçin Temiz Yedek Kıyafet", category: "Giyim", note: "Hasattan sonra otobüste rahat etmek için", required: false }
-];
+export { DEFAULT_PACKING_ITEMS } from "../utils/ayvalikPacking";
 
 export default function AyvalikCasPanel(props:AyvalikCasPanelProps){return <AyvalikCasContent key={props.currentUserId} {...props}/>;}
 
@@ -944,6 +936,16 @@ function AyvalikCasContent({
       <div className="max-w-7xl mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-6">
         {notice&&!showUploadModal&&!selectedLightboxItem&&<div role="alert" className="rounded-2xl p-4 border border-amber-400 bg-amber-50 dark:bg-amber-950 flex gap-3"><p className="flex-1">{notice}</p><button aria-label="Bildirimi kapat" onClick={()=>setNotice('')}>×</button></div>}
         {activeTab==='home'&&<section aria-label="Ayvalık bölümleri" className="space-y-5"><div><h2 className="text-2xl font-black">Gezini planla, arkadaşlarınla hazırlan</h2><p className="text-slate-500 mt-2">Gitmek istediğin bölümü seç.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">{AYVALIK_SECTIONS.map((section)=>{const Icon=section.icon;return <button key={section.id} onClick={()=>setActiveTab(section.id)} className="group min-w-0 text-left p-6 sm:p-7 rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm hover:shadow-lg hover:border-emerald-500 focus-visible:outline-2 focus-visible:outline-emerald-500 transition-all"><span className="inline-flex p-4 rounded-2xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-200 mb-5"><Icon size={28}/></span><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-black">{section.title}</h3><ChevronRight className="shrink-0 text-emerald-500"/></div><p className="mt-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{section.description}</p></button>;})}</div></section>}
+        {activeTab==='games' && <TripGames socket={socket} userId={currentUserId} />}
+        {activeTab==='field' && <section className="space-y-4 rounded-3xl border bg-white p-6 dark:border-slate-700 dark:bg-slate-900">
+          <h2 className="text-2xl font-black">Gezi günü rehberi</h2>
+          <div className="grid gap-4 md:grid-cols-3">
+            <article className="rounded-xl border p-4"><h3 className="font-bold">Buluşma ve mola</h3><p className="mt-2 text-sm">25 Kasım 05:45’te okul bahçesinde buluşma. Her molada otobüse dönüş saatini ve yerini rehberden öğren, birlikte hareket edeceğin arkadaşınla teyit et.</p><button onClick={()=>setActiveTab('schedule')} className="mt-3 font-bold text-emerald-600">Programı aç →</button></article>
+            <article className="rounded-xl border p-4"><h3 className="font-bold">Telefon çekmezse</h3><p className="mt-2 text-sm">Programı takvimine ekle, buluşma yerinin ekran görüntüsünü al ve rehberin paylaştığı iletişim bilgisini kaydet.</p><button onClick={()=>setActiveTab('guide')} className="mt-3 font-bold text-emerald-600">Rehberi aç →</button></article>
+            <article className="rounded-xl border p-4"><h3 className="font-bold">Üç kare, üç gözlem</h3><p className="mt-2 text-sm">Bir zeytin ağacı, bir yerel üretim detayı ve bir ekip çalışması anı seç. Her biri için fark ettiğin bir şeyi not et. İnsanları fotoğraflamadan önce izin iste.</p><button onClick={()=>setActiveTab('reflections')} className="mt-3 font-bold text-emerald-600">CAS günlüğünü aç →</button></article>
+          </div>
+        </section>}
+        {activeTab==='checklist' && currentUsername.trim().toLowerCase()==='emirgan' && <PackingOverview />}
         <AyvalikRooms currentUserId={currentUserId} socket={socket} active={activeTab==='rooms'} onOpen={()=>setActiveTab('rooms')}/>
 
 

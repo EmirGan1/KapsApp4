@@ -17,6 +17,7 @@ import { registerCourseRoutes } from "./src/server/courseController";
 import { registerPostRoutes } from "./src/server/postsController";
 import { registerAdminController } from "./src/server/adminController";
 import { registerAgendaController } from "./src/server/agendaController";
+import { registerActivityGames } from "./src/server/activityGames";
 import { initAyvalikCasTables, registerAyvalikCasRoutes } from "./src/server/ayvalikController";
 import { setupChatSocketHandlers } from "./src/server/socket";
 import { initPasswordResetDb, registerPasswordResetRoutes } from "./src/server/passwordResetController";
@@ -6269,9 +6270,11 @@ async function startServer() {
 
   const messageRamCache = new MessageRamCache();
 
+  const registerActivitySocket = registerActivityGames(io);
   io.on("connection", (socket) => {
     const user = socket.data.user;
     const userIdNum = Number(user.id);
+    registerActivitySocket(socket, { id: userIdNum, name: user.username });
 
     // Cancel any pending disconnect cleanup timer for this user (they reconnected)
     if (disconnectTimers.has(userIdNum)) {

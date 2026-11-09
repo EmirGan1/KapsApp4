@@ -1,0 +1,20 @@
+export const DEFAULT_PACKING_ITEMS = [
+  { id: "id_card", label: "T.C. Kimlik Kartı / Nüfus Cüzdanı", category: "Zorunlu", note: "Kimlik kontrolleri için kolay ulaşabileceğin yerde bulundur", required: true },
+  { id: "personal_headphones", label: "Kişisel Kablolu/Kablosuz Kulaklık", category: "Zorunlu", note: "Yolculukta kişisel dinleme için", required: true },
+  { id: "raincoat", label: "Kapüşonlu Yağmurluk / Rüzgarlık Mont", category: "Giyim", note: "Açık hava etkinliklerinde hava değişimine hazırlık için", required: true },
+  { id: "boots", label: "Dayanıklı Spor Ayakkabı ve Su Geçirmez Bot", category: "Giyim", note: "Hasat ve arazi çalışmalarında zemine uygun ayakkabı seç", required: true },
+  { id: "spare_clothes", label: "Yedek Çorap, Tişört ve Rahat Pantolon", category: "Giyim", note: "Saha spor atölyeleri ve hasat sonrası değişim için", required: true },
+  { id: "fleece", label: "Kalın Polar / Sweatshirt / Bere", category: "Giyim", note: "Şeytan Sofrası yüksek tepesi oldukça soğuk ve rüzgarlıdır", required: true },
+  { id: "powerbank", label: "Powerbank (Taşınabilir Şarj Cihazı)", category: "Elektronik", note: "Otobüste priz vardır ancak arazi için tavsiye edilir", required: false },
+  { id: "chargers", label: "Telefon & Tablet Şarj Kabloları", category: "Elektronik", note: "Otel ve otobüs kullanımı için", required: true },
+  { id: "medicines", label: "Kişisel İlaçlar & Düzenli Vitaminler", category: "Sağlık", note: "Rehber öğretmene bilgi verilmelidir", required: false },
+  { id: "notebook", label: "CAS Not Defteri ve Tükenmez Kalem", category: "Akademik", note: "Reflection toplantıları ve saha gözlemleri için", required: true },
+  { id: "water_bottle", label: "Yeniden Doldurulabilir Su Matarası", category: "Kişisel", note: "Sürdürülebilirlik ve atölye süreçleri için", required: false },
+  { id: "return_clothes", label: "Dönüş Yolculuğu İçin Temiz Yedek Kıyafet", category: "Giyim", note: "Hasattan sonra otobüste rahat etmek için", required: false },
+  { id: "daypack", label: "Küçük günlük sırt çantası", category: "Saha", note: "Matara, yağmurluk ve not defterini otobüs bagajından ayrı taşı", required: false },
+  { id: "dry_bag", label: "Kilitli poşet veya su geçirmez kılıf", category: "Saha", note: "Kimlik ve elektronik eşyaları yağmurdan koru", required: false },
+  { id: "snack", label: "Dayanıklı atıştırmalık", category: "Yolculuk", note: "Molalar için okulun yiyecek kurallarına uygun küçük bir atıştırmalık hazırla", required: false },
+  { id: "toiletries", label: "Diş fırçası ve kişisel bakım seti", category: "Konaklama", note: "İki gece için küçük boy ürünler yeterli", required: false },
+  { id: "sun_protection", label: "Güneş kremi veya güneş gözlüğü", category: "Saha", note: "Açık hava etkinlikleri için", required: false },
+  { id: "offline_plan", label: "Çevrimdışı program ve iletişim bilgileri", category: "Hazırlık", note: "Buluşma yeri ve öğretmeninin paylaştığı iletişim bilgisini telefonuna kaydet", required: false }
+];

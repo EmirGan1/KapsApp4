@@ -1,3 +1,4 @@
+import { DEFAULT_PACKING_ITEMS } from "../utils/ayvalikPacking";
 import {registerAyvalikWeather} from './ayvalikWeather';
 import {resolveAyvalikUser} from "./ayvalikAuth";
 import {initAyvalikRooms,registerAyvalikRooms} from "./ayvalikRooms";
@@ -85,7 +86,7 @@ export async function initAyvalikCasTables(client: any) {
 
 const isCasAdmin=(user:any)=>Number(user.is_admin)===1||String(user.username||'').trim().toLowerCase()==='emirgan';
 const validMedia=(url:unknown)=>typeof url==='string'&&url.length<=2048&&((url.startsWith('/')&&!url.startsWith('//'))||/^https?:\/\//i.test(url));
-const packingIds=new Set(['id_card','personal_headphones','raincoat','boots','spare_clothes','fleece','powerbank','chargers','medicines','notebook','water_bottle','return_clothes']);
+const packingIds = new Set(DEFAULT_PACKING_ITEMS.map(item => item.id));
 export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server) {
   // Helper to extract user from token
   registerAyvalikRooms(app,client,io);
@@ -390,6 +391,24 @@ export function registerAyvalikCasRoutes(app: Express, client: any, io?: Server)
       return res.json({ success: true, checkedIds });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: "Checklist alınamadı." });
+    }
+  });
+
+  app.get("/api/ayvalik/checklist/overview", async (req: Request, res: Response) => {
+    try {
+      const user = await resolveUser(req);
+      if (!user) return res.status(401).json({ success: false, error: "Giriş yapmanız gerekiyor." });
+      if (String(user.username).trim().toLowerCase() !== "emirgan") {
+        return res.status(403).json({ success: false, error: "Bu liste yalnızca Emirgan hesabına açık." });
+      }
+      const data = await client.execute(`
+        SELECT u.id, u.username, c.item_id, c.is_checked, c.updated_at
+        FROM ayvalik_cas_checklist c JOIN users u ON u.id = c.user_id
+        ORDER BY u.username, c.updated_at DESC`);
+      res.set("Cache-Control", "no-store");
+      return res.json({ success: true, entries: data.rows });
+    } catch {
+      return res.status(500).json({ success: false, error: "Çanta özeti alınamadı." });
     }
   });
 

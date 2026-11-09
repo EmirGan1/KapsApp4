@@ -1,3 +1,4 @@
+import { IncomingActivityInvites } from "./components/ActivityInvites";
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
@@ -1014,6 +1015,7 @@ export default function App() {
       }}
     >
       <div className="app-shell flex flex-col lg:flex-row h-[100dvh] w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <IncomingActivityInvites key={currentUserId} socket={socket} />
       {/* Semantic Top Heading for Search Crawlers & Accessibility */}
       <h1 className="sr-only">KapsApp - Canlı Harita ve Çevrimiçi Oyun Platformu</h1>
 
