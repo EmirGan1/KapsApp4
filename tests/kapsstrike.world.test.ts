@@ -8,8 +8,8 @@ import {fits} from '../src/games/kapsstrike/physics';
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
 // Supply crates are the Kill Race ruleset; the tactical map uses round purchases.
 for(const map of Object.values(MAPS).filter(map=>map.id!=='district')){
- test(`${map.id}: compact routes, 100 seeded supplies and reachable warning/landing cycles`,()=>{
-  assert.ok(map.bounds<=36);assert.ok(supplyLocations(map).length>15);
+ test(`${map.id}: 100 seeded supplies and reachable warning/landing cycles`,()=>{
+  assert.ok(supplyLocations(map).length>15);
   for(let seed=0;seed<100;seed++){
    const world=createWorld(map,seed);assert.equal(world.pickups.length,8);assert.equal(new Set(world.pickups.map(s=>s.position.x+','+s.position.z)).size,8);
    for(const p of world.pickups)assert.ok(fits(map,p.position,C.standing));

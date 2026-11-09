@@ -56,7 +56,6 @@ export function spreadSpawn(map:MapDefinition,index:number,occupied:readonly Vec
 
 export function roamingSpawns(map:MapDefinition):Vec3[]{
  const cached=roamingCache.get(map);if(cached)return cached;
- if(map.id!=="district")return computeRoamingSpawns(map);
  const pool:Vec3[]=[];
  for(const p of [...map.spawns,...SPAWN_CANDIDATES[map.id]]){
   if(pool.some(q=>Math.hypot(p.x-q.x,p.y-q.y,p.z-q.z)<.1))continue;
