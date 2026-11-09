@@ -133,8 +133,8 @@ export function getVideoConstraintsForResolution(
 ): MediaTrackConstraints {
   if (resolution === '1080p') {
     return {
-      width: { ideal: 1920, min: 1280 },
-      height: { ideal: 1080, min: 720 },
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
       frameRate: { ideal: 30, max: 30 },
       facingMode: 'user'
     };
@@ -142,8 +142,8 @@ export function getVideoConstraintsForResolution(
 
   if (resolution === '720p') {
     return {
-      width: { ideal: 1280, min: 960 },
-      height: { ideal: 720, min: 540 },
+      width: { ideal: 1280, max: 1280 },
+      height: { ideal: 720, max: 720 },
       frameRate: { ideal: 30, max: 30 },
       facingMode: 'user'
     };
@@ -151,8 +151,8 @@ export function getVideoConstraintsForResolution(
 
   if (resolution === '480p') {
     return {
-      width: { ideal: 640, min: 480 },
-      height: { ideal: 480, min: 360 },
+      width: { ideal: 640, max: 640 },
+      height: { ideal: 480, max: 480 },
       frameRate: { ideal: 24, max: 24 },
       facingMode: 'user'
     };
@@ -289,6 +289,15 @@ export function isMobileBrowser(): boolean {
 /**
  * Apply bandwidth / bitrate clamping on RTCRtpSender.
  */
+export function getCameraSendProfile(resolution: CameraResolutionMode = 'auto', participants = 1) {
+  if (resolution === '1080p') return { maxBitrate: 4_000_000, maxFramerate: 30 };
+  if (resolution === '720p') return { maxBitrate: 2_500_000, maxFramerate: 30 };
+  if (resolution === '480p') return { maxBitrate: 1_200_000, maxFramerate: 24 };
+  if (participants > 10) return { maxBitrate: 900_000, maxFramerate: 20 };
+  if (participants > 4) return { maxBitrate: 1_500_000, maxFramerate: 24 };
+  return { maxBitrate: 4_000_000, maxFramerate: 30 };
+}
+
 export async function applySenderBitrateLimit(
   sender: RTCRtpSender,
   participantCount: number = 1,
@@ -305,35 +314,15 @@ export async function applySenderBitrateLimit(
     targetBitrateBps = profile.maxBitrate;
     maxFps = profile.maxFramerate;
   } else {
-    if (resolution === '1080p') {
-      targetBitrateBps = 2_500_000;
-      maxFps = 30;
-    } else if (resolution === '720p') {
-      targetBitrateBps = 1_200_000;
-      maxFps = 30;
-    } else if (resolution === '480p') {
-      targetBitrateBps = 500_000;
-      maxFps = 24;
-    } else {
-      // Auto based on room density
-      if (participantCount > 10) {
-        targetBitrateBps = 400_000;
-        maxFps = 20;
-      } else if (participantCount > 5) {
-        targetBitrateBps = 800_000;
-        maxFps = 24;
-      } else {
-        targetBitrateBps = 1_500_000;
-        maxFps = 30;
-      }
-    }
+    const profile = getCameraSendProfile(resolution, participantCount);
+    targetBitrateBps = profile.maxBitrate;
+    maxFps = profile.maxFramerate;
   }
 
   try {
     const params = sender.getParameters();
     if (!params.encodings || params.encodings.length === 0) {
-      if (isScreenShare) return;
-      params.encodings = [{}];
+      return;
     }
     
     params.encodings[0].maxBitrate = targetBitrateBps;

@@ -1601,7 +1601,7 @@ export function useWebRTC({
       try { await Promise.allSettled([...peerConnectionsRef.current].map(async ([id, pc]) => {
         if (pc.connectionState !== 'connected') return;
         let state = states.get(pc); if (!state) { state = {}; states.set(pc, state); }
-        await tuneConnection(pc, cameraSendersRef.current.get(id), screenSendersRef.current.get(id), peerConnectionsRef.current.size, state);
+        await tuneConnection(pc, cameraSendersRef.current.get(id), screenSendersRef.current.get(id), peerConnectionsRef.current.size, state, resolutionRef.current);
       })); } finally { sampling = false; }
     }, 3000);
     return () => clearInterval(timer);
