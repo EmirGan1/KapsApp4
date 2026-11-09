@@ -1889,10 +1889,18 @@ export class KapsStrikeServerManager {
       if (cb) cb({ success: ok });
     });
 
-    // 7. Switch Team (TDM)
-    socket.on("strike:switch_team", (data: { team: StrikeTeam }, cb?: (res: { success: boolean }) => void) => {
-      const ok = this.switchTeam(socket.id, data.team);
-      if (cb) cb({ success: ok });
+    socket.on("strike:switch_team", (data: { team?: StrikeTeam } | null, cb?: (res: { success: boolean; room?: StrikeRoomState; error?: string }) => void) => {
+      const room = this.rooms.get(this.socketToRoom.get(socket.id) || "");
+      const team = data?.team;
+      if (team !== "red" && team !== "blue") {
+        cb?.({ success: false, error: "Geçersiz takım." });
+      } else if (!room || room.status !== "lobby" || room.mode === "ffa") {
+        cb?.({ success: false, error: "Takım yalnızca takım modunun lobisinde değiştirilebilir." });
+      } else if (!this.switchTeam(socket.id, team)) {
+        cb?.({ success: false, error: "Takım dolu veya oyuncu odada bulunamadı." });
+      } else {
+        cb?.({ success: true, room: room.getPublicRoomState() });
+      }
     });
 
     // 8. Start Game (Host only - supports strike:start_game and strike:start_match)

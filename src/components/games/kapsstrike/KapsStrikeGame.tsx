@@ -296,6 +296,7 @@ export default function KapsStrikeGame({
     };
 
     const onMatchReset = (state: StrikeRoomState) => {
+      setKillFeed([]);
       updateCurrentRoom(state);
       activeRoom.current = null;
       clearTimeout(loadTimer.current);
@@ -304,14 +305,26 @@ export default function KapsStrikeGame({
       setView("lobby");
     };
 
-    const onKill = (kill: KillFeedEntry) => {
-      setKillFeed((prev) => [kill, ...prev.filter(k => k.id !== kill.id)].slice(0, 6));
-      setTimeout(() => {
-        setKillFeed((prev) => prev.filter((k) => k.id !== kill.id));
-      }, 5000);
+    const pushFeed = (entry: KillFeedEntry, connection = false) => {
+      if (viewRef.current !== "play" && viewRef.current !== "pause") return;
+      const timestamp = Date.now();
+      setKillFeed(prev => {
+        const rest = prev.filter(item => item.id !== entry.id);
+        if (!connection && rest.length !== prev.length) return prev;
+        return [{ ...entry, timestamp }, ...rest].slice(0, 4);
+      });
     };
+    const onKill = (entry: KillFeedEntry) => pushFeed(entry);
+    const feedTimer = window.setInterval(() => {
+      const now = Date.now();
+      setKillFeed(prev => {
+        const active = prev.filter(entry => now - entry.timestamp < (entry.id.startsWith("connection-") ? 2200 : 3400));
+        return active.length === prev.length ? prev : active;
+      });
+    }, 250);
 
     const onMatchEnded = (payload: any) => {
+      setKillFeed([]);
       activeRoom.current = null;
       clearTimeout(loadTimer.current);
       let stats: MatchStats;
@@ -359,43 +372,26 @@ export default function KapsStrikeGame({
       setError(data.message || data.error || "Ağ hatası oluştu.");
     };
 
-    const onPlayerDisconnected = (data: { userId: number; username: string; team: StrikeTeam }) => {
-      setKillFeed((prev) => [
-        {
-          id: `disc-${Date.now()}-${Math.random()}`,
-          tick: Date.now(),
-          killerId: `u-${data.userId}`,
-          killerName: data.username,
-          killerTeam: (data.team as StrikeTeam) || "none",
-          victimId: "disconnect",
-          victimName: "Bağlantı koptu (yeniden bağlanması bekleniyor)",
-          victimTeam: (data.team as StrikeTeam) || "none",
-          weapon: "pistol",
-          headshot: false,
-          timestamp: Date.now(),
-        },
-        ...prev.slice(0, 15),
-      ]);
+    type ConnectionNotice = { userId: number; username: string; team: StrikeTeam };
+    const onConnectionNotice = (data: ConnectionNotice, reconnected: boolean) => {
+      const killerId = `u-${data.userId}`;
+      const entry: KillFeedEntry = {
+        id: `connection-${killerId}`,
+        tick: 0,
+        killerId,
+        killerName: data.username,
+        killerTeam: data.team,
+        victimId: reconnected ? "reconnect" : "disconnect",
+        victimName: reconnected ? "Yeniden bağlandı" : "Bağlantısı koptu",
+        victimTeam: "none",
+        weapon: "pistol",
+        headshot: false,
+        timestamp: Date.now(),
+      };
+      pushFeed(entry, true);
     };
-
-    const onPlayerReconnected = (data: { userId: number; username: string; team: StrikeTeam }) => {
-      setKillFeed((prev) => [
-        {
-          id: `recon-${Date.now()}-${Math.random()}`,
-          tick: Date.now(),
-          killerId: `u-${data.userId}`,
-          killerName: data.username,
-          killerTeam: (data.team as StrikeTeam) || "none",
-          victimId: "reconnect",
-          victimName: "Maça başarıyla yeniden bağlandı!",
-          victimTeam: (data.team as StrikeTeam) || "none",
-          weapon: "knife",
-          headshot: false,
-          timestamp: Date.now(),
-        },
-        ...prev.slice(0, 15),
-      ]);
-    };
+    const onPlayerDisconnected = (data: ConnectionNotice) => onConnectionNotice(data, false);
+    const onPlayerReconnected = (data: ConnectionNotice) => onConnectionNotice(data, true);
 
     socket.on("strike:snapshot",onScores);
     socket.on("strike:rooms_list", onRoomsList);
@@ -432,6 +428,7 @@ export default function KapsStrikeGame({
 
     return () => {
       clearInterval(interval);
+      clearInterval(feedTimer);
       socket.off("strike:snapshot",onScores);
       socket.off("strike:rooms_list", onRoomsList);
       socket.off("strike:room_list", onRoomsList);
@@ -748,16 +745,22 @@ export default function KapsStrikeGame({
     socket.emit("strike:set_ready", { ready: nextReady });
   };
 
+  const teamSwitchPending = useRef(false);
   const switchTeam = (team: StrikeTeam) => {
-    if (!socket || !currentRoom) return;
-    // Optimistic UI update
-    updateCurrentRoom({
-      ...currentRoom,
-      players: currentRoom.players.map((p) =>
-        p.userId === currentUserId ? { ...p, team } : p
-      ),
-    });
-    socket.emit("strike:switch_team", { team });
+    if (!socket?.connected || !currentRoom || teamSwitchPending.current) return;
+    const roomCode = currentRoom.roomCode;
+    teamSwitchPending.current = true;
+    setError("");
+    socket.timeout(4000).emit("strike:switch_team", { team },
+      (err: Error | null, result?: { success: boolean; room?: StrikeRoomState; error?: string }) => {
+        teamSwitchPending.current = false;
+        if (currentRoomRef.current?.roomCode !== roomCode) return;
+        if (err || !result?.success) {
+          setError(err ? "Sunucu yanıt vermedi. Tekrar dene." : result?.error || "Takım değiştirilemedi.");
+          return;
+        }
+        if (result.room && currentRoomRef.current.status === "lobby") updateCurrentRoom(result.room);
+      });
   };
 
   const startMatchAsHost = () => {
@@ -1212,9 +1215,9 @@ export default function KapsStrikeGame({
               <span className={`ks-kill-killer ${k.killerTeam || ""}`}>
                 {k.killerName}
               </span>
-              <span className="ks-kill-weapon">
+              {!k.id.startsWith("connection-") && <span className="ks-kill-weapon">
                 ⚡ {WEAPONS[k.weapon as WeaponId]?.name || k.weapon}
-              </span>
+              </span>}
               {k.headshot && <span className="ks-kill-head">KAFA</span>}
               <span className={`ks-kill-victim ${k.victimTeam || ""}`}>
                 {k.victimName}
