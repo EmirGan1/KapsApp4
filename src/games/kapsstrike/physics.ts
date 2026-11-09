@@ -201,8 +201,21 @@ export function move(
         v[axis] = 0;
       }
     }
-  p.x = clamp(p.x, -map.bounds + C.radius, map.bounds - C.radius);
-  p.z = clamp(p.z, -map.bounds + C.radius, map.bounds - C.radius);
+  const limit = map.bounds - C.radius;
+  if (Math.abs(p.x) > limit || Math.abs(p.z) > limit) {
+    const bounded = { ...p, x: clamp(p.x, -limit, limit), z: clamp(p.z, -limit, limit) };
+    if (!fits(map, bounded, m.height)) {
+      const saved = m.lastSafePosition;
+      const safe = saved && Math.abs(saved.x) <= limit && Math.abs(saved.z) <= limit && fits(map, saved, m.height)
+        ? saved : m.spawnPosition || map.spawns[0];
+      const spawn = m.spawnPosition;
+      Object.assign(m, newMovement(safe));
+      if (spawn) m.spawnPosition = spawn;
+      return;
+    }
+    p.x = bounded.x;
+    p.z = bounded.z;
+  }
   const oldY = p.y;
   v.y -= C.gravity * dt;
   const nextY = p.y + v.y * dt;
@@ -214,14 +227,17 @@ export function move(
     }
   } else {
     const floor = support(map, p, oldY + 0.05);
-    if (nextY <= floor) {
-      p.y = floor;
+    p.y = Math.max(nextY, floor);
+    m.grounded = nextY <= floor;
+    if (!fits(map, p, m.height)) {
+      // A rounded capsule may overhang a ledge while its feet are just below
+      // the top. Resolve the landing before allowing the next downward step.
+      const edgeTop = support(map, p, oldY + C.radius);
+      p.y = edgeTop > oldY && fits(map, { ...p, y: edgeTop }, m.height) ? edgeTop : oldY;
+      m.grounded = p.y === edgeTop;
       v.y = 0;
-      m.grounded = true;
-    } else {
-      p.y = nextY;
-      m.grounded = false;
     }
+    if (m.grounded) v.y = 0;
   }
   if(fits(map,p,m.height))m.lastSafePosition={...p};
   if (
@@ -232,8 +248,32 @@ export function move(
     Object.assign(m, newMovement(m.spawnPosition || map.spawns[0]));
   }
 }
+/** Clip a ray against three axis-aligned slabs without allocating plane arrays. */
+function rayBounds(o: Vec3, d: Vec3, minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, range: number) {
+  let enter = 0, exit = range;
+  for (let axis = 0; axis < 3; axis++) {
+    const origin = axis === 0 ? o.x : axis === 1 ? o.y : o.z;
+    const direction = axis === 0 ? d.x : axis === 1 ? d.y : d.z;
+    const low = axis === 0 ? minX : axis === 1 ? minY : minZ;
+    const high = axis === 0 ? maxX : axis === 1 ? maxY : maxZ;
+    if (Math.abs(direction) < 1e-9) {
+      if (origin < low || origin > high) return Infinity;
+      continue;
+    }
+    const t1 = (low - origin) / direction;
+    const t2 = (high - origin) / direction;
+    enter = Math.max(enter, Math.min(t1, t2));
+    exit = Math.min(exit, Math.max(t1, t2));
+    if (enter > exit) return Infinity;
+  }
+  return enter <= exit ? enter : Infinity;
+}
+
 /** Ray/convex-solid intersection, including the actual ramp plane rather than its box. */
 export function raySolid(origin: Vec3, dir: Vec3, s: Solid, range: number) {
+  if (s.kind === 'box' && !s.shape) {
+    return rayBounds(origin, dir, s.x - s.w / 2, s.y, s.z - s.d / 2, s.x + s.w / 2, s.y + s.h, s.z + s.d / 2, range);
+  }
   const planes: number[][] = [
     [1, 0, 0, s.x + s.w / 2],
     [-1, 0, 0, -s.x + s.w / 2],
@@ -247,7 +287,6 @@ export function raySolid(origin: Vec3, dir: Vec3, s: Solid, range: number) {
     for(let i=0;i<sides;i++){const angle=(i+.5)*Math.PI*2/sides,a=Math.cos(angle)/(s.w/2),c=Math.sin(angle)/(s.d/2),b=s.shape==='cone'?apothem/s.h:0;planes.push([a,b,c,a*s.x+c*s.z+apothem+b*s.y]);}
     planes.push([0,1,0,s.y+s.h]);
   }
-  else if (s.kind === "box") planes.push([0, 1, 0, s.y + s.h]);
   else {
     const k = (s.reverse?-1:1)*s.h / (s.axis === "x" ? s.w : s.d),
       low = s.axis === "x" ? s.x - s.w / 2 : s.z - s.d / 2;
@@ -272,20 +311,5 @@ export function raySolid(origin: Vec3, dir: Vec3, s: Solid, range: number) {
   return enter >= 0 && enter <= range ? enter : Infinity;
 }
 export function rayBox(o: Vec3, d: Vec3, min: Vec3, max: Vec3, range: number) {
-  return raySolid(
-    o,
-    d,
-    {
-      id: "hitbox",
-      kind: "box",
-      x: (min.x + max.x) / 2,
-      y: min.y,
-      z: (min.z + max.z) / 2,
-      w: max.x - min.x,
-      h: max.y - min.y,
-      d: max.z - min.z,
-      color: "",
-    },
-    range,
-  );
+  return rayBounds(o, d, min.x, min.y, min.z, max.x, max.y, max.z, range);
 }

@@ -111,6 +111,7 @@ test('quality switches preserve map materials and reuse GPU resources', () => {
     for(const mesh of world) {
      assert.ok(renderer.scene.meshes.includes(mesh),'world geometry retained');
      assert.ok(mesh.material && renderer.scene.materials.includes(mesh.material),'world has a live material');
+     if (typeof mesh.material.metadata?.doubleSided === 'boolean') assert.equal(mesh.material.backFaceCulling, !mesh.material.metadata.doubleSided, 'ramp culling stays isolated');
     }
     renderer.render(state,0,0,false,1,state.player.movement.position,1/60);
    }

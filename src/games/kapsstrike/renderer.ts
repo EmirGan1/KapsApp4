@@ -190,7 +190,7 @@ export class StrikeRenderer {
         { width: 320, height: 320 },
         this.scene,
       );
-      ground.material = this.terrainMaterial(map.floor,false,map.id==='dust'?'plaster':'concrete');
+      ground.material = this.terrainMaterial(map.floor,false,map.id==='dust'?'stone':map.id==='neon'?'asphalt':'concrete');
       this.worldUV(ground);
       ground.receiveShadows = true;
       ground.isPickable = false;
@@ -250,8 +250,7 @@ export class StrikeRenderer {
           mesh = new Mesh(s.id, this.scene);
           data.applyToMesh(mesh);
           mesh.convertToFlatShadedMesh();
-          mesh.material = this.terrainMaterial(s.color,!!s.glow,s.surface,s.label);
-          (mesh.material as StandardMaterial).backFaceCulling=false;
+          mesh.material = this.terrainMaterial(s.color,!!s.glow,s.surface,s.label,true);
         } else {
           mesh = s.shape ? MeshBuilder.CreateCylinder(s.id,{height:s.h,diameter:s.w,diameterTop:s.shape==='cone'?0:s.w,tessellation:s.shape==='cone'?8:12},this.scene) : MeshBuilder.CreateBox(s.id,{width:s.w,height:s.h,depth:s.d},this.scene);
           if(s.shape)mesh.scaling.z=s.d/s.w;
@@ -539,7 +538,7 @@ export class StrikeRenderer {
     }
   }
   private quality(){return this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;}
-  private textureSize(color?:string){return this.quality()==='high'?(color===this.map.floor?512:256):GRAPHICS[this.quality()].surface;}
+  private textureSize(){return this.quality()==='high'?512:GRAPHICS[this.quality()].surface;}
   private finishMaterial(finish: import('./cosmetics').Cosmetic): StandardMaterial {
         const key='finish-'+finish.id;
         let material=this.materials.get(key);
@@ -596,7 +595,7 @@ export class StrikeRenderer {
       this.qualityApplied=q;this.dynamicScale=1;this.slowSamples=0;this.fastSamples=0;
       for(const mesh of this.scene.meshes){
         if(mesh.name!=='ground'&&!mesh.name.startsWith('district-'))continue;
-        const data=mesh.material?.metadata;if(data?.surface){const material=this.terrainMaterial(data.color,data.emissive,data.surface,data.label);material.backFaceCulling=mesh.material!.backFaceCulling;mesh.material=material;}
+        const data=mesh.material?.metadata;if(data?.surface||data?.label||data?.doubleSided){const material=this.terrainMaterial(data.color,data.emissive,data.surface,data.label,data.doubleSided);mesh.material=material;}
       }
       for(const m of this.scene.meshes)if(m.name.startsWith('district-'))m.setEnabled(q!=='low'||!m.metadata?.detail);
       const sun=this.scene.getLightByName('sun') as DirectionalLight;
@@ -656,24 +655,29 @@ export class StrikeRenderer {
     }
     mesh.setVerticesData(VertexBuffer.UVKind,uv);
   }
-  private terrainMaterial(color:string,emissive=false,surface?:Solid['surface'],label?:string){
+  private terrainMaterial(color:string,emissive=false,surface?:Solid['surface'],label?:string,doubleSided=false){
     const q=this.settings.quality==='auto'?detectAutoQuality():this.settings.quality;
-    if(q!=='high'||emissive||label||!surface)return this.material(color,emissive,surface,label);
-    const key=color+surface;let m=this.terrainMaterials.get(key);
+    if(q!=='high'||emissive||label||!surface)return this.material(color,emissive,surface,label,doubleSided);
+    const key=JSON.stringify([color,surface,doubleSided]);let m=this.terrainMaterials.get(key);
     if(!m){
       m=new PBRMaterial('terrain-pbr-'+key,this.scene);m.albedoColor=Color3.FromHexString(color);m.metallic=surface==='metal'?.65:0;m.roughness=surface==='glass'?.2:surface==='metal'?.48:.92;
       const photographic=['stone','plaster','concrete','brick'].includes(surface)&&typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine';
       if(photographic){
-        const set=color===this.map.floor||surface==='stone'?'stone':'wall';
+        const set=surface==='stone'||(surface==='concrete'&&color===this.map.floor)?'stone':'wall';
         const load=(channel:string,gamma:boolean)=>{const key=set+'-'+channel;let t=this.photographicTextures.get(key);if(!t){t=new Texture(`/kapsstrike/materials/${key}.webp`,this.scene,false,false);t.gammaSpace=gamma;t.anisotropicFilteringLevel=16;this.photographicTextures.set(key,t);}return t;};
         m.albedoTexture=load('albedo',true);m.albedoColor=Color3.Lerp(Color3.White(),Color3.FromHexString(color),.15);
-        m.bumpTexture=load('normal',false);m.bumpTexture.level=.4;m.invertNormalMapY=true;
+        m.bumpTexture=load('normal',false);m.bumpTexture.level=.58;m.invertNormalMapY=true;
         m.metallicTexture=load('roughness',false);m.useRoughnessFromMetallicTextureGreen=true;m.useRoughnessFromMetallicTextureAlpha=false;m.useMetallnessFromMetallicTextureBlue=false;m.metallic=0;m.roughness=1;
       }else{
-        const t=surfaceTexture(this.scene,key+'-pbr',color,surface,undefined,color===this.map.floor?512:256);
-        if(t){m.albedoTexture=t;m.albedoColor=Color3.White();}
+        const resolution = surface === 'metal' || surface === 'wood' || surface === 'asphalt' ? 1024 : 512;
+        const t = surfaceTexture(this.scene, 'high-surface-' + surface, '#d0d0d0', surface, undefined, resolution);
+        if (t) {
+          m.albedoTexture = t;
+          m.albedoColor = Color3.Lerp(m.albedoColor, Color3.White(), .10);
+        }
       }
-      m.metadata={color,surface,emissive,label};m.freeze();this.terrainMaterials.set(key,m);
+      m.backFaceCulling=!doubleSided;
+      m.metadata={color,surface,emissive,label,doubleSided};m.freeze();this.terrainMaterials.set(key,m);
     }
     return m;
   }
@@ -683,13 +687,13 @@ export class StrikeRenderer {
     // Static map geometry never moves; render 2048x2048 shadow map once unless moving practice dummies are active.
     sm.refreshRate=this.hasMovingTargets?RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYTWOFRAMES:RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
   }
-  private material(color: string, emissive = false, surface?:Solid['surface'],label?:string) {
-    const key = color + emissive + (surface||'') + (label||'') + (surface ? ':' + this.quality() : '');
+  private material(color: string, emissive = false, surface?:Solid['surface'],label?:string,doubleSided=false) {
+    const key = JSON.stringify([color,emissive,surface,label,doubleSided,surface||label?this.quality():null]);
     let m = this.materials.get(key);
     if (!m) {
       m = new StandardMaterial(key, this.scene);
       m.diffuseColor = Color3.FromHexString(color);
-      const texture=surfaceTexture(this.scene,key,color,surface,label,this.textureSize(color));
+      const texture=surfaceTexture(this.scene,key,color,surface,label,this.textureSize());
       if(texture){m.diffuseTexture=texture;m.diffuseColor=Color3.White();}
       m.specularColor = color === "#253140" ? new Color3(.22,.25,.3) : new Color3(0.035, 0.035, 0.035);
       if(surface==='water'||surface==='glass') {m.specularColor=new Color3(.45,.52,.57);m.specularPower=64;}
@@ -699,7 +703,8 @@ export class StrikeRenderer {
         if(texture)m.emissiveTexture=texture;
         m.disableLighting = true;
       }
-      m.metadata={color,surface,label,emissive};
+      m.backFaceCulling=!doubleSided;
+      m.metadata={color,surface,label,emissive,doubleSided};
       m.freeze();
       this.materials.set(key, m);
     }

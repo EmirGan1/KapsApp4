@@ -18,15 +18,17 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
  const cached = cache.get(cacheKey);
  if(cached && !(cached as any)._isDisposed) return cached;
 
- const size=label?256:Math.min(512, Math.max(64, resolution));
- const texture=new DynamicTexture(key,{width:size,height:label?64:size},scene,true);
+ const size = label ? (resolution >= 512 ? 512 : 256) : Math.min(1024, Math.max(64, resolution));
+ const height = label ? size / 4 : size;
+ const texture=new DynamicTexture(key,{width:size,height},scene,true);
  const c=texture.getContext() as unknown as CanvasRenderingContext2D;
- c.fillStyle=color;c.fillRect(0,0,size,label?64:size);
+ c.fillStyle=color;c.fillRect(0,0,size,height);
 
  if(label){
-  c.fillStyle='rgba(15,23,42,0.85)';c.fillRect(2,2,size-4,60);
-  c.strokeStyle='#f59e0b';c.lineWidth=3;c.strokeRect(4,4,size-8,56);
-  c.fillStyle='#fef3c7';c.font=`900 ${label.length>16?17:21}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(label,size/2,33,size-20);
+  c.scale(size / 256, size / 256);
+  c.fillStyle='rgba(15,23,42,0.85)';c.fillRect(2,2,252,60);
+  c.strokeStyle='#f59e0b';c.lineWidth=3;c.strokeRect(4,4,248,56);
+  c.fillStyle='#fef3c7';c.font=`900 ${label.length>16?17:21}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(label,128,33,236);
  }else{
   c.save();
   const s=size/128;
@@ -218,6 +220,14 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
  // Ultra-fine weathering for high resolution tiles
  if(!label&&resolution>=512){
   let grain=71473;const random=()=>{grain=(Math.imul(grain,1664525)+1013904223)>>>0;return (grain>>>0)/4294967296;};
+  if (surface === 'metal' || surface === 'wood' || surface === 'asphalt') {
+   for (let i = 0; i < 240; i++) {
+    const x = random() * size, y = random() * size;
+    c.fillStyle = i % 2 ? 'rgba(255,255,255,.09)' : 'rgba(15,18,24,.13)';
+    const length = surface === 'asphalt' ? 1 + random() * 3 : 4 + random() * 29;
+    c.fillRect(x, y, length, 1 + random() * 1.4);
+   }
+  }
   if(surface==='brick'||surface==='stone'||surface==='concrete'||surface==='plaster'){
    for(let i=0;i<30;i++){
     let x=random()*size,y=random()*size;

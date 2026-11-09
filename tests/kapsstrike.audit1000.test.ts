@@ -43,12 +43,12 @@ for(let i=0;i<200;i++)test('plant boundary '+i,()=>{
  m.players.t.position={x:site.x+Math.cos(theta)*3.5,y:i<100?site.y:site.y-3,z:site.z+Math.sin(theta)*3.5};
  stepBomb(m,BOMB_RULES.buy);assert.equal(bombInteract(m,'t',true,BOMB_RULES.buy+1),i<100);
 });
-// Distinct budgets and replacement sequences: money conservation and one firearm.
+// Distinct budgets and attempted replacements: preserve the pistol and never debit a rejected buy.
 const firearms=['smg','rifle','shotgun','sniper'] as const;
 for(let i=0;i<200;i++)test('purchase conservation '+i,()=>{
  const m=match(),p=m.players.t,budget=5000+i*31;p.money=budget;
- const a=firearms[i%4],b=firearms[(i+1)%4];assert.ok(buyBombEquipment(m,'t',a,1));assert.ok(buyBombEquipment(m,'t',b,2));
- assert.equal(p.money,budget-BOMB_SHOP[b]);assert.deepEqual(p.weapons,['knife',b]);const before=p.money;
+ const a=firearms[i%4],b=firearms[(i+1)%4];assert.ok(buyBombEquipment(m,'t',a,1));assert.equal(buyBombEquipment(m,'t',b,2),false);
+ assert.equal(p.money,budget-BOMB_SHOP[a]);assert.deepEqual(p.weapons,['pistol','knife',a]);const before=p.money;
  assert.equal(buyBombEquipment(m,'t',b,3),false);assert.equal(p.money,before);
  assert.equal(buyBombEquipment(m,'t',a,BOMB_RULES.buy),false);assert.equal(p.money,before);
 });
