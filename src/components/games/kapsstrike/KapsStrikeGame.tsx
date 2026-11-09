@@ -1410,7 +1410,7 @@ export default function KapsStrikeGame({
                 {Math.ceil(hud.hp)} <span>/ 100</span>
               </strong>
               <meter min={0} max={100} value={hud.hp} aria-label="Can" />
-              {!currentRoom?.mode?.includes("bomb")&&<div className="ks-shield"><small>ZIRH · {Math.ceil(hud.armor||0)} / 100</small><meter min={0} max={100} value={hud.armor||0} aria-label="Zırh"/></div>}
+              <div className="ks-shield"><small>ZIRH · {Math.ceil(hud.armor||0)} / 100</small><meter min={0} max={100} value={hud.armor||0} aria-label="Zırh"/></div>
               <span>
                 {hud.speed.toFixed(1)} m/s ·{" "}
                 {hud.stance === "slide"

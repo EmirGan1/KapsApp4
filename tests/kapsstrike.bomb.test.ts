@@ -3,7 +3,7 @@ import {createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,bombView
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
 const players=(count=2)=>Array.from({length:count},(_,i)=>({id:String(i),team:(i%2?'CT':'T') as 'T'|'CT',position:{x:34.42208,y:3.2,z:37.9984}}));
 function planted(){const m=createBombMatch(players(),0);stepBomb(m,15);bombInteract(m,'0',true,16);m.players['0'].holdUntil=20;stepBomb(m,19.21);assert.equal(m.phase,'planted');return m;}
-for(const count of [2,4,10])test(`${count} players: minimum teams, 40s planted timer, explosion and one result`,()=>{const m=createBombMatch(players(count),0);stepBomb(m,15);bombInteract(m,'0',true,16);m.players['0'].holdUntil=20;stepBomb(m,19.21);assert.equal(m.deadline,59.21);stepBomb(m,59.21);assert.equal(m.winner,'T');assert.equal(m.scores.T,1);stepBomb(m,59.22);assert.equal(m.scores.T,1);});
+for(const count of [2,4,10])test(`${count} players: minimum teams, 30s planted timer, explosion and one result`,()=>{const m=createBombMatch(players(count),0);stepBomb(m,15);bombInteract(m,'0',true,16);m.players['0'].holdUntil=20;stepBomb(m,19.21);assert.equal(m.deadline,49.21);stepBomb(m,49.21);assert.equal(m.winner,'T');assert.equal(m.scores.T,1);stepBomb(m,49.22);assert.equal(m.scores.T,1);});
 test('invalid teams and overfull teams rejected',()=>{assert.throws(()=>createBombMatch(players(1),0));assert.throws(()=>createBombMatch(players(12),0));assert.throws(()=>createBombMatch(players().map(p=>({...p,team:'T'})),0));});
 test('kits, buy time and balances validated; cosmetic inventory absent from economy',()=>{const m=createBombMatch(players(),0);assert.equal(buyBombEquipment(m,'0','kit',1),false);assert.equal(buyBombEquipment(m,'1','kit',1),true);assert.equal(m.players['1'].money,400);assert.equal(buyBombEquipment(m,'1','rifle',2),false);assert.equal(buyBombEquipment(m,'1','pistol',2),false);assert.equal(buyBombEquipment(m,'1','armor',16),false);});
 test('defuse after all terrorists die remains possible',()=>{const m=planted();m.players['0'].alive=false;stepBomb(m,20);assert.equal(m.phase,'planted');bombInteract(m,'1',true,20);m.players['1'].holdUntil=31;stepBomb(m,30);assert.equal(m.winner,'CT');assert.equal(m.players['1'].defuses,1);});
@@ -157,4 +157,15 @@ test('A platform has continuous collision support throughout the site',async()=>
 });
 
 test('planted T win immediately when final CT dies, with one reward',()=>{const m=planted();m.players['1'].alive=false;stepBomb(m,20);assert.equal(m.phase,'result');assert.equal(m.winner,'T');const money=m.players['0'].money;stepBomb(m,20.1);assert.equal(m.scores.T,1);assert.equal(m.players['0'].money,money);});
-test('weapon replacement refunds only this buy phase and never leaves two firearms',()=>{const m=createBombMatch(players(),0),p=m.players['0'];p.money=5000;assert.ok(buyBombEquipment(m,'0','rifle',1));assert.equal(p.money,2300);assert.ok(buyBombEquipment(m,'0','sniper',2));assert.equal(p.money,500);assert.deepEqual(p.weapons,['knife','sniper']);assert.ok(buyBombEquipment(m,'0','smg',3));assert.equal(p.money,3800);m.phase='result';m.scores.T=1;m.deadline=4;stepBomb(m,4);assert.equal(p.purchase,undefined);p.money=200;assert.equal(buyBombEquipment(m,'0','sniper',5),false);assert.deepEqual(p.weapons,['knife','smg']);});
+test('primary purchase preserves the pistol and blocks a second primary without spending money',()=>{
+ const match=createBombMatch(players(),0), player=match.players['0'];
+ player.money=10000;
+ assert.ok(buyBombEquipment(match,'0','carbine',1));
+ assert.equal(buyBombEquipment(match,'0','rifle',2),false);
+ assert.equal(player.money,7800);
+ assert.deepEqual(player.weapons,['pistol','knife','carbine']);
+ assert.ok(buyBombEquipment(match,'0','halfArmor',3));
+ assert.equal(player.armor,50);
+ assert.ok(buyBombEquipment(match,'0','armor',4));
+ assert.equal(player.armor,100);
+});

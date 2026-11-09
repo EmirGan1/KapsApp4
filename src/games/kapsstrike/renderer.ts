@@ -728,6 +728,21 @@ export class StrikeRenderer {
         const item = this.tracerPool[this.poolIndex % GRAPHICS[this.quality()].tracers],
           impact = this.impactPool[this.poolIndex++ % GRAPHICS[this.quality()].tracers];
         const from=this.scratchFrom.set(e.from.x,e.from.y,e.from.z),to=this.scratchTo.set(e.to.x,e.to.y,e.to.z);
+        // Offset the visual tracer only. The hit ray still starts at the aiming eye.
+        const rayX = to.x - from.x, rayZ = to.z - from.z;
+        const horizontal = Math.hypot(rayX, rayZ);
+        if (Vector3.Distance(from, to) > 1 && horizontal > .05) {
+          if (!localActor || e.actor === localActor) {
+            this.muzzle.computeWorldMatrix(true);
+            from.copyFrom(this.muzzle.getAbsolutePosition());
+          } else {
+            from.x += (rayX * .65 + rayZ * .22) / horizontal;
+            from.z += (rayZ * .65 - rayX * .22) / horizontal;
+            from.y -= .29;
+          }
+        } else {
+          from.y -= .18;
+        }
         const distance=Vector3.Distance(from,to);
         if(distance<.01)continue;
         this.scratchMid.copyFrom(from).addInPlace(to).scaleInPlace(.5);

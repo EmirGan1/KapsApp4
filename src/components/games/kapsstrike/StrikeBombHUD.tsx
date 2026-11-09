@@ -1,16 +1,16 @@
 import React, {useEffect, useRef, useState} from 'react';
 import type {Socket} from 'socket.io-client';
-import {BOMB_RULES, BOMB_SHOP, type BombMatch} from '../../../games/kapsstrike/bomb';
+import {BOMB_RULES, BOMB_SHOP, hasBombPrimary, type BombMatch} from '../../../games/kapsstrike/bomb';
 import {bindingFromEvent, label} from '../../../games/kapsstrike/controls';
 import type {NetworkPlayer, StrikeSnapshot} from '../../../games/kapsstrike/types';
 import {WEAPONS} from '../../../games/kapsstrike/config';
 
 type Item = keyof typeof BOMB_SHOP;
 const categories: {name:string;items:Item[]}[] = [
-  {name:'Ekipman',items:['armor','kit']}, {name:'Tabancalar',items:['pistol']},
-  {name:'Hafif silahlar',items:['smg','shotgun']}, {name:'Tüfekler',items:['rifle','sniper']},
+  {name:'Ekipman',items:['halfArmor','armor','kit']}, {name:'Tabancalar',items:['pistol']},
+  {name:'Hafif silahlar',items:['smg','shotgun','carbine']}, {name:'Tüfekler',items:['rifle','sniper','lmg','railgun']},
 ];
-const names=(item:Item)=>item==='armor'?'Balistik zırh':item==='kit'?'Çözme kiti':WEAPONS[item].name;
+const names=(item:Item)=>item==='halfArmor'?'Yarım zırh · +50':item==='armor'?'Tam zırh · +100':item==='kit'?'Çözme kiti':WEAPONS[item].name;
 const phases={buy:'Hazırlık ve satın alma',active:'Raund devam ediyor',planted:'BOMBA KURULDU',result:'Raund sonucu',finished:'Maç tamamlandı'};
 
 export default function StrikeBombHUD({socket,players,interactKey,onShopChange,touch,onEquipBomb}:{socket?:Socket|null;players:NetworkPlayer[];interactKey:string;onShopChange:(open:boolean)=>void;touch:boolean;onEquipBomb:()=>void}){
@@ -71,7 +71,7 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
     <header className="ks-tactical-bar">{cards('CT')}<div className="ks-bomb-score"><div><b>CT {bomb.scores.CT}</b><strong>{Math.max(0,Math.ceil(bomb.deadline-now))}<small>sn</small></strong><b>{bomb.scores.T} T</b></div><small>RAUND {bomb.round} · {phases[bomb.phase]}</small></div>{cards('T')}</header>
     {(bomb.phase==='result'||bomb.phase==='finished')&&bomb.winner&&<div className={`ks-round-banner ks-round-${bomb.winner}`} role="status"><b>{bomb.explosion?'💥 C4 PATLADI · ':''}{bomb.winner==='CT'?'CT · Savunma':'T · Saldırı'} kazandı</b><span>{bomb.reason}</span><small>{bomb.phase==='finished'?'Maç tamamlandı':`Yeni raund ${Math.max(0,Math.ceil(bomb.deadline-now))} sn içinde`}</small></div>}
     <aside className={`ks-bomb-objective ${touch?'is-touch':'is-desktop'}`}>
-      <span>{me?.team==='CT'?'CT · Savunma':'T · Saldırı'} · ${me?.money||0} · Zırh {Math.ceil(me?.armor||0)}</span>
+      <span>{me?.team==='CT'?'CT · Savunma':'T · Saldırı'} · ${me?.money||0}</span>
       {bomb.carrier===socket?.id&&<strong>Bomba sende · A veya B bölgesine ilerle</strong>}
       {bomb.phase==='buy'&&me?.alive&&(touch?<button onClick={()=>changeShop(true)}>Satın al <kbd>B</kbd></button>:<span>B · Satın alma menüsü</span>)}
       {me?.alive&&(bomb.phase==='active'||bomb.phase==='planted')&&(touch?<div className="ks-bomb-touch-actions">
@@ -92,10 +92,16 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
     }}>
       <header><div><small>KAPSSTRIKE · {me?.team}</small><h2 id="ks-buy-title">Satın alma</h2><p>{Math.max(0,Math.ceil(bomb.deadline-now))} saniye kaldı · Raund {bomb.round}</p></div><strong>${me?.money||0}</strong><button aria-label="Satın alma menüsünü kapat" onClick={()=>changeShop(false)}>Oyuna dön · ESC</button></header>
       <div className="ks-buy-columns">{categories.map(category=><section key={category.name}><h3>{category.name}</h3>{category.items.filter(item=>item!=='kit'||me?.team==='CT').map(item=>{
-        const owned=item==='kit'?me?.kit:item==='armor'?(me?.armor||0)>=100:me?.weapons.includes(item),affordable=(me?.money||0)+(item!=='armor'&&item!=='kit'&&me?.purchase&&me.weapons.includes(me.purchase.weapon)?me.purchase.price:0)>=BOMB_SHOP[item];
-        return <button key={item} disabled={pending||owned||!affordable} className={owned?'is-owned':''} onClick={()=>buy(item)}><span className="ks-buy-symbol" aria-hidden="true"><svg viewBox="0 0 120 40" width="110" height="38" fill="currentColor">{item==='armor'?<path d="M44 2 35 9v16l25 13 25-13V9L76 2 68 9H52z"/>:item==='kit'?<path d="M35 6h50v29H35zM50 0h20v5H50zm7 12v6h-6v6h6v6h6v-6h6v-6h-6v-6z" fillRule="evenodd"/>:item==='pistol'?<path d="M20 8h65v10H54l-5 19H34l5-19H20z"/>:item==='sniper'?<path d="M3 13h90v4h24v3H72l-8 11H52l2-11H30L9 29H3zm42-9h30v7H45z"/>:item==='shotgun'?<path d="M4 12h108v5H55v7H39v-6L8 29H3z"/>:item==='smg'?<path d="M15 10h65v5h22v5H66v16H55V21H41l-3 14H25l4-16H15z"/>:<path d="M3 9h16v5h55v-4h9v4h32v5H74l-7 15H53l4-15H40l-4 12H24l4-14L3 27z"/>}</svg></span><b>{names(item)}</b><span>${BOMB_SHOP[item]}</span><small>{owned?'ENVANTERDE':!affordable?'YETERSİZ BAKİYE':'SATIN AL'}</small></button>;
+        const armorItem = item === 'armor' || item === 'halfArmor';
+        const owned = item === 'kit' ? me?.kit : armorItem
+          ? (me?.armor ?? 0) >= (item === 'armor' ? 100 : 50)
+          : me?.weapons.includes(item);
+        const slotTaken = !owned && !armorItem && item !== 'kit' && item !== 'pistol'
+          && hasBombPrimary(me?.weapons ?? []);
+        const affordable = (me?.money ?? 0) >= BOMB_SHOP[item];
+        return <button key={item} disabled={pending||owned||slotTaken||!affordable} className={owned?'is-owned':slotTaken?'is-slot-taken':''} onClick={()=>buy(item)}><span className="ks-buy-symbol" aria-hidden="true"><svg viewBox="0 0 120 40" width="110" height="38" fill="currentColor">{armorItem?<path d="M44 2 35 9v16l25 13 25-13V9L76 2 68 9H52z"/>:item==='kit'?<path d="M35 6h50v29H35zM50 0h20v5H50zm7 12v6h-6v6h6v6h6v-6h6v-6h-6v-6z" fillRule="evenodd"/>:item==='pistol'?<path d="M20 8h65v10H54l-5 19H34l5-19H20z"/>:item==='sniper'?<path d="M3 13h90v4h24v3H72l-8 11H52l2-11H30L9 29H3zm42-9h30v7H45z"/>:item==='shotgun'?<path d="M4 12h108v5H55v7H39v-6L8 29H3z"/>:item==='smg'?<path d="M15 10h65v5h22v5H66v16H55V21H41l-3 14H25l4-16H15z"/>:<path d="M3 9h16v5h55v-4h9v4h32v5H74l-7 15H53l4-15H40l-4 12H24l4-14L3 27z"/>}</svg></span><b>{names(item)}</b><span>${BOMB_SHOP[item]}</span><small>{owned?'ENVANTERDE':slotTaken?'ZATEN ANA SİLAHIN VAR':!affordable?'YETERSİZ BAKİYE':'SATIN AL'}</small></button>;
       })}</section>)}</div>
-      <footer role="status">{message||'Tek ateşli silah taşırsın. Bu satın alma aşamasında aldığın silah değiştirilirken bedeli iade edilir. G: Silahı bırak.'}</footer>
+      <footer role="status">{message||'Tabanca ayrı slotta kalır. Yeni ana silah almadan önce elindekini G ile bırak.'}</footer>
     </div></div>}
   </>;
 }

@@ -1,9 +1,9 @@
 import type {Vec3,WeaponId} from './types';
 export type BombSide='T'|'CT';
 export type BombPhase='buy'|'active'|'planted'|'result'|'finished';
-export const BOMB_RULES={buy:15,round:105,plant:3.2,explode:40,defuse:10,kitDefuse:5,transition:5,blastRadius:18,maxMoney:16000,startMoney:800,winReward:3250,lossReward:1400,lossStep:500,killReward:300,objectiveReward:300,plantLossBonus:300};
+export const BOMB_RULES={buy:15,round:105,plant:3.2,explode:30,defuse:10,kitDefuse:5,transition:5,blastRadius:18,maxMoney:16000,startMoney:800,winReward:3250,lossReward:1400,lossStep:500,killReward:300,objectiveReward:300,plantLossBonus:300};
 export const BOMB_SITES=[{id:'A',x:34.42208,y:3.2,z:37.9984,radius:4},{id:'B',x:-33.75232,y:2.4,z:42.69232,radius:4}] as const;
-export const BOMB_SHOP={pistol:200,smg:1200,rifle:2700,shotgun:1800,sniper:4500,armor:650,kit:400} as const;
+export const BOMB_SHOP={pistol:200,smg:1200,rifle:2700,shotgun:1800,sniper:4500,carbine:2200,lmg:3400,railgun:5000,halfArmor:350,armor:650,kit:400} as const;
 export interface BombPlayer {id:string;team:BombSide;alive:boolean;position:Vec3;money:number;armor:number;kit:boolean;weapons:WeaponId[];plants:number;defuses:number;holdUntil:number;purchase?:{weapon:WeaponId;price:number}}
 export interface BombMatch {explosion?:{position:Vec3;at:number;radius:number};phase:BombPhase;round:number;deadline:number;scores:{T:number;CT:number};carrier?:string;position?:Vec3;site?:string;action?:{player:string;kind:'plant'|'defuse';started:number;position:Vec3};winner?:BombSide;reason?:string;target:number;half:number;swapped:boolean;loss:{T:number;CT:number};players:Record<string,BombPlayer>}
 const near=(a:Vec3,b:Vec3,r:number)=>Math.hypot(a.x-b.x,a.z-b.z)<=r&&Math.abs(a.y-b.y)<2;
@@ -13,22 +13,26 @@ export function createBombMatch(players:{id:string;team:BombSide;position:Vec3}[
  for(const p of players)match.players[p.id]={...p,alive:true,money:BOMB_RULES.startMoney,armor:0,kit:false,weapons:['pistol','knife'],plants:0,defuses:0,holdUntil:0};
  match.carrier=players.find(p=>p.team==='T')!.id;return match;
 }
+export const isBombPrimary = (weapon: WeaponId) => weapon !== "pistol" && weapon !== "knife";
+export const hasBombPrimary = (weapons: WeaponId[]) => weapons.some(isBombPrimary);
+
 export function bombPurchaseError(m:BombMatch,id:string,item:string,now:number):string|undefined {
  const p=m.players[id];
  if(!p||!p.alive)return 'Satın almak için hayatta olmalısın.';
  if(m.phase!=='buy'||now>=m.deadline)return 'Satın alma süresi sona erdi.';
  if(!Object.hasOwn(BOMB_SHOP,item))return 'Geçersiz ekipman.';
  if(item==='kit'&&p.team!=='CT')return 'Çözme kiti yalnızca CT için.';
- if(item==='kit'?p.kit:item==='armor'?p.armor>=100:p.weapons.includes(item as WeaponId))return 'Bu ekipmana zaten sahipsin.';
- const refund=item!=='armor'&&item!=='kit'&&p.purchase&&p.weapons.includes(p.purchase.weapon)?p.purchase.price:0;
- if(p.money+refund<BOMB_SHOP[item as keyof typeof BOMB_SHOP])return 'Yeterli paran yok.';
+ if(item==='kit'?p.kit:item==='armor'?p.armor>=100:item==='halfArmor'?p.armor>=50:p.weapons.includes(item as WeaponId))return 'Bu ekipmana zaten sahipsin.';
+ if(item!=='kit'&&item!=='armor'&&item!=='halfArmor'&&item!=='pistol'&&hasBombPrimary(p.weapons))return 'Zaten ana silahın var.';
+ if(p.money<BOMB_SHOP[item as keyof typeof BOMB_SHOP])return 'Yeterli paran yok.';
 }
 export function buyBombEquipment(m:BombMatch,id:string,item:string,now:number){
  if(bombPurchaseError(m,id,item,now))return false;
  const p=m.players[id];
  if(item==='kit')p.kit=true;
  else if(item==='armor')p.armor=100;
- else {if(p.purchase&&p.weapons.includes(p.purchase.weapon))p.money+=p.purchase.price;p.weapons=['knife',item as WeaponId];p.purchase={weapon:item as WeaponId,price:BOMB_SHOP[item as keyof typeof BOMB_SHOP]};}
+ else if(item==='halfArmor')p.armor=50;
+ else p.weapons.push(item as WeaponId);
  p.money-=BOMB_SHOP[item as keyof typeof BOMB_SHOP];return true;
 }
 /** A client never receives another player's economy, loadout or objective action. */

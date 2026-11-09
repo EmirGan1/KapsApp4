@@ -1091,7 +1091,7 @@ export class KapsStrikeServerManager {
           p.state.weapon.inventory=[...bp.weapons];p.state.weapon.switchUntil=0;
           p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;
           p.inputQueue=[];p.receivedInputs.clear();p.heldInput=undefined;p.lastInputTick=room.tick;
-          p.state.weapon.selected=bp.weapons.find(w=>w!=='knife')||'knife';p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;
+          p.state.weapon.selected=bp.weapons.find(w=>w!=='knife'&&w!=='pistol')||(bp.weapons.includes('pistol')?'pistol':'knife');p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;
           for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;
           p.history=[];p.pendingFire=undefined;room.addEvent({actor:p.id,kind:'respawn',from:spawn});
         }
@@ -1346,9 +1346,12 @@ export class KapsStrikeServerManager {
         const apply=()=>{
           if(victim.state.hp<=0){if(trace)trace.reason='target-already-dead';return;}
         const damagePerPellet = weaponDamage(weaponId,nearest,isHeadshot,ads);
-        const armor=room.bomb?.players[victim.id];const absorbed=armor?Math.min(armor.armor,damagePerPellet*.35):Math.min(victim.state.armor||0,damagePerPellet);if(armor)armor.armor-=absorbed;else victim.state.armor=(victim.state.armor||0)-absorbed;
+        const absorbed = Math.min(victim.state.armor || 0, damagePerPellet);
+        victim.state.armor = (victim.state.armor || 0) - absorbed;
+        const armor = room.bomb?.players[victim.id];
+        if (armor) armor.armor = victim.state.armor;
         const healthDamage=Math.min(victim.state.hp,damagePerPellet-absorbed);
-        const finalDamage=healthDamage+(armor?0:absorbed);
+        const finalDamage=healthDamage+absorbed;
 
         if(trace){trace.rawDamage=damagePerPellet;trace.absorbed=absorbed;trace.damage=finalDamage;}
         receipt.outcome='hit';receipt.damage+=finalDamage;receipt.head ||= isHeadshot;
@@ -1611,6 +1614,7 @@ export class KapsStrikeServerManager {
         const success=buyBombEquipment(b,socket.id,request.item,now);
         if(success){const player=room.players.get(socket.id)!;
           player.state.weapon.inventory=[...b.players[socket.id].weapons];
+          player.state.armor=b.players[socket.id].armor;
           if(Object.hasOwn(WEAPONS,request.item)){
             const weapon=request.item as WeaponId;player.state.weapon.selected=weapon;
             player.state.weapon.ammo[weapon]=WEAPONS[weapon].capacity;player.state.weapon.reloadUntil=0;player.state.weapon.switchUntil=room.tick+24;player.pendingFire=undefined;
