@@ -5,9 +5,9 @@ const vite=await createServer({cacheDir:'node_modules/.vite-strike-map-qa',logLe
 await vite.listen();
 const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
 try{
- const views={warehouse:[[-21,2.1,-6],[-25,6,16]],dust:[[3,2.1,-10],[-1,2.6,13]],neon:[[-7,2.1,-31],[1,7,10]]};
+ const views={warehouse:[[-20,2.1,-10],[-15,4,3]],dust:[[1.5,2.1,-2],[1.5,2.6,8]],neon:[[0,5.8,0],[5,3.6,10]]};
  for(const [map,original] of Object.entries(views)){
-  const view=original.map(([x,y,z])=>[x*1.35,y,z*1.35]);
+  const view=original;
   const page=await browser.newPage({viewport:{width:1280,height:720}});const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`http://127.0.0.1:4198/__maps?mode=engine&quality=medium&map=${map}`);
   await page.getByRole('button',{name:'Start test',exact:true}).click();
