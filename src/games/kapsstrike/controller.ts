@@ -127,6 +127,7 @@ interface BufferedSnapshot {
   tick:number;
   time: number;
   players: PlayerSnapshot[];
+  playersById: Map<string, PlayerSnapshot>;
   teamScores?: { red: number; blue: number };
   timeLeft?: number;
 }
@@ -488,8 +489,9 @@ export class StrikeController {
       // Buffer snapshot for smooth remote player interpolation
       this.remoteSnapshots.push({
         tick:snapshot.tick,
-        time: performance.now(),
+        time: arrival,
         players: snapshot.players,
+        playersById: new Map(snapshot.players.map(player => [player.id, player])),
         teamScores: snapshot.teamScores,
         timeLeft: snapshot.timeLeft,
       });
@@ -803,9 +805,12 @@ export class StrikeController {
         if (!frozen&&(!this.isMultiplayer || this.state.player.hp > 0)) simulate(this.state, cmd, !this.isMultiplayer);
 
         if (!frozen&&this.isMultiplayer && this.socket && this.state.player.hp>0) {
-          const immediate=this.state.events.filter(e=>e.id>beforeEvent && (e.kind==="shot" || e.kind==="reload"));
-          this.renderer.process(immediate,this.state.player.id,true);
-          for(const e of immediate)this.feedback(e,true);
+          if (this.state.eventId !== beforeEvent) {
+            const immediate = this.state.events.filter(event =>
+              event.id > beforeEvent && (event.kind === "shot" || event.kind === "reload"));
+            this.renderer.process(immediate, this.state.player.id, true);
+            for (const event of immediate) this.feedback(event, true);
+          }
           if(this.state.player.weapon.shotIndex>beforeShot)cmd.shot=this.state.player.weapon.shotIndex;
           this.unacknowledgedInputs.push({ ...cmd });
           if (this.unacknowledgedInputs.length > 240) this.unacknowledgedInputs.shift();
@@ -832,7 +837,7 @@ export class StrikeController {
       }
 
       // Offline mode local events feedback
-      if (!this.isMultiplayer) {
+      if (!this.isMultiplayer && this.state.eventId > this.processed) {
         const events = this.state.events.filter((e) => e.id > this.processed);
         this.renderer.process(events);
         for (const e of events) this.feedback(e);
@@ -840,7 +845,7 @@ export class StrikeController {
 
       // Interpolate and render remote players if in multiplayer
       if (this.isMultiplayer) {
-        this.updateAndRenderRemotePlayers();
+        this.updateAndRenderRemotePlayers(now);
       }
 
       if (!this.isMultiplayer && this.state.bomb) {
@@ -925,12 +930,10 @@ export class StrikeController {
   /**
    * Smooth snapshot interpolation for remote players (~70ms interpolation delay)
    */
-  private updateAndRenderRemotePlayers() {
-    this.refreshSpectator();
+  private updateAndRenderRemotePlayers(now: number) {
     if (this.remoteSnapshots.length === 0) return;
 
     const myId = this.socket?.id;
-    const now = performance.now();
     // Adaptive low-latency interpolation buffer (scales down to ~42ms on low jitter instead of rigid 70ms floor)
     const baseDelay = this.ping > 0 ? clamp(this.ping * 0.45, 38, 62) : 45;
     const renderTime = now - clamp(baseDelay + this.jitter * 1.6, 38, 135);
@@ -958,9 +961,10 @@ export class StrikeController {
     const timeDiff = newer.time - older.time;
     const alpha = timeDiff > 0 ? clamp((renderTime - older.time) / timeDiff, 0, 1) : 1;
 
-    this.viewTick=older.tick+(newer.tick-older.tick)*alpha+clamp((renderTime-newer.time)/1000,0,.05)/C.dt;
+    const extrapolation = clamp((renderTime - newer.time) / 1000, 0, .05);
+    this.viewTick=older.tick+(newer.tick-older.tick)*alpha+extrapolation/C.dt;
     const interpolatedPlayers = older.players.map((p1) => {
-      const p2 = newer!.players.find((p) => p.id === p1.id) || p1;
+      const p2 = newer!.playersById.get(p1.id) || p1;
       return {
         id: p1.id,
         username: p1.username,
@@ -977,7 +981,7 @@ export class StrikeController {
         pitch: p1.pitch + (p2.pitch - p1.pitch) * alpha,
         position: (()=>{
           const base={x:p1.position.x+(p2.position.x-p1.position.x)*alpha,y:p1.position.y+(p2.position.y-p1.position.y)*alpha,z:p1.position.z+(p2.position.z-p1.position.z)*alpha};
-          const dt=clamp((renderTime-newer!.time)/1000,0,.05);
+          const dt = extrapolation;
           if(!dt || p2.hp<=0)return base;
           const next={x:base.x+p2.velocity.x*dt,y:base.y+p2.velocity.y*dt,z:base.z+p2.velocity.z*dt};
           return fits(MAPS[this.state.map],next,p2.stance==="stand"?C.standing:C.crouching)?next:base;
@@ -985,18 +989,19 @@ export class StrikeController {
       };
     });
 
+    this.refreshSpectator(interpolatedPlayers);
     if(!this.menuOverlay){
       const map=MAPS[this.state.map];
+      const listener = this.audioListenerPosition();
       for(const p of interpolatedPlayers){
-        if(p.id===myId||p.hp<=0||now-newer!.time>350){this.footsteps.reset(p.id);continue;}
+        if(p.id===myId||p.hp<=0||now-newer!.time>350||Math.hypot(p.position.x-listener.x,p.position.z-listener.z)>=28){this.footsteps.reset(p.id);continue;}
         const grounded=Math.abs(p.position.y-support(map,p.position,p.position.y+.12))<.16&&Math.abs(p.velocity.y)<1;
         const level=this.footsteps.step(p.id,p.position,grounded,p.stance,now);
-        if(level&&Math.hypot(p.position.x-this.audioListenerPosition().x,p.position.z-this.audioListenerPosition().z)<28)
+        if(level)
           this.audio.footstep(stepSurface(map,p.position),level,p.id===this.spectator?.id?undefined:p.position);
       }
     }
-    this.refreshSpectator(interpolatedPlayers);
-    this.renderer.renderRemotePlayers(interpolatedPlayers.filter(p=>p.id!==this.spectator?.id), myId, this.localTeam);
+    this.renderer.renderRemotePlayers(interpolatedPlayers, myId, this.localTeam, this.spectator?.id);
   }
 
   private audioListenerPosition(){return this.spectator?.position||this.state.player.movement.position;}

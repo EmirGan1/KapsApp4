@@ -39,7 +39,7 @@ import {
   Solid,
 } from "./types";
 import { WEAPONS, WEAPON_ORDER, PHYSICS as C, TARGET_HITBOXES, detectAutoQuality } from "./config";
-import { raySolid, clamp, collisionSolids } from "./physics";
+import { raySolid, clamp, nearbyViewmodelSolids } from "./physics";
 import { aimDirection } from "./combat";
 /** All input belongs to StrikeController; avoid a second device/gamepad listener graph. */
 class StrikeScene extends Scene {
@@ -124,6 +124,7 @@ export class StrikeRenderer {
   private readonly hasMovingTargets: boolean;
   private knifeChildMeshes: Mesh[] = [];
   private appliedKnifeVisibility = "";
+  private visibleWeapon?: WeaponId;
   private shadowTick = 0;
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -631,6 +632,7 @@ export class StrikeRenderer {
       node.position.set(p.position.x,p.position.y,p.position.z);node.setEnabled(!p.opened);
       if(p.kind==='dropped')node.rotation.y=state.tick*C.dt;
     }
+    if(!this.plane && !world.drop && !world.pickups.some(p=>p.kind==='airdrop'&&!p.opened))return;
     if(!this.plane){
       this.plane=new TransformNode('supply-aircraft',this.scene);
       for(const [name,w,h,d] of [['fuselage',1,1,8],['wings',12,.2,2],['tail',4,.25,1]] as const){const m=MeshBuilder.CreateBox(name,{width:w,height:h,depth:d},this.scene);m.parent=this.plane;m.position.z=name==='tail'?-3:0;m.material=this.material('#8e9da8',false,'metal');}
@@ -800,7 +802,7 @@ export class StrikeRenderer {
       : 0;
     const dir = aimDirection(yaw, pitch);
     let wall = 1;
-    for (const s of collisionSolids(this.map))
+    for (const s of nearbyViewmodelSolids(this.map, this.camera.position))
       if (!s.detail&&Math.abs(s.x-this.camera.position.x)<=s.w/2+1&&Math.abs(s.z-this.camera.position.z)<=s.d/2+1&&s.y<=this.camera.position.y+1&&s.y+s.h>=this.camera.position.y-1)
         wall = Math.min(wall, raySolid(this.camera.position, dir, s, 1));
     const near = clamp(1 - wall, 0, 1);
@@ -1034,14 +1036,14 @@ export class StrikeRenderer {
     }
     this.gunRoot.setEnabled(!(ads && (p.weapon.selected === "sniper" || p.weapon.selected === "railgun")));
     this.gunRoot.scaling.setAll(ads ? 0.85 : 1);
-    for (const [id, mesh] of this.weapons) {
-      const isSelected = id === p.weapon.selected;
-      mesh.setEnabled(isSelected);
-      if (id === "knife" && isSelected && this.appliedKnifeVisibility !== knifeType) {
-        this.appliedKnifeVisibility = knifeType;
-        for (const child of this.knifeChildMeshes) {
-          child.setEnabled(child.metadata?.knifeStyle === knifeType);
-        }
+    if (this.visibleWeapon !== p.weapon.selected) {
+      for (const [id, mesh] of this.weapons) mesh.setEnabled(id === p.weapon.selected);
+      this.visibleWeapon = p.weapon.selected;
+    }
+    if (p.weapon.selected === "knife" && this.appliedKnifeVisibility !== knifeType) {
+      this.appliedKnifeVisibility = knifeType;
+      for (const child of this.knifeChildMeshes) {
+        child.setEnabled(child.metadata?.knifeStyle === knifeType);
       }
     }
     if (this.shadow) {
@@ -1210,10 +1212,12 @@ export class StrikeRenderer {
       protectedUntil?:number;
     }>,
     localPlayerId?: string,
-    localTeam?: string
+    localTeam?: string,
+    hiddenPlayerId?: string
   ) {
     if((import.meta as any).env?.DEV&&this.settings.showDebugStats)(this.combatOverlay??=new CombatDebug(this.scene)).poses(players.filter(p=>p.id!==localPlayerId&&p.hp>0).map(p=>({...p,height:p.stance==='stand'?C.standing:C.crouching})));
     const activeIds = new Set<string>();
+    const now = performance.now();
 
     for (const p of players) {
       if (p.id === localPlayerId) continue;
@@ -1279,11 +1283,11 @@ export class StrikeRenderer {
         this.remotePlayerMeshes.set(p.id, item);
       }
 
-      item.model.flash((this.flashes.get(p.id) || 0) > performance.now());
+      item.model.flash((this.flashes.get(p.id) || 0) > now);
       const isAlive = p.hp > 0;
       item.shield?.setEnabled(isAlive&&(p.protectedUntil||0)>this.visualTick);
       if(item.shield){item.shield.scaling.y=p.stance==='crouch'?.75:1;item.shield.position.y=p.stance==='crouch'?.6:.9;}
-      item.root.setEnabled(isAlive);
+      item.root.setEnabled(isAlive && p.id !== hiddenPlayerId);
       if (isAlive) {
         item.root.position.set(p.position.x, p.position.y, p.position.z);
         item.root.rotation.y = p.yaw;

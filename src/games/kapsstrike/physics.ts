@@ -15,19 +15,30 @@ export function collisionSolids(map:MapDefinition):Solid[]{
   }
   return result.solids;
 }
-const spatialCache=new WeakMap<MapDefinition,{solids:Solid[];cells:Map<string,Solid[]>}>();
+type SpatialIndex = { solids: Solid[]; cells: Map<string, Solid[]> };
+const spatialCache = new WeakMap<MapDefinition, SpatialIndex>();
+const viewmodelSpatialCache = new WeakMap<MapDefinition, SpatialIndex>();
 const CELL=8;
 /** Broad phase only: preserve authored order and the exact capsule/ramp narrow phase. */
 export function nearbyCollisionSolids(map:MapDefinition,p:Vec3):Solid[]{
+ return collisionCell(map,p,C.radius,spatialCache);
+}
+
+/** Candidate solids for the viewmodel's one-metre wall probe. */
+export function nearbyViewmodelSolids(map: MapDefinition, p: Vec3): Solid[] {
+ return collisionCell(map,p,1,viewmodelSpatialCache);
+}
+
+function collisionCell(map: MapDefinition, p: Vec3, padding: number, cache: WeakMap<MapDefinition, SpatialIndex>): Solid[] {
  const solids=collisionSolids(map);
  if(!Number.isFinite(p.x)||!Number.isFinite(p.z))return solids;
- let index=spatialCache.get(map);
+ let index=cache.get(map);
  if(!index||index.solids!==solids){
   const cells=new Map<string,Solid[]>();
-  for(const s of solids)for(let x=Math.floor((s.x-s.w/2-C.radius)/CELL);x<=Math.floor((s.x+s.w/2+C.radius)/CELL);x++)for(let z=Math.floor((s.z-s.d/2-C.radius)/CELL);z<=Math.floor((s.z+s.d/2+C.radius)/CELL);z++){
+  for(const s of solids)for(let x=Math.floor((s.x-s.w/2-padding)/CELL);x<=Math.floor((s.x+s.w/2+padding)/CELL);x++)for(let z=Math.floor((s.z-s.d/2-padding)/CELL);z<=Math.floor((s.z+s.d/2+padding)/CELL);z++){
    const key=x+','+z;let list=cells.get(key);if(!list){list=[];cells.set(key,list);}list.push(s);
   }
-  index={solids,cells};spatialCache.set(map,index);
+  index={solids,cells};cache.set(map,index);
  }
  return index.cells.get(Math.floor(p.x/CELL)+','+Math.floor(p.z/CELL))??EMPTY_SOLIDS;
 }

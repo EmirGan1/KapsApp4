@@ -40,7 +40,11 @@ const prismFinishes = [
 for(const [variant,weapon] of guns.entries())for(const [i,f]of prismFinishes.entries())COSMETICS.push({...f,id:`${weapon}-prism-${i}`,weapon,variant});
 for(const [variant,[style,name]]of ([['default','Savaş Bıçağı'],['tanto','Tanto'],['karambit','Karambit'],['butterfly','Kelebek']] as const).entries())for(const [i,f]of prismFinishes.entries())COSMETICS.push({...f,id:`knife-${style}-prism-${i}`,name:`${name} · ${f.name}`,weapon:'knife',rarity:'knife',knife:style,variant:variant+8});
 export const CASES=[{id:'frontline',name:'Cephe Kasası',color:'#4ade80',weapon:'rifle'},{id:'velocity',name:'Hız Kasası',color:'#60a5fa',weapon:'smg'},{id:'horizon',name:'Ufuk Kasası',color:'#c084fc',weapon:'sniper'},{id:'breach',name:'Kuşatma Kasası',color:'#fb7185',weapon:'shotgun'},{id:'sidearm',name:'Düello Kasası',color:'#fbbf24',weapon:'pistol'},{id:'arsenal',name:'Arsenal Kasası',color:'#67e8f9',weapon:null},{id:'prism',name:'Prizma Kasası',color:'#a4ffe6',weapon:null},{id:'sakura',name:'Sakura Kasası',color:'#ffa6dd',weapon:null},{id:'sovereign',name:'Hükümdar Kasası',color:'#ffe69c',weapon:null}] as const;
-export function cosmetic(id:unknown){return typeof id==='string'?COSMETICS.find(c=>c.id===id):undefined;}
+const cosmeticsById = new Map<string, Cosmetic>();
+for (const item of COSMETICS) if (!cosmeticsById.has(item.id)) cosmeticsById.set(item.id, item);
+export function cosmetic(id: unknown) {
+ return typeof id === 'string' ? cosmeticsById.get(id) : undefined;
+}
 export function caseRewards(id:string):{item:Cosmetic;chance:number}[]{
  const box=CASES.find(c=>c.id===id);if(!box)return [];
  const themes:Record<string,WeaponId[]>={frontline:['rifle','carbine','pistol'],velocity:['smg','rifle','shotgun'],horizon:['sniper','railgun','pistol'],breach:['shotgun','lmg','smg'],sidearm:['pistol','carbine','sniper'],arsenal:guns,prism:guns,sakura:guns,sovereign:guns};

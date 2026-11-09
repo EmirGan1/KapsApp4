@@ -37,14 +37,28 @@ export function buyBombEquipment(m:BombMatch,id:string,item:string,now:number){
 }
 /** A client never receives another player's economy, loadout or objective action. */
 export function bombView(m:BombMatch,id:string):BombMatch {
- const v=structuredClone(m),me=m.players[id];
- for(const p of Object.values(v.players))if(p.id!==id){
-  delete p.purchase;p.money=0;p.armor=0;p.kit=false;p.weapons=[];p.holdUntil=0;p.position={x:0,y:0,z:0};
+ const me = Object.hasOwn(m.players, id) ? m.players[id] : undefined;
+ const v: BombMatch = { ...m, scores: { ...m.scores }, loss: { ...m.loss }, players: Object.create(null) };
+ for (const [playerId, player] of Object.entries(m.players)) {
+  if (playerId === id) {
+   v.players[playerId] = { ...player, position: { ...player.position }, weapons: [...player.weapons] };
+   if (player.purchase) v.players[playerId].purchase = { ...player.purchase };
+  } else {
+   v.players[playerId] = {
+    id: player.id, team: player.team, alive: player.alive, plants: player.plants, defuses: player.defuses,
+    money: 0, armor: 0, kit: false, weapons: [], holdUntil: 0, position: { x: 0, y: 0, z: 0 },
+   };
+  }
  }
- if(me?.team!=='T'&&v.phase!=='planted'&&v.phase!=='result'&&v.phase!=='finished'){
-  delete v.carrier;delete v.position;
+ if (me?.team !== 'T' && v.phase !== 'planted' && v.phase !== 'result' && v.phase !== 'finished') {
+  delete v.carrier;
+  delete v.position;
+ } else if (m.position) {
+  v.position = { ...m.position };
  }
- if(v.action?.player!==id)delete v.action;
+ if (m.action?.player === id) v.action = { ...m.action, position: { ...m.action.position } };
+ else delete v.action;
+ if (m.explosion) v.explosion = { ...m.explosion, position: { ...m.explosion.position } };
  return v;
 }
 export function dropBomb(m:BombMatch,id:string){if(m.carrier!==id||m.phase!=='active')return false;m.position={...m.players[id].position};delete m.carrier;delete m.action;return true;}

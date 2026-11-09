@@ -1207,9 +1207,10 @@ export class KapsStrikeServerManager {
 
     // 2. Broadcast snapshots at snapshotRate (30 Hz) using shared precomputed room base
     if (room.tick % Math.round(1 / C.dt / SERVER_CONFIG.snapshotRate) === 0) {
-      const sharedBase = room.buildSharedSnapshotBase();
+      let sharedBase: ReturnType<StrikeRoom["buildSharedSnapshotBase"]> | undefined;
       room.players.forEach((p) => {
         if (p.isDisconnected || p.id.startsWith("bot-")) return;
+        sharedBase ??= room.buildSharedSnapshotBase();
         const snapshot = room.getSnapshotForPlayer(p.id, sharedBase);
         this.io.to(p.id).emit("strike:snapshot", snapshot);
       });
