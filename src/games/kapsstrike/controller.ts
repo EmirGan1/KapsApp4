@@ -1,3 +1,4 @@
+import { GRENADE_KEYS, type GrenadeKind } from "./grenades";
 import {FootstepTracker,stepSurface} from "./footsteps";
 import {touchAimDelta, TouchCombatAssist, type TouchCombatTarget} from './aimAssist';
 import {TeamSpectator} from './spectator';
@@ -63,6 +64,7 @@ export interface StrikeNetworkSample {
 
 export interface StrikeHUD {
   bombEquipped?:boolean;
+  utilityEquipped?:GrenadeKind;
   spectating?:string;
   spectatorCount?:number;
   spectatorNumber?:number;
@@ -183,6 +185,7 @@ export class StrikeController {
   private nextBombBeep=0;
   private lastExplosionKey="";
   private bombEquipped=false;
+  private utilityEquipped?:GrenadeKind;
   private lastDefuseAudioTick=0;
   private lastActionKind?: 'plant' | 'defuse';
   equipBomb(){this.bombEquipped=!this.bombEquipped;this.clearInput();}
@@ -352,6 +355,7 @@ export class StrikeController {
       if (!this.active || this.menuOverlay || (!this.isTouchDevice && this.usesPointerLock && document.pointerLockElement !== canvas)) return;
       e.preventDefault();
       if(this.watchingTeam&&(e.button===0||e.button===2)){this.cycleSpectator(e.button===0?1:-1);return;}
+      if(this.utilityEquipped&&(e.button===0||e.button===2)){this.throwUtility(e.button===2);return;}
       this.keys.add(`Mouse${e.button}`);
       this.handleActions(false);
     }) as EventListener);
@@ -382,6 +386,7 @@ export class StrikeController {
         const code = e.deltaY > 0 ? "WheelDown" : "WheelUp";
         this.keys.add(code);
         this.handleActions(false);
+        this.keys.delete(code);
 
       }) as EventListener,
       { passive: false }
@@ -446,10 +451,21 @@ export class StrikeController {
       const current = this.pendingWeapon || this.state.player.weapon.selected;
       let weapon: WeaponId | undefined = available.find(w => w in this.bindings && this.down(w as Action));
       if (this.down("next") || this.down("previous")) {
-        weapon = available[(available.indexOf(current) + (this.down("next") ? 1 : -1) + available.length) % available.length];
+        const slots = [...available, ...GRENADE_KEYS.filter(item=>this.canEquipUtility(item))];
+        const index = slots.indexOf(this.utilityEquipped ?? current);
+        const direction = this.down("next") ? 1 : -1;
+        const next = slots[(Math.max(0,index) + direction + slots.length) % slots.length];
+        if (next && GRENADE_KEYS.includes(next as GrenadeKind)) {
+          this.selectUtility(next as GrenadeKind);
+          return true;
+        }
+        weapon = next as WeaponId | undefined;
       }
       if (this.down("last")&&available.includes(this.previousWeapon)) weapon = this.previousWeapon;
-      if (weapon && current !== weapon) { this.previousWeapon = current; this.pendingWeapon = weapon; }
+      if (weapon) {
+        this.utilityEquipped=undefined;
+        if(current!==weapon){this.previousWeapon=current;this.pendingWeapon=weapon;}
+      }
     }
     return (Object.keys(this.bindings) as Action[]).some(a => this.down(a));
   }
@@ -783,7 +799,7 @@ export class StrikeController {
             this.touchCrouch ||
             this.down("crouch") || this.down("slide"),
           fire: autoFire || this.touchFire || this.mouseFire || this.down("fire") || (this.state.player.weapon.selected === "knife" && (this.touchAds || this.ads || this.down("ads"))),
-          ads: this.touchAds || this.ads || this.down("ads"),
+          ads: !this.utilityEquipped && (this.touchAds || this.ads || this.down("ads")),
           reload: this.pendingReload || shouldAutoReload(this.state.player.weapon, this.state.tick),
           weapon: this.pendingWeapon,
           interact:this.pendingInteract,
@@ -796,7 +812,8 @@ export class StrikeController {
         // Plant/drop/death removes ownership. Do not leave an invisible bomb
         // selection suppressing the firearm after the held model disappears.
         if(cmd.weapon||this.bombEquipped&&this.state.bomb?.carrier!==this.socket?.id)this.bombEquipped=false;
-        if(this.bombEquipped){cmd.fire=false;cmd.reload=false;cmd.ads=false;}
+        if (this.utilityEquipped && !this.canEquipUtility(this.utilityEquipped)) this.utilityEquipped=undefined;
+        if(this.bombEquipped||this.utilityEquipped){cmd.fire=false;cmd.reload=false;cmd.ads=false;}
         if(this.state.bomb?.phase==='result'){cmd.fire=false;cmd.reload=false;cmd.interact=false;}
         if(owned&&cmd.weapon&&!owned.includes(cmd.weapon))cmd.weapon=undefined;
         if(frozen&&this.state.bomb?.phase==='buy'){
@@ -907,13 +924,14 @@ export class StrikeController {
         this.state,
         this.yaw,
         this.pitch,
-        this.touchAds || this.ads || this.down("ads"),
+        !this.utilityEquipped && (this.touchAds || this.ads || this.down("ads")),
         this.accumulator / C.dt,
         this.previous,
         elapsed,
         this.correction,
         this.spectator,
-        this.bombEquipped&&(this.state.bomb?.carrier===this.socket?.id||(!this.isMultiplayer&&this.state.bomb?.carrier===this.state.player.id))
+        this.bombEquipped&&(this.state.bomb?.carrier===this.socket?.id||(!this.isMultiplayer&&this.state.bomb?.carrier===this.state.player.id)),
+        this.utilityEquipped
       );
 
       if(this.receivedInitialState && !this.notifiedReady && this.renderer.scene.isReady()){
@@ -1156,6 +1174,7 @@ export class StrikeController {
       : undefined;
 
     this.onHUD({
+      utilityEquipped:this.utilityEquipped,
       bombEquipped:this.bombEquipped&&s.bomb?.carrier===this.socket?.id,
       spectating:this.spectator?.username,
       spectatorCount:this.teamSpectator.count,
@@ -1167,7 +1186,7 @@ export class StrikeController {
       lootNotice:p.lootNoticeUntil&&p.lootNoticeUntil>s.tick?p.lootNotice:undefined,
       supplyPrompt:s.world?(()=>{const supply=nearestSupply(s.world,MAPS[s.map],p);return supply?`${supply.kind==="dropped"?"Al":"Aç"} · ${supplyLabel(supply,p)}`:undefined;})():undefined,
       hp: p.hp,
-      ads: this.touchAds || this.ads || this.down("ads"),
+      ads: !this.utilityEquipped && (this.touchAds || this.ads || this.down("ads")),
       ammo: w.ammo[w.selected],
       capacity: WEAPONS[w.selected].capacity,
       weapon: w.selected,
@@ -1204,6 +1223,7 @@ export class StrikeController {
   }
 
   private clearInput() {
+    this.utilityEquipped=undefined;
     this.keys.clear();
     this.mouseFire = false;
     this.ads = false;
@@ -1263,7 +1283,7 @@ export class StrikeController {
     const autoFire = this.settings.touchAutoFire !== false;
     const phase = this.state.bomb?.phase;
     if (!this.isTouchDevice || (!tracking && !autoFire) || this.menuOverlay || player.hp <= 0 ||
-      player.weapon.selected === 'knife' || this.bombEquipped || this.pendingWeapon ||
+      player.weapon.selected === 'knife' || this.bombEquipped || this.utilityEquipped || this.pendingWeapon ||
       (phase && phase !== 'active' && phase !== 'planted')) {
       this.touchCombat.reset();
       return false;
@@ -1339,7 +1359,23 @@ export class StrikeController {
   public setTouchSprint(sprint: boolean) { this.touchSprint = sprint; }
   public triggerReload() { this.pendingReload = true; }
   public triggerInspect() { this.renderer.inspect(); }
-  public selectWeapon(w: WeaponId) { if(this.state.bomb||!this.settings.hiddenWeapons?.includes(w)) this.pendingWeapon = w; }
+  public selectWeapon(w: WeaponId) { this.utilityEquipped=undefined; if(this.state.bomb||!this.settings.hiddenWeapons?.includes(w)) this.pendingWeapon = w; }
+  private canEquipUtility(item: GrenadeKind) {
+    const bomb = this.state.bomb;
+    return !!(this.state.player.hp>0 && bomb && ['active','planted'].includes(bomb.phase) && bomb.players[this.socket?.id??'']?.utility?.[item]);
+  }
+  public selectUtility(item?: GrenadeKind) {
+    if (item && !this.canEquipUtility(item)) return;
+    this.utilityEquipped=item;
+    if(item){this.bombEquipped=false;this.pendingWeapon=undefined;this.touchAds=false;this.ads=false;this.touchFire=false;this.mouseFire=false;this.keys.delete("Mouse0");this.keys.delete("Mouse2");}
+    this.pushHUD();
+  }
+  public throwUtility(short:boolean) {
+    const item=this.utilityEquipped;
+    if(!this.active||this.menuOverlay||!item||!this.canEquipUtility(item))return;
+    this.selectUtility();
+    this.socket?.emit('strike:bomb_action',{kind:'throw_utility',item,short});
+  }
   public triggerDemoBomb() {
     if (this.isMultiplayer) {
       this.socket?.emit("strike:bomb_action", { kind: "fast_detonate" });

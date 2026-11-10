@@ -1,3 +1,4 @@
+import { GRENADE_NAMES } from "../../../games/kapsstrike/grenades";
 import { BOMB_WIN_TARGETS } from "../../../games/kapsstrike/bomb";
 import { Maximize, Minimize } from "lucide-react";
 import StrikeDamageFeedback from "./StrikeDamageFeedback";
@@ -1488,12 +1489,12 @@ export default function KapsStrikeGame({
             </div>
             {!isMobile && (
               <div className="ks-ammo">
-                <small>{hud.bombEquipped?"BOMBA · G ile bırak":WEAPONS[hud.weapon]?.name}</small>
+                <small>{hud.utilityEquipped?GRENADE_NAMES[hud.utilityEquipped]:hud.bombEquipped?"BOMBA · G ile bırak":WEAPONS[hud.weapon]?.name}</small>
                 <strong>
-                  {hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
+                  {hud.utilityEquipped ? "1" : hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
                 </strong>
                 <span>
-                  {hud.reload > 0
+                  {hud.utilityEquipped ? "Sol tık · At | Sağ tık · Yakına bırak" : hud.reload > 0
                     ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
                     : `${label(settings.bindings?.reload||'KeyR')} · Yenile | ${label(settings.bindings?.inspect||'KeyF')} · İncele | ${label(settings.bindings?.interact||'KeyE')} · Al`}
                 </span>
@@ -2111,7 +2112,7 @@ export default function KapsStrikeGame({
         </div>
       )}
 
-      {currentRoom?.mode==='bomb'&&view==='play'&&<StrikeBombHUD touch={isMobile} onEquipBomb={()=>game.current?.equipBomb()} socket={socket} players={currentRoom.players} interactKey={settings.bindings?.interact||"KeyE"} onShopChange={open=>game.current?.setMenuOverlay(open)}/>}
+      {currentRoom?.mode==='bomb'&&view==='play'&&<StrikeBombHUD utility={hud?.utilityEquipped} onSelectUtility={item=>game.current?.selectUtility(item)} onThrowUtility={short=>game.current?.throwUtility(short)} touch={isMobile} onEquipBomb={()=>game.current?.equipBomb()} socket={socket} players={currentRoom.players} interactKey={settings.bindings?.interact||"KeyE"} onShopChange={open=>game.current?.setMenuOverlay(open)}/>}
       {/* Pause has one clear primary action; detailed settings live in dismissible panels. */}
       {view === "pause" && !panel && (
         <div className="ks-overlay ks-pause-overlay"><div className="ks-menu ks-pause-card">

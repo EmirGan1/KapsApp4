@@ -153,7 +153,7 @@ test('running down Dust II ramps preserves ground contact and allows a jump whil
 
 test('Dust II has curated A/B cover without generated supply crates',async()=>{
  const {createWorld,advanceWorld,DROP_INTERVAL}=await import('../src/games/kapsstrike/world');
- assert.equal(map.solids.filter(s=>s.id.includes('a-site-cover-crate')).length,2);
+ assert.equal(map.solids.filter(s=>s.id.includes('a-site-cover-crate')).length,3);
  assert.equal(map.solids.filter(s=>s.id.includes('b-site-cover-crate')).length,1);
  assert.ok(!MAPS.dust.solids.some(s=>/cargo-crate|crate-binding/.test(s.id)));
  const world=createWorld(map,1);

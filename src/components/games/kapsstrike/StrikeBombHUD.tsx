@@ -12,33 +12,29 @@ const categories: {name:string;items:Item[]}[] = [
   {name:'Hafif silahlar',items:['smg','shotgun','carbine']}, {name:'Tüfekler',items:['rifle','sniper','lmg','railgun']},
 ];
 const names=(item:Item)=>isGrenade(item)?GRENADE_NAMES[item]:item==='halfArmor'?'Yarım zırh · +50':item==='armor'?'Tam zırh · +100':item==='kit'?'Çözme kiti':WEAPONS[item].name;
+function GrenadeIcon({kind}:{kind:GrenadeKind}) {
+  if(kind==='frag')return <g stroke="#b7d58c" strokeWidth="2"><path d="M54 11h13l3 6 4 7-3 9-9 5-12-5-4-9 3-7z" fill="#46623c"/><path d="M51 20h20M50 26h22M54 15l-2 16m11-16 3 17M57 11V5h13l3 4" fill="none"/><circle cx="74" cy="8" r="4" fill="none"/></g>;
+  const smoke=kind==='smoke';
+  return <g><rect x="50" y="10" width="20" height="27" rx={smoke?3:6} fill={smoke?'#526f5f':'#526e88'} stroke={smoke?'#a9e7c4':'#b9e4ff'} strokeWidth="2"/><path d="M54 10V5h14l4 8" fill="none" stroke="#e2e8f0" strokeWidth="2"/><circle cx="72" cy="6" r="4" fill="none" stroke="#e2e8f0" strokeWidth="2"/>
+    {smoke?<path d="M51 18h18v5H51zm0 10h18v4H51z" fill="#a9e7c4"/>:<g fill="#c6eaff"><circle cx="56" cy="18" r="2"/><circle cx="64" cy="18" r="2"/><circle cx="56" cy="27" r="2"/><circle cx="64" cy="27" r="2"/></g>}</g>;
+}
 const phases={buy:'Hazırlık ve satın alma',active:'Raund devam ediyor',planted:'BOMBA KURULDU',result:'Raund sonucu',finished:'Maç tamamlandı'};
 
-export default function StrikeBombHUD({socket,players,interactKey,onShopChange,touch,onEquipBomb}:{socket?:Socket|null;players:NetworkPlayer[];interactKey:string;onShopChange:(open:boolean)=>void;touch:boolean;onEquipBomb:()=>void}){
+export default function StrikeBombHUD({socket,players,interactKey,onShopChange,touch,onEquipBomb,utility,onSelectUtility,onThrowUtility}:{socket?:Socket|null;players:NetworkPlayer[];interactKey:string;onShopChange:(open:boolean)=>void;touch:boolean;onEquipBomb:()=>void;utility?:GrenadeKind;onSelectUtility:(item?:GrenadeKind)=>void;onThrowUtility:(short:boolean)=>void}){
   const [bomb,setBomb]=useState<BombMatch|null>(null),[now,setNow]=useState(0),[shop,setShop]=useState(false),[message,setMessage]=useState(''),[pending,setPending]=useState(false);
-  const [utility,setUtility]=useState<GrenadeKind>();
-  const selectedUtility=useRef<GrenadeKind | undefined>(undefined);
-  const selectUtility=(value?:GrenadeKind)=>{selectedUtility.current=value;setUtility(value);};
+  const utilityRef=useRef({utility,onSelectUtility});
+  utilityRef.current={utility,onSelectUtility};
+  const selectUtility=(value?:GrenadeKind)=>utilityRef.current.onSelectUtility(value);
   const holding=useRef(false),shopRef=useRef(false),bombRef=useRef<BombMatch|null>(null),changeRef=useRef(onShopChange),dialog=useRef<HTMLDivElement>(null);
   const equipRef=useRef(onEquipBomb);equipRef.current=onEquipBomb;
   changeRef.current=onShopChange;
   const release=()=>{holding.current=false;socket?.emit('strike:bomb_action',{kind:'hold',held:false});};
   const changeShop=(open:boolean)=>{release();selectUtility();shopRef.current=open;setShop(open);setMessage('');changeRef.current(open);};
-  const throwUtility=(short:boolean)=>{
-    const item=selectedUtility.current;
-    if(!socket||!item)return;
-    selectUtility();
-    socket.timeout(4000).emit('strike:bomb_action',{kind:'throw_utility',item,short},(err:Error|null,result?:{success:boolean;error?:string})=>{
-      if(err||!result?.success)setMessage(err?'Sunucu yanıt vermedi.':result?.error??'Bomba atılamadı.');
-    });
-  };
   useEffect(()=>{
     if(!socket)return;
     const snapshot=(s:StrikeSnapshot)=>{
       if(!s.bomb)return;
       bombRef.current=s.bomb;setBomb(s.bomb);setNow(s.tick/120);
-      const selected=selectedUtility.current, me=s.bomb.players[socket.id??''];
-      if(selected&&(!me?.alive||!me.utility?.[selected]||!['active','planted'].includes(s.bomb.phase)))selectUtility();
       if(s.bomb.phase!=='buy'&&shopRef.current)changeShop(false);
     };
     const timer=setInterval(()=>{if(holding.current)socket.emit('strike:bomb_action',{kind:'hold',held:true});},100);
@@ -54,25 +50,20 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
         const item=GRENADE_KEYS[slot], state=bombRef.current;
         if(state && ['active','planted'].includes(state.phase) && state.players[socket.id??'']?.utility?.[item]){
           e.preventDefault();e.stopImmediatePropagation();
-          selectUtility(selectedUtility.current===item?undefined:item);
+          selectUtility(utilityRef.current.utility===item?undefined:item);
         }
         return;
       }
-      if(e.code==='Escape'&&selectedUtility.current)selectUtility();
+      if(e.code==='Escape'&&utilityRef.current.utility)selectUtility();
       if(e.code==='KeyG'&&!e.repeat){socket.emit('strike:bomb_action',{kind:e.shiftKey?'drop':'drop_weapon'});return;}
       if(e.code==='Digit7'&&!e.repeat){equipRef.current();return;}
       if(e.code==='KeyB'&&bombRef.current?.phase==='buy'&&!e.repeat){e.preventDefault();e.stopImmediatePropagation();changeShop(true);}
       else if(bindingFromEvent(e)===interactKey&&!e.repeat){holding.current=true;socket.emit('strike:bomb_action',{kind:'hold',held:true});}
     };
     const keyup=(e:KeyboardEvent)=>{if(e.code===interactKey.split('+').at(-1))up();};
-    const mouse=(e:MouseEvent)=>{
-      if(!selectedUtility.current || shopRef.current || !(e.target instanceof HTMLCanvasElement) || !e.target.matches('.ks-canvas') || (e.button!==0&&e.button!==2))return;
-      e.preventDefault();e.stopImmediatePropagation();throwUtility(e.button===2);
-    };
-    window.addEventListener('mousedown',mouse,true);
     socket.on('strike:snapshot',snapshot);
     window.addEventListener('keydown',down,true);window.addEventListener('keyup',keyup);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);window.addEventListener('blur',up);
-    return()=>{up();window.removeEventListener('mousedown',mouse,true);clearInterval(timer);socket.off('strike:snapshot',snapshot);window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);window.removeEventListener('blur',up);if(shopRef.current)changeRef.current(false);};
+    return()=>{up();clearInterval(timer);socket.off('strike:snapshot',snapshot);window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);window.removeEventListener('blur',up);if(shopRef.current)changeRef.current(false);};
   },[socket,interactKey]);
   useEffect(()=>{if(shop)dialog.current?.querySelector<HTMLButtonElement>('button')?.focus();},[shop]);
   if(!bomb)return null;
@@ -116,7 +107,7 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
           {GRENADE_KEYS.map((item,index)=>me.utility?.[item]&&(touch
             ? <button key={item} type="button" aria-pressed={utility===item} onClick={()=>selectUtility(utility===item?undefined:item)}>{GRENADE_NAMES[item]}</button>
             : <span key={item}>{[8,9,0][index]} · {GRENADE_NAMES[item]}</span>))}
-          {utility&&(touch?<><button type="button" onClick={()=>throwUtility(false)}>Uzağa at</button><button type="button" onClick={()=>throwUtility(true)}>Yakına bırak</button></>:<strong>{GRENADE_NAMES[utility]} · Sol tık: at · Sağ tık: yakına bırak</strong>)}
+          {utility&&(touch?<><button type="button" onClick={()=>onThrowUtility(false)}>Uzağa at</button><button type="button" onClick={()=>onThrowUtility(true)}>Yakına bırak</button></>:<strong>{GRENADE_NAMES[utility]} · Sol tık: at · Sağ tık: yakına bırak</strong>)}
         </div>}
       {!shop && message && <span role="status">{message}</span>}
       {bomb.action&&<label>{bomb.action.kind==='plant'?`Bomba kuruluyor [${typedCode}]`:'Bomba çözülüyor'}<progress max={plantDuration} value={actionElapsed}/></label>}
@@ -138,7 +129,7 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
           && hasBombPrimary(me?.weapons ?? []);
         const refundPrice = bombRefundPrice(me, item);
         const affordable = (me?.money ?? 0) >= BOMB_SHOP[item];
-        return <div key={item}><button type="button" disabled={pending||owned||slotTaken||!affordable} className={owned?'is-owned':slotTaken?'is-slot-taken':''} onClick={()=>buy(item)}><span className="ks-buy-symbol" aria-hidden="true"><svg viewBox="0 0 120 40" width="110" height="38" fill="currentColor">{armorItem?<path d="M44 2 35 9v16l25 13 25-13V9L76 2 68 9H52z"/>:item==='kit'?<path d="M35 6h50v29H35zM50 0h20v5H50zm7 12v6h-6v6h6v6h6v-6h6v-6h-6v-6z" fillRule="evenodd"/>:item==='pistol'?<path d="M20 8h65v10H54l-5 19H34l5-19H20z"/>:item==='sniper'?<path d="M3 13h90v4h24v3H72l-8 11H52l2-11H30L9 29H3zm42-9h30v7H45z"/>:item==='shotgun'?<path d="M4 12h108v5H55v7H39v-6L8 29H3z"/>:item==='smg'?<path d="M15 10h65v5h22v5H66v16H55V21H41l-3 14H25l4-16H15z"/>:<path d="M3 9h16v5h55v-4h9v4h32v5H74l-7 15H53l4-15H40l-4 12H24l4-14L3 27z"/>}</svg></span><b>{names(item)}</b><span>${BOMB_SHOP[item]}</span><small>{owned?'ENVANTERDE':slotTaken?'ZATEN ANA SİLAHIN VAR':!affordable?'YETERSİZ BAKİYE':'SATIN AL'}</small></button>{refundPrice > 0 && <button type="button" className="ks-refund-button" disabled={pending} onClick={()=>buy(item,true)}>İade et · ${refundPrice}</button>}</div>;
+        return <div key={item}><button type="button" disabled={pending||owned||slotTaken||!affordable} className={owned?'is-owned':slotTaken?'is-slot-taken':''} onClick={()=>buy(item)}><span className="ks-buy-symbol" aria-hidden="true"><svg viewBox="0 0 120 40" width="110" height="38" fill="currentColor">{isGrenade(item)?<GrenadeIcon kind={item}/>:armorItem?<path d="M44 2 35 9v16l25 13 25-13V9L76 2 68 9H52z"/>:item==='kit'?<path d="M35 6h50v29H35zM50 0h20v5H50zm7 12v6h-6v6h6v6h6v-6h6v-6h-6v-6z" fillRule="evenodd"/>:item==='pistol'?<path d="M20 8h65v10H54l-5 19H34l5-19H20z"/>:item==='sniper'?<path d="M3 13h90v4h24v3H72l-8 11H52l2-11H30L9 29H3zm42-9h30v7H45z"/>:item==='shotgun'?<path d="M4 12h108v5H55v7H39v-6L8 29H3z"/>:item==='smg'?<path d="M15 10h65v5h22v5H66v16H55V21H41l-3 14H25l4-16H15z"/>:<path d="M3 9h16v5h55v-4h9v4h32v5H74l-7 15H53l4-15H40l-4 12H24l4-14L3 27z"/>}</svg></span><b>{names(item)}</b><span>${BOMB_SHOP[item]}</span><small>{owned?'ENVANTERDE':slotTaken?'ZATEN ANA SİLAHIN VAR':!affordable?'YETERSİZ BAKİYE':'SATIN AL'}</small></button>{refundPrice > 0 && <button type="button" className="ks-refund-button" disabled={pending} onClick={()=>buy(item,true)}>İade et · ${refundPrice}</button>}</div>;
       })}</section>)}</div>
       <footer role="status">{message||'Bu raund satın aldığın ekipmanı satın alma süresi bitmeden iade edebilirsin.'}</footer>
     </div></div>}

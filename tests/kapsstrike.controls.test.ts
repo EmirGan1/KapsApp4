@@ -152,3 +152,24 @@ test('mobile auto fire emits repeatable semi-auto presses through normal weapon 
     assert.equal(update(0),false);
   } finally { MAPS.dust = original; }
 });
+
+test('weapon wheel includes owned grenades in both directions and keeps the underlying firearm',()=>{
+ const controller=Object.create(StrikeController.prototype);
+ const utility={flash:true,smoke:true};
+ Object.assign(controller,{active:true,bindings:DEFAULT_BINDINGS,keys:new Set<string>(),
+  socket:{id:'p',emit(){}},pushHUD(){},settings:{},
+  state:{player:{hp:100,weapon:{selected:'knife'}},bomb:{phase:'active',players:{p:{weapons:['pistol','knife'],utility}}}}});
+ const wheel=(key:string)=>{
+  controller.keys=new Set([key]);
+  controller.handleActions(false);
+ };
+ wheel('WheelDown');
+ assert.equal(controller.utilityEquipped,'flash');
+ wheel('WheelDown');
+ assert.equal(controller.utilityEquipped,'smoke');
+ wheel('WheelUp');
+ assert.equal(controller.utilityEquipped,'flash');
+ wheel('WheelUp');
+ assert.equal(controller.utilityEquipped,undefined);
+ assert.equal(controller.state.player.weapon.selected,'knife');
+});

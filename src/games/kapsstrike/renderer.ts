@@ -1,4 +1,4 @@
-import { SMOKE_RADIUS, type Grenade } from "./grenades";
+import { SMOKE_RADIUS, type Grenade, type GrenadeKind } from "./grenades";
 import {straightKnifeMotion} from "./knifeMotion";
 import {finishAppearance,finishTextureUrl} from "./finishAppearance";
 import {BombEffects} from './bombEffects';
@@ -129,6 +129,48 @@ export class StrikeRenderer {
   private blast?:BombEffects;
   private blastFlash?:Mesh;
   private heldBomb?:Mesh;
+  private heldUtility = new Map<GrenadeKind, TransformNode>();
+
+  private renderHeldUtility(kind: GrenadeKind | undefined, tick: number) {
+    for(const [item,root] of this.heldUtility)root.setEnabled(item===kind);
+    if(!kind)return;
+    let root=this.heldUtility.get(kind);
+    if(!root){
+      root=new TransformNode("held-utility-"+kind,this.scene);
+      root.parent=this.camera;
+      this.heldUtility.set(kind,root);
+      const mount=(mesh:Mesh,color:string,x=0,y=0,z=0)=>{
+        mesh.parent=root!;
+        mesh.position.set(x,y,z);
+        mesh.material=this.material(color,false,'metal');
+        mesh.isPickable=false;
+        mesh.renderingGroupId=2;
+        return mesh;
+      };
+      const cylinder=(name:string,height:number,diameter:number,color:string,y=0)=>mount(
+        MeshBuilder.CreateCylinder(kind+name,{height,diameter,tessellation:12},this.scene),color,0,y);
+      const frag=kind==='frag',smoke=kind==='smoke';
+      if(frag){
+        const body=mount(MeshBuilder.CreateSphere('frag-body',{diameter:.19,segments:10},this.scene),'#465d32');
+        body.scaling.y=1.22;
+        for(const y of [-.065,-.022,.022,.065])cylinder('-rib-'+y,.008,.178,'#72864b',y);
+      }else{
+        cylinder('-body',smoke?.23:.19,smoke?.16:.135,smoke?'#455c50':'#50677b');
+        for(const y of [-.07,.07])cylinder('-band-'+y,.018,smoke?.167:.142,smoke?'#a7c995':'#a6d8f2',y);
+        if(!smoke)for(const x of [-.035,.035])for(const y of [-.033,.033])
+          mount(MeshBuilder.CreateSphere('flash-port',{diameter:.017,segments:5},this.scene),'#182a3a',x,y,-.061);
+      }
+      cylinder('-cap',.035,.092,'#252b2b',.115);
+      const lever=mount(MeshBuilder.CreateBox(kind+'-lever',{width:.035,height:.16,depth:.024},this.scene),'#949c93',.078,.057,0);
+      lever.rotation.z=.25;
+      const ring=mount(MeshBuilder.CreateTorus(kind+'-pin',{diameter:.059,thickness:.006,tessellation:12},this.scene),'#bcc6c5',-.052,.13,0);
+      ring.rotation.x=Math.PI/2;
+    }
+    root.position.set(.19,-.19+Math.sin(tick*.08)*.006,.56);
+    root.rotation.set(-.17,-.3,-.25);
+    this.gunRoot.setEnabled(false);
+  }
+
   private reloadAt = 0;
   private muzzle: Mesh;
   private shadow?: ShadowGenerator;
@@ -800,6 +842,7 @@ export class StrikeRenderer {
     correction:Vec3={x:0,y:0,z:0},
     spectator?:{position:Vec3;yaw:number;pitch:number;stance:string},
     bombEquipped=false,
+    equippedUtility?:GrenadeKind,
   ) {
     this.renderUtility(state.bomb?.grenades);
     this.visualTick=state.tick;
@@ -1193,6 +1236,7 @@ export class StrikeRenderer {
         this.heldBomb.rotation.set(-0.18,-0.22,0);
       }
     }
+    this.renderHeldUtility(p.hp>0&&!showHeldBomb?equippedUtility:undefined,state.tick);
     if(state.bomb&&p.hp<=0){
       this.gunRoot.setEnabled(false);
       if(spectator&&!(state.bomb.explosion&&(this.blast?this.blast.age<2.6:state.tick*C.dt-state.bomb.explosion.at<2.6))){this.camera.position.set(spectator.position.x,spectator.position.y+(spectator.stance==='stand'?C.eye:C.crouchEye),spectator.position.z);this.camera.rotation.set(spectator.pitch,spectator.yaw,0);}
