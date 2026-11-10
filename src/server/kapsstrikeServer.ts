@@ -630,7 +630,10 @@ export class KapsStrikeServerManager {
       roomCode = "KS-" + randomBytes(8).toString("hex").toUpperCase();
     } while (this.rooms.has(roomCode));
 
-    const mapId: MapId = options.mode === "bomb" ? "district" : options.map && MAPS[options.map] ? options.map : "warehouse";
+    const requestedMap = options.map && Object.hasOwn(MAPS, options.map) ? MAPS[options.map] : undefined;
+    const mapId: MapId = options.mode === "bomb"
+      ? requestedMap?.bombSites ? requestedMap.id : "district"
+      : requestedMap?.id === "bolluca" ? "warehouse" : requestedMap?.id ?? "warehouse";
     const mode: StrikeGameMode = options.mode === "bomb" ? "bomb" : options.mode === "tdm" ? "tdm" : "ffa";
     const maxPlayers = Math.max(2, Math.min(10, Number(options.maxPlayers) || 8));
     const timeLimit = Math.max(60, Math.min(900, Number(options.timeLimit) || 300));
@@ -1014,7 +1017,7 @@ export class KapsStrikeServerManager {
     });
 
     room.bomb=undefined;
-    if(room.mode==='bomb')room.bomb=createBombMatch([...room.players.values()].map(p=>({id:p.id,team:p.team==='red'?'T':'CT',position:{...p.state.movement.position}})),0,room.bombRounds);
+    if(room.mode==='bomb')room.bomb=createBombMatch([...room.players.values()].map(p=>({id:p.id,team:p.team==='red'?'T':'CT',position:{...p.state.movement.position}})),0,room.bombRounds,MAPS[room.map].bombSites);
     this.startRoomSimulationLoop(room);
     this.broadcastRoomState(room);
     this.io.to(`strike:${room.roomCode}`).emit("strike:match_started", room.getPublicRoomState());

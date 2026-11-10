@@ -3,7 +3,7 @@ export interface Vec3 {
   y: number;
   z: number;
 }
-export type MapId = "warehouse" | "dust" | "neon" | "district";
+export type MapId = "warehouse" | "dust" | "neon" | "district" | "bolluca";
 export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol" | "knife" | "carbine" | "lmg" | "railgun";
 export interface Solid {
   id: string;
@@ -39,6 +39,10 @@ export interface MapPhotoFrame {
   height: number;
   rotationY: number;
 }
+export interface BombSite extends Vec3 {
+  id: "A" | "B";
+  radius: number;
+}
 export interface MapDefinition {
   id: MapId;
   name: string;
@@ -53,6 +57,8 @@ export interface MapDefinition {
   routes?: { name: string; points: Vec3[] }[];
   landmarks?: string[];
   photoFrames?: MapPhotoFrame[];
+  bombSites?: readonly BombSite[];
+  radarFootprint?: readonly (readonly [west: number, east: number, south: number, north: number])[];
 }
 export interface InputCommand {
   sequence: number;

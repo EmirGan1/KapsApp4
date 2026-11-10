@@ -39,7 +39,7 @@ import {
   StrikeSnapshot,
   WeaponId,
 } from "../../../games/kapsstrike/types";
-import { MAPS } from "../../../games/kapsstrike/maps";
+import { BOMB_MAPS, MAPS } from "../../../games/kapsstrike/maps";
 import { StrikeVoiceManager } from "../../../games/kapsstrike/voice";
 interface KapsStrikeGameProps {
   onBack: () => void;
@@ -172,6 +172,7 @@ export default function KapsStrikeGame({
 
   // Create Room Form
   const [createName, setCreateName] = useState(`${username}'in Odası`);
+  const [createBombMap, setCreateBombMap] = useState<MapId>("district");
   const [createMap, setCreateMap] = useState<MapId>("warehouse");
   const [createCategory, setCreateCategory] = useState<"kill" | "bomb" | null>(null);
   const [createMode, setCreateMode] = useState<"ffa" | "tdm">("tdm");
@@ -656,7 +657,7 @@ export default function KapsStrikeGame({
       "strike:create_room",
       {
         name: createName,
-        map: createCategory === 'bomb' ? 'district' : createMap,
+        map: createCategory === 'bomb' ? createBombMap : createMap,
         mode: createCategory === 'bomb' ? 'bomb' : createMode,
         bombRounds: createCategory === 'bomb' ? createBombRounds : undefined,
         maxPlayers: createMaxPlayers,
@@ -1999,7 +2000,7 @@ export default function KapsStrikeGame({
                 </header>
                 <div className="ks-room-mode-cards" aria-label="Oyun modu">
                   <button type="button" aria-pressed={createCategory === "bomb"} onClick={() => setCreateCategory("bomb")}>
-                    <small>TAKTİK · T / CT</small><strong>Bomba Kurma</strong><span>Dust II’de bomba bölgelerini savun veya ele geçir.</span>
+                    <small>TAKTİK · T / CT</small><strong>Bomba Kurma</strong><span>Dust II veya Bolluca’da bomba bölgelerini savun ya da ele geçir.</span>
                   </button>
                   <button type="button" aria-pressed={createCategory === "kill"} onClick={() => setCreateCategory("kill")}>
                     <small>HIZLI MAÇ · FFA / TDM</small><strong>Kill Yarışı</strong><span>Haritayı seç ve süre dolmadan skor hedefine ulaş.</span>
@@ -2012,13 +2013,15 @@ export default function KapsStrikeGame({
                       {Array.from({ length: 9 }, (_, i) => i + 2).map(count => <option key={count} value={count}>{count} oyuncu</option>)}
                     </select></label>
                     {createCategory === "bomb" ? <>
-                      <label>Harita<input readOnly value="Dust II" /></label>
+                      <label>Harita<select value={createBombMap} onChange={e => setCreateBombMap(e.target.value as MapId)}>
+                        {BOMB_MAPS.map(m => <option key={m.id} value={m.id}>{m.name.split(" · ")[0]}</option>)}
+                      </select></label>
                       <label>Kazanmak için gereken raund<select value={createBombRounds} onChange={e => setCreateBombRounds(Number(e.target.value))}>
                         {BOMB_WIN_TARGETS.map(target => <option key={target} value={target}>İlk {target} galibiyet</option>)}
                       </select></label>
                     </> : <>
                       <label>Harita<select value={createMap} onChange={e => setCreateMap(e.target.value as MapId)}>
-                        {Object.values(MAPS).filter(m => m.id !== "district").map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        {Object.values(MAPS).filter(m => !m.bombSites).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select></label>
                       <label>Takım düzeni<select value={createMode} onChange={e => setCreateMode(e.target.value === "ffa" ? "ffa" : "tdm")}>
                         <option value="tdm">Takım savaşı</option><option value="ffa">Herkes tek</option>
@@ -2041,7 +2044,7 @@ export default function KapsStrikeGame({
             {modeTab === "training" && !panel && (
               <>
                 <div className="ks-maps">
-                  {Object.values(MAPS).map((m) => (
+                  {Object.values(MAPS).filter(m => m.id !== "bolluca").map((m) => (
                     <button
                       key={m.id}
                       className={map === m.id ? "selected" : ""}

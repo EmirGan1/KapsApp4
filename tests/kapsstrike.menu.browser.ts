@@ -1,6 +1,7 @@
 import { createServer } from "vite";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
+import { CASES } from "../src/games/kapsstrike/cosmetics";
 const server = await createServer({
   cacheDir: "node_modules/.vite-kapsstrike-menu",
   logLevel: "error",
@@ -23,7 +24,7 @@ const server = await createServer({
   server: { host: "127.0.0.1", port: 4192, strictPort: true },
 });
 await server.listen();
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.STRIKE_CHROMIUM });
 try {
   for (const [width, height] of [
     [390, 844],
@@ -48,9 +49,15 @@ try {
     await page.goto("http://127.0.0.1:4192/__strike-menu");
     await page.getByRole("button",{name:"+ Masa aç",exact:true}).click();
     await page.getByRole("button",{name:/Bomba Kurma/i}).click();
-    assert.equal(await page.getByLabel("Harita",{exact:true}).inputValue(),"Dust II");
+    assert.equal(await page.getByLabel("Harita",{exact:true}).inputValue(),"district");
+    const bombMap = page.getByLabel("Harita", { exact: true });
+    assert.deepEqual(await bombMap.locator("option").allTextContents(), ["Dust II", "Bolluca"]);
+    await bombMap.selectOption("bolluca");
+    assert.equal(await bombMap.inputValue(), "bolluca");
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.getByLabel("Kazanmak için gereken raund").selectOption("8");
     await page.getByRole("button",{name:/Kill Yarışı/i}).click();
+    assert.equal(await page.getByLabel("Harita", { exact: true }).locator("option[value=bolluca]").count(), 0);
     await page.getByLabel("Maç süresi").selectOption("600");
     await page.getByRole("button",{name:"İptal",exact:true}).click();
     await page
@@ -58,7 +65,7 @@ try {
       .waitFor();
     await page.getByRole('button',{name:'Envanter / Kasalar',exact:true}).click();
     await page.getByRole('heading',{name:'Envanter ve Kasalar',exact:true}).waitFor();
-    assert.equal(await page.locator('.ks-case-grid button').count(),6);
+    assert.equal(await page.locator('.ks-case-grid button').count(),CASES.length);
     await page.getByRole('button',{name:'Karakterler',exact:true}).click();
     await page.getByRole('heading',{name:'Karakter / Skin',exact:true}).waitFor();
     await page.getByRole('button',{name:'Paneli kapat',exact:true}).click();

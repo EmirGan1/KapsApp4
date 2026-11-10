@@ -2,6 +2,9 @@ import {createServer} from 'vite';
 import {Server} from 'socket.io';
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
+import {MAPS} from '../src/games/kapsstrike/maps';
+const mapId=process.env.STRIKE_BOMB_MAP==='bolluca'?'bolluca':'district';
+const site=MAPS[mapId].bombSites![process.env.STRIKE_BOMB_SITE==='B'?1:0];
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
 // Keep the objective flow affordable on software WebGL; full visual QA stays the default.
 const compact=process.env.STRIKE_QA_COMPACT==='1';
@@ -9,7 +12,7 @@ const vite=await createServer({cacheDir:'node_modules/.vite-bomb-qa',logLevel:'e
 const io=new Server(vite.httpServer!,{pingTimeout:120000}),manager=new KapsStrikeServerManager(io);
 io.on('connection',socket=>{const id=Number(socket.handshake.auth.testUser);manager.register(socket,{id,username:`Tester ${id}`,avatar:null});socket.on('disconnect',()=>manager.handleDisconnect(socket,id));});
 await vite.listen();
-const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const browser=await chromium.launch({headless:true,executablePath:process.env.STRIKE_CHROMIUM,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
 const errors:string[]=[];
 try{
  const desktop=await browser.newContext({viewport:compact?{width:960,height:600}:{width:1440,height:900}}),touch=await browser.newContext({viewport:compact?{width:390,height:844}:{width:768,height:1024},isMobile:true,hasTouch:true});
@@ -23,6 +26,7 @@ try{
  }
  console.log('mode selected');
  await a.getByRole('button',{name:'+ Masa aç',exact:true}).click();await a.getByRole('button',{name:/Bomba Kurma/i}).click();
+ await a.getByLabel('Harita',{exact:true}).selectOption(mapId);
  await a.getByRole('button',{name:'Masayı oluştur',exact:true}).click();
  await a.locator('.ks-lobby-code').waitFor();
  const code=(await a.locator('.ks-lobby-code').textContent())!.trim();
@@ -30,6 +34,7 @@ try{
  await b.getByRole('button',{name:'HAZIR OL',exact:true}).click();
  await a.getByRole('button',{name:/MAÇI BAŞLAT/i}).click();
  const room=manager.rooms.get(code)!;
+ assert.equal(room.map,mapId);
  for(const p of [a,b])await p.waitForFunction(()=>(window as any).strike?.state.bomb,{},{timeout:60000});
  // Extend only the initial purchase window to allow software WebGL startup in CI.
  room.bomb!.deadline=room.tick/120+45;
@@ -59,10 +64,10 @@ try{
  await b.screenshot({path:'/tmp/strike-bomb-buy-phone.png'});
  await b.getByRole('button',{name:'Satın alma menüsünü kapat'}).click();
  await b.screenshot({path:'/tmp/strike-district-spawn.png'});
- // Test-only placement at a clear A lane; input/plant/defuse use live production transport.
+ // Test-only placement at the selected site; input/plant/defuse use live production transport.
  room.bomb!.deadline=room.tick/120;
  const ps=[...room.players.values()];
- for(const [index,p] of ps.entries()){p.state.movement.position={x:index===0?34.42208:35.92208,y:3.2,z:37.9984};p.state.movement.velocity={x:0,y:0,z:0};p.history=[];p.inputQueue=[];p.heldInput=undefined;}
+ for(const [index,p] of ps.entries()){p.state.movement.position={x:site.x+index*1.5,y:site.y,z:site.z};p.state.movement.velocity={x:0,y:0,z:0};p.history=[];p.inputQueue=[];p.heldInput=undefined;}
  await a.waitForFunction(()=>(window as any).strike.state.bomb.phase==='active');
  await a.bringToFront();
  const resume=a.getByRole('button',{name:/Oyuna dön|Oyuna Devam Et/i});if(await resume.isVisible())await resume.click();
@@ -73,6 +78,7 @@ try{
  await a.keyboard.down('KeyE');await a.waitForFunction(()=>(window as any).strike.state.bomb.phase==='planted',{},{timeout:60000});await a.keyboard.up('KeyE');
  await b.waitForFunction(()=>(window as any).strike.state.bomb.phase==='planted');
  assert.equal(room.bomb!.players[ps[0].id].plants,1);
+ assert.equal(room.bomb!.site,site.id);
  assert.equal(await b.locator('.ks-minimap text').filter({hasText:/^[AB]$/}).count(),2);
  assert.ok(await b.evaluate(()=>(window as any).strike.renderer.scene.getMeshByName('tactical-bomb').isEnabled()));
  await b.screenshot({path:'/tmp/strike-bomb-planted.png'});
@@ -89,17 +95,19 @@ try{
  await a.waitForFunction(()=>(window as any).strike.state.bomb.round===2,{},{timeout:60000});
  assert.equal(room.teamScores.blue,1);assert.equal(room.bomb!.players[ps[1].id].money,3950);
  assert.equal(errors.length,0,errors.join('\n'));
+ if(mapId==='district'){
  // Test-only Short viewpoint; screenshots document the revised approach geometry.
  ps[0].state.movement.position={x:13,y:3.2,z:24};ps[0].state.movement.velocity={x:0,y:0,z:0};
  await a.waitForFunction(()=>Math.abs((window as any).strike.state.player.movement.position.z-24)<.5);
  await a.screenshot({path:'/tmp/strike-short-cover.png'});
+ }
 
  if(!compact){
  await b.evaluate(()=>(window as any).strike.renderer.engine.stopRenderLoop());
  await a.setViewportSize({width:640,height:400});
  await a.evaluate(()=>{const c=(window as any).strike;c.updateSettings({...c.settings,quality:'high'});});
  await a.waitForFunction(()=>(window as any).strike.renderer.scene.isReady(),{},{timeout:120000});
- await a.screenshot({path:'/tmp/strike-district-high.png'});
+ await a.screenshot({path:`/tmp/strike-${mapId}-high.png`});
  }
  console.log('PASS two independent Chromium contexts: create/join/ready/start; desktop pointer-lock buy/ESC; tablet buy; phone overflow; authoritative plant/kit-defuse/score/next round; no page errors. Test placements/timer override documented.');
  // Explicitly leave: a plain network loss intentionally reserves the slot for 90 seconds.

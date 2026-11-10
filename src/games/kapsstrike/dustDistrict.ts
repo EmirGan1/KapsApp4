@@ -128,5 +128,5 @@ export function dustDistrict():MapDefinition{
    rotationY:slot.rotationY,
   });
  }
- return{id:'district',name:'Dust II · Reconstruction',subtitle:'Long A, Mid, Catwalk ve B Tunnels',bounds:58,sky:'#b9d8ec',floor:'#c7bba4',solids,photoFrames,spawns,targets:[],hazard:{x:100,z:100,r:0},routes,landmarks:Object.keys(DUST2_AREAS)};
+ return{id:'district',bombSites:BOMB_SITES,name:'Dust II · Reconstruction',subtitle:'Long A, Mid, Catwalk ve B Tunnels',bounds:58,sky:'#b9d8ec',floor:'#c7bba4',solids,photoFrames,spawns,targets:[],hazard:{x:100,z:100,r:0},routes,landmarks:Object.keys(DUST2_AREAS)};
 }

@@ -7,7 +7,6 @@ import {GRAPHICS,knifeTiming} from './presentation';
 import {CombatDebug} from './combatDebug';
 import {createKnifeRig,type KnifeRig} from './knifeRig';
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
-import {BOMB_SITES} from './bomb';
 import {cosmetic} from "./cosmetics";
 import { createCharacter } from "./character";
 import { cleanSkin } from "./skins";
@@ -228,8 +227,8 @@ export class StrikeRenderer {
       this.scene = new StrikeScene(this.engine);
       this.scene.clearColor = Color4.FromHexString(map.sky + "ff");
       this.scene.fogMode = Scene.FOGMODE_LINEAR;
-      this.scene.fogStart = map.id==='district'?95:68;
-      this.scene.fogEnd = map.id==='district'?220:175;
+      this.scene.fogStart = map.bombSites?95:68;
+      this.scene.fogEnd = map.bombSites?220:175;
       this.scene.fogColor = Color3.FromHexString(map.sky);
       this.scene.skipPointerMovePicking = true;
       this.scene.shadowsEnabled=effectiveQuality==='high';
@@ -239,14 +238,14 @@ export class StrikeRenderer {
         new Vector3(0.2, 1, 0.3),
         this.scene,
       );
-      hemi.intensity = map.id === "neon" ? 0.5 : map.id==='district'?(effectiveQuality==='high'?.85:.65):.6;
+      hemi.intensity = map.id === "neon" ? 0.5 : map.bombSites?(effectiveQuality==='high'?.85:.65):.6;
       const sun = new DirectionalLight(
         "sun",
         new Vector3(-0.4, -1, 0.3),
         this.scene,
       );
       sun.position.set(15, 35, -20);
-      sun.intensity = map.id === "neon" ? 0.45 : map.id==='district'?(effectiveQuality==='high'?1.35:.65):.65;
+      sun.intensity = map.id === "neon" ? 0.45 : map.bombSites?(effectiveQuality==='high'?1.35:.65):.65;
       if (effectiveQuality === "high") {
         this.shadow = new ShadowGenerator(2048, sun);
         this.shadow.usePoissonSampling = true;this.shadow.bias=.003;this.shadow.normalBias=.06;
@@ -266,13 +265,13 @@ export class StrikeRenderer {
         { width: 320, height: 320 },
         this.scene,
       );
-      ground.material = this.terrainMaterial(map.floor,false,map.id==='dust'?'stone':map.id==='neon'?'asphalt':'concrete');
+      ground.material = this.terrainMaterial(map.floor,false,(map.id==='dust'||map.id==='bolluca')?'stone':map.id==='neon'?'asphalt':'concrete');
       this.worldUV(ground);
       ground.receiveShadows = true;
       ground.isPickable = false;
       ground.freezeWorldMatrix();
       ground.doNotSyncBoundingInfo = true;
-      if(map.id==='district')for(const site of BOMB_SITES){
+      for(const site of map.bombSites ?? []){
         const ring=MeshBuilder.CreateTorus('plant-zone-'+site.id,{diameter:site.radius*2,thickness:.12,tessellation:64},this.scene);
         ring.position.set(site.x,site.y+.14,site.z);ring.material=this.material('#ffd078',true);ring.isPickable=false;
         ring.freezeWorldMatrix();ring.doNotSyncBoundingInfo=true;
@@ -675,8 +674,8 @@ export class StrikeRenderer {
       }
       for(const m of this.scene.meshes)if(m.name.startsWith('district-'))m.setEnabled(q!=='low'||!m.metadata?.detail);
       const sun=this.scene.getLightByName('sun') as DirectionalLight;
-      sun.intensity=this.map.id==='district'?(q==='high'?1.35:.65):this.map.id==='neon'?.45:.65;
-      this.scene.getLightByName('sky')!.intensity=this.map.id==='district'?(q==='high'?.85:.65):this.map.id==='neon'?.5:.6;
+      sun.intensity=this.map.bombSites?(q==='high'?1.35:.65):this.map.id==='neon'?.45:.65;
+      this.scene.getLightByName('sky')!.intensity=this.map.bombSites?(q==='high'?.85:.65):this.map.id==='neon'?.5:.6;
       if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(2048,sun);this.shadow.usePoissonSampling=true;this.shadow.bias=.003;this.shadow.normalBias=.06;for(const m of this.scene.meshes)if(m.receiveShadows && m.name !== 'ground')this.shadow.addShadowCaster(m);this.configureShadowRefresh();}
       if(q!=='high'&&this.shadow){this.shadow.dispose();this.shadow=undefined;}
       // Retain shared PBR textures until scene disposal. Several batches reference
@@ -741,7 +740,7 @@ export class StrikeRenderer {
       if(photographic){
         const set=surface==='stone'||(surface==='concrete'&&color===this.map.floor)?'stone':'wall';
         const load=(channel:string,gamma:boolean)=>{const key=set+'-'+channel;let t=this.photographicTextures.get(key);if(!t){t=new Texture(`/kapsstrike/materials/${key}.webp`,this.scene,false,false);t.gammaSpace=gamma;t.anisotropicFilteringLevel=16;this.photographicTextures.set(key,t);}return t;};
-        m.albedoTexture=load('albedo',true);m.albedoColor=Color3.Lerp(Color3.White(),Color3.FromHexString(color),.15);
+        m.albedoTexture=load('albedo',true);m.albedoColor=Color3.Lerp(Color3.White(),Color3.FromHexString(color),this.map.id==='bolluca'?.52:.15);
         m.bumpTexture=load('normal',false);m.bumpTexture.level=.58;m.invertNormalMapY=true;
         m.metallicTexture=load('roughness',false);m.useRoughnessFromMetallicTextureGreen=true;m.useRoughnessFromMetallicTextureAlpha=false;m.useMetallnessFromMetallicTextureBlue=false;m.metallic=0;m.roughness=1;
       }else{
