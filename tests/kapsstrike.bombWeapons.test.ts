@@ -111,6 +111,49 @@ test('full grenade throws gain range from aiming up, running forward and jumping
  assert.ok(throwGrenade(0, jumping, false, wall).position.z < 2);
 });
 
+test('frag and smoke wait for a landing after the fuse, while flash bursts midair', async () => {
+ const { FRAG_BURST_DURATION, grenadeLaunch, stepGrenade } = await import('../src/games/kapsstrike/grenades');
+ const map: MapDefinition = { ...MAPS.district, bounds: 100, solids: [
+  { id: 'platform', kind: 'box', x: 0, y: 0, z: 0, w: 5, h: 2, d: 5, color: '#888' },
+ ] };
+ const still = { x: 0, y: 0, z: 0 };
+ const dt = 1 / 120;
+ for (const kind of ['frag', 'smoke', 'flash'] as const) {
+  const grenade = grenadeLaunch('test', kind, 'p', 'T', { x: 0, y: 3.62, z: 0 },
+   { x: 0, y: 1, z: 0 }, 0, false, still);
+  let burstAt = 0;
+  for (let tick = 1; tick <= 600; tick++) {
+   if (stepGrenade(grenade, map, dt, tick * dt)) {
+    burstAt = tick * dt;
+    break;
+   }
+  }
+  if (kind === 'flash') {
+   assert.equal(burstAt, grenade.detonate);
+   assert.ok(grenade.position.y > 3.62);
+  } else {
+   assert.ok(burstAt > grenade.detonate);
+   assert.equal(grenade.position.y, 2.12);
+   assert.equal(grenade.expires, burstAt + (kind === 'frag' ? FRAG_BURST_DURATION : 11));
+   assert.equal(stepGrenade(grenade, map, dt, burstAt + dt), false);
+  }
+ }
+});
+
+test('frag damages beyond the previous radius but still respects walls and its new limit', async () => {
+ const { FRAG_RADIUS, grenadeEffect } = await import('../src/games/kapsstrike/grenades');
+ const open: MapDefinition = { ...MAPS.district, solids: [] };
+ const wall: MapDefinition = { ...open, solids: [
+  { id: 'wall', kind: 'box', x: 0, y: 0, z: 3, w: 5, h: 3, d: .2, color: '#888' },
+ ] };
+ const origin = { x: 0, y: .12, z: 0 };
+ const facing = { x: 0, y: 0, z: -1 };
+ const target = { x: 0, y: 1.62, z: 7 };
+ assert.ok(grenadeEffect('frag', open, origin, target, facing) > 0);
+ assert.equal(grenadeEffect('frag', wall, origin, target, facing), 0);
+ assert.equal(grenadeEffect('frag', open, origin, { ...origin, z: FRAG_RADIUS }, facing), 0);
+});
+
 test('late join balances TDM and queues a new bomb player until the next round',async()=>{
  const {KapsStrikeServerManager}=await import('../src/server/kapsstrikeServer');
  const user=(id:number)=>({id,username:String(id),avatar:null});

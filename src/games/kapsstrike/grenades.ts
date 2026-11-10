@@ -5,6 +5,8 @@ export const GRENADE_NAMES = { flash: "Flaş bombası", frag: "El bombası", smo
 export type GrenadeKind = keyof typeof GRENADE_NAMES;
 export const GRENADE_KEYS: GrenadeKind[] = ["flash", "frag", "smoke"];
 export const SMOKE_RADIUS = 3.8;
+export const FRAG_RADIUS = 8;
+export const FRAG_BURST_DURATION = 0.55;
 export type Grenade = {
   id: string; kind: GrenadeKind; actor: string; team: string; position: Vec3; velocity: Vec3;
   detonate: number; expires?: number;
@@ -52,22 +54,31 @@ export function stepGrenade(grenade: Grenade, map: MapDefinition, dt: number, no
   const p = grenade.position, v = grenade.velocity;
   v.y -= 16 * dt;
   const next = {x:p.x+v.x*dt,y:p.y+v.y*dt,z:p.z+v.z*dt};
-  const floor = support(map,next,p.y);
+  const floor = support(map, next, p.y);
+  const floorHeight = floor + .12;
+  const hitsFloor = v.y <= 0 && next.y <= floorHeight;
+  if (hitsFloor) next.y = floorHeight;
+
+  let touchesGround = false;
   if (!grenadeLineClear(map,p,next) || Math.abs(next.x)>map.bounds || Math.abs(next.z)>map.bounds) {
     v.x *= -.28; v.z *= -.28; v.y = Math.max(0,-v.y * .22);
-  } else if (next.y <= floor + .12) {
-    grenade.position = {...next,y:floor+.12};
-    v.x *= .56; v.z *= .56; v.y = Math.abs(v.y) > 2 ? -v.y * .22 : 0;
-  } else grenade.position = next;
-  if (now < grenade.detonate) return false;
-  grenade.expires = now + (grenade.kind === "smoke" ? 11 : .23);
+  } else {
+    grenade.position = next;
+    if (hitsFloor) {
+      touchesGround = true;
+      v.x *= .56; v.z *= .56; v.y = Math.abs(v.y) > 2 ? -v.y * .22 : 0;
+    }
+  }
+
+  if (now < grenade.detonate || (grenade.kind !== "flash" && !touchesGround)) return false;
+  grenade.expires = now + (grenade.kind === "smoke" ? 11 : grenade.kind === "frag" ? FRAG_BURST_DURATION : .23);
   return true;
 }
 
 export function grenadeEffect(kind: GrenadeKind, map: MapDefinition, origin: Vec3, eye: Vec3, facing: Vec3) {
   const dx=origin.x-eye.x,dy=origin.y-eye.y,dz=origin.z-eye.z;
   const distance=Math.hypot(dx,dy,dz);
-  const range=kind==="flash"?15:6;
+  const range=kind==="flash"?15:FRAG_RADIUS;
   if (kind==="smoke" || distance>=range || !grenadeLineClear(map,origin,eye)) return 0;
   if (kind==="frag") return Math.ceil(82*(1-distance/range));
   const dot=distance>.001?(dx*facing.x+dy*facing.y+dz*facing.z)/distance:1;
