@@ -1,5 +1,5 @@
 import {FootstepTracker,stepSurface} from "./footsteps";
-import {tabletAimDelta,touchAimFriction} from './aimAssist';
+import {touchAimDelta} from './aimAssist';
 import {TeamSpectator} from './spectator';
 import {nearestSupply,supplyLabel} from './world';
 import { cleanBindings, held, Bindings, Action } from "./controls";
@@ -1232,24 +1232,29 @@ export class StrikeController {
   }
 
   public addTouchLook(deltaX: number, deltaY: number) {
-    if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
-    // Discard multitouch jumps or coordinate teleporting
+    if (!this.active || this.menuOverlay || !this.isTouchDevice || !Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+    // Discard multitouch jumps or coordinate teleporting.
     if (Math.hypot(deltaX, deltaY) > 75) return;
-    const clampedX = clamp(deltaX, -30, 30);
-    const clampedY = clamp(deltaY, -30, 30);
-    const p=this.state.player,m=p.movement,eye={...m.position,y:m.position.y+(m.stance==='stand'?C.eye:C.crouchEye)};
-    const targets=this.isMultiplayer?this.remotePlayerList.filter(r=>r.id!==p.id&&r.id!==this.socket?.id).map(r=>({position:r.position,hp:r.hp,friendly:this.localTeam!=='none'&&r.team===this.localTeam})):this.state.targets;
     const sensitivity = (this.settings.mobileSensitivity || this.settings.sensitivity) * .003;
-    let delta = { yaw: clampedX * sensitivity, pitch: clampedY * sensitivity * (this.settings.invertY ? -1 : 1) };
-    if (this.isTouchDevice && this.settings.touchAimAssist !== false && p.hp > 0 && p.weapon.selected !== 'knife') {
-      const aiming = this.touchAds || this.ads;
-      const tablet = navigator.maxTouchPoints > 0 && Math.min(window.screen.width, window.screen.height) >= 600;
-      if (tablet) {
-        delta = tabletAimDelta(eye, this.yaw, this.pitch, delta, targets, MAPS[this.state.map], aiming);
-      } else {
-        const friction = touchAimFriction(eye, this.yaw, this.pitch, targets, MAPS[this.state.map], aiming);
-        delta = { yaw: delta.yaw * friction, pitch: delta.pitch * friction };
-      }
+    let delta = {
+      yaw: clamp(deltaX, -30, 30) * sensitivity,
+      pitch: clamp(deltaY, -30, 30) * sensitivity * (this.settings.invertY ? -1 : 1),
+    };
+    const player = this.state.player;
+    if (this.settings.touchAimAssist !== false && player.hp > 0 && player.weapon.selected !== 'knife' && (delta.yaw || delta.pitch)) {
+      const movement = player.movement;
+      const eye = { ...movement.position, y: movement.position.y + (movement.stance === 'stand' ? C.eye : C.crouchEye) };
+      const targets = this.isMultiplayer
+        ? this.remotePlayerList
+          .filter(remote => remote.connected !== false && remote.id !== player.id && remote.id !== this.socket?.id)
+          .map(remote => ({
+            position: remote.position,
+            hp: remote.hp,
+            crouched: remote.stance !== 'stand',
+            friendly: this.localTeam !== 'none' && remote.team === this.localTeam,
+          }))
+        : this.state.targets;
+      delta = touchAimDelta(eye, this.yaw, this.pitch, delta, targets, MAPS[this.state.map], this.touchAds || this.ads);
     }
     this.yaw += delta.yaw;
     this.pitch = clamp(this.pitch + delta.pitch, -1.48, 1.48);

@@ -1,14 +1,14 @@
 import type { MapDefinition, Vec3 } from './types';
 import { collisionSolids, raySolid } from './physics';
 
-type AimTarget = { position: Vec3; hp: number; friendly?: boolean };
+type AimTarget = { position: Vec3; hp: number; friendly?: boolean; crouched?: boolean };
 
 function visibleAimOffset(eye: Vec3, yaw: number, pitch: number, targets: AimTarget[], map: MapDefinition, radius: number, range: number) {
   let closest: { yaw: number; pitch: number; angle: number } | undefined;
   for (const target of targets) {
     if (target.hp <= 0 || target.friendly) continue;
     const x = target.position.x - eye.x;
-    const y = target.position.y + 1.05 - eye.y;
+    const y = target.position.y + (target.crouched ? .65 : 1.05) - eye.y;
     const z = target.position.z - eye.z;
     const distance = Math.hypot(x, y, z);
     if (distance < 1 || distance > range) continue;
@@ -18,34 +18,40 @@ function visibleAimOffset(eye: Vec3, yaw: number, pitch: number, targets: AimTar
     const angle = Math.hypot(deltaYaw, deltaPitch);
     if (angle >= (closest?.angle ?? radius)) continue;
     const direction = { x: x / distance, y: y / distance, z: z / distance };
-    if (collisionSolids(map).some(solid => !solid.detail && raySolid(eye, direction, solid, distance) < distance - .1)) continue;
+    if (collisionSolids(map).some(solid => raySolid(eye, direction, solid, distance) < distance)) continue;
     closest = { yaw: deltaYaw, pitch: deltaPitch, angle };
   }
   return closest;
 }
 
-export function touchAimFriction(eye: Vec3, yaw: number, pitch: number, targets: AimTarget[], map: MapDefinition, aiming = false) {
-  const radius = aiming ? .075 : .06;
-  const target = visibleAimOffset(eye, yaw, pitch, targets, map, radius, 35);
-  return target ? 1 - (1 - target.angle / radius) * (aiming ? .32 : .22) : 1;
-}
-
-export function tabletAimDelta(eye: Vec3, yaw: number, pitch: number, delta: { yaw: number; pitch: number }, targets: AimTarget[], map: MapDefinition, aiming: boolean) {
+export function touchAimDelta(
+  eye: Vec3, yaw: number, pitch: number, delta: { yaw: number; pitch: number },
+  targets: AimTarget[], map: MapDefinition, aiming: boolean,
+) {
   const speed = Math.hypot(delta.yaw, delta.pitch);
   const radius = aiming ? .09 : .075;
   if (speed === 0 || speed >= radius) return delta;
-  const target = visibleAimOffset(eye, yaw, pitch, targets, map, radius, aiming ? 35 : 26);
+  const target = visibleAimOffset(eye, yaw, pitch, targets, map, radius, aiming ? 35 : 30);
   if (!target) return delta;
 
-  const proximity = 1 - target.angle / radius;
-  const strength = proximity * (1 - speed / radius);
-  const friction = 1 - strength * (aiming ? .42 : .31);
-  // Reinforce only the axes the player is already moving toward the target.
+  const strength = (1 - target.angle / radius) * (1 - speed / radius);
+  const toward = delta.yaw * target.yaw + delta.pitch * target.pitch > 0;
+  if (!toward) {
+    // Slow only near the center. Turning away farther out remains under full player control.
+    const center = Math.max(0, 1 - target.angle / (radius * .35));
+    const friction = 1 - center * strength * (aiming ? .30 : .23);
+    return { yaw: delta.yaw * friction, pitch: delta.pitch * friction };
+  }
+
   const steer = (input: number, remaining: number) => {
-    const slowed = input * friction;
-    if (input * remaining <= 0) return slowed;
-    const room = Math.max(0, Math.abs(remaining) - Math.abs(slowed));
-    return slowed + Math.sign(input) * Math.min(room, Math.abs(input) * strength * .18);
+    if (input * remaining <= 0) return input;
+    const movement = Math.abs(input);
+    const room = Math.abs(remaining);
+    // Resist overshoot without locking the crosshair, and never add movement past the target.
+    const adjusted = movement >= room
+      ? movement - (movement - room) * strength * (aiming ? .30 : .23)
+      : movement + Math.min(room - movement, movement * strength * (aiming ? .16 : .12));
+    return Math.sign(input) * adjusted;
   };
   return { yaw: steer(delta.yaw, target.yaw), pitch: steer(delta.pitch, target.pitch) };
 }
