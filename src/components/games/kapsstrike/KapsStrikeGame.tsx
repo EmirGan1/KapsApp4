@@ -1,3 +1,4 @@
+import { BOMB_WIN_TARGETS } from "../../../games/kapsstrike/bomb";
 import { Maximize, Minimize } from "lucide-react";
 import StrikeDamageFeedback from "./StrikeDamageFeedback";
 import StrikeBombHUD from "./StrikeBombHUD";
@@ -34,7 +35,6 @@ import {
   KillFeedEntry,
   MatchStats,
   StrikeTeam,
-  StrikeGameMode,
   StrikeSnapshot,
   WeaponId,
 } from "../../../games/kapsstrike/types";
@@ -70,7 +70,6 @@ export default function KapsStrikeGame({
   const [loadStage, setLoadStage] = useState("");
 
   // General state
-  const [category,setCategory]=useState<"kill"|"bomb"|null>(null);
   const [modeTab, setModeTab] = useState<"multiplayer" | "training">("multiplayer");
   const [map, setMap] = useState<MapId>("warehouse");
   const [settings, setSettings] = useState<StrikeSettings>(() => {
@@ -173,7 +172,10 @@ export default function KapsStrikeGame({
   // Create Room Form
   const [createName, setCreateName] = useState(`${username}'in Odası`);
   const [createMap, setCreateMap] = useState<MapId>("warehouse");
-  const [createMode, setCreateMode] = useState<StrikeGameMode>("tdm");
+  const [createCategory, setCreateCategory] = useState<"kill" | "bomb" | null>(null);
+  const [createMode, setCreateMode] = useState<"ffa" | "tdm">("tdm");
+  const [createBombRounds, setCreateBombRounds] = useState(7);
+  const isBombRoom = currentRoom?.mode === "bomb";
   const [createMaxPlayers, setCreateMaxPlayers] = useState(8);
   const [createDuration, setCreateDuration] = useState(300);
   const [createScoreLimit, setCreateScoreLimit] = useState(30);
@@ -646,15 +648,16 @@ export default function KapsStrikeGame({
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!socket) return;
+    if (!socket || !createCategory) return;
     setError("");
 
     socket.emit(
       "strike:create_room",
       {
         name: createName,
-        map: category==='bomb'?'district':createMap,
-        mode: category==='bomb'?'bomb':createMode,
+        map: createCategory === 'bomb' ? 'district' : createMap,
+        mode: createCategory === 'bomb' ? 'bomb' : createMode,
+        bombRounds: createCategory === 'bomb' ? createBombRounds : undefined,
         maxPlayers: createMaxPlayers,
         timeLimit: createDuration,
         scoreLimit: createScoreLimit,
@@ -674,7 +677,6 @@ export default function KapsStrikeGame({
   };
 
   const handleQuickMatch = () => {
-    if(category==='bomb'){setPanel('create_room');return;}
     if (!socket) return;
     setError("");
     socket.emit(
@@ -871,9 +873,9 @@ export default function KapsStrikeGame({
     return()=>{active=false;socket?.off('connect',sync);};
   },[socket,currentUserId]);
   useEffect(()=>{
-    const open=(e:KeyboardEvent)=>{if(e.code!=='KeyB'||e.repeat||view!=='play'||category==='bomb'||(e.target instanceof HTMLElement&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)))return;e.preventDefault();game.current?.pause();setPanel('weapons');};
+    const open=(e:KeyboardEvent)=>{if(e.code!=='KeyB'||e.repeat||view!=='play'||isBombRoom||(e.target instanceof HTMLElement&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)))return;e.preventDefault();game.current?.pause();setPanel('weapons');};
     window.addEventListener('keydown',open);return()=>window.removeEventListener('keydown',open);
-  },[view,category]);
+  },[view,isBombRoom]);
   const [loadoutBusy,setLoadoutBusy]=useState(false);
   const [loadoutError,setLoadoutError]=useState('');
   const toggleWeapon=(id:WeaponId)=>{
@@ -886,7 +888,6 @@ export default function KapsStrikeGame({
 
   const isHost = currentRoom?.hostId === currentUserId;
   const filteredRooms = rooms.filter((r) => {
-    if((r.mode==='bomb')!==(category==='bomb'))return false;
     const matchQuery = r.name.toLowerCase().includes(roomFilter.toLowerCase());
     const matchMode = roomModeFilter === "all" || r.mode === roomModeFilter;
     return matchQuery && matchMode;
@@ -1218,7 +1219,7 @@ export default function KapsStrikeGame({
                 transform: `translateX(-50%) scale(${touchLayout.weapon.size})`,
               }}
             >
-              {(hud?.inventory || WEAPON_ORDER.slice(0, 6)).filter(w=>category==='bomb'||!settings.hiddenWeapons?.includes(w)).map((wId) => (
+              {(hud?.inventory || WEAPON_ORDER.slice(0, 6)).filter(w=>isBombRoom||!settings.hiddenWeapons?.includes(w)).map((wId) => (
                 <button
                   key={wId}
                   type="button"
@@ -1628,8 +1629,8 @@ export default function KapsStrikeGame({
                   </h1>
                   <span className="text-xs text-slate-400">
                     Harita: <b>{MAPS[currentRoom.map]?.name}</b> · Mod:{" "}
-                    <b>{currentRoom.mode === "bomb" ? "Bomba Kurma · MR6" : currentRoom.mode !== "ffa" ? "Takım Savaşı" : "Herkes Tek"}</b> · Süre:{" "}
-                    <b>{Math.round(currentRoom.timeLimit / 60)} dk</b>
+                    <b>{currentRoom.mode === "bomb" ? "Bomba Kurma" : currentRoom.mode !== "ffa" ? "Takım Savaşı" : "Herkes Tek"}</b> · {currentRoom.mode === "bomb" ? "Hedef: " : "Süre: "}
+                    <b>{currentRoom.mode === "bomb" ? `İlk ${currentRoom.bombRounds ?? 7} galibiyet` : `${Math.round(currentRoom.timeLimit / 60)} dk`}</b>
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
@@ -1852,10 +1853,10 @@ export default function KapsStrikeGame({
                     ⚡ Hızlı Maç Bul
                   </button>
                   <button
-                    onClick={() => setPanel("create_room")}
+                    onClick={() => { setCreateCategory(null); setError(""); setPanel("create_room"); }}
                     className="ks-primary"
                   >
-                    + Oda Oluştur
+                    + Masa aç
                   </button>
                   <form onSubmit={handleJoinByCode} className="flex gap-2">
                     <input
@@ -1899,7 +1900,7 @@ export default function KapsStrikeGame({
                       className="ks-filter-select"
                     >
                       <option value="all">Tüm Modlar</option>
-                      {category==='bomb'&&<option value="bomb">Bomba Kurma (T / CT)</option>}<option value="tdm">Takım Savaşı (TDM)</option>
+                      <option value="bomb">Bomba Kurma (T / CT)</option><option value="tdm">Takım Savaşı (TDM)</option>
                       <option value="ffa">Herkes Tek (FFA)</option>
                     </select>
                   </div>
@@ -1990,94 +1991,48 @@ export default function KapsStrikeGame({
 
             {/* CREATE ROOM PANEL */}
             {panel === "create_room" && (
-              <form onSubmit={handleCreateRoom} className="ks-settings">
-                <h2>Yeni Çok Oyunculu Oda Kur</h2>
-                <label>
-                  Oda Adı
-                  <input
-                    type="text"
-                    value={createName}
-                    onChange={(e) => setCreateName(e.target.value)}
-                    required
-                  />
-                </label>
-                <label>
-                  Harita
-                  <select
-                    value={createMap}
-                    disabled={category==='bomb'}
-                    onChange={(e) => setCreateMap(e.target.value as MapId)}
-                  >
-                    {Object.values(MAPS).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} ({m.subtitle})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Oyun Modu
-                  <select
-                    value={createMode}
-                    disabled={category==='bomb'}
-                    onChange={(e) => setCreateMode(e.target.value as StrikeGameMode)}
-                  >
-                    {category==='bomb'&&<option value="bomb">Bomba Kurma (T / CT)</option>}<option value="tdm">Takım Savaşı (TDM - Red vs Blue)</option>
-                    <option value="ffa">Herkes Tek (FFA - Deathmatch)</option>
-                  </select>
-                </label>
-                <label>
-                  Maksimum Oyuncu ({createMaxPlayers})
-                  <input
-                    type="range"
-                    min="2"
-                    max="10"
-                    step="1"
-                    value={createMaxPlayers}
-                    onChange={(e) => setCreateMaxPlayers(Number(e.target.value))}
-                  />
-                </label>
-                <label>
-                  Maç Süresi
-                  <select
-                    value={createDuration}
-                    disabled={category==='bomb'}
-                    onChange={(e) => setCreateDuration(Number(e.target.value))}
-                  >
-                    <option value={180}>3 Dakika</option>
-                    <option value={300}>5 Dakika</option>
-                    <option value={600}>10 Dakika</option>
-                  </select>
-                </label>
-                <label>
-                  Skor Limiti ({createScoreLimit} Kill)
-                  <input
-                    type="range"
-                    min="10"
-                    max="60"
-                    step="5"
-                    value={createScoreLimit}
-                    disabled={category==='bomb'}
-                    onChange={(e) => setCreateScoreLimit(Number(e.target.value))}
-                  />
-                </label>
-                <label>
-                  Oda Şifresi (İsteğe Bağlı)
-                  <input
-                    type="text"
-                    placeholder="Şifresiz için boş bırakın"
-                    value={createPassword}
-                    onChange={(e) => setCreatePassword(e.target.value)}
-                  />
-                </label>
-                <div className="flex gap-3 mt-4">
-                  <button type="submit" className="ks-primary">
-                    Odayı Oluştur
+              <form onSubmit={handleCreateRoom} className="ks-room-builder">
+                <header>
+                  <div><h2>Masa aç</h2><p>Modu seç, ardından aynı ekranda masanın kurallarını belirle.</p></div>
+                  <button type="button" onClick={() => { setPanel(null); setError(""); }}>İptal</button>
+                </header>
+                <div className="ks-room-mode-cards" aria-label="Oyun modu">
+                  <button type="button" aria-pressed={createCategory === "bomb"} onClick={() => setCreateCategory("bomb")}>
+                    <small>TAKTİK · T / CT</small><strong>Bomba Kurma</strong><span>Dust II’de bomba bölgelerini savun veya ele geçir.</span>
                   </button>
-                  <button type="button" onClick={() => setPanel(null)}>
-                    İptal
+                  <button type="button" aria-pressed={createCategory === "kill"} onClick={() => setCreateCategory("kill")}>
+                    <small>HIZLI MAÇ · FFA / TDM</small><strong>Kill Yarışı</strong><span>Haritayı seç ve süre dolmadan skor hedefine ulaş.</span>
                   </button>
                 </div>
+                {createCategory && <>
+                  <div className="ks-room-builder-fields">
+                    <label>Masa adı<input required maxLength={32} value={createName} onChange={e => setCreateName(e.target.value)} /></label>
+                    <label>Oyuncu sınırı<select value={createMaxPlayers} onChange={e => setCreateMaxPlayers(Number(e.target.value))}>
+                      {Array.from({ length: 9 }, (_, i) => i + 2).map(count => <option key={count} value={count}>{count} oyuncu</option>)}
+                    </select></label>
+                    {createCategory === "bomb" ? <>
+                      <label>Harita<input readOnly value="Dust II" /></label>
+                      <label>Kazanmak için gereken raund<select value={createBombRounds} onChange={e => setCreateBombRounds(Number(e.target.value))}>
+                        {BOMB_WIN_TARGETS.map(target => <option key={target} value={target}>İlk {target} galibiyet</option>)}
+                      </select></label>
+                    </> : <>
+                      <label>Harita<select value={createMap} onChange={e => setCreateMap(e.target.value as MapId)}>
+                        {Object.values(MAPS).filter(m => m.id !== "district").map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select></label>
+                      <label>Takım düzeni<select value={createMode} onChange={e => setCreateMode(e.target.value === "ffa" ? "ffa" : "tdm")}>
+                        <option value="tdm">Takım savaşı</option><option value="ffa">Herkes tek</option>
+                      </select></label>
+                      <label>Maç süresi<select value={createDuration} onChange={e => setCreateDuration(Number(e.target.value))}>
+                        {[3, 5, 10, 15].map(minutes => <option key={minutes} value={minutes * 60}>{minutes} dakika</option>)}
+                      </select></label>
+                      <label>Skor hedefi<select value={createScoreLimit} onChange={e => setCreateScoreLimit(Number(e.target.value))}>
+                        {[10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(score => <option key={score} value={score}>{score} skor</option>)}
+                      </select></label>
+                    </>}
+                    <label>Masa şifresi <input type="password" placeholder="İsteğe bağlı" value={createPassword} onChange={e => setCreatePassword(e.target.value)} /></label>
+                  </div>
+                  <button type="submit" className="ks-primary">Masayı oluştur</button>
+                </>}
               </form>
             )}
 
@@ -2157,8 +2112,6 @@ export default function KapsStrikeGame({
       )}
 
       {currentRoom?.mode==='bomb'&&view==='play'&&<StrikeBombHUD touch={isMobile} onEquipBomb={()=>game.current?.equipBomb()} socket={socket} players={currentRoom.players} interactKey={settings.bindings?.interact||"KeyE"} onShopChange={open=>game.current?.setMenuOverlay(open)}/>}
-      {view==='menu'&&<button className="ks-mode-back" onClick={()=>setCategory(null)}>Oyun modu seçimi</button>}
-      {view==='menu'&&category===null&&<div className="ks-mode-gate"><h1>KapsStrike · Oyununu seç</h1><div><button onClick={()=>{setCategory('kill');setCreateMode('tdm');setCreateMap('warehouse');}}>KILL YARIŞI<small>Mevcut FFA ve takım savaşı · Haritalar, kasalar ve envanter</small></button><button onClick={()=>{setCategory('bomb');setModeTab('multiplayer');setCreateMode('bomb');setCreateMap('district');}}>BOMBA KURMA<small>Takımını seç, bomba bölgelerini savun veya bombayı kur. Raundları kazan ve zafere ulaş.</small></button></div></div>}
       {/* Pause has one clear primary action; detailed settings live in dismissible panels. */}
       {view === "pause" && !panel && (
         <div className="ks-overlay ks-pause-overlay"><div className="ks-menu ks-pause-card">
@@ -2170,7 +2123,7 @@ export default function KapsStrikeGame({
             <button aria-label="Kontroller" onClick={()=>setPanel('controls')}>Kontroller<small>Tuş atamaları ve silah inceleme</small></button>
             <button onClick={()=>setPanel('input')}>Mobil Kontroller / Jiroskop<small>Dokunma, hassasiyet ve sensör</small></button>
             <button onClick={()=>setPanel('touch_layout')}>🎮 PUBG Tuş Düzeni<small>Tuşları ekranda serbestçe taşı & boyutlandır</small></button>
-            <button onClick={()=>setPanel('inventory')}>Envanter / Kasalar<small>Kaplamalarını seç</small></button>{category!=='bomb'&&<button onClick={()=>setPanel('weapons')}>Silah düzeni · B<small>Gizle veya geri al</small></button>}<button aria-label="Karakter" onClick={()=>setPanel('skins')}>Karakter<small>Görünümünü seç</small></button>
+            <button onClick={()=>setPanel('inventory')}>Envanter / Kasalar<small>Kaplamalarını seç</small></button>{!isBombRoom&&<button onClick={()=>setPanel('weapons')}>Silah düzeni · B<small>Gizle veya geri al</small></button>}<button aria-label="Karakter" onClick={()=>setPanel('skins')}>Karakter<small>Görünümünü seç</small></button>
           </nav>
           <button className="ks-mic-toggle" onClick={toggleVoice}>{isVoiceMuted?'Mikrofonu aç':'Mikrofonu sustur'}</button>
           <button className="ks-leave" onClick={()=>{setPanel(null);exit();}}>Menüye / Lobiye Dön</button>

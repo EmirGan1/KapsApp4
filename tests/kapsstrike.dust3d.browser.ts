@@ -19,11 +19,11 @@ try{
   p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')console.log('WEBGL',m.text());});
   await p.addInitScript(()=>localStorage.setItem('kapsstrike-settings',JSON.stringify({quality:'low',bindings:{fire:'KeyH'}})));
   await p.goto(`http://127.0.0.1:4198/__bomb?user=${i+1}`);
-  await p.getByRole('button',{name:/BOMBA KURMA/}).click();
+
  }
  console.log('mode selected');
- await a.getByRole('button',{name:'+ Oda Oluştur',exact:true}).click();
- await a.getByRole('button',{name:'Odayı Oluştur',exact:true}).click();
+ await a.getByRole('button',{name:'+ Masa aç',exact:true}).click();await a.getByRole('button',{name:/Bomba Kurma/i}).click();
+ await a.getByRole('button',{name:'Masayı oluştur',exact:true}).click();
  await a.locator('.ks-lobby-code').waitFor();
  const code=(await a.locator('.ks-lobby-code').textContent())!.trim();
  await b.getByPlaceholder('Oda kodu',{exact:true}).fill(code);await b.getByRole('button',{name:'Koda Katıl',exact:true}).click();

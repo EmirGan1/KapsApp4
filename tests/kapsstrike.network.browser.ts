@@ -66,10 +66,10 @@ try {
   await a.getByRole('button',{name:'İptal',exact:true}).click();
   await a.getByRole("button",{name:"Paneli kapat",exact:true}).click();
   assert.equal(await a.evaluate(()=>JSON.parse(localStorage.getItem('kapsstrike-settings')!).bindings.forward),'KeyI');
-  await a.getByRole("button",{name:"+ Oda Oluştur",exact:true}).click();
-  await a.getByLabel("Oyun Modu").selectOption("ffa");
+  await a.getByRole("button",{name:"+ Masa aç",exact:true}).click();await a.getByRole('button',{name:/Kill Yarışı/i}).click();
+  await a.getByLabel("Takım düzeni").selectOption("ffa");
   await a.getByLabel(/^Harita/).selectOption(process.env.STRIKE_TEST_MAP || "warehouse");
-  await a.getByRole("button",{name:"Odayı Oluştur",exact:true}).click();
+  await a.getByRole("button",{name:"Masayı oluştur",exact:true}).click();
   await a.locator('.ks-lobby-code').waitFor();
   const code=(await a.locator('.ks-lobby-code').textContent())!.trim();
   await b.getByPlaceholder('Oda kodu',{exact:true}).fill(code);

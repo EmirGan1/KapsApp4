@@ -46,11 +46,13 @@ try {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("http://127.0.0.1:4192/__strike-menu");
-    await page.getByRole("button",{name:/BOMBA KURMA/}).waitFor();
-    assert.ok(await page.getByRole("button",{name:/BOMBA KURMA/}).isVisible());
-    await page.getByRole("button",{name:/BOMBA KURMA/}).click();
-    await page.getByRole("button",{name:"Oyun modu seçimi",exact:true}).click();
-    await page.getByRole("button",{name:/KILL YARIŞI/}).click();
+    await page.getByRole("button",{name:"+ Masa aç",exact:true}).click();
+    await page.getByRole("button",{name:/Bomba Kurma/i}).click();
+    assert.equal(await page.getByLabel("Harita",{exact:true}).inputValue(),"Dust II");
+    await page.getByLabel("Kazanmak için gereken raund").selectOption("8");
+    await page.getByRole("button",{name:/Kill Yarışı/i}).click();
+    await page.getByLabel("Maç süresi").selectOption("600");
+    await page.getByRole("button",{name:"İptal",exact:true}).click();
     await page
       .getByText("Bu oyun WebGL destekli", { exact: false })
       .waitFor();

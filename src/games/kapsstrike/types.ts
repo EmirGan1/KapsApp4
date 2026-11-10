@@ -278,6 +278,7 @@ export interface StrikeRoomState {
   status: StrikeRoomStatus;
   maxPlayers: number;
   scoreLimit: number;
+  bombRounds?: number;
   timeLimit: number; // in seconds
   timeLeft: number; // in seconds
   hostId: number;

@@ -28,15 +28,6 @@ export function dustDistrict():MapDefinition{
   box('city-block',p.x,0,p.z,w*cell,h,d*cell,['#c8b99e','#d4c5ac','#bcae96'][(x+y)%3]);
   box('cornice',p.x,h,p.z,w*cell+.08,.15,d*cell+.08,'#e2d2b8',true,'stone');
  }
- // Visible window and shutter compositions along exposed faces, outside walkable space.
- for(let y=1;y<n-1;y+=2)for(let x=1;x<n-1;x+=2){
-  if(!closed[y][x])continue;
-  for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]])if(!closed[y+dy][x+dx]){
-   const p=dust2Point(x*8+4+dx*4,y*8+4+dy*4);
-   box('window',p.x,3,p.z,dx?.03:.65,.95,dy?.03:.65,'#57716e',true,'glass');
-   box('shutter',p.x-dx*.04,3,p.z+dy*.04,dx?.06:.88,1.05,dy?.06:.88,'#718073',true,'wood');
-  }
- }
  const walkable=(x:number,z:number)=>{const ix=Math.floor(x/cell+64),iy=Math.floor(64-z/cell);return ix>=0&&iy>=0&&ix<n&&iy<n&&!closed[iy][ix];};
  for(const name of ['A Long Doors','Mid Doors'] as const){
   const p=dust2Point(DUST2_AREAS[name][0],DUST2_AREAS[name][1]);

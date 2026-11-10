@@ -20,3 +20,20 @@ test('only the current buy-phase firearm can be refunded once for its purchase p
  assert.ok(buyBombEquipment(m,p.id,'smg',3));
  assert.equal(refundBombEquipment(m,p.id,'smg',m.deadline),false);
 });
+
+test('armor and defuse kit refunds restore the previous loadout and cannot be repeated',()=>{
+ const {m}=setup();
+ const ct=m.players.q;
+ ct.money=3000;ct.armor=17;
+ assert.ok(buyBombEquipment(m,'q','halfArmor',1));
+ assert.ok(buyBombEquipment(m,'q','armor',1));
+ assert.ok(buyBombEquipment(m,'q','kit',1));
+ assert.equal(refundBombEquipment(m,'q','halfArmor',2),false);
+ assert.ok(refundBombEquipment(m,'q','armor',2));
+ assert.equal(ct.armor,17);
+ assert.ok(refundBombEquipment(m,'q','kit',2));
+ assert.equal(ct.kit,false);
+ assert.equal(ct.money,3000);
+ assert.equal(refundBombEquipment(m,'q','kit',3),false);
+ assert.equal(refundBombEquipment(m,'q','armor',3),false);
+});

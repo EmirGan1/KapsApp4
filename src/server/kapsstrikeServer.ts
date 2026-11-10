@@ -3,7 +3,7 @@ import {advanceReload} from '../games/kapsstrike/reload';
 import {dropBombWeapon,pickupBombWeapon} from '../games/kapsstrike/bombWeapons';
 import {safeSpawn,spreadSpawn} from "../games/kapsstrike/spawns";
 import {tracePlayer} from '../games/kapsstrike/hitboxes';
-import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,refundBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
+import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,refundBombEquipment,bombWinTarget,type BombMatch} from "../games/kapsstrike/bomb";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
 import { randomBytes } from "node:crypto";
 import { StrikeInventory } from "./strikeInventory";
@@ -301,6 +301,7 @@ export class StrikeRoom {
   maxPlayers: number;
   scoreLimit: number = 30;
   timeLimit: number = 300;
+  bombRounds?: number;
   timeLeft: number;
   hostId: number;
   password?: string;
@@ -337,6 +338,7 @@ export class StrikeRoom {
     this.mode = mode;
     this.maxPlayers = Math.max(2, Math.min(10, maxPlayers));
     this.hostId = hostId;
+    this.scoreLimit = scoreLimit;
     this.timeLimit = timeLimit;
     this.timeLeft = timeLimit;
     this.password = typeof password === "string" && password.trim().length > 0 ? password.trim() : undefined;
@@ -394,6 +396,7 @@ export class StrikeRoom {
       maxPlayers: this.maxPlayers,
       scoreLimit: this.scoreLimit,
       timeLimit: this.timeLimit,
+      bombRounds: this.mode === "bomb" ? this.bombRounds : undefined,
       timeLeft: this.timeLeft,
       hostId: this.hostId,
       hasPassword: !!this.password,
@@ -615,6 +618,7 @@ export class KapsStrikeServerManager {
       maxPlayers?: number;
       timeLimit?: number;
       scoreLimit?: number;
+      bombRounds?: number;
       password?: string;
     }
   ): StrikeRoom {
@@ -643,6 +647,8 @@ export class KapsStrikeServerManager {
       scoreLimit,
       options.password
     );
+
+    if (options.bombRounds !== undefined) room.bombRounds = bombWinTarget(options.bombRounds);
 
     const team: StrikeTeam = mode !== "ffa" ? "red" : "none";
     const spawn = room.getSpawnPosition(team, 0);
@@ -987,7 +993,7 @@ export class KapsStrikeServerManager {
     });
 
     room.bomb=undefined;
-    if(room.mode==='bomb')room.bomb=createBombMatch([...room.players.values()].map(p=>({id:p.id,team:p.team==='red'?'T':'CT',position:{...p.state.movement.position}})),0);
+    if(room.mode==='bomb')room.bomb=createBombMatch([...room.players.values()].map(p=>({id:p.id,team:p.team==='red'?'T':'CT',position:{...p.state.movement.position}})),0,room.bombRounds);
     this.startRoomSimulationLoop(room);
     this.broadcastRoomState(room);
     this.io.to(`strike:${room.roomCode}`).emit("strike:match_started", room.getPublicRoomState());
@@ -1624,7 +1630,7 @@ export class KapsStrikeServerManager {
         this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(success);return;
       }
       if(request.kind==='refund'&&typeof request.item==='string'){
-        if(!refundBombEquipment(b,socket.id,request.item,now)){reply(false,'Bu silah artık iade edilemez.');return;}
+        if(!refundBombEquipment(b,socket.id,request.item,now)){reply(false,'Bu ekipman artık iade edilemez.');return;}
         const player=room.players.get(socket.id)!;
         const weapon=player.state.weapon;
         weapon.inventory=[...b.players[socket.id].weapons];
@@ -1634,8 +1640,11 @@ export class KapsStrikeServerManager {
           weapon.switchUntil=room.tick+24;
           weapon.triggerHeld=false;
         }
-        weapon.ammo[request.item as WeaponId]=0;
-        player.pendingFire=undefined;
+        player.state.armor=b.players[socket.id].armor;
+        if(Object.hasOwn(WEAPONS,request.item)){
+          weapon.ammo[request.item as WeaponId]=0;
+          player.pendingFire=undefined;
+        }
         this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(true);return;
       }
       if(request.kind==='pickup_weapon'){const player=room.players.get(socket.id)!;reply(pickupBombWeapon(b,room.world,MAPS[room.map],player.state,room.tick));return;}

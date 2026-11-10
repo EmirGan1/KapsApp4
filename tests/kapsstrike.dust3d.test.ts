@@ -161,3 +161,18 @@ test('Dust II has neither static cover boxes nor generated supply crates',async(
  assert.deepEqual(world.pickups,[]);
  assert.equal(world.drop,undefined);
 });
+
+test('uphill jumps keep forward velocity on Dust II ramps',()=>{
+ for(const ramp of map.solids.filter(s=>s.kind==='ramp')){
+  if(ramp.kind!=='ramp')continue;
+  const x=ramp.x,z=ramp.z;
+  const yaw=ramp.axis==='x'?(ramp.reverse?-Math.PI/2:Math.PI/2):(ramp.reverse?Math.PI:0);
+  for(const speed of [3.5,8]){
+   const m=newMovement({x,y:surface(ramp,x,z),z});
+   m.velocity.x=speed*Math.sin(yaw);m.velocity.z=speed*Math.cos(yaw);
+   for(let i=0;i<5;i++)move(m,{sequence:i,tick:i,moveX:0,moveZ:1,yaw,pitch:0,jump:i===0,sprint:speed>5,crouch:false,fire:false,ads:true,reload:false},map,i);
+   assert.ok(Math.hypot(m.position.x-x,m.position.z-z)>.08,ramp.id);
+   assert.ok(Math.hypot(m.velocity.x,m.velocity.z)>2,ramp.id);
+  }
+ }
+});

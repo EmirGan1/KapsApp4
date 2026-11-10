@@ -169,3 +169,15 @@ test('primary purchase preserves the pistol and blocks a second primary without 
  assert.ok(buyBombEquipment(match,'0','armor',4));
  assert.equal(player.armor,100);
 });
+
+test('room round targets finish at the selected win count, including a deciding round',()=>{
+ for(const target of [5,8,10]){
+  const match=createBombMatch(players(),0,target);
+  assert.equal(match.target,target);
+  assert.equal(match.half,target-1);
+  match.phase='result';match.round=target*2-1;match.scores.T=target;match.scores.CT=target-1;match.deadline=20;
+  stepBomb(match,20);
+  assert.equal(match.phase,'finished');
+  assert.equal(match.winner,'T');
+ }
+});

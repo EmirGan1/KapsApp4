@@ -1504,3 +1504,22 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
 .ks-buy-columns button.is-owned:not(:disabled) small {
   color: #ffd393;
 }
+
+.ks-room-builder { display:grid; gap:18px; padding:clamp(14px, 3vw, 26px); background:#142333; border:1px solid #40576d; border-radius:16px; }
+.ks-room-builder > header { display:flex; align-items:start; justify-content:space-between; gap:12px; }
+.ks-room-builder h2 { margin:0; color:#f6f9fc; font-size:clamp(22px, 4vw, 30px); }
+.ks-room-builder p { margin:5px 0 0; color:#afc0d2; }
+.ks-room-mode-cards, .ks-room-builder-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.ks-room-builder .ks-room-mode-cards button { display:grid; align-content:center; justify-items:start; min-height:135px; gap:8px; text-align:left; background:#1e3448; border-color:#49647c; border-radius:12px; }
+.ks-room-builder .ks-room-mode-cards button[aria-pressed="true"] { background:#334238; border-color:#f2c175; box-shadow:inset 0 0 0 1px #f2c175; }
+.ks-room-mode-cards strong { font-size:clamp(16px, 3vw, 23px); }
+.ks-room-mode-cards small { color:#f2c175; }
+.ks-room-builder-fields label { display:grid; gap:6px; min-width:0; color:#d5e1ec; }
+.ks-room-builder-fields input, .ks-room-builder-fields select { min-width:0; width:100%; min-height:44px; padding:8px; background:#0e1a27; color:#f4f7fb; border:1px solid #49647c; border-radius:8px; }
+.ks-room-builder > .ks-primary { justify-self:end; }
+.ks-buy-columns .ks-refund-button { display:block; min-height:44px; background:#3a3023; border-color:#a48046; color:#ffe0a8; }
+@media (max-width:520px) {
+  .ks-room-builder-fields { grid-template-columns:minmax(0,1fr); }
+  .ks-room-builder .ks-room-mode-cards button { padding:10px; min-height:115px; }
+  .ks-room-builder > .ks-primary { justify-self:stretch; }
+}

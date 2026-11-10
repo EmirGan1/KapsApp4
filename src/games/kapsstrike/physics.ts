@@ -174,7 +174,8 @@ export function move(
     v.x += dx * add;
     v.z += dz * add;
   }
-  if (input.jump && !m.jumpHeld && m.grounded && m.stance === "stand") {
+  const jumping = input.jump && !m.jumpHeld && m.grounded && m.stance === "stand";
+  if (jumping) {
     v.y = C.jumpSpeed;
     m.grounded = false;
   }
@@ -183,6 +184,13 @@ export function move(
   if (planar > C.maxSpeed) {
     v.x *= C.maxSpeed / planar;
     v.z *= C.maxSpeed / planar;
+  }
+  // Apply the first jump rise before testing lateral movement against an uphill surface.
+  if (jumping) {
+    v.y -= C.gravity * dt;
+    const raised = { ...p, y: p.y + v.y * dt };
+    if (fits(map, raised, m.height)) p.y = raised.y;
+    else v.y = 0;
   }
   const steps = Math.max(1, Math.ceil((Math.hypot(v.x, v.z) * dt) / 0.1));
   for (let i = 0; i < steps; i++)
@@ -217,15 +225,15 @@ export function move(
     p.z = bounded.z;
   }
   const oldY = p.y;
-  v.y -= C.gravity * dt;
+  if (!jumping) v.y -= C.gravity * dt;
   const nextY = p.y + v.y * dt;
-  if (v.y > 0) {
+  if (!jumping && v.y > 0) {
     p.y = nextY;
     if (!fits(map, p, m.height)) {
       p.y = oldY;
       v.y = 0;
     }
-  } else {
+  } else if (!jumping) {
     const floor = support(map, p, oldY + 0.05);
     // Descending a ramp can move the floor farther than one tick of gravity.
     // Keep existing ground contact over a small slope drop, never across a ledge.

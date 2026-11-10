@@ -27,9 +27,9 @@ try{
   p.on('pageerror',e=>errors.push(e.message));
   await p.addInitScript(()=>localStorage.setItem('kapsstrike-settings',JSON.stringify({quality:'low'})));
   await p.goto(`http://127.0.0.1:4209/__spectator?user=${index+1}`);
-  await p.getByRole('button',{name:/BOMBA KURMA/}).click();
+
  }
- await a.getByRole('button',{name:'+ Oda Oluştur',exact:true}).click();await a.getByRole('button',{name:'Odayı Oluştur',exact:true}).click();
+ await a.getByRole('button',{name:'+ Masa aç',exact:true}).click();await a.getByRole('button',{name:/Bomba Kurma/i}).click();await a.getByRole('button',{name:'Masayı oluştur',exact:true}).click();
  const code=(await a.locator('.ks-lobby-code').textContent())!.trim();
  await b.getByPlaceholder('Oda kodu',{exact:true}).fill(code);await b.getByRole('button',{name:'Koda Katıl',exact:true}).click();
  await b.getByRole('button',{name:'HAZIR OL',exact:true}).click();
