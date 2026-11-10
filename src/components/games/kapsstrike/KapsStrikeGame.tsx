@@ -194,19 +194,52 @@ export default function KapsStrikeGame({
 
   useEffect(() => {if(typeof hud?.ads === "boolean")setTouchAdsActive(hud.ads);},[hud?.ads]);
 
-  // Mobile detection & Orientation check
   useEffect(() => {
-    const checkMobile = () => {
-      const mobile = touchControls(settings.controlMode);
-      setIsMobile(mobile);
-      setIsPortrait(window.innerHeight > window.innerWidth);
+    let frame = 0;
+    let portrait: boolean | undefined;
+    const orientation = screen.orientation;
+    const portraitQuery = window.matchMedia("(orientation: portrait)");
+    const releaseTouches = () => {
+      lookTouchId.current = joystickTouchId.current = null;
+      lookLastPos.current = null;
+      game.current?.releaseTouchControls();
+      setJoystickThumb({ x: 0, y: 0 });
+      setTouchAdsActive(false);
+      gyro.recenter();
     };
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    window.addEventListener("orientationchange", checkMobile);
+    const measure = () => {
+      const root = gameRoot.current;
+      const next = root?.clientWidth && root.clientHeight
+        ? root.clientHeight > root.clientWidth : portraitQuery.matches;
+      if (portrait !== undefined && next !== portrait) releaseTouches();
+      portrait = next;
+      setIsPortrait(next);
+      setIsMobile(touchControls(settings.controlMode));
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    const rotate = () => {
+      if (touchControls(settings.controlMode)) releaseTouches();
+      schedule();
+    };
+    measure();
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", rotate);
+    orientation?.addEventListener("change", rotate);
+    portraitQuery.addEventListener?.("change", schedule);
+    window.visualViewport?.addEventListener("resize", schedule);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(schedule);
+    if (gameRoot.current) observer?.observe(gameRoot.current);
     return () => {
-      window.removeEventListener("resize", checkMobile);
-      window.removeEventListener("orientationchange", checkMobile);
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", rotate);
+      orientation?.removeEventListener("change", rotate);
+      portraitQuery.removeEventListener?.("change", schedule);
+      window.visualViewport?.removeEventListener("resize", schedule);
     };
   }, [settings.controlMode]);
 
@@ -938,6 +971,7 @@ export default function KapsStrikeGame({
               opacity: touchLayout.joystick.opacity,
             }}
             onTouchStart={(e) => {
+              if (joystickTouchId.current !== null) return;
               const touch = e.changedTouches[0];
               joystickTouchId.current = touch.identifier;
               const rect = e.currentTarget.getBoundingClientRect();
@@ -1108,6 +1142,7 @@ export default function KapsStrikeGame({
           {/* Zıpla (Jump) Button */}
           <button
             type="button"
+            aria-label="Zıpla"
             className="ks-touch-btn-custom ks-touch-jump-btn"
             style={{
               left: `${touchLayout.jump.x}%`,

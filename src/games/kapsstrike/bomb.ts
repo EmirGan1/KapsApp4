@@ -32,8 +32,21 @@ export function buyBombEquipment(m:BombMatch,id:string,item:string,now:number){
  if(item==='kit')p.kit=true;
  else if(item==='armor')p.armor=100;
  else if(item==='halfArmor')p.armor=50;
- else p.weapons.push(item as WeaponId);
+ else {
+  const weapon=item as WeaponId;
+  p.weapons.push(weapon);
+  if(isBombPrimary(weapon))p.purchase={weapon,price:BOMB_SHOP[item as keyof typeof BOMB_SHOP]};
+ }
  p.money-=BOMB_SHOP[item as keyof typeof BOMB_SHOP];return true;
+}
+export function refundBombEquipment(m:BombMatch,id:string,item:string,now:number):boolean {
+ const player=m.players[id];
+ const purchase=player?.purchase;
+ if(!player?.alive||m.phase!=='buy'||now>=m.deadline||!purchase||purchase.weapon!==item||!player.weapons.includes(purchase.weapon))return false;
+ player.weapons=player.weapons.filter(weapon=>weapon!==purchase.weapon);
+ player.money=Math.min(BOMB_RULES.maxMoney,player.money+purchase.price);
+ delete player.purchase;
+ return true;
 }
 /** A client never receives another player's economy, loadout or objective action. */
 export function bombView(m:BombMatch,id:string):BombMatch {

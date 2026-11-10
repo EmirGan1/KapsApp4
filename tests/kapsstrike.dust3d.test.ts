@@ -120,3 +120,18 @@ test('walking or jumping off the A edge cannot enter the former retaining-wall p
   }
  }
 });
+
+test('Dust II cover crates are removed and previously open catwalk edges have a solid deck',()=>{
+ assert.ok(!map.solids.some(s=>/crate|xbox|tarp/.test(s.id)));
+ for(const [x,z] of [[11.5,25.5],[11.5,26],[11.5,27],[11.5,28.5],[22.5,27.5],[22.5,28]]){
+  assert.ok(map.solids.some(s=>!s.detail&&raySolid({x,y:3.24,z},{x:0,y:-1,z:0},s,.08)<.08),`deck at ${x},${z}`);
+ }
+});
+
+test('aiming down sights permits jumping off supported Dust II ground',()=>{
+ const m=newMovement(map.spawns[0]);
+ const baseline=m.position.y;
+ move(m,{sequence:1,tick:1,moveX:0,moveZ:0,yaw:0,pitch:0,jump:true,sprint:false,crouch:false,fire:false,ads:true,reload:false},map,1);
+ assert.ok(m.position.y>baseline);
+ assert.ok(m.velocity.y>0);
+});

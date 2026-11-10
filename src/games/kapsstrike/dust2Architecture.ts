@@ -111,9 +111,6 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   box('ct-underpass-north-pier',19.0,0,37.8,.45,4.25,5.2,'#c4b193',false,'stone');
   box('ct-underpass-north-lower-wall',23.0,0,35.2,7.6,3.2,.4,'#b8a587',false,'stone');
 
-  // Ninja double-box cover at Short-to-A entrance
-  box('a-short-ninja-crate',28.6,3.2,39.4,1.7,2.9,2.2,'#a8987c',false,'wood');
-  box('a-short-ninja-tarp',28.6,6.1,39.4,1.8,.08,2.3,'#5c8785',true,'fabric');
 
   // ============================================================================
   // 3. CLEAN CS:GO B-SITE ENTRANCE (B DOORS & B WINDOW)
@@ -145,10 +142,6 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   // East side wall of B Window stairs & back-pocket (x=-19.5, z=34.5..44.0)
   box('b-window-east-alcove-wall',-19.5,0,39.25,.45,5.8,9.5,'#c4b092',false,'stone');
 
-  // Iconic B-Site interior cover crates (blocks deep cross-map sightlines into B plant zone)
-  box('b-doors-sanctuary-crate',-36.4,2.4,29.8,1.5,3.2,4.4,'#a8987c',false,'wood');
-  box('b-doors-sanctuary-tarp',-36.4,5.6,29.8,1.6,.08,4.5,'#689c9a',true,'fabric');
-  box('b-window-backplat-crate',-22.0,2.4,42.2,2.4,2.8,1.4,'#b1a58b',false,'wood');
 
   // ============================================================================
   // 4. SHORT STAIRS, MID XBOX, TUNNELS & ICONIC DUST II COVER
@@ -159,9 +152,6 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   box('short-elbow-parapet',17,3.2,28.85,4,.9,.3);
   box('short-a-approach-parapet',24.5,3.2,34.15,5,.9,.3);
 
-  // Iconic Mid Xbox crate at Short entrance corner
-  box('mid-xbox-crate',9.3,0,12.6,1.9,1.65,1.9,'#b1a58b',false,'wood');
-  box('mid-xbox-tarp',9.3,1.65,12.6,2.0,.08,2.0,'#689c9a',true,'fabric');
   // A Long Blue Shipping Container along east wall
   box('a-long-blue-container',50.2,0,8.0,2.1,2.6,5.4,'#2d5a7b',false,'metal');
 
@@ -201,12 +191,7 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   for(const x of [-42,-30])box('upper-roof-remnant',x,6.8,7,2,.25,10,'#b5a083',false,'plaster');
   tunnel('b-tunnels',-45,22,5,18,2.4,6.6);
 
-  // Site cover: original crate geometry, tarpaulins, barrels
-  for(const [x,z,y] of [[33,38,3.2],[37,40,3.2],[-35,44,2.4],[-39,39,2.4]]){
-    box('shipping-crate',x,y,z,1.8,1.45,1.6,'#b1a58b',false,'wood');
-    box('crate-tarp',x,y+1.45,z,1.9,.08,1.7,'#689c9a',true,'fabric');
-    for(const side of [-1,1])box('crate-brace',x+side*.77,y+.1,z,.08,1.3,1.65,'#d1c2a6',true,'wood');
-  }
+  // Keep the barrel cover at the two sites.
   for(const [x,z,y] of [[31,42,3.2],[-40,45,2.4],[-31,40,2.4]])for(let i=0;i<2;i++){
     const s=box('barrel',x+i*.65,y,z,.52,.9,.52,'#738786',false,'metal');
     s.shape='cylinder';
@@ -226,6 +211,10 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   hotelSign.label='KAPS HAN';
   box('b-fort-tower',-40,0,49,5,11,5,'#bda17c',false,'stone');
   for(const side of [-1,1])for(let k=0;k<4;k++)box('fort-merlon',-42.2+k*1.45,11,49+side*2.3,.65,.65,.55,'#cdb590',true,'stone');
+
+  // Close the exposed grid edges on the west landing and at the inner elbow.
+  box('catwalk-deck-west-seam',11.66,2.92,27,.64,.28,3.4);
+  box('catwalk-deck-elbow-seam',22.35,2.92,27.85,.62,.28,1.5);
 
   // Railings stop accidental falls along the short bridge, leaving both ends open.
   for(const side of [-1,1])box('catwalk-parapet',21+side*1.85,3.2,31.5,.3,.85,6);

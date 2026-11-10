@@ -1483,3 +1483,24 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
     right: calc(max(16px, env(safe-area-inset-right)) + 56px);
   }
 }
+
+@supports (height: 100dvh) {
+  .ks-root.ks-touch-layout {
+    bottom: auto;
+    height: 100dvh;
+    max-width: 100dvw;
+  }
+}
+
+.ks-touch-layout .ks-touch-jump-btn {
+  z-index: 2;
+}
+
+.ks-buy-columns button.is-owned:not(:disabled) {
+  opacity: 1;
+  border-color: #edba6b;
+}
+
+.ks-buy-columns button.is-owned:not(:disabled) small {
+  color: #ffd393;
+}

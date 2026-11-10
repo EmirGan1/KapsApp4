@@ -229,6 +229,7 @@ export class StrikeController {
   private touchRenderedTargets?: { time: number; targets: TouchCombatTarget[] };
   private touchAds = false;
   private touchJump = false;
+  private touchJumpQueued = false;
   private touchCrouch = false;
   private touchSprint = false;
 
@@ -776,7 +777,7 @@ export class StrikeController {
           moveZ: this.touchMoveZ !== 0 ? this.touchMoveZ : keyMoveZ,
           yaw: this.yaw,
           pitch: this.pitch,
-          jump: this.touchJump || this.down("jump"),
+          jump: this.touchJumpQueued || this.touchJump || this.down("jump"),
           sprint: this.touchSprint || this.down("sprint"),
           crouch:
             this.touchCrouch ||
@@ -788,6 +789,7 @@ export class StrikeController {
           interact:this.pendingInteract,
         };
 
+        this.touchJumpQueued = false;
         const frozen=!!this.state.bomb&&!["active","planted","result"].includes(this.state.bomb.phase);
         if(this.menuOverlay){cmd.moveX=0;cmd.moveZ=0;cmd.fire=false;cmd.reload=false;cmd.jump=false;cmd.interact=false;cmd.weapon=undefined;}
         const owned=this.state.bomb?.players[this.socket?.id||'']?.weapons;
@@ -1212,7 +1214,12 @@ export class StrikeController {
     this.pttActive = false;
     this.callbacks?.onPttChange?.(false);
     this.callbacks?.onScoreboardToggle?.(false);
+    this.releaseTouchControls();
+  }
+
+  public releaseTouchControls() {
     this.touchMoveX = this.touchMoveZ = 0;
+    this.touchJumpQueued = false;
     this.touchCombat.reset();
     this.touchRenderedTargets = undefined;
     this.touchFire = this.touchAds = this.touchJump = this.touchCrouch = this.touchSprint = false;
@@ -1324,7 +1331,10 @@ export class StrikeController {
 
   public setTouchFire(fire: boolean) { this.touchFire = fire; }
   public setTouchAds(ads: boolean) { this.touchAds = ads; }
-  public setTouchJump(jump: boolean) { this.touchJump = jump; }
+  public setTouchJump(jump: boolean) {
+    if (jump && !this.touchJump && this.active && !this.menuOverlay) this.touchJumpQueued = true;
+    this.touchJump = jump;
+  }
   public setTouchCrouch(crouch: boolean) { this.touchCrouch = crouch; }
   public setTouchSprint(sprint: boolean) { this.touchSprint = sprint; }
   public triggerReload() { this.pendingReload = true; }

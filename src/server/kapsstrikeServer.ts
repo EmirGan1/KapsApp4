@@ -3,7 +3,7 @@ import {advanceReload} from '../games/kapsstrike/reload';
 import {dropBombWeapon,pickupBombWeapon} from '../games/kapsstrike/bombWeapons';
 import {safeSpawn,spreadSpawn} from "../games/kapsstrike/spawns";
 import {tracePlayer} from '../games/kapsstrike/hitboxes';
-import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
+import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,refundBombEquipment,type BombMatch} from "../games/kapsstrike/bomb";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
 import { randomBytes } from "node:crypto";
 import { StrikeInventory } from "./strikeInventory";
@@ -1622,6 +1622,21 @@ export class KapsStrikeServerManager {
           }
         }
         this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(success);return;
+      }
+      if(request.kind==='refund'&&typeof request.item==='string'){
+        if(!refundBombEquipment(b,socket.id,request.item,now)){reply(false,'Bu silah artık iade edilemez.');return;}
+        const player=room.players.get(socket.id)!;
+        const weapon=player.state.weapon;
+        weapon.inventory=[...b.players[socket.id].weapons];
+        if(weapon.selected===request.item){
+          weapon.selected='pistol';
+          weapon.reloadUntil=0;
+          weapon.switchUntil=room.tick+24;
+          weapon.triggerHeld=false;
+        }
+        weapon.ammo[request.item as WeaponId]=0;
+        player.pendingFire=undefined;
+        this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(true);return;
       }
       if(request.kind==='pickup_weapon'){const player=room.players.get(socket.id)!;reply(pickupBombWeapon(b,room.world,MAPS[room.map],player.state,room.tick));return;}
       if(request.kind==='drop_weapon'){const player=room.players.get(socket.id)!;const success=dropBombWeapon(b,room.world,player.state,room.tick);if(success)player.pendingFire=undefined;reply(success,success?undefined:'Bu silah bırakılamaz.');return;}

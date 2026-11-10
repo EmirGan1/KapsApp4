@@ -48,10 +48,10 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
   useEffect(()=>{if(shop)dialog.current?.querySelector<HTMLButtonElement>('button')?.focus();},[shop]);
   if(!bomb)return null;
   const me=bomb.players[socket?.id||''];
-  const buy=(item:Item)=>{
-    if(!socket||pending)return;setPending(true);setMessage('Satın alınıyor…');
-    socket.timeout(4000).emit('strike:bomb_action',{kind:'buy',item},(err:Error|null,result?:{success:boolean;error?:string})=>{
-      setPending(false);setMessage(err?'Sunucu yanıt vermedi; envanterini kontrol edip tekrar dene.':result?.success?`${names(item)} alındı.`:result?.error||'Satın alma başarısız.');
+  const buy=(item:Item, refund=false)=>{
+    if(!socket||pending)return;setPending(true);setMessage(refund?'İade ediliyor…':'Satın alınıyor…');
+    socket.timeout(4000).emit('strike:bomb_action',{kind:refund?'refund':'buy',item},(err:Error|null,result?:{success:boolean;error?:string})=>{
+      setPending(false);setMessage(err?'Sunucu yanıt vermedi; envanterini kontrol edip tekrar dene.':result?.success?`${names(item)} ${refund?'iade edildi':'alındı'}.`:result?.error||'İşlem başarısız.');
     });
   };
   const cards=(team:'T'|'CT')=><div className={`ks-bomb-team ks-bomb-team-${team}`} aria-label={`${team} takımı`}>{Object.values(bomb.players).filter(p=>p.team===team).map(p=>{
@@ -98,8 +98,9 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
           : me?.weapons.includes(item);
         const slotTaken = !owned && !armorItem && item !== 'kit' && item !== 'pistol'
           && hasBombPrimary(me?.weapons ?? []);
+        const refundable = owned && me?.purchase?.weapon === item;
         const affordable = (me?.money ?? 0) >= BOMB_SHOP[item];
-        return <button key={item} disabled={pending||owned||slotTaken||!affordable} className={owned?'is-owned':slotTaken?'is-slot-taken':''} onClick={()=>buy(item)}><span className="ks-buy-symbol" aria-hidden="true"><svg viewBox="0 0 120 40" width="110" height="38" fill="currentColor">{armorItem?<path d="M44 2 35 9v16l25 13 25-13V9L76 2 68 9H52z"/>:item==='kit'?<path d="M35 6h50v29H35zM50 0h20v5H50zm7 12v6h-6v6h6v6h6v-6h6v-6h-6v-6z" fillRule="evenodd"/>:item==='pistol'?<path d="M20 8h65v10H54l-5 19H34l5-19H20z"/>:item==='sniper'?<path d="M3 13h90v4h24v3H72l-8 11H52l2-11H30L9 29H3zm42-9h30v7H45z"/>:item==='shotgun'?<path d="M4 12h108v5H55v7H39v-6L8 29H3z"/>:item==='smg'?<path d="M15 10h65v5h22v5H66v16H55V21H41l-3 14H25l4-16H15z"/>:<path d="M3 9h16v5h55v-4h9v4h32v5H74l-7 15H53l4-15H40l-4 12H24l4-14L3 27z"/>}</svg></span><b>{names(item)}</b><span>${BOMB_SHOP[item]}</span><small>{owned?'ENVANTERDE':slotTaken?'ZATEN ANA SİLAHIN VAR':!affordable?'YETERSİZ BAKİYE':'SATIN AL'}</small></button>;
+        return <button key={item} disabled={pending||(!refundable&&(owned||slotTaken||!affordable))} className={owned?'is-owned':slotTaken?'is-slot-taken':''} onClick={()=>buy(item,refundable)}><span className="ks-buy-symbol" aria-hidden="true"><svg viewBox="0 0 120 40" width="110" height="38" fill="currentColor">{armorItem?<path d="M44 2 35 9v16l25 13 25-13V9L76 2 68 9H52z"/>:item==='kit'?<path d="M35 6h50v29H35zM50 0h20v5H50zm7 12v6h-6v6h6v6h6v-6h6v-6h-6v-6z" fillRule="evenodd"/>:item==='pistol'?<path d="M20 8h65v10H54l-5 19H34l5-19H20z"/>:item==='sniper'?<path d="M3 13h90v4h24v3H72l-8 11H52l2-11H30L9 29H3zm42-9h30v7H45z"/>:item==='shotgun'?<path d="M4 12h108v5H55v7H39v-6L8 29H3z"/>:item==='smg'?<path d="M15 10h65v5h22v5H66v16H55V21H41l-3 14H25l4-16H15z"/>:<path d="M3 9h16v5h55v-4h9v4h32v5H74l-7 15H53l4-15H40l-4 12H24l4-14L3 27z"/>}</svg></span><b>{names(item)}</b><span>${BOMB_SHOP[item]}</span><small>{refundable?`İADE ET · $${me?.purchase?.price}`:owned?'ENVANTERDE':slotTaken?'ZATEN ANA SİLAHIN VAR':!affordable?'YETERSİZ BAKİYE':'SATIN AL'}</small></button>;
       })}</section>)}</div>
       <footer role="status">{message||'Tabanca ayrı slotta kalır. Yeni ana silah almadan önce elindekini G ile bırak.'}</footer>
     </div></div>}
