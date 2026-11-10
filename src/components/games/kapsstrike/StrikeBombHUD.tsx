@@ -1,3 +1,4 @@
+import { GRENADE_KEYS, GRENADE_NAMES, isGrenade, type GrenadeKind } from "../../../games/kapsstrike/grenades";
 import React, {useEffect, useRef, useState} from 'react';
 import type {Socket} from 'socket.io-client';
 import {BOMB_RULES, BOMB_SHOP, bombRefundPrice, hasBombPrimary, type BombMatch} from '../../../games/kapsstrike/bomb';
@@ -7,24 +8,37 @@ import {WEAPONS} from '../../../games/kapsstrike/config';
 
 type Item = keyof typeof BOMB_SHOP;
 const categories: {name:string;items:Item[]}[] = [
-  {name:'Ekipman',items:['halfArmor','armor','kit']}, {name:'Tabancalar',items:['pistol']},
+  {name:'Bombalar',items:GRENADE_KEYS}, {name:'Ekipman',items:['halfArmor','armor','kit']}, {name:'Tabancalar',items:['pistol']},
   {name:'Hafif silahlar',items:['smg','shotgun','carbine']}, {name:'Tüfekler',items:['rifle','sniper','lmg','railgun']},
 ];
-const names=(item:Item)=>item==='halfArmor'?'Yarım zırh · +50':item==='armor'?'Tam zırh · +100':item==='kit'?'Çözme kiti':WEAPONS[item].name;
+const names=(item:Item)=>isGrenade(item)?GRENADE_NAMES[item]:item==='halfArmor'?'Yarım zırh · +50':item==='armor'?'Tam zırh · +100':item==='kit'?'Çözme kiti':WEAPONS[item].name;
 const phases={buy:'Hazırlık ve satın alma',active:'Raund devam ediyor',planted:'BOMBA KURULDU',result:'Raund sonucu',finished:'Maç tamamlandı'};
 
 export default function StrikeBombHUD({socket,players,interactKey,onShopChange,touch,onEquipBomb}:{socket?:Socket|null;players:NetworkPlayer[];interactKey:string;onShopChange:(open:boolean)=>void;touch:boolean;onEquipBomb:()=>void}){
   const [bomb,setBomb]=useState<BombMatch|null>(null),[now,setNow]=useState(0),[shop,setShop]=useState(false),[message,setMessage]=useState(''),[pending,setPending]=useState(false);
+  const [utility,setUtility]=useState<GrenadeKind>();
+  const selectedUtility=useRef<GrenadeKind | undefined>(undefined);
+  const selectUtility=(value?:GrenadeKind)=>{selectedUtility.current=value;setUtility(value);};
   const holding=useRef(false),shopRef=useRef(false),bombRef=useRef<BombMatch|null>(null),changeRef=useRef(onShopChange),dialog=useRef<HTMLDivElement>(null);
   const equipRef=useRef(onEquipBomb);equipRef.current=onEquipBomb;
   changeRef.current=onShopChange;
   const release=()=>{holding.current=false;socket?.emit('strike:bomb_action',{kind:'hold',held:false});};
-  const changeShop=(open:boolean)=>{release();shopRef.current=open;setShop(open);setMessage('');changeRef.current(open);};
+  const changeShop=(open:boolean)=>{release();selectUtility();shopRef.current=open;setShop(open);setMessage('');changeRef.current(open);};
+  const throwUtility=(short:boolean)=>{
+    const item=selectedUtility.current;
+    if(!socket||!item)return;
+    selectUtility();
+    socket.timeout(4000).emit('strike:bomb_action',{kind:'throw_utility',item,short},(err:Error|null,result?:{success:boolean;error?:string})=>{
+      if(err||!result?.success)setMessage(err?'Sunucu yanıt vermedi.':result?.error??'Bomba atılamadı.');
+    });
+  };
   useEffect(()=>{
     if(!socket)return;
     const snapshot=(s:StrikeSnapshot)=>{
       if(!s.bomb)return;
       bombRef.current=s.bomb;setBomb(s.bomb);setNow(s.tick/120);
+      const selected=selectedUtility.current, me=s.bomb.players[socket.id??''];
+      if(selected&&(!me?.alive||!me.utility?.[selected]||!['active','planted'].includes(s.bomb.phase)))selectUtility();
       if(s.bomb.phase!=='buy'&&shopRef.current)changeShop(false);
     };
     const timer=setInterval(()=>{if(holding.current)socket.emit('strike:bomb_action',{kind:'hold',held:true});},100);
@@ -35,15 +49,30 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
         if(e.code==='Escape'||e.code==='KeyB'){e.preventDefault();e.stopImmediatePropagation();changeShop(false);}
         return;
       }
+      const slot=['Digit8','Digit9','Digit0'].indexOf(e.code);
+      if(slot>=0&&!e.repeat){
+        const item=GRENADE_KEYS[slot], state=bombRef.current;
+        if(state && ['active','planted'].includes(state.phase) && state.players[socket.id??'']?.utility?.[item]){
+          e.preventDefault();e.stopImmediatePropagation();
+          selectUtility(selectedUtility.current===item?undefined:item);
+        }
+        return;
+      }
+      if(e.code==='Escape'&&selectedUtility.current)selectUtility();
       if(e.code==='KeyG'&&!e.repeat){socket.emit('strike:bomb_action',{kind:e.shiftKey?'drop':'drop_weapon'});return;}
       if(e.code==='Digit7'&&!e.repeat){equipRef.current();return;}
       if(e.code==='KeyB'&&bombRef.current?.phase==='buy'&&!e.repeat){e.preventDefault();e.stopImmediatePropagation();changeShop(true);}
       else if(bindingFromEvent(e)===interactKey&&!e.repeat){holding.current=true;socket.emit('strike:bomb_action',{kind:'hold',held:true});}
     };
     const keyup=(e:KeyboardEvent)=>{if(e.code===interactKey.split('+').at(-1))up();};
+    const mouse=(e:MouseEvent)=>{
+      if(!selectedUtility.current || shopRef.current || !(e.target instanceof HTMLCanvasElement) || !e.target.matches('.ks-canvas') || (e.button!==0&&e.button!==2))return;
+      e.preventDefault();e.stopImmediatePropagation();throwUtility(e.button===2);
+    };
+    window.addEventListener('mousedown',mouse,true);
     socket.on('strike:snapshot',snapshot);
     window.addEventListener('keydown',down,true);window.addEventListener('keyup',keyup);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);window.addEventListener('blur',up);
-    return()=>{up();clearInterval(timer);socket.off('strike:snapshot',snapshot);window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);window.removeEventListener('blur',up);if(shopRef.current)changeRef.current(false);};
+    return()=>{up();window.removeEventListener('mousedown',mouse,true);clearInterval(timer);socket.off('strike:snapshot',snapshot);window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);window.removeEventListener('blur',up);if(shopRef.current)changeRef.current(false);};
   },[socket,interactKey]);
   useEffect(()=>{if(shop)dialog.current?.querySelector<HTMLButtonElement>('button')?.focus();},[shop]);
   if(!bomb)return null;
@@ -68,6 +97,7 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
   const typedCode=bomb.action?.kind==='plant'?c4Code.slice(0,Math.max(1,Math.ceil(actionRatio*c4Code.length))).padEnd(c4Code.length,'_'):'';
   const soloOrBotMatch=players.filter(p=>!String(p.id).startsWith('bot-')).length<=1;
   return <>
+    {(me?.flashedUntil ?? 0)>now && <div className="ks-utility-flash" style={{opacity:Math.min(.94,((me?.flashedUntil ?? 0)-now)/.38)}} aria-hidden="true" />}
     <header className="ks-tactical-bar">{cards('CT')}<div className="ks-bomb-score"><div><b>CT {bomb.scores.CT}</b><strong>{Math.max(0,Math.ceil(bomb.deadline-now))}<small>sn</small></strong><b>{bomb.scores.T} T</b></div><small>RAUND {bomb.round} · {phases[bomb.phase]}</small></div>{cards('T')}</header>
     {(bomb.phase==='result'||bomb.phase==='finished')&&bomb.winner&&<div className={`ks-round-banner ks-round-${bomb.winner}`} role="status"><b>{bomb.explosion?'💥 C4 PATLADI · ':''}{bomb.winner==='CT'?'CT · Savunma':'T · Saldırı'} kazandı</b><span>{bomb.reason}</span><small>{bomb.phase==='finished'?'Maç tamamlandı':`Yeni raund ${Math.max(0,Math.ceil(bomb.deadline-now))} sn içinde`}</small></div>}
     <aside className={`ks-bomb-objective ${touch?'is-touch':'is-desktop'}`}>
@@ -81,6 +111,14 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
         <button onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop_weapon'})}>Silahı bırak · G</button>
         {bomb.carrier===socket?.id&&<button onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop'})}>Bombayı bırak</button>}
       </div>:<span>{label(interactKey)} basılı tut · Kur / Çöz / Al · G: Silahı bırak{bomb.carrier===socket?.id?' · 7: Bombayı ele al · Shift+G: Bombayı bırak':''}</span>)}
+      {me?.alive&&['active','planted'].includes(bomb.phase)&&GRENADE_KEYS.some(item=>me.utility?.[item])&&
+        <div className="ks-utility-controls">
+          {GRENADE_KEYS.map((item,index)=>me.utility?.[item]&&(touch
+            ? <button key={item} type="button" aria-pressed={utility===item} onClick={()=>selectUtility(utility===item?undefined:item)}>{GRENADE_NAMES[item]}</button>
+            : <span key={item}>{[8,9,0][index]} · {GRENADE_NAMES[item]}</span>))}
+          {utility&&(touch?<><button type="button" onClick={()=>throwUtility(false)}>Uzağa at</button><button type="button" onClick={()=>throwUtility(true)}>Yakına bırak</button></>:<strong>{GRENADE_NAMES[utility]} · Sol tık: at · Sağ tık: yakına bırak</strong>)}
+        </div>}
+      {!shop && message && <span role="status">{message}</span>}
       {bomb.action&&<label>{bomb.action.kind==='plant'?`Bomba kuruluyor [${typedCode}]`:'Bomba çözülüyor'}<progress max={plantDuration} value={actionElapsed}/></label>}
       {bomb.phase==='planted'&&<strong role="alert">💣 Bomba {bomb.site} bölgesine kuruldu! ({Math.max(0,Math.ceil(bomb.deadline-now))} sn)</strong>}
       {bomb.phase==='planted'&&soloOrBotMatch&&<button type="button" onClick={()=>socket?.emit('strike:bomb_action',{kind:'fast_detonate'})} style={{marginTop:4,padding:'4px 10px',fontSize:12,background:'rgba(239,68,68,0.28)',border:'1px solid rgba(248,113,113,0.6)',borderRadius:6,color:'#fecaca',fontWeight:700}}>💥 Hızlı Patlat (Test)</button>}
@@ -93,10 +131,10 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
       <header><div><small>KAPSSTRIKE · {me?.team}</small><h2 id="ks-buy-title">Satın alma</h2><p>{Math.max(0,Math.ceil(bomb.deadline-now))} saniye kaldı · Raund {bomb.round}</p></div><strong>${me?.money||0}</strong><button aria-label="Satın alma menüsünü kapat" onClick={()=>changeShop(false)}>Oyuna dön · ESC</button></header>
       <div className="ks-buy-columns">{categories.map(category=><section key={category.name}><h3>{category.name}</h3>{category.items.filter(item=>item!=='kit'||me?.team==='CT').map(item=>{
         const armorItem = item === 'armor' || item === 'halfArmor';
-        const owned = item === 'kit' ? me?.kit : armorItem
+        const owned = isGrenade(item) ? me?.utility?.[item] : item === 'kit' ? me?.kit : armorItem
           ? (me?.armor ?? 0) >= (item === 'armor' ? 100 : 50)
           : me?.weapons.includes(item);
-        const slotTaken = !owned && !armorItem && item !== 'kit' && item !== 'pistol'
+        const slotTaken = !owned && !isGrenade(item) && !armorItem && item !== 'kit' && item !== 'pistol'
           && hasBombPrimary(me?.weapons ?? []);
         const refundPrice = bombRefundPrice(me, item);
         const affordable = (me?.money ?? 0) >= BOMB_SHOP[item];

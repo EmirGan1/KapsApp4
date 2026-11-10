@@ -37,3 +37,64 @@ test('armor and defuse kit refunds restore the previous loadout and cannot be re
  assert.equal(refundBombEquipment(m,'q','kit',3),false);
  assert.equal(refundBombEquipment(m,'q','armor',3),false);
 });
+
+test('grenades can be bought alongside a rifle and refunded independently; armor prices match the shop',async()=>{
+ const {BOMB_SHOP}=await import('../src/games/kapsstrike/bomb');
+ assert.equal(BOMB_SHOP.halfArmor,650);
+ assert.equal(BOMB_SHOP.armor,1200);
+ const {m}=setup(),p=m.players.p;
+ p.money=5000;
+ assert.ok(buyBombEquipment(m,'p','rifle',1));
+ for(const kind of ['flash','frag','smoke']){
+  assert.ok(buyBombEquipment(m,'p',kind,1));
+  assert.equal(buyBombEquipment(m,'p',kind,1),false);
+  assert.ok(refundBombEquipment(m,'p',kind,2));
+  assert.equal(refundBombEquipment(m,'p',kind,2),false);
+ }
+ assert.equal(p.money,2300);
+ assert.deepEqual(p.weapons,['pistol','knife','rifle']);
+});
+
+test('grenade simulation separates short throws, cover, flash facing and smoke lifetime',async()=>{
+ const {grenadeLaunch,grenadeEffect,stepGrenade}=await import('../src/games/kapsstrike/grenades');
+ const open={...MAPS.district,solids:[]};
+ const wall={...open,solids:[{id:'wall',kind:'box' as const,x:0,y:0,z:2,w:8,h:5,d:.3,color:'#888'}]};
+ const origin={x:0,y:1.62,z:0},forward={x:0,y:0,z:1},target={x:0,y:1.62,z:4};
+ const far=grenadeLaunch('a','smoke','p','T',origin,forward,0,false);
+ const near=grenadeLaunch('b','smoke','p','T',origin,forward,0,true);
+ for(let i=1;i<=150;i++)for(const g of [far,near])stepGrenade(g,open,1/120,i/120);
+ assert.ok(far.position.z>near.position.z+5);
+ assert.equal(far.expires,12.25);
+ assert.equal(grenadeEffect('frag',wall,origin,target,forward),0);
+ assert.ok(grenadeEffect('frag',open,origin,target,forward)>0);
+ assert.ok(grenadeEffect('flash',open,origin,target,{...forward,z:-1})>grenadeEffect('flash',open,origin,target,forward));
+});
+
+test('late join balances TDM and queues a new bomb player until the next round',async()=>{
+ const {KapsStrikeServerManager}=await import('../src/server/kapsstrikeServer');
+ const user=(id:number)=>({id,username:String(id),avatar:null});
+ for(const mode of ['ffa','tdm','bomb'] as const){
+  const io:any={to:()=>({emit(){}}),emit(){}};
+  const server=new KapsStrikeServerManager(io);
+  const room=server.createRoom(user(1),'a',{mode,maxPlayers:6});
+  server.joinRoom(room.roomCode,user(2),'b');server.setReady('b',true);
+  assert.equal(server.startGame('a').success,true);
+  server.stopRoomSimulationLoop(room);
+  server.tickSimulation(room);
+  const c=server.joinRoom(room.roomCode,user(3),'c');
+  assert.ok(c.success);
+  if(room.bomb){room.bomb.phase='active';room.bomb.deadline=100;}
+  const d=server.joinRoom(room.roomCode,user(4),'d');
+  assert.ok(d.success);
+  const p=room.players.get('d')!;
+  if(mode==='ffa')assert.equal(p.team,'none');
+  else assert.notEqual(p.team,room.players.get('c')!.team);
+  if(room.bomb){
+   assert.equal(p.state.hp,0);
+   assert.equal(room.bomb.players.d.alive,false);
+   room.bomb.phase='result';room.bomb.deadline=0;
+   server.tickSimulation(room);
+   assert.equal(p.state.hp,100);
+  }
+ }
+});

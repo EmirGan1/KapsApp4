@@ -143,6 +143,7 @@ export function shotDirection(p:PlayerState,shotIndex:number,pellet:number,ads:b
 }
 
 export function weaponDamage(id:WeaponId,distance:number,head:boolean,ads:boolean) {
+  if(id === "railgun") return Math.max(100, WEAPONS[id].damage * (head ? 2 : 1));
   if(id === "knife")return ads?MELEE.heavyDamage:MELEE.damage;
   const d=WEAPONS[id],falloff=id==="shotgun"?clamp(1-distance/45,.2,1):clamp(1-distance/(d.range*3),.7,1);
   return d.damage/d.pellets*(head?2:1)*falloff;

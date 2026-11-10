@@ -190,6 +190,18 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   for(const x of [-42,-30])box('upper-roof-remnant',x,6.8,7,2,.25,10,'#b5a083',false,'plaster');
   tunnel('b-tunnels',-45,22,5,18,2.4,6.6);
 
+  // Seal the sides of the Mid exit and support the base of the elevated B tunnel walls.
+  for(const side of [-1,1]){
+    box('b-tunnels-wall-base-infill',-45+side*2.5,0,22,.3,2.42,18);
+    box('mid-exit-wing',-9.52,0,10+side*2.02,.35,3.5,.62);
+  }
+  box('b-tunnels-south-threshold-infill',-45,0,13.08,5.28,2.4,.42);
+  box('b-tunnels-north-threshold-infill',-45,0,30.94,5.28,2.4,.42);
+
+  // Short cover leaves the plant centers and the main approaches open.
+  box('b-site-cover-crate',-37.7,2.4,42.6,1.8,1.65,1.7,'#a88962',false,'wood');
+  box('a-site-cover-crate-west',30.1,3.2,40.6,1.65,1.55,1.55,'#a88962',false,'wood');
+  box('a-site-cover-crate-east',38,3.2,42.7,2.05,1.9,1.55,'#9b7d5b',false,'wood');
   // Keep the barrel cover at the two sites.
   for(const [x,z,y] of [[31,42,3.2],[-40,45,2.4],[-31,40,2.4]])for(let i=0;i<2;i++){
     const s=box('barrel',x+i*.65,y,z,.52,.9,.52,'#738786',false,'metal');

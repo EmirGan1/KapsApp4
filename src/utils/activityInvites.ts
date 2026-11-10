@@ -7,7 +7,7 @@ export const ACTIVITY_NAMES = {
 } as const;
 
 export type Activity = keyof typeof ACTIVITY_NAMES;
-export type ActivityInvite = { id: string; activity: Activity; sender: string; room?: string };
+export type ActivityInvite = { id: string; activity: Activity; sender: string; room?: string; roomName?: string };
 export function isActivity(value: unknown): value is Activity {
   return typeof value === 'string' && Object.hasOwn(ACTIVITY_NAMES, value);
 }

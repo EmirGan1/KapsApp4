@@ -1,9 +1,10 @@
+import { grenadeEffect, grenadeLaunch, isGrenade, stepGrenade } from "../games/kapsstrike/grenades";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import {advanceReload} from '../games/kapsstrike/reload';
 import {dropBombWeapon,pickupBombWeapon} from '../games/kapsstrike/bombWeapons';
 import {safeSpawn,spreadSpawn} from "../games/kapsstrike/spawns";
 import {tracePlayer} from '../games/kapsstrike/hitboxes';
-import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,refundBombEquipment,bombWinTarget,type BombMatch} from "../games/kapsstrike/bomb";
+import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,refundBombEquipment,bombWinTarget,isBombPrimary,type BombMatch} from "../games/kapsstrike/bomb";
 import {createWorld,advanceWorld,claimSupply,dropInventory} from '../games/kapsstrike/world';
 import { randomBytes } from "node:crypto";
 import { StrikeInventory } from "./strikeInventory";
@@ -674,11 +675,14 @@ export class KapsStrikeServerManager {
     return room;
   }
 
+  private roomInvites = new Map<string,{target:number;sender:number;roomCode:string;expires:number}>();
+
   public joinRoom(
     roomCode: string,
     user: { id: number; username: string; avatar: string | null; color?: string },
     socketId: string,
-    password?: string
+    password?: string,
+    invited = false
   ): { success: boolean; room?: StrikeRoom; error?: string } {
     const room = this.findRoomByCode(roomCode);
     if (!room) {
@@ -686,7 +690,7 @@ export class KapsStrikeServerManager {
     }
 
     roomCode = room.roomCode; // Store canonical codes even when users join without KS-.
-    if (room.password && room.password !== (password || "").trim()) {
+    if (!invited && room.players.get(socketId)?.userId !== user.id && room.password && room.password !== (password || "").trim()) {
       return { success: false, error: "Hatalı oda şifresi." };
     }
 
@@ -734,9 +738,6 @@ export class KapsStrikeServerManager {
     }
 
     const isReconnecting = savedSession?.roomCode === room.roomCode;
-    if(room.mode==='bomb'&&room.status==='in_progress'&&!isReconnecting) {
-      return {success:false,error:'Aktif bomba maçına yeni oyuncu alınmıyor.'};
-    }
     if (room.players.size >= room.maxPlayers && !isReconnecting) return {success:false,error:"Oda dolu."};
     this.removePreviousMembership(user.id,socketId);
 
@@ -751,7 +752,7 @@ export class KapsStrikeServerManager {
         if (p.team === "red") redCount++;
         else if (p.team === "blue") blueCount++;
       });
-      team = redCount <= blueCount ? "red" : "blue";
+      team = redCount === blueCount ? (room.status === "lobby" || Math.random() < .5 ? "red" : "blue") : redCount < blueCount ? "red" : "blue";
     }
 
     const spawn = room.getSpawnPosition(team, room.players.size);
@@ -778,6 +779,26 @@ export class KapsStrikeServerManager {
         room.bomb.players[socketId] = { ...savedSession.bombPlayer, id: socketId };
       }
       this.disconnectedSessions.delete(user.id);
+    }
+
+    if (room.status === "in_progress") {
+      player.state.protectedUntil = room.tick + C.protectionTicks;
+      if (room.bomb && !room.bomb.players[socketId]) {
+        const alive = room.bomb.phase === "buy";
+        room.bomb.players[socketId] = {
+          id: socketId, team: team === "red" ? "T" : "CT", alive, position: { ...spawn },
+          money: BOMB_RULES.startMoney, armor: 0, kit: false, weapons: ["pistol", "knife"], plants: 0, defuses: 0, holdUntil: 0,
+        };
+        player.state.weapon.inventory = ["pistol", "knife"];
+        player.state.weapon.selected = "pistol";
+        player.state.hp = alive ? 100 : 0;
+      } else if (room.bomb?.players[socketId]) {
+        const member = room.bomb.players[socketId];
+        player.state.hp = member.alive ? 100 : 0;
+        player.state.armor = member.armor;
+        player.state.weapon.inventory = [...member.weapons];
+        player.state.weapon.selected = member.weapons.find(isBombPrimary) ?? "pistol";
+      }
     }
 
     player.skin = this.profiles.cache.get(user.id) || "classic";
@@ -1209,6 +1230,35 @@ export class KapsStrikeServerManager {
 
     // Resolve all valid same-step shots after every player has had a chance to fire.
     for(const hit of pendingHits)hit();
+    const bomb = room.bomb;
+    if (bomb?.grenades && (bomb.phase === "active" || bomb.phase === "planted")) {
+      const now = room.tick * C.dt;
+      bomb.grenades = bomb.grenades.filter(g => g.expires === undefined || g.expires > now);
+      for (const grenade of bomb.grenades) {
+        if (!stepGrenade(grenade,mapDef,C.dt,now) || grenade.kind === "smoke") continue;
+        const thrower = room.players.get(grenade.actor);
+        for (const target of room.players.values()) {
+          const member = bomb.players[target.id];
+          if (!member || target.state.hp <= 0 || room.tick < target.state.protectedUntil) continue;
+          const facing = aimDirection(target.state.yaw,target.state.pitch);
+          const effect = grenadeEffect(grenade.kind,mapDef,grenade.position,eye(target.state),facing);
+          if (!effect) continue;
+          if (grenade.kind === "flash") {
+            member.flashedUntil = Math.max(member.flashedUntil ?? 0,now + effect);
+          } else if (thrower && member.team !== grenade.team) {
+            const absorbed = Math.min(target.state.armor ?? 0, Math.floor(effect * .35));
+            const health = Math.min(target.state.hp, effect - absorbed);
+            target.state.armor = (target.state.armor ?? 0) - absorbed;
+            member.armor = target.state.armor;
+            target.state.hp -= health;
+            thrower.damage += health + absorbed;
+            room.addEvent({actor:target.id,kind:"damage",damage:health+absorbed,
+              direction:Math.atan2(grenade.position.x-target.state.movement.position.x,grenade.position.z-target.state.movement.position.z)-target.state.yaw});
+            if (target.state.hp === 0) this.handlePlayerKill(room,thrower,target,"knife",false,true,"frag");
+          }
+        }
+      }
+    }
     this.checkMatchEndConditions(room);
 
     // 2. Broadcast snapshots at snapshotRate (30 Hz) using shared precomputed room base
@@ -1353,7 +1403,7 @@ export class KapsStrikeServerManager {
         const apply=()=>{
           if(victim.state.hp<=0){if(trace)trace.reason='target-already-dead';return;}
         const damagePerPellet = weaponDamage(weaponId,nearest,isHeadshot,ads);
-        const absorbed = Math.min(victim.state.armor || 0, damagePerPellet);
+        const absorbed = weaponId === "railgun" ? 0 : Math.min(victim.state.armor || 0, damagePerPellet);
         victim.state.armor = (victim.state.armor || 0) - absorbed;
         const armor = room.bomb?.players[victim.id];
         if (armor) armor.armor = victim.state.armor;
@@ -1415,7 +1465,8 @@ export class KapsStrikeServerManager {
     victim: StrikeServerPlayer,
     weapon: WeaponId,
     headshot: boolean,
-    deferEnd = false
+    deferEnd = false,
+    utility?: "frag"
   ): void {
     for(const [id,credit] of victim.damageCredits) {
       const helper=room.players.get(id);
@@ -1453,6 +1504,7 @@ export class KapsStrikeServerManager {
       victimName: victim.username,
       victimTeam: victim.team,
       weapon,
+      utility,
       headshot,
       timestamp: Date.now(),
     };
@@ -1646,6 +1698,18 @@ export class KapsStrikeServerManager {
           player.pendingFire=undefined;
         }
         this.io.to(socket.id).emit('strike:snapshot',room.getSnapshotForPlayer(socket.id));reply(true);return;
+      }
+      if(request.kind==='throw_utility'&&isGrenade(request.item)){
+        const player=room.players.get(socket.id)!;
+        const member=b.players[socket.id];
+        if(!member.utility?.[request.item]||player.state.hp<=0||!['active','planted'].includes(b.phase)||(b.grenades?.length??0)>=30){
+          reply(false,'Bu bomba şu anda kullanılamaz.');return;
+        }
+        const short=(data as {short?:unknown}).short;
+        if(typeof short!=='boolean'){reply(false,'Geçersiz atış.');return;}
+        delete member.utility[request.item];
+        (b.grenades??=[]).push(grenadeLaunch(randomBytes(8).toString('hex'),request.item,socket.id,member.team,eye(player.state),aimDirection(player.state.yaw,player.state.pitch),now,short));
+        reply(true);return;
       }
       if(request.kind==='pickup_weapon'){const player=room.players.get(socket.id)!;reply(pickupBombWeapon(b,room.world,MAPS[room.map],player.state,room.tick));return;}
       if(request.kind==='drop_weapon'){const player=room.players.get(socket.id)!;const success=dropBombWeapon(b,room.world,player.state,room.tick);if(success)player.pendingFire=undefined;reply(success,success?undefined:'Bu silah bırakılamaz.');return;}
@@ -2057,6 +2121,19 @@ export class KapsStrikeServerManager {
       }
     );
 
+    socket.on("strike:accept_invite",(data: { id?: string }, cb?: (reply: {success:boolean; roomCode?:string; error?:string})=>void)=>{
+      if(typeof cb !== "function")return;
+      const id = data?.id;
+      const invite = typeof id === "string" ? this.roomInvites.get(id) : undefined;
+      if(!invite || invite.target !== userIdNum || invite.expires <= Date.now())return cb({success:false,error:"Davetin süresi dolmuş."});
+      const room = this.rooms.get(invite.roomCode);
+      if(!room || ![...room.players.values()].some(p=>p.userId===invite.sender && !p.isDisconnected))return cb({success:false,error:"Davet artık geçerli değil."});
+      const result = this.joinRoom(invite.roomCode,u,socket.id,undefined,true);
+      if(!result.success)return cb({success:false,error:result.error});
+      this.roomInvites.delete(id!);
+      cb({success:true,roomCode:invite.roomCode});
+    });
+
     let inviteWindow=0,inviteCount=0;
     socket.on("strike:send_invite",async(data,cb)=>{
       const respond=(success:boolean,error?:string)=>{if(typeof cb === "function")cb({success,error});};
@@ -2069,9 +2146,14 @@ export class KapsStrikeServerManager {
       try {
         const friends=await this.dbClient.execute({sql:"SELECT id FROM friends WHERE status=1 AND ((user1=? AND user2=?) OR (user1=? AND user2=?)) LIMIT 1",args:[userIdNum,target,target,userIdNum]});
         if(!friends.rows.length){respond(false,"Yalnızca arkadaşlarına davet gönderebilirsin.");return;}
+        const now=Date.now();
+        for(const [key,invite] of this.roomInvites)if(invite.expires<=now || (invite.target===target && invite.roomCode===room.roomCode))this.roomInvites.delete(key);
+        if(this.roomInvites.size>=1024){respond(false,"Davet kuyruğu dolu.");return;}
+        const id=randomBytes(18).toString("hex");
         let delivered=false;
         for(const peer of this.io.sockets.sockets.values())if(Number(peer.data.user?.id)===target){
-          peer.emit("strike:invite_received",{targetUserId:target,roomCode:room.roomCode,roomName:room.name,inviterId:userIdNum,inviterName:user.username,inviterAvatar:user.avatar});delivered=true;
+          this.roomInvites.set(id,{target,sender:userIdNum,roomCode:room.roomCode,expires:now+120000});
+          peer.emit("activity:invited",{id,activity:"kapsstrike",sender:user.username,room:room.roomCode,roomName:room.name});delivered=true;
         }
         respond(delivered,delivered?undefined:"Arkadaşın şu anda bağlı değil.");
       } catch {respond(false,"Davet gönderilemedi.");}

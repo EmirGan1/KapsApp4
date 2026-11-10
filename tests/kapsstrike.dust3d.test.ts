@@ -121,8 +121,7 @@ test('walking or jumping off the A edge cannot enter the former retaining-wall p
  }
 });
 
-test('Dust II cover crates are removed and previously open catwalk edges have a solid deck',()=>{
- assert.ok(!map.solids.some(s=>/crate|xbox|tarp/.test(s.id)));
+test('Dust II catwalk edges have a solid deck',()=>{
  for(const [x,z] of [[11.5,25.5],[11.5,26],[11.5,27],[11.5,28.5],[22.5,27.5],[22.5,28]]){
   assert.ok(map.solids.some(s=>!s.detail&&raySolid({x,y:3.24,z},{x:0,y:-1,z:0},s,.08)<.08),`deck at ${x},${z}`);
  }
@@ -152,9 +151,10 @@ test('running down Dust II ramps preserves ground contact and allows a jump whil
  }
 });
 
-test('Dust II has neither static cover boxes nor generated supply crates',async()=>{
+test('Dust II has curated A/B cover without generated supply crates',async()=>{
  const {createWorld,advanceWorld,DROP_INTERVAL}=await import('../src/games/kapsstrike/world');
- assert.ok(!map.solids.some(s=>/crate|xbox|tarp|blue-container/.test(s.id)));
+ assert.equal(map.solids.filter(s=>s.id.includes('a-site-cover-crate')).length,2);
+ assert.equal(map.solids.filter(s=>s.id.includes('b-site-cover-crate')).length,1);
  assert.ok(!MAPS.dust.solids.some(s=>/cargo-crate|crate-binding/.test(s.id)));
  const world=createWorld(map,1);
  advanceWorld(world,map,DROP_INTERVAL);
@@ -175,4 +175,15 @@ test('uphill jumps keep forward velocity on Dust II ramps',()=>{
    assert.ok(Math.hypot(m.velocity.x,m.velocity.z)>2,ramp.id);
   }
  }
+});
+
+test('B tunnel seams and Mid flanks have solid backing without closing the Mid passage',()=>{
+ for(const x of [-47.5,-42.5])for(const z of [14,20,26,30]){
+  assert.ok(map.solids.some(s=>s.id.includes('b-tunnels-wall-base-infill')&&raySolid({x,y:1,z},{x:0,y:1,z:0},s,2)===0));
+ }
+ for(const z of [7.98,12.02]){
+  assert.ok(map.solids.some(s=>s.id.includes('mid-exit-wing')&&raySolid({x:-9.52,y:1,z},{x:0,y:1,z:0},s,2)===0));
+ }
+ const result=walk({x:-19,y:0,z:10},{x:-5.5,z:10});
+ assert.ok(Math.abs(result.position.z-10)<.4);
 });

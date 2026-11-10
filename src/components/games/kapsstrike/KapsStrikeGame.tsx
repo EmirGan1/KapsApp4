@@ -1279,7 +1279,7 @@ export default function KapsStrikeGame({
                 {k.killerName}
               </span>
               {!k.id.startsWith("connection-") && <span className="ks-kill-weapon">
-                ⚡ {WEAPONS[k.weapon as WeaponId]?.name || k.weapon}
+                ⚡ {k.utility === "frag" ? "El bombası" : WEAPONS[k.weapon as WeaponId]?.name || k.weapon}
               </span>}
               {k.headshot && <span className="ks-kill-head">KAFA</span>}
               <span className={`ks-kill-victim ${k.victimTeam || ""}`}>

@@ -1,3 +1,4 @@
+import { SMOKE_RADIUS, type Grenade } from "./grenades";
 import {straightKnifeMotion} from "./knifeMotion";
 import {finishAppearance,finishTextureUrl} from "./finishAppearance";
 import {BombEffects} from './bombEffects';
@@ -95,6 +96,29 @@ export class StrikeRenderer {
   private knifeAttackType: "slash" | "heavy" = "slash";
   private knifeAttackCombo = 0;
   private qualityApplied = "";
+  private utilityMeshes = new Map<string,Mesh>();
+  private renderUtility(grenades: Grenade[] | undefined) {
+    if (!grenades?.length && !this.utilityMeshes.size) return;
+    const ids = new Set(grenades?.map(g => g.id));
+    for (const [id,mesh] of this.utilityMeshes) if (!ids.has(id)) {
+      mesh.dispose();
+      this.utilityMeshes.delete(id);
+    }
+    for (const grenade of grenades ?? []) {
+      let mesh = this.utilityMeshes.get(grenade.id);
+      if (!mesh) {
+        mesh = MeshBuilder.CreateSphere("utility-"+grenade.id,{diameter:1,segments:8},this.scene);
+        mesh.isPickable = false;
+        this.utilityMeshes.set(grenade.id,mesh);
+      }
+      const smoke = grenade.expires !== undefined && grenade.kind === "smoke";
+      const burst = grenade.expires !== undefined && !smoke;
+      const scale = smoke ? SMOKE_RADIUS*2 : burst ? 1.6 : .23;
+      mesh.scaling.set(scale,smoke ? scale*.7 : scale,scale);
+      mesh.position.set(grenade.position.x,grenade.position.y+(smoke?1.3:0),grenade.position.z);
+      mesh.material = this.material(smoke ? "#71777d" : burst ? (grenade.kind==="flash"?"#ffffff":"#ff983f") : "#405b49",burst,undefined,undefined,smoke);
+    }
+  }
   private supplyMeshes=new Map<string,TransformNode>();
   private plane?:TransformNode;
   private falling?:Mesh;
@@ -777,6 +801,7 @@ export class StrikeRenderer {
     spectator?:{position:Vec3;yaw:number;pitch:number;stance:string},
     bombEquipped=false,
   ) {
+    this.renderUtility(state.bomb?.grenades);
     this.visualTick=state.tick;
     const p = state.player,
       m = p.movement;

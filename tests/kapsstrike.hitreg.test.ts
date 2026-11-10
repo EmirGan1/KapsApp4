@@ -86,3 +86,14 @@ test('10 simultaneous automatic shooters retain bounded history and fire exactly
  const durations:number[]=[];for(let step=0;step<900;step++){for(const p of players)manager.processPlayerInput(p.id,{...input(step+1,room.tick,true),yaw:p.userId<=5?0:Math.PI,pitch:.08});const start=performance.now();manager.tickSimulation(room);durations.push(performance.now()-start);}
  assert.equal(counts.shots,600);assert.ok(players.every(p=>p.history.length<=60&&p.inputQueue.length<=24&&p.state.weapon.ammo.lmg===0));durations.sort((a,b)=>a-b);console.log(JSON.stringify({diagnostic:'10-shooter empty-range stress',acceptedShots:counts.shots,p95StepMs:durations[Math.floor(durations.length*.95)],meanStepMs:durations.reduce((a,b)=>a+b,0)/durations.length}));
 }));
+
+test('RX-3 Şimşek body shot defeats 100 health and full armor in one confirmed hit',()=>clearWorld(()=>{
+ const {manager,room,a,b,events}=fixture();
+ a.state.weapon.selected='railgun';
+ a.state.weapon.inventory=['railgun'];
+ a.state.pitch=Math.atan2(.62,5);
+ b.state.hp=100;b.state.armor=100;
+ (manager as any).verifyAndExecuteShot(room,a,true,room.tick);
+ assert.equal(b.state.hp,0);
+ assert.ok(events.some(e=>e.name==='strike:shot_ack'&&e.value.outcome==='hit'));
+}));

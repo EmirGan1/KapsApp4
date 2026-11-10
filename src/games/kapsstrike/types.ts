@@ -266,6 +266,7 @@ export interface KillFeedEntry {
   victimName: string;
   victimTeam: StrikeTeam;
   weapon: WeaponId;
+  utility?: "frag";
   headshot: boolean;
   timestamp: number;
 }

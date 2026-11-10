@@ -1523,3 +1523,7 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
   .ks-room-builder .ks-room-mode-cards button { padding:10px; min-height:115px; }
   .ks-room-builder > .ks-primary { justify-self:stretch; }
 }
+
+.ks-utility-controls { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+.ks-utility-controls button[aria-pressed="true"] { border-color:#f5c576; background:#57442c; }
+.ks-utility-flash { position:absolute; inset:0; background:#fff; pointer-events:none; z-index:110; }
