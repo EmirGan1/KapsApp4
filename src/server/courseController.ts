@@ -1,5 +1,6 @@
 import { Express, Request, Response } from "express";
 import fs from "fs";
+import type { registerStagedUploads } from "./stagedUploads";
 import path from "path";
 
 /**
@@ -145,7 +146,8 @@ export function registerCourseRoutes(
   client: any,
   upload: any,
   io: any,
-  deleteUploadedFile: (filePath: string) => Promise<void>
+  deleteUploadedFile: (filePath: string) => Promise<void>,
+  receiveSingleUpload: ReturnType<typeof registerStagedUploads>
 ) {
   // Ensure 'topics', 'doc_type', and 'download_count' columns exist in subject_files
   client.execute("ALTER TABLE subject_files ADD COLUMN topics TEXT").catch(() => {});
@@ -619,7 +621,7 @@ export function registerCourseRoutes(
   app.post(["/api/courses/:courseId/files", "/api/subjects/:courseId/files"], async (req: Request, res: Response) => {
     const authUser = await getAuthUserFromRequest(req, client);
     if (!authUser) return res.status(401).json({ error: "Giriş yapmalısınız." });
-    upload.single("file")(req, res, async (err: any) => {
+    await receiveSingleUpload(req, res, authUser.id, upload.single("file"), async (err: any) => {
       if (err) {
         if (err.code === "LIMIT_FILE_SIZE") {
           return res.status(413).json({ code: "UPLOAD_FILE_LIMIT", error: "Bir dosya en fazla 300 MB olabilir." });

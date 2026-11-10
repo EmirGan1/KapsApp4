@@ -1,4 +1,4 @@
-import { getUploadError, uploadErrorMessage } from "../utils/uploadErrors";
+import { uploadFile } from "../utils/uploadFile";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Socket } from "socket.io-client";
 import { Post, Story, MediaModalData } from "../types";
@@ -382,63 +382,23 @@ export default function Feed({
     let firstMediaUrl: string | null = null;
     let firstMediaType: "image" | "video" = "image";
 
-    // XMLHttpRequest helper to track upload progress in real-time
-    const uploadWithProgress = (url: string, formData: FormData): Promise<any> => {
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", url);
-        xhr.withCredentials = true;
-        getAuthHeaders().forEach((value,key)=>xhr.setRequestHeader(key,value));
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percent = Math.round((event.loaded / event.total) * 100);
-            setUploadProgress(percent);
-          }
-        };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(JSON.parse(xhr.responseText));
-            } catch {
-              resolve(xhr.responseText);
-            }
-          } else {
-            let body: unknown;
-            try { body = JSON.parse(xhr.responseText); } catch {}
-            reject(new Error(uploadErrorMessage(xhr.status, body)));
-          }
-        };
-        xhr.onerror = () => reject(new Error("Ağ hatası veya dosya yüklenemedi."));
-        xhr.send(formData);
-      });
-    };
-
     if (selectedMediaList.length > 0) {
       try {
-        if (selectedMediaList.length === 1) {
-          const formData = new FormData();
-          formData.append("file", selectedMediaList[0].file);
-          const data = await uploadWithProgress(getApiUrl("/api/upload"), formData);
-          firstMediaUrl = data.url;
-          firstMediaType = data.media_type === "video" ? "video" : "image";
-          uploadedAttachments = [{
-            url: data.url,
-            media_type: firstMediaType,
-            original_name: data.original_name,
-            size: data.size
-          }];
-        } else {
-          const formData = new FormData();
-          selectedMediaList.forEach((item) => {
-            formData.append("files", item.file);
+        const totalBytes = selectedMediaList.reduce((sum, media) => sum + media.file.size, 0);
+        let completeBytes = 0;
+        for (const { file } of selectedMediaList) {
+          const form = new FormData();
+          form.append("file", file);
+          const data = await uploadFile("/api/upload", form, getAuthHeaders(), percent => {
+            if (totalBytes) setUploadProgress(Math.round((completeBytes + file.size * percent / 100) * 100 / totalBytes));
           });
-          const data = await uploadWithProgress(getApiUrl("/api/upload-multiple"), formData);
-          if (data.files && Array.isArray(data.files)) {
-            uploadedAttachments = data.files;
-            firstMediaUrl = data.files[0]?.url || null;
-            firstMediaType = data.files[0]?.media_type === "video" ? "video" : "image";
-          }
+          uploadedAttachments.push({
+            url: data.url, media_type: data.media_type, original_name: data.original_name, size: data.size,
+          });
+          completeBytes += file.size;
         }
+        firstMediaUrl = uploadedAttachments[0]?.url || null;
+        firstMediaType = uploadedAttachments[0]?.media_type === "video" ? "video" : "image";
       } catch (err: any) {
         console.error("Media upload error:", err);
         const firstFile = selectedMediaList[0]?.file;
@@ -568,23 +528,13 @@ export default function Feed({
       }
       const formData = new FormData();
       formData.append("file", fileToUpload);
-      const res = await fetch(getApiUrl("/api/upload"), { method: "POST", body: formData, credentials: "include", headers: getAuthHeaders() });
-      if (!res.ok) {
-        if (res.status === 413) {
-          alert(await getUploadError(res));
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          alert(`Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB\nHata: ${errData.error || `Yüklenemedi (${res.status})`}`);
-        }
-        return;
-      }
-      const data = await res.json();
+      const data = await uploadFile("/api/upload", formData, getAuthHeaders());
       if (data.url) {
         socket.emit("create_story", data.url);
       }
     } catch (err) {
       console.error("Story upload error:", err);
-      alert("Hikaye yüklenirken bir hata oluştu.");
+      alert(err instanceof Error ? err.message : "Hikaye yüklenirken bir hata oluştu.");
     } finally {
       e.target.value = "";
     }

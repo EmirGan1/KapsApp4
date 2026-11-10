@@ -13,6 +13,7 @@ import os from "os";
 import { createClient } from "@libsql/client";
 import dotenv from "dotenv";
 import { registerSubjectResourceRoutes } from "./src/server/subjectResourceRoutes";
+import { registerStagedUploads } from "./src/server/stagedUploads";
 import { registerCourseRoutes } from "./src/server/courseController";
 import { registerPostRoutes } from "./src/server/postsController";
 import { registerAdminController } from "./src/server/adminController";
@@ -1680,9 +1681,14 @@ async function startServer() {
     }
   });
 
+  const receiveSingleUpload = registerStagedUploads(app, uploadsDir, async req => {
+    const user = await authenticateToken(req);
+    return user ? { id: user.id } : null;
+  });
   app.post("/api/upload", async (req, res) => {
-    if (!await authenticateToken(req)) return res.status(401).json({ error: "Oturum gerekli." });
-    (upload.single("file") as any)(req, res, async (err: any) => {
+    const user = await authenticateToken(req);
+    if (!user) return res.status(401).json({ error: "Oturum gerekli." });
+    await receiveSingleUpload(req, res, user.id, upload.single("file"), async (err: any) => {
       if (err) {
         console.error("Upload single error:", err);
         if (err.code === "LIMIT_FILE_SIZE") {
@@ -1798,7 +1804,7 @@ async function startServer() {
   });
 
   // Course / Subject Files Endpoints (PDF, DOCX, PPTX, XLSX, ZIP, etc.)
-  registerCourseRoutes(app, client, upload, io, deleteUploadedFile);
+  registerCourseRoutes(app, client, upload, io, deleteUploadedFile, receiveSingleUpload);
   registerSubjectResourceRoutes(app, client);
   registerPostRoutes(app, client, io);
 

@@ -1,4 +1,4 @@
-import { getUploadError } from "../utils/uploadErrors";
+import { uploadFile } from "../utils/uploadFile";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -287,17 +287,7 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
     }
 
     try {
-      const res = await fetch(getApiUrl(`/api/courses/${encodeURIComponent(courseId)}/files`), {
-        method: "POST",
-        headers: getFullAuthHeaders(),
-        body: formData
-      });
-
-      if (!res.ok) {
-        throw new Error(await getUploadError(res));
-      }
-
-      const data = await res.json();
+      const data = await uploadFile(`/api/courses/${encodeURIComponent(courseId)}/files`, formData, getAuthHeaders());
       if (data && data.file) {
         setFiles((prev) => [data.file, ...(Array.isArray(prev) ? prev : [])]);
       }
