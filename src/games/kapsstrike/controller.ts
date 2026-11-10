@@ -1,5 +1,5 @@
 import {FootstepTracker,stepSurface} from "./footsteps";
-import {touchAimDelta} from './aimAssist';
+import {touchAimDelta, TouchCombatAssist, type TouchCombatTarget} from './aimAssist';
 import {TeamSpectator} from './spectator';
 import {nearestSupply,supplyLabel} from './world';
 import { cleanBindings, held, Bindings, Action } from "./controls";
@@ -22,7 +22,7 @@ import {
 } from "./types";
 import { MAPS } from "./maps";
 import {touchControls,currentInputDevice} from '../../utils/gameInput';
-import { createTraining, simulate, shouldAutoReload } from "./combat";
+import { createTraining, simulate, shouldAutoReload, eye } from "./combat";
 import { PHYSICS as C, WEAPONS, WEAPON_ORDER, ownsWeapon } from "./config";
 import { clamp, fits, support } from "./physics";
 
@@ -225,6 +225,8 @@ export class StrikeController {
   private touchMoveX = 0;
   private touchMoveZ = 0;
   private touchFire = false;
+  private touchCombat = new TouchCombatAssist();
+  private touchRenderedTargets?: { time: number; targets: TouchCombatTarget[] };
   private touchAds = false;
   private touchJump = false;
   private touchCrouch = false;
@@ -765,6 +767,7 @@ export class StrikeController {
         this.previous = { ...this.state.player.movement.position };
         const keyMoveX = Number(this.down("right")) - Number(this.down("left"));
         const keyMoveZ = Number(this.down("forward")) - Number(this.down("backward"));
+        const autoFire = this.updateTouchCombat(now);
         const cmd: InputCommand = {
           sequence: ++this.sequence,
           tick: this.state.tick,
@@ -778,7 +781,7 @@ export class StrikeController {
           crouch:
             this.touchCrouch ||
             this.down("crouch") || this.down("slide"),
-          fire: this.touchFire || this.mouseFire || this.down("fire") || (this.state.player.weapon.selected === "knife" && (this.touchAds || this.ads || this.down("ads"))),
+          fire: autoFire || this.touchFire || this.mouseFire || this.down("fire") || (this.state.player.weapon.selected === "knife" && (this.touchAds || this.ads || this.down("ads"))),
           ads: this.touchAds || this.ads || this.down("ads"),
           reload: this.pendingReload || shouldAutoReload(this.state.player.weapon, this.state.tick),
           weapon: this.pendingWeapon,
@@ -973,6 +976,7 @@ export class StrikeController {
         skin: p2.skin,
         weaponSkin:p2.weaponSkin,
         hp: p2.hp,
+        connected: p2.connected,
         protectedUntil:p2.protectedUntil,
         velocity:p2.velocity,
         stance: p2.stance,
@@ -989,6 +993,19 @@ export class StrikeController {
       };
     });
 
+    if (this.isTouchDevice && (this.settings.touchAimAssist !== false || this.settings.touchAutoFire !== false)) {
+      this.touchRenderedTargets = {
+        time: newer.time,
+        targets: interpolatedPlayers
+          .filter(player => player.id !== myId && player.connected !== false)
+          .map(player => ({
+            ...player,
+            crouched: player.stance !== 'stand',
+            friendly: this.localTeam !== 'none' && player.team === this.localTeam,
+            protected: player.protectedUntil > newer.tick,
+          })),
+      };
+    }
     this.refreshSpectator(interpolatedPlayers);
     if(!this.menuOverlay){
       const map=MAPS[this.state.map];
@@ -1196,6 +1213,8 @@ export class StrikeController {
     this.callbacks?.onPttChange?.(false);
     this.callbacks?.onScoreboardToggle?.(false);
     this.touchMoveX = this.touchMoveZ = 0;
+    this.touchCombat.reset();
+    this.touchRenderedTargets = undefined;
     this.touchFire = this.touchAds = this.touchJump = this.touchCrouch = this.touchSprint = false;
   }
 
@@ -1229,6 +1248,33 @@ export class StrikeController {
   public setTouchMovement(x: number, z: number) {
     this.touchMoveX = clamp(x, -1, 1);
     this.touchMoveZ = clamp(z, -1, 1);
+  }
+
+  private updateTouchCombat(now: number) {
+    const player = this.state.player;
+    const tracking = this.settings.touchAimAssist !== false;
+    const autoFire = this.settings.touchAutoFire !== false;
+    const phase = this.state.bomb?.phase;
+    if (!this.isTouchDevice || (!tracking && !autoFire) || this.menuOverlay || player.hp <= 0 ||
+      player.weapon.selected === 'knife' || this.bombEquipped || this.pendingWeapon ||
+      (phase && phase !== 'active' && phase !== 'planted')) {
+      this.touchCombat.reset();
+      return false;
+    }
+
+    const rendered = this.touchRenderedTargets;
+    const targets = this.isMultiplayer
+      ? (this.socket?.connected && rendered && now - rendered.time <= 200 ? rendered.targets : [])
+      : this.state.targets.map(target => ({ ...target, dummy: true }));
+    const range = Math.min(35, WEAPONS[player.weapon.selected].range);
+    const result = this.touchCombat.step(eye(player), this.yaw, this.pitch, targets, MAPS[this.state.map], range, tracking, autoFire, C.dt);
+    this.yaw = result.yaw;
+    this.pitch = result.pitch;
+    const weapon = player.weapon;
+    const tick = this.state.tick;
+    // Send discrete trigger presses through normal prediction and server cadence.
+    return result.fire && !weapon.triggerHeld && !weapon.reloadUntil &&
+      tick >= weapon.nextFire && tick >= weapon.switchUntil && weapon.ammo[weapon.selected] > 0;
   }
 
   public addTouchLook(deltaX: number, deltaY: number) {

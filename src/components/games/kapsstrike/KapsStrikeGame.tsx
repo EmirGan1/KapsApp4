@@ -1,3 +1,4 @@
+import { Maximize, Minimize } from "lucide-react";
 import StrikeDamageFeedback from "./StrikeDamageFeedback";
 import StrikeBombHUD from "./StrikeBombHUD";
 import StrikeInventory from "./StrikeInventory";
@@ -58,6 +59,7 @@ export default function KapsStrikeGame({
   color = "#3b82f6",
   targetRoomId = null,
 }: KapsStrikeGameProps) {
+  const gameRoot = useRef<HTMLElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const game = useRef<StrikeController | null>(null);
   const voice = useRef<StrikeVoiceManager | null>(null);
@@ -85,6 +87,24 @@ export default function KapsStrikeGame({
   const [touchLayout, setTouchLayout] = useState<TouchLayout>(() => loadTouchLayout());
   const [hud, setHUD] = useState<StrikeHUD | null>(null);
   const [error, setError] = useState("");
+  const [fullscreen, setFullscreen] = useState(false);
+  const canFullscreen = typeof document !== "undefined" && document.fullscreenEnabled;
+  useEffect(() => {
+    const syncFullscreen = () => setFullscreen(!!gameRoot.current && document.fullscreenElement === gameRoot.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+  const toggleFullscreen = async () => {
+    const element = gameRoot.current;
+    if (!element) return;
+    try {
+      if (document.fullscreenElement === element) await document.exitFullscreen();
+      else await element.requestFullscreen();
+    } catch {
+      setError("Tarayıcı tam ekran isteğini kabul etmedi.");
+    }
+  };
+  const fullscreenLabel = fullscreen ? "Tam ekrandan çık" : "Tam ekran";
   const [returnFire, setReturnFire] = useState(false);
   const [supported, setSupported] = useState(true);
   const [inventoryAdmin,setInventoryAdmin]=useState(false);
@@ -840,7 +860,7 @@ export default function KapsStrikeGame({
   });
 
   return (
-    <section className={`ks-root ks-experience ${isMobile?'ks-touch-layout':''} ks-view-${view} ${hud?.ads&&(hud.weapon==='sniper'||hud.weapon==='railgun')?'ks-scoped':''}`} aria-label="KapsStrike 3D FPS">
+    <section ref={gameRoot} className={`ks-root ks-experience ${isMobile?'ks-touch-layout':''} ks-view-${view} ${hud?.ads&&(hud.weapon==='sniper'||hud.weapon==='railgun')?'ks-scoped':''}`} aria-label="KapsStrike 3D FPS">
       <canvas
         ref={canvas}
         className="ks-canvas"
@@ -876,6 +896,13 @@ export default function KapsStrikeGame({
           title="Ayarlar & Duraklat"
         >
           ⚙️
+        </button>
+      )}
+
+      {view === "play" && canFullscreen && (
+        <button type="button" className="ks-pause-gear-btn ks-fullscreen-btn" aria-label={fullscreenLabel}
+          title={fullscreenLabel} onClick={() => void toggleFullscreen()}>
+          {fullscreen ? <Minimize size={19} aria-hidden="true" /> : <Maximize size={19} aria-hidden="true" />}
         </button>
       )}
 
@@ -2080,19 +2107,7 @@ export default function KapsStrikeGame({
               >
                 Kontroller
               </button>
-              <button
-                onClick={() => {
-                  if (document.fullscreenElement)
-                    void document.exitFullscreen();
-                  else
-                    void document
-                      .querySelector(".ks-root")
-                      ?.requestFullscreen()
-                      .catch(() => setError("Tam ekran açılamadı."));
-                }}
-              >
-                Tam ekran
-              </button>
+              {canFullscreen && <button type="button" onClick={() => void toggleFullscreen()}>{fullscreenLabel}</button>}
               <button
                 onClick={() => {
                   exit();

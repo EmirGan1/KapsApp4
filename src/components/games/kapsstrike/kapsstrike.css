@@ -1472,3 +1472,14 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
 .ks-buy-columns button.is-slot-taken { opacity: 1; background: #192635; border-color: #66563b; }
 .ks-buy-columns button.is-slot-taken small { color: #ffd393; }
 .ks-buy-symbol svg { max-width: 100%; max-height: 100%; }
+
+.ks-root .ks-fullscreen-btn {
+  right: calc(max(14px, env(safe-area-inset-right)) + 56px);
+  padding: 0;
+}
+
+@media (pointer: coarse) {
+  .ks-root.ks-touch-layout .ks-fullscreen-btn {
+    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
+  }
+}
