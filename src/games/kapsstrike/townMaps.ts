@@ -18,7 +18,7 @@ export function townMap(id:MapId):MapDefinition {
  };
  const lamp=(x:number,z:number,night=false)=>{b('lamp-post',x,0,z,.14,5,.14,'#46515a','metal');deco('lamp-arm',x,4.85,z+.55,.16,.14,1.2,'#46515a','metal');const s=deco('lamp-head',x,4.7,z+1,.6,.13,.8,night?'#61d7d0':'#e6cb92');s.glow=night;};
  const barrel=(x:number,z:number,color='#957457')=>{b('barrel',x,0,z,.85,1.12,.85,color,'metal',false,'cylinder');for(const y of [.15,.85])deco('barrel-ring',x,y,z,.9,.08,.9,'#49505a','metal').shape='cylinder';};
- const crate=(x:number,z:number)=>{b('cargo-crate',x,0,z,1.3,1.05,1.2,'#a17e55','wood');for(const side of [-1,1])deco('crate-binding',x+side*.45,0,z,.09,1.09,1.23,'#655745');};
+ const crate=(x:number,z:number)=>{if(id==='dust')return;b('cargo-crate',x,0,z,1.3,1.05,1.2,'#a17e55','wood');for(const side of [-1,1])deco('crate-binding',x+side*.45,0,z,.09,1.09,1.23,'#655745');};
  const vehicle=(x:number,z:number,truck=false,future=false)=>{
   const color=future?'#426a82':truck?'#a2957d':'#8a6b59';
   b('vehicle-chassis',x,.25,z,2.1,.85,truck?6.4:4.5,color,'metal');

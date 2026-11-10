@@ -135,3 +135,29 @@ test('aiming down sights permits jumping off supported Dust II ground',()=>{
  assert.ok(m.position.y>baseline);
  assert.ok(m.velocity.y>0);
 });
+
+test('running down Dust II ramps preserves ground contact and allows a jump while aiming',()=>{
+ for(const id of ['district-a-ramp-long','district-a-ramp-upper','district-b-doors-ramp','district-tunnel-entrance-ramp']){
+  const ramp=map.solids.find(s=>s.id===id);
+  assert.ok(ramp?.kind==='ramp');
+  const x=ramp.x,z=ramp.z;
+  const m=newMovement({x,y:surface(ramp,x,z),z});
+  const yaw=ramp.axis==='x'?(ramp.reverse?Math.PI/2:-Math.PI/2):(ramp.reverse?0:Math.PI);
+  m.velocity.x=5*Math.sin(yaw);m.velocity.z=5*Math.cos(yaw);
+  for(let i=0;i<9;i++){
+   move(m,{sequence:i,tick:i,moveX:0,moveZ:1,yaw,pitch:0,jump:i===8,sprint:false,crouch:false,fire:false,ads:true,reload:false},map,i);
+   if(i<8)assert.equal(m.grounded,true,`${id} descending at tick ${i}`);
+  }
+  assert.ok(m.velocity.y>0,`${id} jump`);
+ }
+});
+
+test('Dust II has neither static cover boxes nor generated supply crates',async()=>{
+ const {createWorld,advanceWorld,DROP_INTERVAL}=await import('../src/games/kapsstrike/world');
+ assert.ok(!map.solids.some(s=>/crate|xbox|tarp|blue-container/.test(s.id)));
+ assert.ok(!MAPS.dust.solids.some(s=>/cargo-crate|crate-binding/.test(s.id)));
+ const world=createWorld(map,1);
+ advanceWorld(world,map,DROP_INTERVAL);
+ assert.deepEqual(world.pickups,[]);
+ assert.equal(world.drop,undefined);
+});

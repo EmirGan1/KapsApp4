@@ -227,8 +227,13 @@ export function move(
     }
   } else {
     const floor = support(map, p, oldY + 0.05);
-    p.y = Math.max(nextY, floor);
-    m.grounded = nextY <= floor;
+    // Descending a ramp can move the floor farther than one tick of gravity.
+    // Keep existing ground contact over a small slope drop, never across a ledge.
+    const followsRamp = wasGrounded && nextY > floor && oldY - floor <= .12 &&
+      nearbyCollisionSolids(map,p).some(s => s.kind === "ramp" && overlaps(s,p) &&
+        Math.abs(surface(s,p.x,p.z) - floor) < .001);
+    p.y = followsRamp ? floor : Math.max(nextY, floor);
+    m.grounded = followsRamp || nextY <= floor;
     if (!fits(map, p, m.height)) {
       // A rounded capsule may overhang a ledge while its feet are just below
       // the top. Resolve the landing before allowing the next downward step.

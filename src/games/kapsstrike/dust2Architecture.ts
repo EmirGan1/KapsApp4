@@ -153,7 +153,6 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
   box('short-a-approach-parapet',24.5,3.2,34.15,5,.9,.3);
 
   // A Long Blue Shipping Container along east wall
-  box('a-long-blue-container',50.2,0,8.0,2.1,2.6,5.4,'#2d5a7b',false,'metal');
 
   // Stair treads (Short, Upper-to-Lower Tunnels, B Window)
   for(let i=0;i<32;i++)box('stair-tread-short',13,0,15+(i+.5)*.25,3.3,(i+1)*.1,.255);
