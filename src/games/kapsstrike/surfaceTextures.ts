@@ -85,6 +85,30 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
    }
   }
 
+  if(surface==='sand'){
+   // Wind-smoothed desert ground: broad low-contrast drifts plus dense, fine mineral grains.
+   // The pattern has no grid seams, keeping the large Dust II floor from reading as tiled plastic.
+   for(let i=0;i<18;i++){
+    const px=rand()*128,py=rand()*128,rx=18+rand()*30,ry=5+rand()*10;
+    const g=c.createRadialGradient(px,py,0,px,py,rx);
+    g.addColorStop(0,rand()>.5?'rgba(255,237,196,0.13)':'rgba(118,91,59,0.09)');
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    c.save();c.translate(px,py);c.scale(1,ry/rx);c.translate(-px,-py);
+    c.fillStyle=g;c.fillRect(px-rx,py-rx,rx*2,rx*2);c.restore();
+   }
+   for(let i=0;i<1800;i++){
+    const light=rand()>.53;
+    c.fillStyle=light?'rgba(255,239,204,0.17)':'rgba(92,70,46,0.13)';
+    const grain=.25+rand()*.6;c.fillRect(rand()*128,rand()*128,grain,grain*.6);
+   }
+   // Sparse compacted footprints/pebbles create natural scale without busy high-contrast tiling.
+   for(let i=0;i<24;i++){
+    const x=rand()*128,y=rand()*128,r=.35+rand()*.8;
+    c.fillStyle=i%3===0?'rgba(80,70,58,0.18)':'rgba(239,220,184,0.16)';
+    c.beginPath();c.ellipse(x,y,r*1.5,r,rand()*Math.PI,0,Math.PI*2);c.fill();
+   }
+  }
+
   if(surface==='brick'){
    // Running bond masonry bricks with authentic mortar beds and tone variation
    const rows=8,rowH=128/rows,brickW=128/3.5;
@@ -228,7 +252,7 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
     c.fillRect(x, y, length, 1 + random() * 1.4);
    }
   }
-  if(surface==='brick'||surface==='stone'||surface==='concrete'||surface==='plaster'){
+  if(surface==='brick'||surface==='stone'||surface==='sand'||surface==='concrete'||surface==='plaster'){
    for(let i=0;i<30;i++){
     let x=random()*size,y=random()*size;
     c.strokeStyle='rgba(25,32,40,0.18)';c.lineWidth=0.75;

@@ -265,7 +265,7 @@ export class StrikeRenderer {
         { width: 320, height: 320 },
         this.scene,
       );
-      ground.material = this.terrainMaterial(map.floor,false,(map.id==='dust'||map.id==='bolluca')?'stone':map.id==='neon'?'asphalt':'concrete');
+      ground.material = this.terrainMaterial(map.floor,false,map.floorSurface??(map.id==='neon'?'asphalt':'concrete'));
       this.worldUV(ground);
       ground.receiveShadows = true;
       ground.isPickable = false;
@@ -735,7 +735,8 @@ export class StrikeRenderer {
     if(q!=='high'||emissive||label||!surface)return this.material(color,emissive,surface,label,doubleSided);
     const key=JSON.stringify([color,surface,doubleSided]);let m=this.terrainMaterials.get(key);
     if(!m){
-      m=new PBRMaterial('terrain-pbr-'+key,this.scene);m.albedoColor=Color3.FromHexString(color);m.metallic=surface==='metal'?.65:0;m.roughness=surface==='glass'?.2:surface==='metal'?.48:.92;
+      m=new PBRMaterial('terrain-pbr-'+key,this.scene);m.albedoColor=Color3.FromHexString(color);m.metallic=surface==='metal'?.65:0;m.roughness=surface==='glass'?.2:surface==='metal'?.48:surface==='sand'?.99:.92;
+      if(surface==='sand')m.reflectivityColor=new Color3(.18,.15,.11);
       const photographic=['stone','plaster','concrete','brick'].includes(surface)&&typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine';
       if(photographic){
         const set=surface==='stone'||(surface==='concrete'&&color===this.map.floor)?'stone':'wall';

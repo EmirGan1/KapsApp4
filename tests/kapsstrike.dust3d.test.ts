@@ -2,6 +2,10 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {MAPS} from '../src/games/kapsstrike/maps';
 import {move,newMovement,raySolid,surface,fits,support} from '../src/games/kapsstrike/physics';
 const map=MAPS.district;
+test('Dust II uses granular desert terrain while Bolluca retains its stone streets',()=>{
+ assert.equal(map.floorSurface,'sand');
+ assert.equal(MAPS.bolluca.floorSurface,'stone');
+});
 function walk(start:{x:number;y:number;z:number},target:{x:number;z:number},ticks=1000){
  const m=newMovement(start);let reached=false;
  for(let i=0;i<ticks;i++){

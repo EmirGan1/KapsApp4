@@ -251,7 +251,7 @@ export function bolluca(): MapDefinition {
       color: "#51413a", label, detail: true });
 
   return {
-    id: "bolluca", name: "Bolluca", subtitle: "Palace, Mid ve Pazar", bounds: 54, sky: "#bfd8ec", floor: "#c7b79b",
+    id: "bolluca", name: "Bolluca", subtitle: "Palace, Mid ve Pazar", bounds: 54, sky: "#bfd8ec", floor: "#c7b79b", floorSurface: "stone",
     solids, routes, radarFootprint: rects, landmarks: Object.keys(blocks), bombSites: sites, targets: [], hazard: { x: 120, z: 120, r: 0 },
     spawns: [point(43, 5), point(46, 6), point(49, 8), point(43, 10), point(47, 12),
       point(-31, -40), point(-28, -41), point(-25, -38), point(-22, -41), point(-19, -39)],

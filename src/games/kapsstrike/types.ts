@@ -20,7 +20,7 @@ export interface Solid {
   detail?: boolean;
   hidden?: boolean;
   shape?: "cylinder" | "cone";
-  surface?: "plaster" | "stone" | "brick" | "metal" | "asphalt" | "concrete" | "wood" | "glass" | "water" | "fabric";
+  surface?: "plaster" | "stone" | "sand" | "brick" | "metal" | "asphalt" | "concrete" | "wood" | "glass" | "water" | "fabric";
   glow?: boolean;
   label?: string;
 }
@@ -50,6 +50,7 @@ export interface MapDefinition {
   bounds: number;
   sky: string;
   floor: string;
+  floorSurface?: Solid["surface"];
   solids: Solid[];
   spawns: Vec3[];
   targets: TargetDefinition[];
