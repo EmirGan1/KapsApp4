@@ -2,6 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {createBombMatch,buyBombEquipment,refundBombEquipment} from '../src/games/kapsstrike/bomb';
 import {dropBombWeapon,pickupBombWeapon} from '../src/games/kapsstrike/bombWeapons';
 import {createTraining} from '../src/games/kapsstrike/combat';import {MAPS} from '../src/games/kapsstrike/maps';import {newMovement} from '../src/games/kapsstrike/physics';
+import type { MapDefinition } from "../src/games/kapsstrike/types";
 function setup(){const state=createTraining('district');const p=state.player;p.id='p';const map=MAPS.district;p.movement=newMovement(map.spawns[0]);const m=createBombMatch([{id:'p',team:'T',position:p.movement.position},{id:'q',team:'CT',position:map.spawns[5]}],0);p.weapon.inventory=['pistol','knife'];p.weapon.selected='pistol';state.world!.pickups=[];return {p,m,w:state.world!,map};}
 test('drop and pick up preserve ammo, single ownership and cannot refund a dropped purchase',()=>{const {p,m,w,map}=setup();m.players.p.money=5000;assert.ok(buyBombEquipment(m,'p','rifle',1));p.weapon.selected='rifle';p.weapon.ammo.rifle=7;assert.ok(dropBombWeapon(m,w,p,1));assert.equal(p.weapon.selected,'pistol');assert.deepEqual(m.players.p.weapons,['pistol','knife']);assert.equal(m.players.p.purchase,undefined);assert.equal(dropBombWeapon(m,w,p,2),false);assert.equal(w.pickups.length,1);assert.ok(pickupBombWeapon(m,w,map,p,2));assert.equal(p.weapon.ammo.rifle,7);assert.deepEqual(m.players.p.weapons,['pistol','knife','rifle']);assert.equal(pickupBombWeapon(m,w,map,p,3),false);assert.equal(m.players.p.money,2300);});
 test('pickup swaps existing firearm and rejects distant, dead and frozen players',()=>{const {p,m,w,map}=setup();w.pickups.push({id:'test',position:{...p.movement.position},weapon:'sniper',ammo:2,kind:'dropped',opened:false,expires:999});assert.ok(pickupBombWeapon(m,w,map,p,1));assert.deepEqual(m.players.p.weapons,['pistol','knife','sniper']);assert.equal(w.pickups.filter(x=>!x.opened).length,0);p.hp=0;assert.equal(dropBombWeapon(m,w,p,2),false);p.hp=100;m.phase='result';assert.equal(pickupBombWeapon(m,w,map,p,3),false);assert.equal(dropBombWeapon(m,w,p,3),false);m.phase='active';p.movement.position.x+=10;assert.equal(pickupBombWeapon(m,w,map,p,4),false);});
@@ -60,14 +61,54 @@ test('grenade simulation separates short throws, cover, flash facing and smoke l
  const open={...MAPS.district,solids:[]};
  const wall={...open,solids:[{id:'wall',kind:'box' as const,x:0,y:0,z:2,w:8,h:5,d:.3,color:'#888'}]};
  const origin={x:0,y:1.62,z:0},forward={x:0,y:0,z:1},target={x:0,y:1.62,z:4};
- const far=grenadeLaunch('a','smoke','p','T',origin,forward,0,false);
- const near=grenadeLaunch('b','smoke','p','T',origin,forward,0,true);
+ const stationary={x:0,y:0,z:0};
+ const far=grenadeLaunch('a','smoke','p','T',origin,forward,0,false,stationary);
+ const near=grenadeLaunch('b','smoke','p','T',origin,forward,0,true,stationary);
  for(let i=1;i<=150;i++)for(const g of [far,near])stepGrenade(g,open,1/120,i/120);
  assert.ok(far.position.z>near.position.z+5);
  assert.equal(far.expires,12.25);
  assert.equal(grenadeEffect('frag',wall,origin,target,forward),0);
  assert.ok(grenadeEffect('frag',open,origin,target,forward)>0);
  assert.ok(grenadeEffect('flash',open,origin,target,{...forward,z:-1})>grenadeEffect('flash',open,origin,target,forward));
+});
+
+test('full grenade throws gain range from aiming up, running forward and jumping', async () => {
+ const { grenadeLaunch, stepGrenade } = await import('../src/games/kapsstrike/grenades');
+ const { aimDirection } = await import('../src/games/kapsstrike/combat');
+ const { PHYSICS } = await import('../src/games/kapsstrike/config');
+ const open: MapDefinition = { ...MAPS.district, bounds: 100, solids: [] };
+ const stationary = { x: 0, y: 0, z: 0 };
+ const running = { ...stationary, z: PHYSICS.sprintSpeed };
+ const jumping = { ...running, y: PHYSICS.jumpSpeed };
+ const throwGrenade = (pitch: number, velocity: typeof stationary, short = false, map = open) => {
+  const origin = { x: 0, y: short ? 0.65 : PHYSICS.eye, z: 0 };
+  const grenade = grenadeLaunch('test', 'frag', 'p', 'T', origin, aimDirection(0, pitch), 0, short, velocity);
+  let peak = origin.y;
+  for (let tick = 1; tick <= 200 && grenade.expires === undefined; tick++) {
+   stepGrenade(grenade, map, PHYSICS.dt, tick * PHYSICS.dt);
+   peak = Math.max(peak, grenade.position.y);
+  }
+  return { position: grenade.position, peak };
+ };
+ const flat = throwGrenade(0, stationary);
+ assert.ok(flat.position.z > 25);
+ assert.ok(throwGrenade(-0.30, stationary).position.z > flat.position.z + 2);
+ assert.ok(throwGrenade(0.50, stationary).position.z < flat.position.z);
+ const run = throwGrenade(0, running);
+ const jump = throwGrenade(0, jumping);
+ assert.ok(run.position.z > flat.position.z + 5);
+ assert.ok(jump.position.z > run.position.z + 3);
+ assert.ok(jump.peak > run.peak + 2);
+
+ const short = throwGrenade(1.48, jumping, true);
+ assert.ok(short.position.z > 2 && short.position.z < 5);
+ assert.ok(short.peak > 0.70 && short.peak < 1);
+ assert.deepEqual(short, throwGrenade(-1.48, stationary, true));
+
+ const wall = { ...open, solids: [
+  { id: 'wall', kind: 'box' as const, x: 0, y: 0, z: 2, w: 10, h: 10, d: 0.15, color: '#888' },
+ ] };
+ assert.ok(throwGrenade(0, jumping, false, wall).position.z < 2);
 });
 
 test('late join balances TDM and queues a new bomb player until the next round',async()=>{

@@ -1,5 +1,5 @@
 import type { MapDefinition, Vec3 } from "./types";
-import { collisionSolids, raySolid, support } from "./physics";
+import { clamp, collisionSolids, raySolid, support } from "./physics";
 
 export const GRENADE_NAMES = { flash: "Flaş bombası", frag: "El bombası", smoke: "Sis bombası" } as const;
 export type GrenadeKind = keyof typeof GRENADE_NAMES;
@@ -14,11 +14,27 @@ export function isGrenade(value: unknown): value is GrenadeKind {
   return typeof value === "string" && Object.hasOwn(GRENADE_NAMES, value);
 }
 
-export function grenadeLaunch(id: string, kind: GrenadeKind, actor: string, team: string, origin: Vec3, direction: Vec3, now: number, short: boolean): Grenade {
-  const speed = short ? 5.5 : 17;
+export function grenadeLaunch(
+  id: string, kind: GrenadeKind, actor: string, team: string, origin: Vec3,
+  direction: Vec3, now: number, short: boolean, playerVelocity: Vec3,
+): Grenade {
+  const yaw = Math.atan2(direction.x, direction.z);
+  const aimElevation = Math.atan2(direction.y, Math.hypot(direction.x, direction.z));
+  const elevation = short
+    ? 0.34
+    : clamp(aimElevation + Math.PI / 18, -Math.PI / 2, Math.PI / 2);
+  const speed = short ? 6 : 30;
+  const horizontalSpeed = speed * Math.cos(elevation);
+  // Full throws carry the thrower's movement. Short tosses stay close even at a sprint.
+  const inheritedVelocity = short ? 0 : 0.85;
+
   return {
     id, kind, actor, team, position: { ...origin },
-    velocity: { x: direction.x * speed, y: direction.y * speed + (short ? 1.8 : 4), z: direction.z * speed },
+    velocity: {
+      x: Math.sin(yaw) * horizontalSpeed + playerVelocity.x * inheritedVelocity,
+      y: Math.sin(elevation) * speed + playerVelocity.y * inheritedVelocity,
+      z: Math.cos(yaw) * horizontalSpeed + playerVelocity.z * inheritedVelocity,
+    },
     detonate: now + (kind === "frag" ? 1.45 : 1.25),
   };
 }

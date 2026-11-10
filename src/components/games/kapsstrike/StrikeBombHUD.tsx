@@ -107,7 +107,7 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
           {GRENADE_KEYS.map((item,index)=>me.utility?.[item]&&(touch
             ? <button key={item} type="button" aria-pressed={utility===item} onClick={()=>selectUtility(utility===item?undefined:item)}>{GRENADE_NAMES[item]}</button>
             : <span key={item}>{[8,9,0][index]} · {GRENADE_NAMES[item]}</span>))}
-          {utility&&(touch?<><button type="button" onClick={()=>onThrowUtility(false)}>Uzağa at</button><button type="button" onClick={()=>onThrowUtility(true)}>Yakına bırak</button></>:<strong>{GRENADE_NAMES[utility]} · Sol tık: at · Sağ tık: yakına bırak</strong>)}
+          {utility&&(touch?<><button type="button" onClick={()=>onThrowUtility(false)}>Uzağa at</button><button type="button" onClick={()=>onThrowUtility(true)}>Yakına at</button></>:<strong>{GRENADE_NAMES[utility]} · Sol tık: at · Sağ tık: yakına at</strong>)}
         </div>}
       {!shop && message && <span role="status">{message}</span>}
       {bomb.action&&<label>{bomb.action.kind==='plant'?`Bomba kuruluyor [${typedCode}]`:'Bomba çözülüyor'}<progress max={plantDuration} value={actionElapsed}/></label>}

@@ -1708,7 +1708,12 @@ export class KapsStrikeServerManager {
         const short=(data as {short?:unknown}).short;
         if(typeof short!=='boolean'){reply(false,'Geçersiz atış.');return;}
         delete member.utility[request.item];
-        (b.grenades??=[]).push(grenadeLaunch(randomBytes(8).toString('hex'),request.item,socket.id,member.team,eye(player.state),aimDirection(player.state.yaw,player.state.pitch),now,short));
+        const { movement, yaw, pitch } = player.state;
+        const origin = short ? { ...movement.position, y: movement.position.y + 0.65 } : eye(player.state);
+        (b.grenades ??= []).push(grenadeLaunch(
+          randomBytes(8).toString('hex'), request.item, socket.id, member.team,
+          origin, aimDirection(yaw, pitch), now, short, movement.velocity,
+        ));
         reply(true);return;
       }
       if(request.kind==='pickup_weapon'){const player=room.players.get(socket.id)!;reply(pickupBombWeapon(b,room.world,MAPS[room.map],player.state,room.tick));return;}

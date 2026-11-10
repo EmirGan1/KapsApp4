@@ -1494,7 +1494,7 @@ export default function KapsStrikeGame({
                   {hud.utilityEquipped ? "1" : hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
                 </strong>
                 <span>
-                  {hud.utilityEquipped ? "Sol tık · At | Sağ tık · Yakına bırak" : hud.reload > 0
+                  {hud.utilityEquipped ? "Sol tık · At | Sağ tık · Yakına at" : hud.reload > 0
                     ? `ŞARJÖR · ${hud.reload.toFixed(1)} sn`
                     : `${label(settings.bindings?.reload||'KeyR')} · Yenile | ${label(settings.bindings?.inspect||'KeyF')} · İncele | ${label(settings.bindings?.interact||'KeyE')} · Al`}
                 </span>
