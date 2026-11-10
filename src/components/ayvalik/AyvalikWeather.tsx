@@ -30,6 +30,9 @@ import {
   WEATHER_REFRESH_MS,
   weatherLabel,
   weatherTime,
+  weatherNumber,
+  parseWeather,
+  WEATHER_URL,
   type WeatherRow,
   type WeatherSnapshot
 } from '../../utils/ayvalikWeather';
@@ -672,21 +675,22 @@ export default function AyvalikWeather() {
           setSyncError('');
         }
       } catch {
-        // Also attempt direct Open-Meteo check for 25-27 Nov if backend auth/proxy fails
+        if (abort.signal.aborted) return;
         try {
-          const directUrl =
-            'https://api.open-meteo.com/v1/forecast?latitude=39.319&longitude=26.695&timezone=Europe%2FIstanbul&forecast_days=16&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,uv_index_max&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,relative_humidity_2m';
-          const directRes = await fetch(directUrl, {
-            signal: AbortSignal.any([abort.signal, AbortSignal.timeout(8000)])
+          const directRes = await fetch(WEATHER_URL, {
+            signal: AbortSignal.any([abort.signal, AbortSignal.timeout(8000)]),
+            cache: 'no-store',
           });
-          if (directRes.ok && mounted) {
+          if (!directRes.ok) throw Error('Open-Meteo yanıt vermedi.');
+          const data = parseWeather(await directRes.json());
+          if (mounted) {
+            setSnapshot({ data, fetchedAt: Date.now(), stale: false });
             setSyncError('');
           }
         } catch {
           if (mounted) {
-            setSyncError(
-              'Canlı meteoroloji servisine şu an ulaşılamadı; 25–27 Kasım Ayvalık gezi tahmin verileri aktif olarak gösteriliyor.'
-            );
+            setSnapshot(previous => previous ? { ...previous, stale: true } : previous);
+            setSyncError('Canlı veri alınamadı. Varsa son kaydedilen tahminler gösteriliyor.');
           }
         }
       } finally {
@@ -775,8 +779,8 @@ export default function AyvalikWeather() {
                 <span className="px-3 py-1 rounded-full bg-white/10 text-sky-200 text-xs font-bold flex items-center gap-1.5">
                   <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
                   {day.isLiveApiSynced
-                    ? 'Canlı API Verisiyle Senkronize Edildi'
-                    : 'Oto-Senkronize Aktif (Yeni Tahmin Çıktıkça Güncellenir)'}
+                    ? (snapshot?.stale ? 'Son kaydedilen tahmin' : 'Open-Meteo tahmini')
+                    : 'Canlı tahmin henüz yok · planlama örneği'}
                 </span>
               </div>
               <h3 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2.5">
@@ -1176,7 +1180,7 @@ export default function AyvalikWeather() {
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/20 border border-sky-400/30 text-sky-200 text-xs font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 {liveSyncedCount > 0
-                  ? `${liveSyncedCount}/3 Gün Canlı API ile Güncellendi`
+                  ? `${liveSyncedCount}/3 gün için ${snapshot?.stale ? "önbellekteki" : "Open-Meteo"} tahmini`
                   : 'Otomatik Tahmin Senkronizasyonu Aktif'}
               </span>
             </div>
@@ -1206,7 +1210,7 @@ export default function AyvalikWeather() {
             </button>
             <div className="text-[11px] text-emerald-200/90 text-right">
               {snapshot
-                ? `Son senkronizasyon kontrolü: ${formatSyncTimestamp(snapshot.fetchedAt)}`
+                ? `Son başarılı veri alımı: ${formatSyncTimestamp(snapshot.fetchedAt)}`
                 : 'Open-Meteo Ayvalık (39.32°K, 26.70°D) ile otomatik senkronize'}
             </div>
           </div>
@@ -1217,9 +1221,10 @@ export default function AyvalikWeather() {
           <div className="flex items-center gap-2.5">
             <ShieldCheck size={18} className="text-emerald-400 shrink-0" />
             <span>
-              <strong>Canlı Tahmin Senkronizasyonu:</strong> Gezi tarihlerine (25–27 Kasım) yaklaştıkça meteoroloji uydularından yeni saatlik ve günlük tahminler çıktığı anda bu kartlardaki değerler otomatik olarak güncellenir ve en güncel veriyi kullanır.
+              <strong>Tahmin güncellemesi:</strong> Sayfa açıkken Open-Meteo 15 dakikada bir kontrol edilir. Tahmin aralığına henüz girmeyen günler planlama örneği olarak etiketlenir.
             </span>
           </div>
+          {snapshot && <span>Ayvalık {snapshot.stale ? '· son kaydedilen değer' : '· güncel model değeri'} · {weatherNumber(snapshot.data.current.values.temperature_2m, ' °C')} · {formatSyncTimestamp(weatherTime(snapshot.data.current.time))}</span>}
           {syncError && (
             <span className="text-amber-300 font-semibold">{syncError}</span>
           )}
