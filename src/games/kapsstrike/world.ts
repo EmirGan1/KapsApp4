@@ -6,6 +6,7 @@ export const DROP_INTERVAL = Math.round(90/C.dt);
 export const DROP_WARNING = Math.round(12/C.dt);
 /** Candidates are on authored, continuous spawn-to-spawn routes, never random rooftops or water. */
 export function supplyLocations(map:MapDefinition):Vec3[]{
+ if(map.id==='bolluca')return [];
  const points:Vec3[]=[];
  for(const route of map.routes||[])for(let i=1;i<route.points.length;i++){
   const a=route.points[i-1],b=route.points[i],n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/7));
@@ -21,7 +22,7 @@ const candidates=new WeakMap<MapDefinition,Vec3[]>();
 function locations(map:MapDefinition){let p=candidates.get(map);if(!p){p=supplyLocations(map);candidates.set(map,p);}return p;}
 export function createWorld(map:MapDefinition,seed=Date.now()):StrikeWorld{
  const w:StrikeWorld={pickups:[],nextDrop:DROP_INTERVAL,serial:0,seed:seed>>>0};
- if(map.id==='district')return w;
+ if(map.id==='district'||map.id==='bolluca')return w;
  const pool=[...locations(map)];
  // 8 pickups: 3 Health boxes, 2 Armor boxes, 3 Special Weapons (carbine, lmg, railgun)
  const pickupTypes: Array<{ consumable?: "health" | "armor"; amount?: number; weapon?: WeaponId }> = [
@@ -50,6 +51,12 @@ export function createWorld(map:MapDefinition,seed=Date.now()):StrikeWorld{
  return w;
 }
 export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
+ if(map.id==='bolluca'){
+  w.drop=undefined;
+  w.respawns=undefined;
+  w.pickups=w.pickups.filter(p=>p.kind==='dropped'&&(!p.expires||p.expires>tick));
+  return;
+ }
  for(const job of [...(w.respawns||[])]){
   if(tick<job.at)continue;
   const pool=locations(map).filter(p=>Math.hypot(p.x-job.pickup.position.x,p.z-job.pickup.position.z)>4&&w.pickups.every(s=>s.opened||Math.hypot(s.position.x-p.x,s.position.z-p.z)>3.5)&&(!w.drop||Math.hypot(w.drop.position.x-p.x,w.drop.position.z-p.z)>3.5));
@@ -74,7 +81,7 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
 export function nearestSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState){
  if(p.hp<=0)return undefined;
  const eye={...p.movement.position,y:p.movement.position.y+1.1};
- return w.pickups.filter(s=>!s.opened).map(s=>({s,d:Math.hypot(s.position.x-eye.x,s.position.y+.5-eye.y,s.position.z-eye.z)})).filter(({s,d})=>{
+ return w.pickups.filter(s=>!s.opened&&(map.id!=='bolluca'||s.kind==='dropped')).map(s=>({s,d:Math.hypot(s.position.x-eye.x,s.position.y+.5-eye.y,s.position.z-eye.z)})).filter(({s,d})=>{
   if(d>2.8)return false;
   const dir={x:(s.position.x-eye.x)/d,y:(s.position.y+.5-eye.y)/d,z:(s.position.z-eye.z)/d};
   return !collisionSolids(map).some(solid=>raySolid(eye,dir,solid,d)<d-.1);

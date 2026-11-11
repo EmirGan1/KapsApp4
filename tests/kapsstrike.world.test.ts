@@ -7,7 +7,7 @@ import {ownsWeapon,PHYSICS as C,WEAPONS} from '../src/games/kapsstrike/config';
 import {fits} from '../src/games/kapsstrike/physics';
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
 // Supply crates are the Kill Race ruleset; the tactical map uses round purchases.
-for(const map of Object.values(MAPS).filter(map=>map.id!=='district')){
+for(const map of Object.values(MAPS).filter(map=>map.id!=='district'&&map.id!=='bolluca')){
  test(`${map.id}: 100 seeded supplies and reachable warning/landing cycles`,()=>{
   assert.ok(supplyLocations(map).length>15);
   for(let seed=0;seed<100;seed++){
@@ -56,7 +56,7 @@ test('authoritative supply ownership, malformed interact, snapshots and respawn 
  manager.leaveRoom(player.id,1);
 });
 
-for(const map of Object.values(MAPS).filter(m=>m.id!=='district')){
+for(const map of Object.values(MAPS).filter(m=>m.id!=='district'&&m.id!=='bolluca')){
  test(`${map.id}: weapon, health and armor replenish once after ten seconds at different reachable route points`,()=>{
   const state=createTraining(map.id),world=createWorld(map,145),p=state.player;
   world.nextDrop=Number.MAX_SAFE_INTEGER;
@@ -81,3 +81,22 @@ for(const map of Object.values(MAPS).filter(m=>m.id!=='district')){
   }
  });
 }
+
+test('Bolluca does not create, respawn, or expose supply crates and airdrops', async () => {
+  const { supplyLocations, nearestSupply } = await import('../src/games/kapsstrike/world');
+  const { createTraining } = await import('../src/games/kapsstrike/combat');
+  const map = MAPS.bolluca;
+  const world = createWorld(map, 123);
+  const player = createTraining('bolluca').player;
+  assert.deepEqual(supplyLocations(map), []);
+  assert.equal(world.pickups.length, 0);
+  const staleCrate = { id: 'old-crate', kind: 'chest', weapon: 'carbine',
+    position: { ...player.movement.position }, opened: false, expires: 0 } as const;
+  world.pickups.push(staleCrate);
+  world.respawns = [{ at: 1, pickup: staleCrate }];
+  assert.equal(nearestSupply(world, map, player), undefined);
+  advanceWorld(world, map, DROP_INTERVAL * 3);
+  assert.equal(world.pickups.length, 0);
+  assert.equal(world.respawns, undefined);
+  assert.equal(world.drop, undefined);
+});

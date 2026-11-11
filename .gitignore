@@ -8,3 +8,5 @@ coverage/
 !.env.example
 
 /subject-resources-data/
+
+/public/kapsstrike/catalog-v1/
