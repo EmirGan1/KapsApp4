@@ -7,7 +7,7 @@ import {ownsWeapon,PHYSICS as C,WEAPONS} from '../src/games/kapsstrike/config';
 import {fits} from '../src/games/kapsstrike/physics';
 import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';
 // Supply crates are the Kill Race ruleset; the tactical map uses round purchases.
-for(const map of Object.values(MAPS).filter(map=>map.id!=='district')){
+for(const map of Object.values(MAPS).filter(map=>!['district','district2','bolluca2'].includes(map.id))){
  test(`${map.id}: 100 seeded supplies and reachable warning/landing cycles`,()=>{
   assert.ok(supplyLocations(map).length>15);
   for(let seed=0;seed<100;seed++){
@@ -56,7 +56,7 @@ test('authoritative supply ownership, malformed interact, snapshots and respawn 
  manager.leaveRoom(player.id,1);
 });
 
-for(const map of Object.values(MAPS).filter(m=>m.id!=='district')){
+for(const map of Object.values(MAPS).filter(m=>!['district','district2','bolluca2'].includes(m.id))){
  test(`${map.id}: weapon, health and armor replenish once after ten seconds at different reachable route points`,()=>{
   const state=createTraining(map.id),world=createWorld(map,145),p=state.player;
   world.nextDrop=Number.MAX_SAFE_INTEGER;

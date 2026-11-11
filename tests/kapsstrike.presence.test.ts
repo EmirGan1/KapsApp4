@@ -5,7 +5,7 @@ import {createTraining,takeDamage} from '../src/games/kapsstrike/combat';
 import {COSMETICS,CASES,caseRewards} from '../src/games/kapsstrike/cosmetics';import {finishTextureUrl} from '../src/games/kapsstrike/finishAppearance';
 import {knifeTiming} from '../src/games/kapsstrike/presentation';
 import {straightKnifeMotion} from '../src/games/kapsstrike/knifeMotion';
-for(const map of Object.values(MAPS).filter(m=>m.id!=='bolluca'))test(`${map.id}: dispersed ground/roof spawns have clearance, support and occupied avoidance`,()=>{
+for(const map of Object.values(MAPS).filter(m=>!m.id.startsWith('bolluca')))test(`${map.id}: dispersed ground/roof spawns have clearance, support and occupied avoidance`,()=>{
  const pool=roamingSpawns(map);assert.ok(pool.length>40);assert.ok(pool.some(p=>p.y>4));
  for(const p of pool){assert.ok(fits(map,p,C.standing),JSON.stringify(p));assert.ok(Math.abs(support(map,p,p.y+.06)-p.y)<.1);}
  const occupied=pool.slice(0,8),spawn=spreadSpawn(map,8,occupied);assert.ok(occupied.every(p=>Math.hypot(p.x-spawn.x,p.z-spawn.z)>C.radius*2));

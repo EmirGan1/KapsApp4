@@ -51,7 +51,9 @@ try {
     await page.getByRole("button",{name:/Bomba Kurma/i}).click();
     assert.equal(await page.getByLabel("Harita",{exact:true}).inputValue(),"district");
     const bombMap = page.getByLabel("Harita", { exact: true });
-    assert.deepEqual(await bombMap.locator("option").allTextContents(), ["Dust II", "Bolluca"]);
+    assert.deepEqual(await bombMap.locator("option").allTextContents(), ["Dust II", "Bolluca", "Dust II (2)", "Bolluca (2)"]);
+    await bombMap.selectOption("bolluca2");
+    assert.equal(await bombMap.inputValue(), "bolluca2");
     await bombMap.selectOption("bolluca");
     assert.equal(await bombMap.inputValue(), "bolluca");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));

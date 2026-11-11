@@ -39,9 +39,11 @@ export const DUST2_AREAS={
   for(const side of [-1,1]){box('door-jamb',p.x+side*1.95,0,p.z,.3,3.7,.4,'#bda98a');for(let k=0;k<3;k++)box('door-ironwork',p.x+side*1.3,.5+k*.8,p.z-.12,.6,.07,.08,'#4d5049',true,'metal');}
   box('door-arch-header',p.x,3.4,p.z,4.2,.35,.4,'#d2bc99');
   if(name==='A Long Doors'){
-   box('long-doors-ceiling',p.x,3.8,p.z,4.2,.3,7,'#a99578');
-   for(const side of [-1,1])box('long-doors-chamber-pier',p.x+side*1.95,0,p.z-3.2,.32,3.8,.45,'#bda98a',true,'stone');
-   box('long-doors-south-arch',p.x,3.4,p.z-3.2,4.2,.4,.45,'#d2bc99',true,'stone');
+   for(const side of [-1,1]){
+    box('long-doors-chamber-pier',p.x+side*1.95,0,p.z-3.2,.32,4.2,.45,'#bda98a',true,'stone');
+    box('long-doors-chamber-wall-coping',p.x+side*2.05,4.15,p.z-1.6,.36,.28,4.2,'#d2bc99',true,'stone');
+   }
+   box('long-doors-south-arch',p.x,3.45,p.z-3.2,4.2,.48,.48,'#d2bc99',true,'stone');
   }
  }
  const terrain=addDust2Architecture(solids,walkable);
@@ -70,19 +72,9 @@ export const DUST2_AREAS={
  const routes=[path('T → A',DUST2_AREAS['T Spawn'],DUST2_AREAS['A Site']),path('T → B',DUST2_AREAS['T Spawn'],DUST2_AREAS['B Site']),path('CT → A',DUST2_AREAS['CT Spawn'],DUST2_AREAS['A Site']),path('CT → B',DUST2_AREAS['CT Spawn'],DUST2_AREAS['B Site'])];
  for(const s of BOMB_SITES){
   box('site-paving',s.x,s.y+.02,s.z,s.radius*2,.03,s.radius*2,'#c4b28f',true,'stone');
-  const sign=box('site-sign',s.x,s.y+2.8,s.z+s.radius+.3,2.5,1,.1,'#a65b35',true);sign.label='BOMBSITE '+s.id;
+  const sign=box('site-sign',s.x,s.y+2.1,45.88,2.5,1,.1,'#a65b35',true);sign.label='BOMBSITE '+s.id;
  }
  const spawns=[-16,-8,0,8,16].map(dx=>spawn(390+dx,920)).concat([-16,-8,0,8,16].map(dx=>spawn(600+dx,210)));
- // Matching neighborhood gateway boards mounted flush against outer building facades.
- for(const [text,x,z,color] of [
-  ['Gazeteciler Sitesi',-10,-47.2,'#315c49'],
-  ['Yeni Nesil Eyüp Sitesi',48.0,-16.9,'#244f75'],
- ] as [string,number,number,string][]){
-  box('neighborhood-sign-post',x,0,z,.18,3.6,.18,'#3b4348',true,'metal');
-  const board=box('neighborhood-sign-board',x,3.55,z,6.8,1.15,.18,color,true,'metal');
-  board.label=text;
-  box('neighborhood-sign-trim',x,4.15,z,6.95,.08,.22,'#d3ad5d',true,'metal');
- }
  // Interior & exterior photo frames across tunnels, chambers and exposed city-block walls.
  const photoFrames:NonNullable<MapDefinition['photoFrames']>=[];
  const photoAspects:readonly number[]=[.5625,.5625,4/3,16/9,.75,4/3,.75,1.803,4/3,4/3,4/3,4/3,.75,.75,.75];

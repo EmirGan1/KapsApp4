@@ -356,20 +356,60 @@ export function addDust2Architecture(solids:Solid[],walkable:(x:number,z:number)
     s.shape='cylinder';
   }
 
-  // Original hotel facade behind A: recessed windows, projecting balcony and roofline.
-  box('a-hotel',35,0,49.5,18,12,6,'#e1d7c2',false,'plaster');
-  box('hotel-balcony',35,6.2,45.9,18.5,.3,1.4,'#d9cbb2',true,'stone');
-  box('hotel-cornice',35,11.7,46.2,19,.35,.65,'#ece0c8',true,'stone');
+  // Authentic CS:GO 2017 North-African arched stucco & sandstone building behind A Site (PDF GÖRSEL #08 & #09)
+  box('a-north-palace-mass',35,0,49.5,18.4,11.4,6,'#f2e8d5',false,'plaster');
+  box('a-north-palace-plinth',35,3.2,46.32,18.6,1.35,.48,'#c9b28f',true,'stone');
+  box('a-north-palace-gallery-ledge',35,6.35,46.12,18.6,.28,.98,'#d8c4a3',true,'stone');
+  box('a-north-palace-terracotta-eave',35,10.85,45.98,18.8,.32,1.18,'#b34730',true,'wood');
+  box('a-north-palace-parapet',35,11.17,46.22,18.6,.52,.48,'#f2e8d5',true,'plaster');
   for(let x=28;x<=42;x+=3.5){
-    box('hotel-recess',x,6.5,46.44,2.4,3.7,.12,'#426c69',true,'glass');
-    for(const side of [-1,1])box('hotel-window-frame',x+side*1.25,6.3,46.3,.18,4.1,.35,'#e8ddc7',true,'stone');
-    box('hotel-window-header',x,10.2,46.3,2.65,.2,.35,'#e8ddc7',true,'stone');
-    for(let k=0;k<5;k++)box('balcony-rail',x-1+k*.5,6.6,45.5,.06,.85,.06,'#638481',true,'metal');
+    // Recessed Moorish arched window bays with timber shutters (PDF GÖRSEL #08, #09)
+    box('a-north-arch-recess',x,6.65,46.36,1.95,3.35,.18,'#26343f',true,'glass');
+    for(const side of [-1,1]){
+      box('a-north-arch-pier',x+side*1.08,6.6,46.24,.26,3.5,.42,'#d8c4a3',true,'stone');
+      box('a-north-shutter',x+side*.72,6.85,46.26,.40,2.6,.12,'#6b4f35',true,'wood');
+    }
+    box('a-north-arch-crown',x,9.95,46.22,2.38,.48,.44,'#d8c4a3',true,'stone');
   }
-  const hotelSign=box('hotel-sign',43,5,46.1,1.8,4.8,.12,'#729b97',true);
-  hotelSign.label='KAPS HAN';
-  box('b-fort-tower',-40,0,49,5,11,5,'#bda17c',false,'stone');
-  for(const side of [-1,1])for(let k=0;k<4;k++)box('fort-merlon',-42.2+k*1.45,11,49+side*2.3,.65,.65,.55,'#cdb590',true,'stone');
+
+  // B Site North Fortress Wall & Crenellations (PDF GÖRSEL #04 & #05)
+  box('b-fort-tower',-40,0,49,8,10.5,5,'#bda17c',false,'stone');
+  for(const side of [-1,1])for(let k=0;k<5;k++)box('fort-merlon',-43.2+k*1.6,10.5,49+side*2.3,.72,.68,.55,'#cdb590',true,'stone');
+  // B Site West Fence & Painted Red 'B' Callout Sign (PDF GÖRSEL #04, #05 & Page 37)
+  box('b-site-fence-frame',-47.25,2.4,40.2,.12,2.1,4.6,'#6e563b',true,'wood');
+  const bSiteWallSign=box('b-site-wall-letter',-36.8,4.2,45.88,1.6,1.6,.08,'#a83824',true,'plaster');
+  bSiteWallSign.label='B';
+
+  // Outside Long Shuttered Shopfront & Crate Stack (PDF Page 10 GÖRSEL #21)
+  box('outside-long-shutter-frame',28.5,0,-23.8,3.6,3.4,.22,'#5b656b',true,'metal');
+  box('outside-long-awning',28.5,3.45,-23.2,3.8,.16,1.2,'#9c4332',true,'wood');
+  box('outside-long-crate',33.8,0,-23.2,1.5,1.45,1.5,'#987954',true,'wood');
+
+  // Mid Desert Palm Tree & Utility Pole at Top Mid / Palm (PDF Page 24 GÖRSEL #12 & Page 25 GÖRSEL #26)
+  const palmTrunk=box('mid-palm-trunk',1.45,0,-6.2,.46,6.4,.46,'#7a5c3e',true,'wood');
+  palmTrunk.shape='cylinder';
+  for(const [dx,dz] of [[1.45,0],[-1.45,0],[0,1.45],[0,-1.45],[1.05,1.05],[-1.05,1.05],[1.05,-1.05],[-1.05,-1.05]]){
+    box('mid-palm-frond',1.45+dx,6.25,-6.2+dz,1.45,.18,1.45,'#4a6e3d',true,'wood');
+  }
+  const midPole=box('mid-utility-pole',1.65,0,2.5,.24,6.8,.24,'#6e553b',true,'wood');
+  midPole.shape='cylinder';
+  box('mid-utility-crossarm',1.65,6.2,2.5,.16,.14,1.6,'#57422d',true,'wood');
+
+  // Catwalk & Short Stairs Mashrabiya Lattice Windows & Painted 'A' Arrow (PDF GÖRSEL #10, #11, #18)
+  for(const z of [18.5,24.5]){
+    box('short-mashrabiya-frame',14.95,4.1,z,.24,1.85,1.55,'#6b5037',true,'wood');
+  }
+  const shortASign=box('short-a-wall-sign',22.5,4.8,34.32,1.5,1.4,.08,'#a83824',true,'plaster');
+  shortASign.label='A';
+
+  // CT Mid Limestone Block Stack ('B Boxes') outside B Doors & B Window (PDF Page 28 & 42 GÖRSEL #24)
+  box('ct-mid-b-boxes-lower',-18.2,0,31.8,1.8,1.35,1.6,'#c8b698',true,'stone');
+  box('ct-mid-b-boxes-upper',-18.2,1.35,31.8,1.35,1.05,1.25,'#d4c3a6',true,'stone');
+  box('ct-mid-east-b-boxes-lower',-1.8,0,24.5,1.75,1.35,1.55,'#c8b698',true,'stone');
+  box('ct-mid-east-b-boxes-upper',-1.8,1.35,24.5,1.3,1.05,1.2,'#d4c3a6',true,'stone');
+
+  // Lower Tunnels Recessed Corner Crate Stack (PDF Page 32 GÖRSEL #27 — clear of stair path)
+  box('lower-tunnel-corner-crate',-21.2,0,11.35,1.15,1.15,.95,'#8c6d49',true,'wood');
 
   // North-African / Middle-Eastern environmental façade details across Mid, Long & Catwalk
   for(const [ax,ay,az,aw,ad,col] of [

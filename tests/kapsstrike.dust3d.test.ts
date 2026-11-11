@@ -216,9 +216,14 @@ test('Dust II B Tunnels, Upper Tunnels, Tunnel Stairs and Lower Tunnels have con
  for(const token of [
   'a-goose-backwall','a-goose-sign','a-long-car-chassis','blue-container-body',
   'pit-retaining-wall','mid-xbox-main','mid-xbox-step','b-closet-car-chassis',
-  'b-window-scaffold-plank','upper-tunnels-roof','tunnel-stairs-wall-n','tunnel-stairs-wall-s'
+  'b-window-scaffold-plank','upper-tunnels-roof','tunnel-stairs-wall-n','tunnel-stairs-wall-s',
+  'a-north-palace-mass','outside-long-shutter-frame','mid-palm-trunk','ct-mid-b-boxes-lower'
  ]){
   assert.ok(map.solids.some(s=>s.id.includes(token)),`missing Dust II landmark: ${token}`);
+  assert.ok(MAPS.district2.solids.some(s=>s.id.includes(token)),`missing Dust II (2) landmark: ${token}`);
  }
+ assert.deepEqual(MAPS.district2.photoFrames,[]);
+ assert.ok(!MAPS.district2.solids.some(s=>s.label==='KAPS HAN'||s.id.includes('neighborhood-sign')));
 });
+
 

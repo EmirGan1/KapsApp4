@@ -633,7 +633,7 @@ export class KapsStrikeServerManager {
     const requestedMap = options.map && Object.hasOwn(MAPS, options.map) ? MAPS[options.map] : undefined;
     const mapId: MapId = options.mode === "bomb"
       ? requestedMap?.bombSites ? requestedMap.id : "district"
-      : requestedMap?.id === "bolluca" ? "warehouse" : requestedMap?.id ?? "warehouse";
+      : requestedMap?.id === "bolluca" || requestedMap?.id === "bolluca2" ? "warehouse" : requestedMap?.id ?? "warehouse";
     const mode: StrikeGameMode = options.mode === "bomb" ? "bomb" : options.mode === "tdm" ? "tdm" : "ffa";
     const maxPlayers = Math.max(2, Math.min(10, Number(options.maxPlayers) || 8));
     const timeLimit = Math.max(60, Math.min(900, Number(options.timeLimit) || 300));
