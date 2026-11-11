@@ -101,7 +101,7 @@ export function takeDamage(s: TrainingState, amount: number, from: Vec3) {
       ) - p.yaw,
   });
   if (!p.hp) {
-    if(s.world)dropInventory(s.world,p,s.tick);
+    if(s.world)dropInventory(s.world,p,s.tick,MAPS[s.map]);
     p.deadUntil = s.tick + C.respawnTicks;
     p.weapon.reloadUntil = 0;
     event(s, { kind: "death" });

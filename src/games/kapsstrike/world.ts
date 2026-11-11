@@ -54,7 +54,7 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
  if(map.id==='bolluca'){
   w.drop=undefined;
   w.respawns=undefined;
-  w.pickups=w.pickups.filter(p=>p.kind==='dropped'&&(!p.expires||p.expires>tick));
+  w.pickups=[];
   return;
  }
  for(const job of [...(w.respawns||[])]){
@@ -79,9 +79,10 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
  }
 }
 export function nearestSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState){
+ if(map.id==='bolluca')return undefined;
  if(p.hp<=0)return undefined;
  const eye={...p.movement.position,y:p.movement.position.y+1.1};
- return w.pickups.filter(s=>!s.opened&&(map.id!=='bolluca'||s.kind==='dropped')).map(s=>({s,d:Math.hypot(s.position.x-eye.x,s.position.y+.5-eye.y,s.position.z-eye.z)})).filter(({s,d})=>{
+ return w.pickups.filter(s=>!s.opened).map(s=>({s,d:Math.hypot(s.position.x-eye.x,s.position.y+.5-eye.y,s.position.z-eye.z)})).filter(({s,d})=>{
   if(d>2.8)return false;
   const dir={x:(s.position.x-eye.x)/d,y:(s.position.y+.5-eye.y)/d,z:(s.position.z-eye.z)/d};
   return !collisionSolids(map).some(solid=>raySolid(eye,dir,solid,d)<d-.1);
@@ -105,8 +106,8 @@ export function claimSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState,tick:n
  s.opened=true;s.expires=tick+Math.round(15/C.dt);p.lootNoticeUntil=tick+Math.round(3/C.dt);
  return true;
 }
-export function dropInventory(w:StrikeWorld,p:PlayerState,tick:number){
- for(const weapon of p.weapon.inventory||[])if(SPECIAL_WEAPONS.includes(weapon))w.pickups.push({id:`weapon-${++w.serial}`,position:{...p.movement.position},weapon,kind:'dropped',opened:false,expires:tick+DROP_INTERVAL});
+export function dropInventory(w:StrikeWorld,p:PlayerState,tick:number,map?:MapDefinition){
+ if(map?.id!=='bolluca')for(const weapon of p.weapon.inventory||[])if(SPECIAL_WEAPONS.includes(weapon))w.pickups.push({id:`weapon-${++w.serial}`,position:{...p.movement.position},weapon,kind:'dropped',opened:false,expires:tick+DROP_INTERVAL});
  p.weapon.inventory=[];p.weapon.selected='rifle';p.weapon.reloadUntil=0;
 }
 
