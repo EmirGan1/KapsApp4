@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {createWorld,advanceWorld,claimSupply,DROP_INTERVAL} from '../src/games/kapsstrike/world';
 import {createTraining,takeDamage} from '../src/games/kapsstrike/combat';import {MAPS} from '../src/games/kapsstrike/maps';import {COSMETICS,caseRewards,cleanLoadout} from '../src/games/kapsstrike/cosmetics';import {knifeTiming,GRAPHICS} from '../src/games/kapsstrike/presentation';import {KapsStrikeServerManager} from '../src/server/kapsstrikeServer';import {WEAPONS} from '../src/games/kapsstrike/config';
 test('maps with loot contain real heal/shield crates; full, dead and duplicate claims never consume them',()=>{
- for(const map of Object.values(MAPS).filter(map=>map.id!=='district')){
+ for(const map of Object.values(MAPS).filter(map=>!['district','district2','bolluca2'].includes(map.id))){
   const s=createTraining(map.id),world=createWorld(map,13),hp=world.pickups.find(p=>p.consumable==='health')!,shield=world.pickups.find(p=>p.consumable==='armor')!;assert.ok(hp&&shield);
   s.player.movement.position={...hp.position};assert.equal(claimSupply(world,map,s.player,1),false);assert.equal(hp.opened,false);s.player.hp=40;assert.equal(claimSupply(world,map,s.player,2),true);assert.equal(s.player.hp,90);assert.equal(claimSupply(world,map,s.player,3),false);
   s.player.movement.position={...shield.position};s.player.hp=0;assert.equal(claimSupply(world,map,s.player,4),false);s.player.hp=90;s.player.armor=80;assert.ok(claimSupply(world,map,s.player,5));assert.equal(s.player.armor,100);

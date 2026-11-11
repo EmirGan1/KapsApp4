@@ -56,6 +56,7 @@ export function spreadSpawn(map:MapDefinition,index:number,occupied:readonly Vec
 
 export function roamingSpawns(map:MapDefinition):Vec3[]{
  const cached=roamingCache.get(map);if(cached)return cached;
+ if(map.id==='campus')return computeRoamingSpawns(map);
  const pool:Vec3[]=[];
  const candidates=map.id==='bolluca'||map.id==='bolluca2'?[]:(SPAWN_CANDIDATES[map.id as keyof typeof SPAWN_CANDIDATES]??SPAWN_CANDIDATES.district);
  for(const p of [...map.spawns,...candidates]){

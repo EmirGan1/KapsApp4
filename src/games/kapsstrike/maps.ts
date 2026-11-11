@@ -4,6 +4,7 @@ import { dust2Pdf } from "./dust2Pdf";
 import {dustDistrict} from "./dustDistrict";
 import type { MapDefinition, MapId } from "./types";
 import { townMap } from "./townMaps";
+import { kapsCampus } from "./kapsCampus";
 
 /** Stable IDs preserve existing KapsApp room URLs while each district has its own topology. */
 export const MAPS: Record<MapId, MapDefinition> = {
@@ -14,6 +15,7 @@ export const MAPS: Record<MapId, MapDefinition> = {
   warehouse: townMap("warehouse"),
   dust: townMap("dust"),
   neon: townMap("neon"),
+  campus: kapsCampus(),
 };
 
-export const BOMB_MAPS = [MAPS.district, MAPS.bolluca, MAPS.district2, MAPS.bolluca2] as const;
+export const BOMB_MAPS = [MAPS.district, MAPS.bolluca, MAPS.district2, MAPS.bolluca2, MAPS.campus] as const;

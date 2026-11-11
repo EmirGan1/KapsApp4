@@ -2021,7 +2021,7 @@ export default function KapsStrikeGame({
                       </select></label>
                     </> : <>
                       <label>Harita<select value={createMap} onChange={e => setCreateMap(e.target.value as MapId)}>
-                        {Object.values(MAPS).filter(m => !m.bombSites).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        {Object.values(MAPS).filter(m => !m.bombSites || m.id === "campus").map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select></label>
                       <label>Takım düzeni<select value={createMode} onChange={e => setCreateMode(e.target.value === "ffa" ? "ffa" : "tdm")}>
                         <option value="tdm">Takım savaşı</option><option value="ffa">Herkes tek</option>
