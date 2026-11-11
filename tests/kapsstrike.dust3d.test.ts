@@ -220,10 +220,7 @@ test('Dust II B Tunnels, Upper Tunnels, Tunnel Stairs and Lower Tunnels have con
   'a-north-palace-mass','outside-long-shutter-frame','mid-palm-trunk','ct-mid-b-boxes-lower'
  ]){
   assert.ok(map.solids.some(s=>s.id.includes(token)),`missing Dust II landmark: ${token}`);
-  assert.ok(MAPS.district2.solids.some(s=>s.id.includes(token)),`missing Dust II (2) landmark: ${token}`);
  }
- assert.deepEqual(MAPS.district2.photoFrames,[]);
- assert.ok(!MAPS.district2.solids.some(s=>s.label==='KAPS HAN'||s.id.includes('neighborhood-sign')));
 });
 
 

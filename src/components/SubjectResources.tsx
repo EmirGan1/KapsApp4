@@ -1,3 +1,4 @@
+import CoursePdfPreview from "./CoursePdfPreview";
 import { uploadErrorMessage } from "../utils/uploadErrors";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Download, Eye, FileText, Folder, FolderPlus, Loader2, Pencil, Search, Trash2, Upload } from "lucide-react";
@@ -356,9 +357,9 @@ export default function SubjectResources({ subject, collection, folder }: {
         )}
         {preview && (
           <dialog ref={previewDialog} onClose={() => setPreview(null)} className="m-auto w-[min(92vw,64rem)] rounded-2xl bg-white p-4 text-slate-900 backdrop:bg-black/70 dark:bg-slate-900 dark:text-white">
-            <header className="mb-3 flex items-center justify-between gap-3"><h2 className="break-all font-semibold">{preview.name}</h2><form method="dialog"><button className={button}>Kapat</button></form></header>
+            <header className="mb-3 flex items-center justify-between gap-3"><h2 className="break-all font-semibold">{preview.name}</h2><div className="flex gap-2">{preview.mime === "application/pdf" && <a href={preview.url} download={preview.name} className={button}>İndir</a>}<form method="dialog"><button className={button}>Kapat</button></form></div></header>
             {preview.mime === "application/pdf" ? (
-              <iframe title={preview.name} src={preview.url} className="h-[72vh] w-full rounded-lg" />
+              <div className="h-[72vh]"><CoursePdfPreview key={preview.url} url={preview.url} /></div>
             ) : (
               <img alt={preview.name} src={preview.url} className="mx-auto max-h-[72vh] max-w-full object-contain" />
             )}

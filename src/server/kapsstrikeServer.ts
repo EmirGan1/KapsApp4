@@ -633,7 +633,7 @@ export class KapsStrikeServerManager {
     const requestedMap = options.map && Object.hasOwn(MAPS, options.map) ? MAPS[options.map] : undefined;
     const mapId: MapId = options.mode === "bomb"
       ? requestedMap?.bombSites ? requestedMap.id : "district"
-      : requestedMap?.id === "bolluca" || requestedMap?.id === "bolluca2" ? "warehouse" : requestedMap?.id ?? "warehouse";
+      : requestedMap?.id === "bolluca" ? "warehouse" : requestedMap?.id ?? "warehouse";
     const mode: StrikeGameMode = options.mode === "bomb" ? "bomb" : options.mode === "tdm" ? "tdm" : "ffa";
     const maxPlayers = Math.max(2, Math.min(10, Number(options.maxPlayers) || 8));
     const timeLimit = Math.max(60, Math.min(900, Number(options.timeLimit) || 300));
@@ -1710,7 +1710,9 @@ export class KapsStrikeServerManager {
         }
         const short=(data as {short?:unknown}).short;
         if(typeof short!=='boolean'){reply(false,'Geçersiz atış.');return;}
-        delete member.utility[request.item];
+        const remaining = member.utility[request.item]! - 1;
+        if (remaining > 0) member.utility[request.item] = remaining;
+        else delete member.utility[request.item];
         const { movement, yaw, pitch } = player.state;
         const origin = short ? { ...movement.position, y: movement.position.y + 0.65 } : eye(player.state);
         (b.grenades ??= []).push(grenadeLaunch(

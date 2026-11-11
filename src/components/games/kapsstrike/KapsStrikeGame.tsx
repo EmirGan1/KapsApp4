@@ -1492,7 +1492,7 @@ export default function KapsStrikeGame({
               <div className="ks-ammo">
                 <small>{hud.utilityEquipped?GRENADE_NAMES[hud.utilityEquipped]:hud.bombEquipped?"BOMBA · G ile bırak":WEAPONS[hud.weapon]?.name}</small>
                 <strong>
-                  {hud.utilityEquipped ? "1" : hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
+                  {hud.utilityEquipped ? hud.utilityCount : hud.weapon === "knife" ? "∞" : <>{hud.ammo} <span>/ {hud.capacity}</span></>}
                 </strong>
                 <span>
                   {hud.utilityEquipped ? "Sol tık · At | Sağ tık · Yakına at" : hud.reload > 0
@@ -2021,7 +2021,7 @@ export default function KapsStrikeGame({
                       </select></label>
                     </> : <>
                       <label>Harita<select value={createMap} onChange={e => setCreateMap(e.target.value as MapId)}>
-                        {Object.values(MAPS).filter(m => !m.bombSites || m.id === "campus").map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        {Object.values(MAPS).filter(m => !m.bombSites).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select></label>
                       <label>Takım düzeni<select value={createMode} onChange={e => setCreateMode(e.target.value === "ffa" ? "ffa" : "tdm")}>
                         <option value="tdm">Takım savaşı</option><option value="ffa">Herkes tek</option>

@@ -82,19 +82,16 @@ test('explosion payload reaches both teams including the dead victim during resu
  for(const id of ['t','ct']){const v=bombView(b,id);assert.ok(v.explosion);assert.equal(v.phase,'result');assert.equal(v.explosion!.at,1);assert.equal(v.players[id].alive,false);}
 });
 
-test('all 15 community photos remain in the original four maps while PDF maps have zero invented photos',async()=>{
+test('all 15 community photos remain in the original four maps',async()=>{
  const {MAPS}=await import('../src/games/kapsstrike/maps');
  const expectedPhotos=Array.from({length:15},(_,i)=>`/kapsstrike/photos/photo-${String(i+1).padStart(2,'0')}.jpg`);
- for(const map of Object.values(MAPS).filter(m=>!['bolluca','district2','bolluca2','campus'].includes(m.id))){
+ for(const map of Object.values(MAPS).filter(m=>m.id!=='bolluca')){
   assert.ok(map.photoFrames&&map.photoFrames.length>=15,`${map.id} must have at least 15 photoFrames`);
   const present=new Set(map.photoFrames!.map(f=>f.image));
   for(const img of expectedPhotos){
    assert.ok(present.has(img),`${map.id} is missing ${img}`);
   }
  }
- assert.deepEqual(MAPS.district2.photoFrames,[]);
- assert.deepEqual(MAPS.bolluca2.photoFrames,[]);
- assert.equal(MAPS.campus.photoFrames,undefined);
 });
 
 test('CS-style C4 plant animation, blinking beacon, and multi-stage explosion render in Babylon scene',async()=>{

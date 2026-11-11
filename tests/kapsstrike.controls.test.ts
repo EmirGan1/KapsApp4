@@ -155,7 +155,7 @@ test('mobile auto fire emits repeatable semi-auto presses through normal weapon 
 
 test('weapon wheel includes owned grenades in both directions and keeps the underlying firearm',()=>{
  const controller=Object.create(StrikeController.prototype);
- const utility={flash:true,smoke:true};
+ const utility={flash:1,smoke:1};
  Object.assign(controller,{active:true,bindings:DEFAULT_BINDINGS,keys:new Set<string>(),
   socket:{id:'p',emit(){}},pushHUD(){},settings:{},
   state:{player:{hp:100,weapon:{selected:'knife'}},bomb:{phase:'active',players:{p:{weapons:['pistol','knife'],utility}}}}});

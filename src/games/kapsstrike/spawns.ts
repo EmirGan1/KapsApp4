@@ -56,9 +56,8 @@ export function spreadSpawn(map:MapDefinition,index:number,occupied:readonly Vec
 
 export function roamingSpawns(map:MapDefinition):Vec3[]{
  const cached=roamingCache.get(map);if(cached)return cached;
- if(map.id==='campus')return computeRoamingSpawns(map);
  const pool:Vec3[]=[];
- const candidates=map.id==='bolluca'||map.id==='bolluca2'?[]:(SPAWN_CANDIDATES[map.id as keyof typeof SPAWN_CANDIDATES]??SPAWN_CANDIDATES.district);
+ const candidates=map.id==='bolluca'?[]:(SPAWN_CANDIDATES[map.id as keyof typeof SPAWN_CANDIDATES]??SPAWN_CANDIDATES.district);
  for(const p of [...map.spawns,...candidates]){
   if(pool.some(q=>Math.hypot(p.x-q.x,p.y-q.y,p.z-q.z)<.1))continue;
   if(fits(map,p,C.standing)&&Math.abs(support(map,p,p.y+.06)-p.y)<.1)pool.push({...p});

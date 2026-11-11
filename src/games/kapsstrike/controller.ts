@@ -64,6 +64,7 @@ export interface StrikeNetworkSample {
 
 export interface StrikeHUD {
   bombEquipped?:boolean;
+  utilityCount?: number;
   utilityEquipped?:GrenadeKind;
   spectating?:string;
   spectatorCount?:number;
@@ -1175,6 +1176,7 @@ export class StrikeController {
 
     this.onHUD({
       utilityEquipped:this.utilityEquipped,
+      utilityCount:this.utilityEquipped ? this.state.bomb?.players[this.socket?.id ?? ""]?.utility?.[this.utilityEquipped] : undefined,
       bombEquipped:this.bombEquipped&&s.bomb?.carrier===this.socket?.id,
       spectating:this.spectator?.username,
       spectatorCount:this.teamSpectator.count,

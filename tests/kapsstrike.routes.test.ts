@@ -26,8 +26,8 @@ for(const map of Object.values(MAPS)) test(`${map.name}: all ten spawns connect 
  assert.ok(reachable.size>1500,'district must provide substantial connected walkable space');
 });
 test('district geometry differs structurally and includes interiors and distinct vertical routes',()=>{
- const signatures=Object.values(MAPS).filter(m=>m.id!=='district2').map(m=>JSON.stringify(m.solids.filter(s=>!s.detail).map(({x,y,z,w,h,d,kind})=>[x,y,z,w,h,d,kind])));
- assert.equal(new Set(signatures).size,Object.keys(MAPS).length-1);
+ const signatures=Object.values(MAPS).map(m=>JSON.stringify(m.solids.filter(s=>!s.detail).map(({x,y,z,w,h,d,kind})=>[x,y,z,w,h,d,kind])));
+ assert.equal(new Set(signatures).size,Object.keys(MAPS).length);
  for(const map of Object.values(MAPS)){
   assert.ok(map.solids.some(s=>s.kind==='ramp'));
   assert.ok(map.solids.some(s=>s.id.includes('entry-lintel')),'enterable structures');

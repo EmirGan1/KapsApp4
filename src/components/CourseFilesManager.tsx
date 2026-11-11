@@ -1,3 +1,4 @@
+import CoursePdfPreview from "./CoursePdfPreview";
 import { uploadFile } from "../utils/uploadFile";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
@@ -790,13 +791,8 @@ export const CourseFilesManager: React.FC<CourseFilesManagerProps> = ({
               </div>
             </div>
 
-            {/* Modal Gövdesi / PDF Iframe */}
-            <div className="flex-1 w-full h-full bg-slate-100 dark:bg-slate-950 relative">
-              <iframe
-                src={`${previewPdfUrl}#toolbar=1`}
-                title={previewPdfTitle}
-                className="w-full h-full border-none"
-              />
+            <div className="min-h-0 flex-1 bg-slate-100 dark:bg-slate-950">
+              <CoursePdfPreview key={previewPdfUrl} url={previewPdfUrl} />
             </div>
           </div>
         </div>

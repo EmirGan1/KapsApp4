@@ -9,7 +9,7 @@ export const BOMB_WIN_TARGETS = [5, 7, 8, 10, 13] as const;
 export function bombWinTarget(value: unknown): number {
  return typeof value === "number" && BOMB_WIN_TARGETS.some(target => target === value) ? value : 7;
 }
-export interface BombPlayer {id:string;team:BombSide;alive:boolean;position:Vec3;money:number;armor:number;kit:boolean;weapons:WeaponId[];plants:number;defuses:number;holdUntil:number;purchase?:{weapon:WeaponId;price:number};armorPurchase?:{item:"armor"|"halfArmor";previous:number;price:number};kitPurchase?:boolean;utility?:Partial<Record<GrenadeKind, boolean>>;flashedUntil?:number}
+export interface BombPlayer {id:string;team:BombSide;alive:boolean;position:Vec3;money:number;armor:number;kit:boolean;weapons:WeaponId[];plants:number;defuses:number;holdUntil:number;purchase?:{weapon:WeaponId;price:number};armorPurchase?:{item:"armor"|"halfArmor";previous:number;price:number};kitPurchase?:boolean;utility?:Partial<Record<GrenadeKind, number>>;flashedUntil?:number}
 export interface BombMatch {sites?: readonly BombSite[];grenades?:Grenade[];explosion?:{position:Vec3;at:number;radius:number};phase:BombPhase;round:number;deadline:number;scores:{T:number;CT:number};carrier?:string;position?:Vec3;site?:string;action?:{player:string;kind:'plant'|'defuse';started:number;position:Vec3};winner?:BombSide;reason?:string;target:number;half:number;firstToTarget?:boolean;swapped:boolean;loss:{T:number;CT:number};players:Record<string,BombPlayer>}
 const near=(a:Vec3,b:Vec3,r:number)=>Math.hypot(a.x-b.x,a.z-b.z)<=r&&Math.abs(a.y-b.y)<2;
 export function createBombMatch(players:{id:string;team:BombSide;position:Vec3}[],now:number,rounds:number|boolean=false,sites:readonly BombSite[]=BOMB_SITES):BombMatch{
@@ -28,14 +28,14 @@ export function bombPurchaseError(m:BombMatch,id:string,item:string,now:number):
  if(m.phase!=='buy'||now>=m.deadline)return 'Satın alma süresi sona erdi.';
  if(!Object.hasOwn(BOMB_SHOP,item))return 'Geçersiz ekipman.';
  if(item==='kit'&&p.team!=='CT')return 'Çözme kiti yalnızca CT için.';
- if(item==='kit'?p.kit:item==='armor'?p.armor>=100:item==='halfArmor'?p.armor>=50:isGrenade(item)?p.utility?.[item]:p.weapons.includes(item as WeaponId))return 'Bu ekipmana zaten sahipsin.';
+ if(item==='kit'?p.kit:item==='armor'?p.armor>=100:item==='halfArmor'?p.armor>=50:isGrenade(item)?false:p.weapons.includes(item as WeaponId))return 'Bu ekipmana zaten sahipsin.';
  if(!isGrenade(item)&&item!=='kit'&&item!=='armor'&&item!=='halfArmor'&&item!=='pistol'&&hasBombPrimary(p.weapons))return 'Zaten ana silahın var.';
  if(p.money<BOMB_SHOP[item as keyof typeof BOMB_SHOP])return 'Yeterli paran yok.';
 }
 export function buyBombEquipment(m:BombMatch,id:string,item:string,now:number){
  if(bombPurchaseError(m,id,item,now))return false;
  const p=m.players[id];
- if(isGrenade(item))(p.utility??={})[item]=true;
+ if(isGrenade(item))(p.utility??={})[item]=(p.utility?.[item]??0)+1;
  else if(item==='kit'){p.kit=true;p.kitPurchase=true;}
  else if(item==='armor'||item==='halfArmor'){
   p.armorPurchase={item,previous:p.armorPurchase?.previous??p.armor,price:(p.armorPurchase?.price??0)+BOMB_SHOP[item]};
@@ -59,7 +59,11 @@ export function refundBombEquipment(m:BombMatch,id:string,item:string,now:number
  const player=m.players[id];
  const price=bombRefundPrice(player,item);
  if(!price||m.phase!=='buy'||now>=m.deadline)return false;
- if(isGrenade(item))delete player.utility![item];
+ if(isGrenade(item)){
+  const remaining=player.utility![item]!-1;
+  if(remaining>0)player.utility![item]=remaining;
+  else delete player.utility![item];
+ }
  else if(item==='kit'){player.kit=false;delete player.kitPurchase;}
  else if(item==='armor'||item==='halfArmor'){player.armor=player.armorPurchase!.previous;delete player.armorPurchase;}
  else {player.weapons=player.weapons.filter(weapon=>weapon!==item);delete player.purchase;}

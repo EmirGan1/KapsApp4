@@ -48,7 +48,9 @@ test('grenades can be bought alongside a rifle and refunded independently; armor
  assert.ok(buyBombEquipment(m,'p','rifle',1));
  for(const kind of ['flash','frag','smoke']){
   assert.ok(buyBombEquipment(m,'p',kind,1));
-  assert.equal(buyBombEquipment(m,'p',kind,1),false);
+  assert.ok(buyBombEquipment(m,'p',kind,1));
+  assert.equal(p.utility?.[kind as 'flash'|'frag'|'smoke'],2);
+  assert.ok(refundBombEquipment(m,'p',kind,2));
   assert.ok(refundBombEquipment(m,'p',kind,2));
   assert.equal(refundBombEquipment(m,'p',kind,2),false);
  }

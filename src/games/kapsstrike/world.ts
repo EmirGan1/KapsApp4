@@ -21,7 +21,7 @@ const candidates=new WeakMap<MapDefinition,Vec3[]>();
 function locations(map:MapDefinition){let p=candidates.get(map);if(!p){p=supplyLocations(map);candidates.set(map,p);}return p;}
 export function createWorld(map:MapDefinition,seed=Date.now()):StrikeWorld{
  const w:StrikeWorld={pickups:[],nextDrop:DROP_INTERVAL,serial:0,seed:seed>>>0};
- if(map.id==='district'||map.id==='district2'||map.id==='bolluca2')return w;
+ if(map.id==='district')return w;
  const pool=[...locations(map)];
  // 8 pickups: 3 Health boxes, 2 Armor boxes, 3 Special Weapons (carbine, lmg, railgun)
  const pickupTypes: Array<{ consumable?: "health" | "armor"; amount?: number; weapon?: WeaponId }> = [
@@ -59,7 +59,7 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
   w.respawns!.splice(w.respawns!.indexOf(job),1);
  }
  w.pickups=w.pickups.filter(p=>!p.expires||p.expires>tick);
- if(map.id!=='district'&&map.id!=='district2'&&map.id!=='bolluca2'&&!w.drop&&tick>=w.nextDrop-DROP_WARNING){
+ if(map.id!=='district'&&!w.drop&&tick>=w.nextDrop-DROP_WARNING){
   const pool=locations(map).filter(p=>w.pickups.every(s=>s.opened||Math.hypot(s.position.x-p.x,s.position.z-p.z)>3.5));if(pool.length)w.drop={position:{...pool[Math.floor(random(w)*pool.length)]},warning:tick,landing:w.nextDrop};
  }
  if(w.drop&&tick>=w.drop.landing){

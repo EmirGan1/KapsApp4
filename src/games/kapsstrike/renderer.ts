@@ -741,7 +741,7 @@ export class StrikeRenderer {
       const photographic=['stone','plaster','concrete','brick'].includes(surface)&&typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine';
       if(photographic){
         const set=surface==='stone'||(surface==='concrete'&&color===this.map.floor)?'stone':'wall';
-        const tint=(this.map.id==='bolluca'||this.map.id==='bolluca2')?.58:(this.map.id==='district'||this.map.id==='district2')?.38:.15;
+        const tint=(this.map.id==='bolluca')?.58:(this.map.id==='district')?.38:.15;
         m.albedoTexture=loadPbr(set,'albedo',true);m.albedoColor=Color3.Lerp(Color3.White(),Color3.FromHexString(color),tint);
         m.bumpTexture=loadPbr(set,'normal',false);m.bumpTexture.level=.58;m.invertNormalMapY=true;
         m.metallicTexture=loadPbr(set,'roughness',false);m.useRoughnessFromMetallicTextureGreen=true;m.useRoughnessFromMetallicTextureAlpha=false;m.useMetallnessFromMetallicTextureBlue=false;m.metallic=0;m.roughness=1;
