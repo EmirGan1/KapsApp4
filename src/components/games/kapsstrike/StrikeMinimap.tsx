@@ -4,8 +4,8 @@ import type {StrikeHUD} from '../../../games/kapsstrike/controller';
 /** North-up tactical overview: self, team and supplies. Never reveals enemies through walls. */
 export default function StrikeMinimap({map,hud}:{map:MapDefinition;hud:StrikeHUD}){
  // Walkable decks and overhead roofs must not look like solid building blocks.
- const floor=/raised-floor|catwalk-deck|stair-tread|a-ramp|entrance-ramp|b-doors-ramp|bolluca-deck|bolluca-step|bolluca-slope/;
- const overhead=/tunnels-roof|underpass-roof|roof-beam|roof-remnant|bolluca-roof/;
+ const floor=/raised-floor|catwalk-deck|stair-tread|a-ramp|entrance-ramp|b-doors-ramp|(?:site|apron|core|rear|floor)-infill|bolluca-deck|bolluca-step|bolluca-slope/;
+ const overhead=/tunnels-roof|tunnel-entrance-roof|tunnel-stairs-roof|drop-bulkhead|long-doors-ceiling|underpass-roof|roof-beam|roof-remnant|lintel|arch-header|bolluca-roof/;
  const buildings=useMemo(()=>map.solids.filter(s=>!s.detail&&!s.hidden&&s.h>1.5&&!floor.test(s.id)&&!overhead.test(s.id)),[map]);
  const terraces=useMemo(()=>map.solids.filter(s=>floor.test(s.id)),[map]);
  const b=map.bounds,p=hud.position;if(!p)return null;

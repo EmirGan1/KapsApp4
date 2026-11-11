@@ -312,8 +312,8 @@ export class StrikeRenderer {
             z,
           ];
           const indices = [
-            4, 7, 6, 4, 6, 5, 0, 1, 2, 0, 2, 3, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6,
-            2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0,
+            4, 6, 7, 4, 5, 6, 0, 2, 1, 0, 3, 2, 0, 5, 4, 0, 1, 5, 1, 6, 5, 1, 2,
+            6, 2, 7, 6, 2, 3, 7, 3, 4, 7, 3, 0, 4,
           ];
           const normals: number[] = [];
           VertexData.ComputeNormals(positions, indices, normals);
@@ -737,19 +737,25 @@ export class StrikeRenderer {
     if(!m){
       m=new PBRMaterial('terrain-pbr-'+key,this.scene);m.albedoColor=Color3.FromHexString(color);m.metallic=surface==='metal'?.65:0;m.roughness=surface==='glass'?.2:surface==='metal'?.48:surface==='sand'?.99:.92;
       if(surface==='sand')m.reflectivityColor=new Color3(.18,.15,.11);
+      const loadPbr=(set:string,channel:string,gamma:boolean)=>{const key=set+'-'+channel;let t=this.photographicTextures.get(key);if(!t){t=new Texture(`/kapsstrike/materials/${key}.webp`,this.scene,false,false);t.gammaSpace=gamma;t.anisotropicFilteringLevel=16;this.photographicTextures.set(key,t);}return t;};
       const photographic=['stone','plaster','concrete','brick'].includes(surface)&&typeof document!=='undefined'&&this.engine.getClassName()!=='NullEngine';
       if(photographic){
         const set=surface==='stone'||(surface==='concrete'&&color===this.map.floor)?'stone':'wall';
-        const load=(channel:string,gamma:boolean)=>{const key=set+'-'+channel;let t=this.photographicTextures.get(key);if(!t){t=new Texture(`/kapsstrike/materials/${key}.webp`,this.scene,false,false);t.gammaSpace=gamma;t.anisotropicFilteringLevel=16;this.photographicTextures.set(key,t);}return t;};
-        m.albedoTexture=load('albedo',true);m.albedoColor=Color3.Lerp(Color3.White(),Color3.FromHexString(color),this.map.id==='bolluca'?.52:.15);
-        m.bumpTexture=load('normal',false);m.bumpTexture.level=.58;m.invertNormalMapY=true;
-        m.metallicTexture=load('roughness',false);m.useRoughnessFromMetallicTextureGreen=true;m.useRoughnessFromMetallicTextureAlpha=false;m.useMetallnessFromMetallicTextureBlue=false;m.metallic=0;m.roughness=1;
+        m.albedoTexture=loadPbr(set,'albedo',true);m.albedoColor=Color3.Lerp(Color3.White(),Color3.FromHexString(color),this.map.id==='bolluca'?.52:.15);
+        m.bumpTexture=loadPbr(set,'normal',false);m.bumpTexture.level=.58;m.invertNormalMapY=true;
+        m.metallicTexture=loadPbr(set,'roughness',false);m.useRoughnessFromMetallicTextureGreen=true;m.useRoughnessFromMetallicTextureAlpha=false;m.useMetallnessFromMetallicTextureBlue=false;m.metallic=0;m.roughness=1;
       }else{
         const resolution = surface === 'metal' || surface === 'wood' || surface === 'asphalt' ? 1024 : 512;
-        const t = surfaceTexture(this.scene, 'high-surface-' + surface, '#d0d0d0', surface, undefined, resolution);
+        const baseTone = surface === 'sand' ? '#9e8868' : '#d0d0d0';
+        const t = surfaceTexture(this.scene, 'high-surface-' + surface, baseTone, surface, undefined, resolution);
         if (t) {
           m.albedoTexture = t;
-          m.albedoColor = Color3.Lerp(m.albedoColor, Color3.White(), .10);
+          m.albedoColor = surface === 'sand' ? Color3.FromHexString(color).scale(.68) : Color3.Lerp(m.albedoColor, Color3.White(), .10);
+        }
+        if (surface === 'sand' && typeof document !== 'undefined' && this.engine.getClassName() !== 'NullEngine') {
+          m.bumpTexture = loadPbr('stone', 'normal', false);
+          m.bumpTexture.level = .26;
+          m.invertNormalMapY = true;
         }
       }
       m.backFaceCulling=!doubleSided;

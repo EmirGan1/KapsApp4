@@ -191,3 +191,34 @@ test('B tunnel seams and Mid flanks have solid backing without closing the Mid p
  const result=walk({x:-19,y:0,z:10},{x:-5.5,z:10});
  assert.ok(Math.abs(result.position.z-10)<.4);
 });
+
+test('Dust II B Tunnels, Upper Tunnels, Tunnel Stairs and Lower Tunnels have continuous floor, side walls and ceiling with zero gaps',()=>{
+ // 1. Upper Tunnels & B Tunnels floor support and overhead ceiling
+ for(const [x,z] of [[-38,4],[-38,8],[-38,11],[-44,6],[-44,11],[-31,6],[-31,11],[-45,15],[-45,22],[-45,29]]){
+  assert.equal(support(map,{x,y:2.4,z},2.45),2.4,`tunnel floor gap at ${x},${z}`);
+  assert.ok(fits(map,{x,y:2.4,z},1.8),`tunnel clearance blocked at ${x},${z}`);
+  const eye={x,y:3.8,z};
+  const roofHit=Math.min(...map.solids.filter(s=>!s.detail).map(s=>raySolid(eye,{x:0,y:1,z:0},s,6)));
+  assert.ok(roofHit<4.0,`missing tunnel ceiling above ${x},${z}`);
+ }
+ // 2. Tunnel Stairs (x: -26.5..-20.5, z: 10) enclosed on both north (z+) and south (z-) sides and overhead
+ for(const x of [-26,-24.5,-23,-21.5]){
+  const y=support(map,{x,y:2.4,z:10},2.5);
+  const eye={x,y:y+1.2,z:10};
+  const northWall=Math.min(...map.solids.filter(s=>!s.detail).map(s=>raySolid(eye,{x:0,y:0,z:1},s,4)));
+  const southWall=Math.min(...map.solids.filter(s=>!s.detail).map(s=>raySolid(eye,{x:0,y:0,z:-1},s,4)));
+  const roofHit=Math.min(...map.solids.filter(s=>!s.detail).map(s=>raySolid(eye,{x:0,y:1,z:0},s,8)));
+  assert.ok(northWall<2.5,`missing north stairwell wall at x=${x}`);
+  assert.ok(southWall<2.5,`missing south stairwell wall at x=${x}`);
+  assert.ok(roofHit<6.5,`missing stairwell roof at x=${x}`);
+ }
+ // 3. Iconic CS:GO Dust II landmarks present across A Site, A Long, Mid and B Site
+ for(const token of [
+  'a-goose-backwall','a-goose-sign','a-long-car-chassis','blue-container-body',
+  'pit-retaining-wall','mid-xbox-main','mid-xbox-step','b-closet-car-chassis',
+  'b-window-scaffold-plank','upper-tunnels-roof','tunnel-stairs-wall-n','tunnel-stairs-wall-s'
+ ]){
+  assert.ok(map.solids.some(s=>s.id.includes(token)),`missing Dust II landmark: ${token}`);
+ }
+});
+

@@ -107,3 +107,32 @@ test("Bolluca server rooms plant and defuse at both sites and Dust II remains th
     assert.equal(ct.defuses, 1);
   }
 });
+
+test("Bolluca includes faithful Mirage architectural landmarks across A Site, Mid, Palace, Underpass, Market and B Site", () => {
+  for (const token of [
+    "bolluca-crate-tetris",
+    "bolluca-crate-tetris-top",
+    "bolluca-sandwich-back-wall",
+    "bolluca-a-stairs-east-parapet",
+    "bolluca-crate-a-default",
+    "bolluca-crate-triple",
+    "bolluca-crate-triple-wing",
+    "bolluca-crate-firebox",
+    "bolluca-ticket-booth",
+    "bolluca-palace-dome-crown",
+    "bolluca-window-under-bench",
+    "bolluca-window-vent-frame",
+    "bolluca-underpass-tile-band-1",
+    "bolluca-b-canopy",
+    "bolluca-crate-b-default",
+    "bolluca-crate-b-ebox",
+    "bolluca-crate-b-bench",
+    "bolluca-van",
+    "bolluca-van-cab-hood",
+    "bolluca-market-counter",
+    "bolluca-market-window-sill",
+  ]) {
+    assert.ok(map.solids.some(s => s.id === token), `missing Mirage landmark: ${token}`);
+  }
+});
+

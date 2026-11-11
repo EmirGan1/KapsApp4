@@ -86,15 +86,19 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
   }
 
   if(surface==='sand'){
-   // Wind-smoothed desert ground: broad low-contrast drifts plus dense, fine mineral grains.
-   // The pattern has no grid seams, keeping the large Dust II floor from reading as tiled plastic.
+   // Wind-smoothed desert ground: broad low-contrast drifts, subtle wind ripples, plus dense mineral grains.
    for(let i=0;i<18;i++){
     const px=rand()*128,py=rand()*128,rx=18+rand()*30,ry=5+rand()*10;
     const g=c.createRadialGradient(px,py,0,px,py,rx);
-    g.addColorStop(0,rand()>.5?'rgba(255,237,196,0.13)':'rgba(118,91,59,0.09)');
+    g.addColorStop(0,rand()>.5?'rgba(255,237,196,0.14)':'rgba(118,91,59,0.10)');
     g.addColorStop(1,'rgba(0,0,0,0)');
     c.save();c.translate(px,py);c.scale(1,ry/rx);c.translate(-px,-py);
     c.fillStyle=g;c.fillRect(px-rx,py-rx,rx*2,rx*2);c.restore();
+   }
+   for(let y=6;y<128;y+=16){
+    c.strokeStyle='rgba(255,244,214,0.08)';c.lineWidth=1.4;
+    c.beginPath();c.moveTo(0,y);
+    c.bezierCurveTo(36,y+2.2,84,y-2.2,128,y+.5);c.stroke();
    }
    for(let i=0;i<1800;i++){
     const light=rand()>.53;
@@ -137,9 +141,19 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
    for(let i=0;i<32;i++){
     const px=rand()*128,py=rand()*128,pr=10+rand()*24;
     const g=c.createRadialGradient(px,py,0,px,py,pr);
-    g.addColorStop(0,rand()>.45?'rgba(255,250,235,0.1)':'rgba(25,35,45,0.12)');
+    g.addColorStop(0,rand()>.45?'rgba(255,250,235,0.11)':'rgba(35,28,22,0.13)');
     g.addColorStop(1,'rgba(0,0,0,0)');
     c.fillStyle=g;c.fillRect(px-pr,py-pr,pr*2,pr*2);
+   }
+   if(surface==='plaster'){
+    // Subtle sun-baked stucco hairline cracks and limewash patches
+    for(let k=0;k<6;k++){
+     let cx=12+rand()*104,cy=12+rand()*104;
+     c.strokeStyle='rgba(48,36,26,0.22)';c.lineWidth=0.7;
+     c.beginPath();c.moveTo(cx,cy);
+     for(let step=0;step<4;step++){cx+=(rand()-.5)*14;cy+=3+rand()*9;c.lineTo(cx,cy);}
+     c.stroke();
+    }
    }
    if(surface==='asphalt'){
     // Dense aggregate road specks and micro-pitting
@@ -181,12 +195,16 @@ export function surfaceTexture(scene:Scene,key:string,color:string,surface:Solid
   }
 
   if(surface==='wood'){
-   // Natural organic wood grain planks
+   // Natural organic wood grain planks with knots and nail fasteners
    const plankH=128/4;
    for(let p=0;p<4;p++){
     const y=p*plankH;
-    c.fillStyle='rgba(20,12,6,0.35)';c.fillRect(0,y+plankH-1.5,128,1.5);
-    c.fillStyle='rgba(255,230,190,0.1)';c.fillRect(0,y+0.5,128,1);
+    c.fillStyle='rgba(20,12,6,0.38)';c.fillRect(0,y+plankH-1.5,128,1.5);
+    c.fillStyle='rgba(255,230,190,0.11)';c.fillRect(0,y+0.5,128,1);
+    for(const nx of [7,121]){
+     c.fillStyle='rgba(25,18,12,0.55)';
+     c.beginPath();c.arc(nx,y+7,1.3,0,Math.PI*2);c.arc(nx,y+plankH-7,1.3,0,Math.PI*2);c.fill();
+    }
     for(let g=0;g<5;g++){
      c.strokeStyle=rand()>.5?'rgba(40,25,15,0.25)':'rgba(255,220,170,0.12)';c.lineWidth=1;
      c.beginPath();

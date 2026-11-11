@@ -43,7 +43,7 @@ try{
  console.log('playing',await a.locator('.ks-bomb-objective').textContent());
  await a.keyboard.press('KeyB');await a.getByRole('dialog',{name:'Satın alma',exact:true}).waitFor();
  assert.equal(await a.evaluate(()=>document.pointerLockElement===null),true);
- assert.equal(await a.locator('.ks-buy-columns section').count(),4);
+ assert.equal(await a.locator('.ks-buy-columns section').count(),5);
  assert.equal(await a.locator('.ks-bomb-player').count(),2);
  await a.getByRole('button',{name:/Balistik zırh/}).click();await a.getByRole('status').filter({hasText:'Balistik zırh alındı'}).waitFor();
  assert.equal(room.bomb!.players[(await a.evaluate(()=>(window as any).socket.id))].money,150);

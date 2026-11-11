@@ -13,7 +13,7 @@ export const DUST2_AREAS={
  'A Ramp':[842,240],'A Site':[820,172],'B Site':[210,130],
 } as const;
 /** Radar-derived horizontal reconstruction. Not a claim of measured Source 2 mesh parity. */
-export function dustDistrict():MapDefinition{
+ export function dustDistrict():MapDefinition{
  const n=128,cell=8*RADAR_METRES,solids:Solid[]=[];let serial=0;
  const box=(name:string,x:number,y:number,z:number,w:number,h:number,d:number,color='#c8b99e',detail=false,surface:Solid['surface']='plaster')=>{
   const s:Solid={id:`district-${name}-${serial++}`,kind:'box',x,y,z,w,h,d,color,detail,surface};solids.push(s);return s;
@@ -26,7 +26,11 @@ export function dustDistrict():MapDefinition{
   for(let b=0;b<d;b++)for(let a=0;a<w;a++)used[y+b][x+a]=true;
   const p=dust2Point(x*8+w*4,y*8+d*4),h=6.5+(x+y)%3;
   box('city-block',p.x,0,p.z,w*cell,h,d*cell,['#c8b99e','#d4c5ac','#bcae96'][(x+y)%3]);
-  box('cornice',p.x,h,p.z,w*cell+.08,.15,d*cell+.08,'#e2d2b8',true,'stone');
+  box('cornice',p.x,h,p.z,w*cell+.12,.18,d*cell+.12,'#e2d2b8',true,'stone');
+  if(w>=3&&d>=3){
+   box('block-plinth',p.x,0,p.z,w*cell+.08,.42,d*cell+.08,'#a89376',true,'stone');
+   box('block-frieze',p.x,h-.55,p.z,w*cell+.1,.14,d*cell+.1,'#b59e7d',true,'stone');
+  }
  }
  const walkable=(x:number,z:number)=>{const ix=Math.floor(x/cell+64),iy=Math.floor(64-z/cell);return ix>=0&&iy>=0&&ix<n&&iy<n&&!closed[iy][ix];};
  for(const name of ['A Long Doors','Mid Doors'] as const){
@@ -34,7 +38,11 @@ export function dustDistrict():MapDefinition{
   for(const side of [-1,1])box('door-leaf',p.x+side*1.3,0,p.z,.65,2.8,.18,'#797367',false,'wood');
   for(const side of [-1,1]){box('door-jamb',p.x+side*1.95,0,p.z,.3,3.7,.4,'#bda98a');for(let k=0;k<3;k++)box('door-ironwork',p.x+side*1.3,.5+k*.8,p.z-.12,.6,.07,.08,'#4d5049',true,'metal');}
   box('door-arch-header',p.x,3.4,p.z,4.2,.35,.4,'#d2bc99');
-  if(name==='A Long Doors')box('long-doors-ceiling',p.x,3.8,p.z,4.2,.3,7,'#a99578');
+  if(name==='A Long Doors'){
+   box('long-doors-ceiling',p.x,3.8,p.z,4.2,.3,7,'#a99578');
+   for(const side of [-1,1])box('long-doors-chamber-pier',p.x+side*1.95,0,p.z-3.2,.32,3.8,.45,'#bda98a',true,'stone');
+   box('long-doors-south-arch',p.x,3.4,p.z-3.2,4.2,.4,.45,'#d2bc99',true,'stone');
+  }
  }
  const terrain=addDust2Architecture(solids,walkable);
  const heightAt=(x:number,z:number)=>Math.max(0,...terrain.filter(s=>overlaps(s,{x,y:0,z},.01)).map(s=>surface(s,x,z)));
@@ -65,15 +73,15 @@ export function dustDistrict():MapDefinition{
   const sign=box('site-sign',s.x,s.y+2.8,s.z+s.radius+.3,2.5,1,.1,'#a65b35',true);sign.label='BOMBSITE '+s.id;
  }
  const spawns=[-16,-8,0,8,16].map(dx=>spawn(390+dx,920)).concat([-16,-8,0,8,16].map(dx=>spawn(600+dx,210)));
- // Matching neighborhood gateway boards at the outer map approaches.
- for(const [text,x,color] of [
-  ['Gazeteciler Sitesi',-51,'#315c49'],
-  ['Yeni Nesil Eyüp Sitesi',51,'#244f75'],
- ] as [string,number,string][]){
-  box('neighborhood-sign-post',x,0,0,.18,3.5,.18,'#3b4348',true,'metal');
-  const board=box('neighborhood-sign-board',x,3.45,0,15,1.35,.2,color,true,'metal');
+ // Matching neighborhood gateway boards mounted flush against outer building facades.
+ for(const [text,x,z,color] of [
+  ['Gazeteciler Sitesi',-10,-47.2,'#315c49'],
+  ['Yeni Nesil Eyüp Sitesi',48.0,-16.9,'#244f75'],
+ ] as [string,number,number,string][]){
+  box('neighborhood-sign-post',x,0,z,.18,3.6,.18,'#3b4348',true,'metal');
+  const board=box('neighborhood-sign-board',x,3.55,z,6.8,1.15,.18,color,true,'metal');
   board.label=text;
-  box('neighborhood-sign-trim',x,4.18,0,15.2,.08,.24,'#d3ad5d',true,'metal');
+  box('neighborhood-sign-trim',x,4.15,z,6.95,.08,.22,'#d3ad5d',true,'metal');
  }
  // Interior & exterior photo frames across tunnels, chambers and exposed city-block walls.
  const photoFrames:NonNullable<MapDefinition['photoFrames']>=[];
