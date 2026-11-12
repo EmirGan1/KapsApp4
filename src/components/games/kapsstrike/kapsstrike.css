@@ -1558,3 +1558,13 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
   .ks-buy-columns button { min-height:72px; }
   .ks-buy-columns .ks-buy-symbol { height:18px; }
 }
+
+/* Bomb mode at phone widths: keep both top-right and top-left controls outside the
+   two four-player roster columns. The mic bar is hidden in this mode, so its
+   left corner can safely host the fullscreen control instead. */
+@media (max-width:700px) {
+  .ks-root:has(.ks-bomb-objective) .ks-fullscreen-btn {
+    left:max(8px, env(safe-area-inset-left));
+    right:auto;
+  }
+}
