@@ -49,12 +49,10 @@ try{
   await b.setViewportSize(size);await b.waitForFunction(()=>document.querySelectorAll('.ks-bomb-player').length===8);
   await b.screenshot({path:'/tmp/strike-4v4-roster-'+size.width+'.png'});
   const collision=await b.evaluate(()=>{
-   const rect=(el:Element)=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
-   const blockers=[...document.querySelectorAll('.ks-pause-gear-btn,.ks-top-left-bar')].filter(el=>getComputedStyle(el).display!=='none').map(el=>({name:el.className,box:rect(el)}));
-   const players=[...document.querySelectorAll('.ks-bomb-player')].map(el=>({name:el.getAttribute('title'),box:rect(el)}));
-   const overlaps=(a:ReturnType<typeof rect>,q:ReturnType<typeof rect>)=>a.right>q.left&&a.left<q.right&&a.bottom>q.top&&a.top<q.bottom;
+   const blockers=[...document.querySelectorAll('.ks-pause-gear-btn,.ks-top-left-bar')].filter(el=>getComputedStyle(el).display!=='none').map(el=>({name:el.className,box:el.getBoundingClientRect().toJSON()}));
+   const players=[...document.querySelectorAll('.ks-bomb-player')].map(el=>({name:el.getAttribute('title'),box:el.getBoundingClientRect().toJSON()}));
    return {viewport:{width:innerWidth,height:innerHeight},blockers,players,
-    invalid:players.filter(p=>p.box.left<0||p.box.right>innerWidth||blockers.some(q=>overlaps(p.box,q.box)))};
+    invalid:players.filter(p=>p.box.left<0||p.box.right>innerWidth||blockers.some(q=>p.box.right>q.box.left&&p.box.left<q.box.right&&p.box.bottom>q.box.top&&p.box.top<q.box.bottom))};
   });
   if(collision.invalid.length)console.log('roster-layout-failure',JSON.stringify(collision));
   assert.equal(collision.invalid.length,0,'all eight roster cards must clear mic/pause controls');
