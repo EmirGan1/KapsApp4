@@ -427,6 +427,7 @@ export class StrikeRoom {
       selectedWeapon: p.state.weapon.selected,
       deadUntil: p.state.deadUntil,
       protectedUntil: p.state.protectedUntil,
+      flashedUntil: this.bomb?.players[p.id]?.flashedUntil,
       kills: p.kills,
       deaths: p.deaths,
       score: p.score,

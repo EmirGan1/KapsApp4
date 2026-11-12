@@ -1,5 +1,6 @@
 // Sample offsets generated from the licensed edits documented in public/assets/kapsstrike/audio/CREDITS.md.
 export const AUDIO_SAMPLES = {
+  knife: { bank: 'knife', offset: 0, duration: .28 },
   "rifle": {
     "bank": "guns",
     "offset": 0.0,
@@ -114,7 +115,7 @@ export class StrikeSampleBank {
   private disposed = false;
   load(ctx:AudioContext) {
     if(this.pending||this.disposed)return this.pending;
-    this.pending=Promise.all(['guns','foley'].map(async bank=>{
+    this.pending=Promise.all(['guns','foley','knife'].map(async bank=>{
       if(this.buffers.has(bank))return;
       try {
         const response=await fetch(`/assets/kapsstrike/audio/${bank}.mp3`,{signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(10000)])});
