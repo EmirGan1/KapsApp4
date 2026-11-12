@@ -59,7 +59,7 @@ try{
  assert.equal(await a.evaluate(()=>document.pointerLockElement===null),true);
  assert.equal(await a.locator('.ks-buy-columns section').count(),5);
  assert.equal(await a.locator('.ks-bomb-player').count(),2);
- await a.getByRole('button',{name:/Balistik zırh/}).click();await a.getByRole('status').filter({hasText:'Balistik zırh alındı'}).waitFor();
+ await a.getByRole('button',{name:/Yarım zırh/}).click();await a.getByRole('status').filter({hasText:'Yarım zırh · +50 alındı'}).waitFor();
  assert.equal(room.bomb!.players[(await a.evaluate(()=>(window as any).socket.id))].money,150);
  const buyerId=await a.evaluate(()=>(window as any).socket.id);
  room.bomb!.players[buyerId].money=10000;io.to(buyerId).emit('strike:snapshot',room.getSnapshotForPlayer(buyerId));
