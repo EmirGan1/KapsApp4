@@ -1,7 +1,7 @@
 {
   "rifle": {
     "bank": "guns",
-    "offset": 0.0,
+    "offset": 0,
     "duration": 0.85
   },
   "carbine": {
@@ -27,11 +27,11 @@
   "shotgun": {
     "bank": "guns",
     "offset": 4.4,
-    "duration": 1.0
+    "duration": 1
   },
   "reload-out": {
     "bank": "foley",
-    "offset": 0.0,
+    "offset": 0,
     "duration": 0.176125
   },
   "reload-in": {
@@ -102,6 +102,11 @@
   "step-grass-3": {
     "bank": "foley",
     "offset": 3.6159583333333334,
+    "duration": 0.28
+  },
+  "knife": {
+    "bank": "knife",
+    "offset": 0,
     "duration": 0.28
   }
 }
