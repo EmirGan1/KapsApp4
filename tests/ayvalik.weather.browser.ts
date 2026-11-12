@@ -70,14 +70,19 @@ try {
     const weather = page.getByRole('region', {name: '25-27 Kasım Ayvalık Hava Durumu', exact: true});
     await weather.waitFor();
 
-    // Verify all 5 meteorological sources are rendered in the comparison table
+    // Verify embedded comparison box is present in the top header and click to expand
+    const consensusToggle = weather.getByRole('button', {name: /Çoklu Hava Durumu Kaynakları Karşılaştırma/});
+    await consensusToggle.waitFor();
+    await consensusToggle.click();
+
+    // Verify all 5 meteorological sources are rendered in the expanded comparison table
     await weather.getByText('ECMWF IFS & SEAS5 Ensemble').first().waitFor();
     await weather.getByText('NOAA GFS Seamless (NCEP)').first().waitFor();
     await weather.getByText('CMC GEM Global Ensemble').first().waitFor();
     await weather.getByText('Copernicus ERA5 & MGM Klimatoloji').first().waitFor();
     await weather.getByText('MET Norway (Yr.no) & Ege Deniz Analizi').first().waitFor();
 
-    // Verify all 3 trip day cards (25, 26, 27 Kasım) are rendered
+    // Verify all 3 trip day cards (25, 26, 27 Kasım) are rendered prominently
     await weather.getByRole('button', {name: /25 Kasım 2026, Çarşamba detaylı saatlik/}).waitFor();
     await weather.getByRole('button', {name: /26 Kasım 2026, Perşembe detaylı saatlik/}).waitFor();
     await weather.getByRole('button', {name: /27 Kasım 2026, Cuma detaylı saatlik/}).waitFor();

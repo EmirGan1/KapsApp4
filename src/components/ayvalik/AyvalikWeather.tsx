@@ -721,6 +721,8 @@ export default function AyvalikWeather() {
   const [selectedDayDate, setSelectedDayDate] = useState<string | null>('2026-11-25');
   const [hourlyViewMode, setHourlyViewMode] = useState<'program' | 'all24'>('program');
   const [modalDayDate, setModalDayDate] = useState<string | null>(null);
+  const [isConsensusExpanded, setIsConsensusExpanded] = useState<boolean>(false);
+  const [showConsensusModal, setShowConsensusModal] = useState<boolean>(false);
   const [secondsToNextSync, setSecondsToNextSync] = useState<number>(Math.round(LIVE_POLL_INTERVAL_MS / 1000));
   const detailSectionRef = useRef<HTMLDivElement | null>(null);
   const refreshRef = useRef<(force?: boolean) => void>(() => {});
@@ -1431,118 +1433,159 @@ export default function AyvalikWeather() {
             {syncError && <span className="text-amber-300 font-semibold">{syncError}</span>}
           </div>
         </div>
-      </div>
 
-      {/* Multi-Source Comparison Matrix across 25, 26, 27 Kasım */}
-      <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <Activity size={19} className="text-emerald-600" />
-              <span>25–27 Kasım Çoklu Hava Durumu Kaynakları Karşılaştırma ve Konsensüs Tablosu</span>
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Her bir meteoroloji kaynağının 25, 26 ve 27 Kasım için verdiği bağımsız tahminler ve KapsApp’in ağırlıklı ortak (konsensüs) sonucu
-            </p>
-          </div>
-          <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-black">
-            ✓ 5 Bağımsız Kaynak Senkronize
-          </span>
-        </div>
+        {/* Gömülü 25–27 Kasım Çoklu Kaynak Karşılaştırma & Konsensüs Kutucuğu (Tıklanınca Büyür / Tabloyu Açar) */}
+        <div className="rounded-2xl bg-black/40 backdrop-blur-md border border-emerald-400/30 overflow-hidden shadow-md transition-all">
+          <button
+            type="button"
+            onClick={() => setIsConsensusExpanded(prev => !prev)}
+            aria-expanded={isConsensusExpanded}
+            className="w-full p-3.5 sm:p-4 text-left flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-white/5 transition-colors cursor-pointer group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center shrink-0 text-emerald-400 group-hover:scale-105 transition-transform">
+                <Activity size={20} />
+              </div>
+              <div className="min-w-0 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs sm:text-sm font-black text-white group-hover:text-emerald-300 transition-colors">
+                    📊 25–27 Kasım Çoklu Hava Durumu Kaynakları Karşılaştırma ve Konsensüs Tablosu
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    5 Bağımsız Kaynak Senkronize
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-200 border border-sky-400/30">
+                    %{Math.round((tripDays[0].confidencePercent + tripDays[1].confidencePercent + tripDays[2].confidencePercent) / 3)} Model Uyumu
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 truncate">
+                  ECMWF IFS (Avrupa), NOAA GFS (ABD), CMC GEM (Kanada), ERA5/MGM ve MET Norway model tahminlerini karşılaştır
+                </p>
+              </div>
+            </div>
 
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
-          <table className="w-full text-xs text-left border-collapse">
-            <thead className="bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 uppercase text-[11px] font-black">
-              <tr>
-                <th className="p-3 whitespace-nowrap">Meteoroloji Kaynağı</th>
-                <th className="p-3 whitespace-nowrap">Model & Ağırlık</th>
-                <th className="p-3 whitespace-nowrap">1. Gün (25 Kasım Çar)</th>
-                <th className="p-3 whitespace-nowrap">2. Gün (26 Kasım Per)</th>
-                <th className="p-3 whitespace-nowrap">3. Gün (27 Kasım Cum)</th>
-                <th className="p-3 whitespace-nowrap">Durum</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800">
-              {tripDays[0].sources.map((src, sIdx) => {
-                const d1 = tripDays[0].sources[sIdx] || src;
-                const d2 = tripDays[1].sources[sIdx] || src;
-                const d3 = tripDays[2].sources[sIdx] || src;
-                return (
-                  <tr key={src.sourceId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                    <td className="p-3 font-black text-slate-900 dark:text-white whitespace-nowrap">
-                      <div>{src.sourceName}</div>
-                      <div className="text-[10px] font-semibold text-slate-400">{src.institution}</div>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                        %{src.weight} Ağırlık
-                      </span>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{src.modelDetail}</div>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="font-black text-slate-900 dark:text-white">
-                        {d1.tempMax}° / {d1.tempMin}°C • {d1.condition}
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Yağış %{d1.precipProbMax} ({d1.precipSumMm}mm) • Rüzgâr {d1.windSpeedMax} km/s
-                      </div>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="font-black text-slate-900 dark:text-white">
-                        {d2.tempMax}° / {d2.tempMin}°C • {d2.condition}
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Yağış %{d2.precipProbMax} ({d2.precipSumMm}mm) • Rüzgâr {d2.windSpeedMax} km/s
-                      </div>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="font-black text-slate-900 dark:text-white">
-                        {d3.tempMax}° / {d3.tempMin}°C • {d3.condition}
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Yağış %{d3.precipProbMax} ({d3.precipSumMm}mm) • Rüzgâr {d3.windSpeedMax} km/s
-                      </div>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        Çevrimiçi Aktif
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-              {/* Final Consensus Row */}
-              <tr className="bg-emerald-500/10 dark:bg-emerald-950/40 font-black">
-                <td className="p-3 text-emerald-900 dark:text-emerald-200 whitespace-nowrap">
-                  <div>KAPSAPP ORTAK KONSENSÜS TAHMİNİ</div>
-                  <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
-                    5 Kaynağın Ağırlıklı Birleşimi
-                  </div>
-                </td>
-                <td className="p-3 whitespace-nowrap">
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-black">
-                    %100 Birleşik Model
-                  </span>
-                </td>
-                {tripDays.map(d => (
-                  <td key={d.date} className="p-3 whitespace-nowrap">
-                    <div className="text-sm font-black text-emerald-950 dark:text-white">
-                      {d.tempMax}° / {d.tempMin}°C • {weatherLabel(d.weatherCode)}
-                    </div>
-                    <div className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
-                      Yağış %{d.precipProbMax} ({d.precipSumMm}mm) • Hamle {d.windGustMax} km/s
-                    </div>
-                  </td>
-                ))}
-                <td className="p-3 whitespace-nowrap">
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-black">
-                    %{Math.round((tripDays[0].confidencePercent + tripDays[1].confidencePercent + tripDays[2].confidencePercent) / 3)} Uyum
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+            <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+              <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 group-hover:bg-emerald-500/30 border border-emerald-400/30 text-xs font-black text-emerald-200 flex items-center gap-1.5 transition-all">
+                <span>{isConsensusExpanded ? 'Tabloyu Küçült' : 'Tıkla ve Tabloyu Büyüt'}</span>
+                <ChevronRight size={15} className={`transition-transform duration-200 ${isConsensusExpanded ? 'rotate-90' : ''}`} />
+              </span>
+            </div>
+          </button>
+
+          {/* Tıklanınca Büyüyen Karşılaştırma Tablosu */}
+          {isConsensusExpanded && (
+            <div className="p-4 sm:p-5 border-t border-emerald-500/20 bg-slate-950/75 space-y-3 animate-fade-in">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+                <span>Her bir meteoroloji kaynağının 25, 26 ve 27 Kasım için verdiği bağımsız tahminler ve KapsApp’in ağırlıklı ortak (konsensüs) sonucu:</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowConsensusModal(true);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-emerald-200 font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Sparkles size={12} className="text-amber-300" />
+                  <span>Tam Ekran Pencerede Gör</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-white/10">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-slate-900/95 text-slate-200 uppercase text-[11px] font-black">
+                    <tr>
+                      <th className="p-3 whitespace-nowrap">Meteoroloji Kaynağı</th>
+                      <th className="p-3 whitespace-nowrap">Model & Ağırlık</th>
+                      <th className="p-3 whitespace-nowrap">1. Gün (25 Kasım Çar)</th>
+                      <th className="p-3 whitespace-nowrap">2. Gün (26 Kasım Per)</th>
+                      <th className="p-3 whitespace-nowrap">3. Gün (27 Kasım Cum)</th>
+                      <th className="p-3 whitespace-nowrap">Durum</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10 text-slate-200">
+                    {tripDays[0].sources.map((src, sIdx) => {
+                      const d1 = tripDays[0].sources[sIdx] || src;
+                      const d2 = tripDays[1].sources[sIdx] || src;
+                      const d3 = tripDays[2].sources[sIdx] || src;
+                      return (
+                        <tr key={src.sourceId} className="hover:bg-white/5 transition-colors">
+                          <td className="p-3 font-black text-white whitespace-nowrap">
+                            <div>{src.sourceName}</div>
+                            <div className="text-[10px] font-semibold text-slate-400">{src.institution}</div>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded-md bg-white/10 font-bold text-slate-200">
+                              %{src.weight} Ağırlık
+                            </span>
+                            <div className="text-[10px] text-slate-400 mt-0.5">{src.modelDetail}</div>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="font-black text-white">
+                              {d1.tempMax}° / {d1.tempMin}°C • {d1.condition}
+                            </div>
+                            <div className="text-[11px] text-slate-300">
+                              Yağış %{d1.precipProbMax} ({d1.precipSumMm}mm) • Rüzgâr {d1.windSpeedMax} km/s
+                            </div>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="font-black text-white">
+                              {d2.tempMax}° / {d2.tempMin}°C • {d2.condition}
+                            </div>
+                            <div className="text-[11px] text-slate-300">
+                              Yağış %{d2.precipProbMax} ({d2.precipSumMm}mm) • Rüzgâr {d2.windSpeedMax} km/s
+                            </div>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="font-black text-white">
+                              {d3.tempMax}° / {d3.tempMin}°C • {d3.condition}
+                            </div>
+                            <div className="text-[11px] text-slate-300">
+                              Yağış %{d3.precipProbMax} ({d3.precipSumMm}mm) • Rüzgâr {d3.windSpeedMax} km/s
+                            </div>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              Çevrimiçi Aktif
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Final Consensus Row */}
+                    <tr className="bg-emerald-500/20 font-black text-emerald-100">
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="text-white">KAPSAPP ORTAK KONSENSÜS TAHMİNİ</div>
+                        <div className="text-[10px] font-bold text-emerald-300">
+                          5 Kaynağın Ağırlıklı Birleşimi
+                        </div>
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-black">
+                          %100 Birleşik Model
+                        </span>
+                      </td>
+                      {tripDays.map(d => (
+                        <td key={d.date} className="p-3 whitespace-nowrap">
+                          <div className="text-sm font-black text-white">
+                            {d.tempMax}° / {d.tempMin}°C • {weatherLabel(d.weatherCode)}
+                          </div>
+                          <div className="text-[11px] font-bold text-emerald-200">
+                            Yağış %{d.precipProbMax} ({d.precipSumMm}mm) • Hamle {d.windGustMax} km/s
+                          </div>
+                        </td>
+                      ))}
+                      <td className="p-3 whitespace-nowrap">
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-black">
+                          %{Math.round((tripDays[0].confidencePercent + tripDays[1].confidencePercent + tripDays[2].confidencePercent) / 3)} Uyum
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1766,6 +1809,138 @@ export default function AyvalikWeather() {
         >
           <div className="w-full max-w-6xl">
             {renderDetailedDayPanel(activeDetailDay, true)}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Overlay for Full-Screen Consensus Comparison Table */}
+      {showConsensusModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="25–27 Kasım Çoklu Hava Durumu Kaynakları Karşılaştırma Tablosu"
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm p-3 sm:p-6 flex items-center justify-center animate-fade-in"
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowConsensusModal(false);
+          }}
+        >
+          <div className="w-full max-w-5xl bg-slate-900 border border-emerald-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col text-white">
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Activity size={22} className="text-emerald-400" />
+                <div>
+                  <h3 className="text-base sm:text-lg font-black">
+                    25–27 Kasım Çoklu Hava Durumu Kaynakları Karşılaştırma ve Konsensüs Tablosu
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    5 bağımsız küresel meteoroloji kaynağının karşılaştırması ve KapsApp ortak konsensüs tahmini
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConsensusModal(false)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+                aria-label="Kapat"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="overflow-auto flex-1 rounded-2xl border border-white/10">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-slate-950 text-slate-200 uppercase text-[11px] font-black sticky top-0">
+                  <tr>
+                    <th className="p-3 whitespace-nowrap">Meteoroloji Kaynağı</th>
+                    <th className="p-3 whitespace-nowrap">Model & Ağırlık</th>
+                    <th className="p-3 whitespace-nowrap">1. Gün (25 Kasım Çar)</th>
+                    <th className="p-3 whitespace-nowrap">2. Gün (26 Kasım Per)</th>
+                    <th className="p-3 whitespace-nowrap">3. Gün (27 Kasım Cum)</th>
+                    <th className="p-3 whitespace-nowrap">Durum</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10 text-slate-200">
+                  {tripDays[0].sources.map((src, sIdx) => {
+                    const d1 = tripDays[0].sources[sIdx] || src;
+                    const d2 = tripDays[1].sources[sIdx] || src;
+                    const d3 = tripDays[2].sources[sIdx] || src;
+                    return (
+                      <tr key={src.sourceId} className="hover:bg-white/5 transition-colors">
+                        <td className="p-3 font-black text-white whitespace-nowrap">
+                          <div>{src.sourceName}</div>
+                          <div className="text-[10px] font-semibold text-slate-400">{src.institution}</div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-md bg-white/10 font-bold text-slate-200">
+                            %{src.weight} Ağırlık
+                          </span>
+                          <div className="text-[10px] text-slate-400 mt-0.5">{src.modelDetail}</div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          <div className="font-black text-white">
+                            {d1.tempMax}° / {d1.tempMin}°C • {d1.condition}
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            Yağış %{d1.precipProbMax} ({d1.precipSumMm}mm) • Rüzgâr {d1.windSpeedMax} km/s
+                          </div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          <div className="font-black text-white">
+                            {d2.tempMax}° / {d2.tempMin}°C • {d2.condition}
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            Yağış %{d2.precipProbMax} ({d2.precipSumMm}mm) • Rüzgâr {d2.windSpeedMax} km/s
+                          </div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          <div className="font-black text-white">
+                            {d3.tempMax}° / {d3.tempMin}°C • {d3.condition}
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            Yağış %{d3.precipProbMax} ({d3.precipSumMm}mm) • Rüzgâr {d3.windSpeedMax} km/s
+                          </div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            Çevrimiçi Aktif
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {/* Final Consensus Row */}
+                  <tr className="bg-emerald-500/20 font-black text-emerald-100">
+                    <td className="p-3 whitespace-nowrap">
+                      <div className="text-white">KAPSAPP ORTAK KONSENSÜS TAHMİNİ</div>
+                      <div className="text-[10px] font-bold text-emerald-300">
+                        5 Kaynağın Ağırlıklı Birleşimi
+                      </div>
+                    </td>
+                    <td className="p-3 whitespace-nowrap">
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-black">
+                        %100 Birleşik Model
+                      </span>
+                    </td>
+                    {tripDays.map(d => (
+                      <td key={d.date} className="p-3 whitespace-nowrap">
+                        <div className="text-sm font-black text-white">
+                          {d.tempMax}° / {d.tempMin}°C • {weatherLabel(d.weatherCode)}
+                        </div>
+                        <div className="text-[11px] font-bold text-emerald-200">
+                          Yağış %{d.precipProbMax} ({d.precipSumMm}mm) • Hamle {d.windGustMax} km/s
+                        </div>
+                      </td>
+                    ))}
+                    <td className="p-3 whitespace-nowrap">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-black">
+                        %{Math.round((tripDays[0].confidencePercent + tripDays[1].confidencePercent + tripDays[2].confidencePercent) / 3)} Uyum
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
