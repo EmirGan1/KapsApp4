@@ -210,7 +210,7 @@ export default function MiniChatWidget({
                         {timeStr}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 break-words line-clamp-1">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 break-words line-clamp-1 privacy-sensitive">
                       {msg.content}
                     </p>
                   </div>
@@ -232,13 +232,26 @@ export default function MiniChatWidget({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => {
+              try {
+                const raw = localStorage.getItem("kaps_user_preferences_v2");
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  if (parsed.chatSendOnEnter === false && e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                  }
+                }
+              } catch {}
+            }}
             onFocus={() => setUnreadCount(0)}
             placeholder="Genel sohbete anında yaz..."
+            aria-label="Genel sohbete mesaj yaz"
             className="flex-1 bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none"
           />
           <button
             type="submit"
             disabled={!inputText.trim() || isSending}
+            aria-label="Mesajı Gönder"
             className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold transition-colors cursor-pointer shrink-0"
             title="Gönder"
           >

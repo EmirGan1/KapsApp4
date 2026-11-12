@@ -1,6 +1,8 @@
 export interface TripActivity {day:number;time:string;title:string;description:string;location:string;}
 export const activityTime=(a:TripActivity)=>Date.parse(`2026-11-${String(24+a.day).padStart(2,'0')}T${a.time}:00+03:00`);
 export const activityId=(a:TripActivity)=>`${a.day}-${a.time}-${a.title}`;
+export const isActivityAutoTicked=(a:TripActivity,now:number)=>activityTime(a)<=now;
+export function isActivityCompleted(a:TripActivity,now:number,completedIds:readonly string[],uncompletedIds:readonly string[]=[]):boolean{const id=activityId(a);if(completedIds.includes(id))return true;if(uncompletedIds.includes(id))return false;return isActivityAutoTicked(a,now);}
 export function programState(program:readonly TripActivity[],now:number){const sorted=[...program].sort((a,b)=>activityTime(a)-activityTime(b));return {current:sorted.filter(a=>activityTime(a)<=now).at(-1),next:sorted.find(a=>activityTime(a)>now),ended:!!sorted.length&&now>=activityTime(sorted.at(-1)!)};}
 export function readStringList(key:string,allowed?:readonly string[]){try{const data=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(data)?[...new Set(data.filter((v):v is string=>typeof v==='string'&&(!allowed||allowed.includes(v))))]:[];}catch{return [];}}
 const escapeIcs=(s:string)=>s.replace(/\\/g,'\\\\').replace(/\r\n|\r|\n/g,'\\n').replace(/;/g,'\\;').replace(/,/g,'\\,');

@@ -1,9 +1,10 @@
 import { DEFAULT_PACKING_ITEMS } from "../utils/ayvalikPacking";
 import TripGames from "./ayvalik/TripGames";
+import TripCompanion from "./ayvalik/TripCompanion";
 import PackingOverview from "./ayvalik/PackingOverview";
 import AyvalikWeather from "./ayvalik/AyvalikWeather";
 import {usePackingList} from "./ayvalik/usePackingList";
-import {activityId,casDateLabel,readStringList,readReflectionDraft,downloadText,programCalendar} from "../utils/ayvalik";
+import {activityId,activityTime,isActivityCompleted,isActivityAutoTicked,casDateLabel,readStringList,readReflectionDraft,downloadText,programCalendar} from "../utils/ayvalik";
 import {useSearchParams} from "react-router-dom";
 import AyvalikRooms from "./AyvalikRooms";
 import React, { useState, useEffect, useMemo, useRef } from "react";
@@ -482,20 +483,59 @@ function AyvalikCasContent({
     return () => clearInterval(timer);
   }, []);
 
-  // 2. CHECKED ACTIVITIES (Interactive Schedule Completion)
+  // 2. CHECKED ACTIVITIES (Interactive Schedule Completion with Automatic Time Passing)
   const [completedActivities, setCompletedActivities] = useState<string[]>(() => {
     return [...new Set(readStringList(`ayvalik_completed_act_${currentUserId}`).flatMap(value=>AYVALIK_PROGRAM.filter(a=>activityId(a)===value||a.title===value).map(activityId)))];
   });
+  const [manuallyUnchecked, setManuallyUnchecked] = useState<string[]>(() => {
+    return [...new Set(readStringList(`ayvalik_uncompleted_act_${currentUserId}`).flatMap(value=>AYVALIK_PROGRAM.filter(a=>activityId(a)===value||a.title===value).map(activityId)))];
+  });
 
-  const toggleActivityCompletion = (actTitle: string) => {
-    setCompletedActivities(prev => {
-      const next = prev.includes(actTitle) ? prev.filter(t => t !== actTitle) : [...prev, actTitle];
-      try {
-        localStorage.setItem(`ayvalik_completed_act_${currentUserId}`, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+  const toggleActivityCompletion = (actId: string) => {
+    const item = AYVALIK_PROGRAM.find(a => activityId(a) === actId);
+    const itemCompleted = item ? isActivityCompleted(item, now, completedActivities, manuallyUnchecked) : completedActivities.includes(actId);
+    const isPast = item ? activityTime(item) <= now : false;
+
+    if (itemCompleted) {
+      setCompletedActivities(prev => {
+        const next = prev.filter(t => t !== actId);
+        try {
+          localStorage.setItem(`ayvalik_completed_act_${currentUserId}`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      if (isPast) {
+        setManuallyUnchecked(prev => {
+          const next = [...new Set([...prev, actId])];
+          try {
+            localStorage.setItem(`ayvalik_uncompleted_act_${currentUserId}`, JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
+    } else {
+      setCompletedActivities(prev => {
+        const next = [...new Set([...prev, actId])];
+        try {
+          localStorage.setItem(`ayvalik_completed_act_${currentUserId}`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      if (isPast) {
+        setManuallyUnchecked(prev => {
+          const next = prev.filter(t => t !== actId);
+          try {
+            localStorage.setItem(`ayvalik_uncompleted_act_${currentUserId}`, JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
+    }
   };
+
+  const completedActivitiesCount = useMemo(() => {
+    return AYVALIK_PROGRAM.filter(a => isActivityCompleted(a, now, completedActivities, manuallyUnchecked)).length;
+  }, [completedActivities, manuallyUnchecked, now]);
 
   // 3. PACKING CHECKLIST STATE
   const {checked:checkedItems,toggle:toggleChecklistItem,loading:packingLoading,status:packingStatus}=usePackingList(currentUserId,DEFAULT_PACKING_ITEMS.map(i=>i.id));
@@ -935,7 +975,12 @@ function AyvalikCasContent({
       {/* ========================================================================= */}
       <div className="max-w-7xl mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-6">
         {notice&&!showUploadModal&&!selectedLightboxItem&&<div role="alert" className="rounded-2xl p-4 border border-amber-400 bg-amber-50 dark:bg-amber-950 flex gap-3"><p className="flex-1">{notice}</p><button aria-label="Bildirimi kapat" onClick={()=>setNotice('')}>×</button></div>}
-        {activeTab==='home'&&<section aria-label="Ayvalık bölümleri" className="space-y-5"><div><h2 className="text-2xl font-black">Gezini planla, arkadaşlarınla hazırlan</h2><p className="text-slate-500 mt-2">Gitmek istediğin bölümü seç.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">{AYVALIK_SECTIONS.map((section)=>{const Icon=section.icon;return <button key={section.id} onClick={()=>setActiveTab(section.id)} className="group min-w-0 text-left p-6 sm:p-7 rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm hover:shadow-lg hover:border-emerald-500 focus-visible:outline-2 focus-visible:outline-emerald-500 transition-all"><span className="inline-flex p-4 rounded-2xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-200 mb-5"><Icon size={28}/></span><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-black">{section.title}</h3><ChevronRight className="shrink-0 text-emerald-500"/></div><p className="mt-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{section.description}</p></button>;})}</div></section>}
+        {activeTab==='home'&&(
+          <div className="space-y-6">
+            <TripCompanion program={AYVALIK_PROGRAM} checked={checkedItems} items={DEFAULT_PACKING_ITEMS} now={now} onOpen={setActiveTab}/>
+            <section aria-label="Ayvalık bölümleri" className="space-y-5"><div><h2 className="text-2xl font-black">Gezini planla, arkadaşlarınla hazırlan</h2><p className="text-slate-500 mt-2">Gitmek istediğin bölümü seç.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">{AYVALIK_SECTIONS.filter(s=>s.id!=='games'&&s.id!=='field').map((section)=>{const Icon=section.icon;return <button key={section.id} onClick={()=>setActiveTab(section.id)} className="group min-w-0 text-left p-6 sm:p-7 rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm hover:shadow-lg hover:border-emerald-500 focus-visible:outline-2 focus-visible:outline-emerald-500 transition-all"><span className="inline-flex p-4 rounded-2xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-200 mb-5"><Icon size={28}/></span><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-black">{section.title}</h3><ChevronRight className="shrink-0 text-emerald-500"/></div><p className="mt-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{section.description}</p></button>;})}</div></section>
+          </div>
+        )}
         {activeTab==='games' && <TripGames socket={socket} userId={currentUserId} />}
         {activeTab==='field' && <section className="space-y-4 rounded-3xl border bg-white p-6 dark:border-slate-700 dark:bg-slate-900">
           <h2 className="text-2xl font-black">Gezi günü rehberi</h2>
@@ -962,8 +1007,11 @@ function AyvalikCasContent({
                   <CalendarDays className="text-emerald-600" size={24} />
                   <span>3 Günlük Gezi Programı</span>
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Tamamladığınız etkinlikleri yanlarındaki daireye tıklayarak işaretleyebilirsiniz ({completedActivities.length}/{AYVALIK_PROGRAM.length} tamamlandı).
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                  <span>Tamamladığınız etkinlikleri yanlarındaki daireye tıklayarak işaretleyebilirsiniz ({completedActivitiesCount}/{AYVALIK_PROGRAM.length} tamamlandı).</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                    <Clock size={11} /> Saati geçen etkinlikler otomatik işaretlenir
+                  </span>
                 </p>
               </div>
 
@@ -993,7 +1041,8 @@ function AyvalikCasContent({
             {/* Timeline Stream */}
             <div className="space-y-4">
               {filteredSchedule.map((item, idx) => {
-                const isCompleted = completedActivities.includes(activityId(item));
+                const isCompleted = isActivityCompleted(item, now, completedActivities, manuallyUnchecked);
+                const isAuto = isActivityAutoTicked(item, now) && !completedActivities.includes(activityId(item)) && !manuallyUnchecked.includes(activityId(item));
                 return (
                   <div
                     key={idx}
@@ -1009,7 +1058,7 @@ function AyvalikCasContent({
                         aria-label={`${item.day}. gün ${item.time} ${item.title}`} aria-pressed={isCompleted}
                         onClick={() => toggleActivityCompletion(activityId(item))}
                         className="mt-1 text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer shrink-0"
-                        title={isCompleted ? "Tamamlanmadı olarak işaretle" : "Tamamlandı olarak işaretle"}
+                        title={isCompleted ? (isAuto ? "Saati geçtiği için otomatik tamamlandı (kaldırmak için tıklayın)" : "Tamamlanmadı olarak işaretle") : "Tamamlandı olarak işaretle"}
                       >
                         {isCompleted ? (
                           <CheckCircle2 size={24} className="text-emerald-500 fill-emerald-500/20" />
@@ -1035,6 +1084,15 @@ function AyvalikCasContent({
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${item.badgeColor}`}>
                             {item.badge}
                           </span>
+                          {isCompleted && (
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                              isAuto
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                                : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                            }`}>
+                              {isAuto ? "✓ Saati Geçti (Otomatik)" : "✓ Tamamlandı"}
+                            </span>
+                          )}
                         </div>
 
                         <h3 className={`text-base sm:text-lg font-black text-slate-900 dark:text-white ${isCompleted ? "line-through text-slate-400 dark:text-slate-500" : ""}`}>

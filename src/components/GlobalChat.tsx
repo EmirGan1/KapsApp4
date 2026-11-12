@@ -16,6 +16,7 @@ import {
 } from "../utils/globalChatCache";
 import { getApiUrl, getAuthHeaders } from "../utils/api";
 import { compressImage } from "../utils/imageCompressor";
+import { loadPreferences } from "../utils/preferences";
 
 export default function GlobalChat({
   socket,
@@ -623,7 +624,7 @@ export default function GlobalChat({
 
                     {/* Text Message */}
                     {msg.type === "text" && (
-                      <p className="break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap text-[15px] leading-relaxed select-text">
+                      <p className="privacy-sensitive break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap text-[15px] leading-relaxed select-text">
                         {msg.content}
                       </p>
                     )}
@@ -916,7 +917,15 @@ export default function GlobalChat({
                   value={newMessage}
                   maxLength={1000}
                   onChange={handleTyping}
-                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      const prefs = loadPreferences();
+                      if (prefs.chatSendOnEnter) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }
+                  }}
                   className="flex-1 bg-transparent border-none focus:outline-none text-sm sm:text-[15px] py-1 text-slate-800 dark:text-slate-100 min-w-0"
                 />
               )}

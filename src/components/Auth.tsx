@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShieldCheck, FileText, CheckCircle2, MapPin, KeyRound } from "lucide-react";
+import { ShieldCheck, FileText, CheckCircle2, MapPin, KeyRound, Sparkles } from "lucide-react";
 import { safeFetchJson } from "../utils/api";
 import KvkkModal from "./KvkkModal";
 import ForgotPasswordModal from "./ForgotPasswordModal";
@@ -72,6 +72,23 @@ export default function Auth({ onAuthSuccess, onNavigateToReset }: AuthProps) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDemoLogin = () => {
+    const demoToken = "demo-preview-token-" + Date.now();
+    const demoUsername = "Emirhan (Önizleme)";
+    const demoId = 1;
+    const demoColor = "#2563eb";
+    try {
+      localStorage.setItem("lan_is_demo", "true");
+      localStorage.setItem("lan_account_role", "admin");
+      localStorage.setItem("lan_user_roles", JSON.stringify(["student", "admin"]));
+      localStorage.setItem("lan_token", demoToken);
+      localStorage.setItem("lan_username", demoUsername);
+      localStorage.setItem("lan_user_id", "1");
+      localStorage.setItem("lan_color", demoColor);
+    } catch {}
+    onAuthSuccess(demoToken, demoUsername, null, demoId, demoColor);
   };
 
   return (
@@ -217,7 +234,25 @@ export default function Auth({ onAuthSuccess, onNavigateToReset }: AuthProps) {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        {/* Demo / Önizleme Girişi Button (Bypasses DB verification in preview/dev mode) */}
+        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={handleDemoLogin}
+            className="w-full bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-[0.99] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md shadow-amber-500/25 text-sm flex items-center justify-center gap-2 cursor-pointer border border-amber-400/40"
+          >
+            <Sparkles size={16} className="text-amber-100 animate-pulse" />
+            <span>Demo / Önizleme Girişi</span>
+            <span className="text-[10px] bg-black/25 text-white font-mono px-2 py-0.5 rounded-full font-bold">
+              Bypass DB
+            </span>
+          </button>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center mt-2 leading-relaxed">
+            Önizleme ortamı: Veritabanı bağlantısı gerekmeden doğrudan ana panele yönlendirir.
+          </p>
+        </div>
+
+        <div className="mt-5 text-center">
           <button
             onClick={() => {
               setIsLogin(!isLogin);

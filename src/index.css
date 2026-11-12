@@ -4,9 +4,27 @@
 
 @layer base {
   :root {
+    --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-sans: "DM Sans", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    --kaps-accent: #2563eb;
+    --kaps-accent-hover: #1d4ed8;
+    --kaps-accent-soft: rgba(37, 99, 235, 0.12);
     color-scheme: light;
     background: #f8fafc;
     color: #0f172a;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6, nav, button {
+    font-family: var(--font-display);
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
 
   :root.dark {
@@ -15,14 +33,262 @@
     color: #e2e8f0;
   }
 
+  :root.theme-pink, [data-theme="pink"] {
+    color-scheme: dark;
+    background: #14060f;
+    color: #fff1f2;
+  }
+
+  :root.theme-navy, [data-theme="navy"] {
+    color-scheme: dark;
+    background: #020817;
+    color: #f0f6fc;
+  }
+
+  :root.theme-emerald, [data-theme="emerald"] {
+    color-scheme: dark;
+    background: #03140e;
+    color: #ecfdf5;
+  }
+
+  :root.theme-amethyst, [data-theme="amethyst"] {
+    color-scheme: dark;
+    background: #0c061a;
+    color: #faf5ff;
+  }
+
   :focus-visible {
-    outline: 2px solid #2563eb;
+    outline: 2px solid var(--kaps-accent, #2563eb);
     outline-offset: 2px;
   }
 
   .dark :focus-visible {
-    outline-color: #93c5fd;
+    outline-color: #60a5fa;
   }
+
+  .theme-pink :focus-visible {
+    outline-color: #fb7185;
+  }
+
+  .theme-navy :focus-visible {
+    outline-color: #38bdf8;
+  }
+
+  .theme-emerald :focus-visible {
+    outline-color: #34d399;
+  }
+
+  .theme-amethyst :focus-visible {
+    outline-color: #c084fc;
+  }
+}
+
+/* ============================================================================
+   1. FONT SCALE ENGINE (data-font-scale: sm | base | lg)
+   ============================================================================ */
+html[data-font-scale="sm"] {
+  font-size: 14.5px;
+}
+html[data-font-scale="base"] {
+  font-size: 16px;
+}
+html[data-font-scale="lg"] {
+  font-size: 17.5px;
+}
+
+/* ============================================================================
+   2. UI DENSITY ENGINE (data-density: compact | default | comfortable)
+   ============================================================================ */
+html[data-density="compact"] {
+  --kaps-density-pad: 0.75rem;
+  --kaps-density-gap: 0.65rem;
+}
+html[data-density="compact"] .app-content .rounded-3xl {
+  border-radius: 1.125rem;
+}
+html[data-density="compact"] .app-content .p-6,
+html[data-density="compact"] .app-content .sm\:p-8 {
+  padding: 1rem !important;
+}
+html[data-density="compact"] .app-content .space-y-6 > :not(:last-child),
+html[data-density="compact"] .app-content .space-y-8 > :not(:last-child) {
+  margin-bottom: 0.875rem !important;
+}
+html[data-density="compact"] .app-content .gap-6 {
+  gap: 0.875rem !important;
+}
+
+html[data-density="comfortable"] {
+  --kaps-density-pad: 1.5rem;
+  --kaps-density-gap: 1.5rem;
+}
+html[data-density="comfortable"] .app-content .p-5,
+html[data-density="comfortable"] .app-content .md\:p-6 {
+  padding: 1.75rem !important;
+}
+html[data-density="comfortable"] .app-content .gap-6 {
+  gap: 1.75rem !important;
+}
+
+/* ============================================================================
+   3. REDUCED MOTION ENGINE (data-reduced-motion: true)
+   ============================================================================ */
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ============================================================================
+   4. PRIVACY / STREAMER MASK ENGINE (data-privacy-mask: true)
+   ============================================================================ */
+html[data-privacy-mask="true"] .privacy-sensitive {
+  filter: blur(6px);
+  transition: filter 150ms ease;
+  user-select: none;
+}
+html[data-privacy-mask="true"] .privacy-sensitive:hover,
+html[data-privacy-mask="true"] .privacy-sensitive:focus-within {
+  filter: blur(0px);
+}
+
+/* ============================================================================
+   5. CURATED MULTI-THEME PALETTES (Pink, Navy, Emerald, Amethyst)
+   ============================================================================ */
+
+/* --- Pink (Rose Quartz) --- */
+html.theme-pink .app-shell {
+  background: #14060f !important;
+}
+html.theme-pink .dark\:bg-slate-900,
+html.theme-pink .bg-white.dark\:bg-slate-900 {
+  background-color: #210b19 !important;
+  border-color: #421732 !important;
+}
+html.theme-pink .dark\:bg-slate-950,
+html.theme-pink .md\:dark\:bg-slate-950 {
+  background-color: #14060f !important;
+}
+html.theme-pink .dark\:bg-slate-800,
+html.theme-pink .dark\:bg-slate-800\/40,
+html.theme-pink .dark\:bg-slate-800\/50,
+html.theme-pink .dark\:bg-slate-800\/60 {
+  background-color: #2d1023 !important;
+}
+html.theme-pink .dark\:border-slate-800,
+html.theme-pink .dark\:border-slate-700 {
+  border-color: #451834 !important;
+}
+html.theme-pink .text-blue-600,
+html.theme-pink .dark\:text-blue-400,
+html.theme-pink .dark\:text-blue-500 {
+  color: #fb7185 !important;
+}
+html.theme-pink .bg-blue-600,
+html.theme-pink .dark\:bg-blue-600 {
+  background-color: #e11d48 !important;
+}
+
+/* --- Navy (Midnight Sapphire) --- */
+html.theme-navy .app-shell {
+  background: #020817 !important;
+}
+html.theme-navy .dark\:bg-slate-900,
+html.theme-navy .bg-white.dark\:bg-slate-900 {
+  background-color: #091530 !important;
+  border-color: #172b57 !important;
+}
+html.theme-navy .dark\:bg-slate-950,
+html.theme-navy .md\:dark\:bg-slate-950 {
+  background-color: #020817 !important;
+}
+html.theme-navy .dark\:bg-slate-800,
+html.theme-navy .dark\:bg-slate-800\/40,
+html.theme-navy .dark\:bg-slate-800\/50,
+html.theme-navy .dark\:bg-slate-800\/60 {
+  background-color: #0f2147 !important;
+}
+html.theme-navy .dark\:border-slate-800,
+html.theme-navy .dark\:border-slate-700 {
+  border-color: #193161 !important;
+}
+html.theme-navy .text-blue-600,
+html.theme-navy .dark\:text-blue-400,
+html.theme-navy .dark\:text-blue-500 {
+  color: #38bdf8 !important;
+}
+html.theme-navy .bg-blue-600,
+html.theme-navy .dark\:bg-blue-600 {
+  background-color: #0284c7 !important;
+}
+
+/* --- Emerald (Nordic Forest) --- */
+html.theme-emerald .app-shell {
+  background: #03120d !important;
+}
+html.theme-emerald .dark\:bg-slate-900,
+html.theme-emerald .bg-white.dark\:bg-slate-900 {
+  background-color: #062118 !important;
+  border-color: #0f3d2d !important;
+}
+html.theme-emerald .dark\:bg-slate-950,
+html.theme-emerald .md\:dark\:bg-slate-950 {
+  background-color: #03120d !important;
+}
+html.theme-emerald .dark\:bg-slate-800,
+html.theme-emerald .dark\:bg-slate-800\/40,
+html.theme-emerald .dark\:bg-slate-800\/50,
+html.theme-emerald .dark\:bg-slate-800\/60 {
+  background-color: #0b2e22 !important;
+}
+html.theme-emerald .dark\:border-slate-800,
+html.theme-emerald .dark\:border-slate-700 {
+  border-color: #124231 !important;
+}
+html.theme-emerald .text-blue-600,
+html.theme-emerald .dark\:text-blue-400,
+html.theme-emerald .dark\:text-blue-500 {
+  color: #34d399 !important;
+}
+html.theme-emerald .bg-blue-600,
+html.theme-emerald .dark\:bg-blue-600 {
+  background-color: #059669 !important;
+}
+
+/* --- Amethyst (Royal Violet) --- */
+html.theme-amethyst .app-shell {
+  background: #0c061a !important;
+}
+html.theme-amethyst .dark\:bg-slate-900,
+html.theme-amethyst .bg-white.dark\:bg-slate-900 {
+  background-color: #160c2e !important;
+  border-color: #2e1b59 !important;
+}
+html.theme-amethyst .dark\:bg-slate-950,
+html.theme-amethyst .md\:dark\:bg-slate-950 {
+  background-color: #0c061a !important;
+}
+html.theme-amethyst .dark\:bg-slate-800,
+html.theme-amethyst .dark\:bg-slate-800\/40,
+html.theme-amethyst .dark\:bg-slate-800\/50,
+html.theme-amethyst .dark\:bg-slate-800\/60 {
+  background-color: #211242 !important;
+}
+html.theme-amethyst .dark\:border-slate-800,
+html.theme-amethyst .dark\:border-slate-700 {
+  border-color: #331e63 !important;
+}
+html.theme-amethyst .text-blue-600,
+html.theme-amethyst .dark\:text-blue-400,
+html.theme-amethyst .dark\:text-blue-500 {
+  color: #c084fc !important;
+}
+html.theme-amethyst .bg-blue-600,
+html.theme-amethyst .dark\:bg-blue-600 {
+  background-color: #9333ea !important;
 }
 
 html, body, #root {
@@ -52,7 +318,7 @@ html, body, #root {
   visibility: inherit !important;
 }
 
-/* Ensure padding-bottom safe area for modern mobile browsers (iPhone home bar, Android gesture nav) */
+/* Ensure padding-bottom safe area for modern mobile browsers */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -75,14 +341,13 @@ html, body, #root {
   scrollbar-width: none;
 }
 
-/* Touch device interactions & visibility (Ensures controls hidden behind hover are accessible on touch devices) */
+/* Touch device interactions & visibility */
 @media (hover: none), (pointer: coarse) {
   .touch-control-visible {
     opacity: 1 !important;
     pointer-events: auto !important;
   }
 }
-
 
 /* Mobile/tablet layout only: desktop geometry is kept intact. */
 @media (max-width: 1023px) {

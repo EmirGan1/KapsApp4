@@ -3,9 +3,30 @@
   <head>
     <script>
       try {
-        document.documentElement.classList.toggle("dark", localStorage.getItem("lan_theme") === "dark");
+        const rawPrefs = localStorage.getItem("kaps_user_preferences_v2");
+        const parsed = rawPrefs ? JSON.parse(rawPrefs) : {};
+        const t = parsed.theme || localStorage.getItem("lan_theme_id") || (localStorage.getItem("lan_theme") === "light" ? "light" : "dark");
+        const root = document.documentElement;
+        root.setAttribute("data-theme", t);
+        root.classList.remove("theme-pink", "theme-navy", "theme-emerald", "theme-amethyst");
+        if (t === "light") {
+          root.classList.remove("dark");
+        } else {
+          root.classList.add("dark");
+          if (t !== "dark") root.classList.add("theme-" + t);
+        }
+        const density = parsed.density || localStorage.getItem("kaps_pref_density") || "default";
+        const fontScale = parsed.fontScale || localStorage.getItem("kaps_pref_font_scale") || "base";
+        root.setAttribute("data-density", density);
+        root.setAttribute("data-font-scale", fontScale);
+        if (parsed.reducedMotion) root.setAttribute("data-reduced-motion", "true");
+        if (parsed.privacyHideSensitive) root.setAttribute("data-privacy-mask", "true");
+        if (parsed.accentColor) root.setAttribute("data-accent", parsed.accentColor);
       } catch {}
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-SHHXG4QYDE"></script>
     <script>

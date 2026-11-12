@@ -4,7 +4,7 @@ export { safeDecodeURI };
 
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
-export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ayvalik-cas";
+export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ayvalik-cas" | "settings";
 
 export interface RouteMeta {
   path: string;
@@ -139,6 +139,13 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     description: "Kişisel mesajlar, oyun davetleri ve sistem bildirimleri merkezi.",
     canonical: "https://kapsapp.online/bildirimler",
   },
+  settings: {
+    path: "/ayarlar",
+    tab: "settings",
+    title: "Ayarlar ve Tercihler | KapsApp",
+    description: "KapsApp tema seçimi (Karanlık, Açık, Pembe, Lacivert), bildirimler, gizlilik ve hesap tercihleri.",
+    canonical: "https://kapsapp.online/ayarlar",
+  },
 };
 
 // Map URL pathname to internal Tab name
@@ -169,6 +176,11 @@ export function getTabFromPathname(pathname: string): {
   // Root path -> Dashboard (Ana Sayfa)
   if (cleanPath === "/" || cleanPath === "") {
     return { tab: "dashboard" };
+  }
+
+  // Settings path /ayarlar and /settings
+  if (cleanPath === "/ayarlar" || cleanPath === "/settings") {
+    return { tab: "settings" };
   }
 
   // Alternate admin path /admin
@@ -235,6 +247,7 @@ export function getPathFromTab(
     case "voice": return "/sesli-sohbet";
     case "friends": return "/arkadaslar";
     case "notifications": return "/bildirimler";
+    case "settings": return "/ayarlar";
     default: return "/";
   }
 }

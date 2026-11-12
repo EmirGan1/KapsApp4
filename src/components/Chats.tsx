@@ -9,6 +9,7 @@ import MediaModal from "./MediaModal";
 import { getApiUrl, getAuthHeaders } from "../utils/api";
 import { compressImage } from "../utils/imageCompressor";
 import { useCall } from "../context/CallContext";
+import { loadPreferences } from "../utils/preferences";
 
 type Group = {
   id: number;
@@ -1035,7 +1036,7 @@ export default function Chats({
                           </div>
                         )}
 
-                        {msg.type === 'text' && <p className="text-[15px] text-slate-800 dark:text-slate-100 leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap select-text">{msg.content}</p>}
+                        {msg.type === 'text' && <p className="privacy-sensitive text-[15px] text-slate-800 dark:text-slate-100 leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap select-text">{msg.content}</p>}
                         {msg.type === 'image' && (
                           <div className="relative group cursor-pointer overflow-hidden rounded-xl max-w-xs md:max-w-sm" onClick={() => openMediaModal(msg)}>
                             <img src={msg.content} referrerPolicy="no-referrer" alt="Fotoğraf" className="w-full object-cover rounded-xl hover:opacity-95 transition-opacity" />
@@ -1262,6 +1263,14 @@ export default function Chats({
                         className="w-full bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl shadow-sm text-sm sm:text-[15px]"
                         value={text}
                         onChange={handleTyping}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            const prefs = loadPreferences();
+                            if (!prefs.chatSendOnEnter) {
+                              e.preventDefault();
+                            }
+                          }
+                        }}
                       />
                     </form>
                   )}

@@ -29,7 +29,14 @@ import {
   LogOut,
   KeyRound,
   Calculator,
-  Compass
+  Compass,
+  Settings as SettingsIcon,
+  Palette,
+  Search,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelLeft,
+  BellOff
 } from "lucide-react";
 import { APP_ROUTES, getTabFromPathname, getPathFromTab, AppTab } from "./routes";
 import { useSEO } from "./components/SEO";
@@ -47,6 +54,8 @@ import VoiceChat from "./components/VoiceChat";
 import LiveMap from "./components/LiveMap";
 import WeatherDashboard from "./components/WeatherDashboard";
 import AyvalikCasPanel from "./components/AyvalikCasPanel";
+import Settings from "./components/Settings";
+import CommandPalette from "./components/CommandPalette";
 import Announcements, { AnnouncementItem } from "./components/Announcements";
 import KapsculatorHub from "./components/KapsculatorHub";
 import AnnouncementModal from "./components/AnnouncementModal";
@@ -67,6 +76,15 @@ import { getSocketUrl, getApiUrl } from "./utils/api";
 import { getCachedHardwareFingerprint, getHardwareFingerprint } from "./utils/deviceFingerprint";
 import { isVisibleToUser } from "./types";
 import { getCachedWeather, fetchWeatherForecast, DEFAULT_ISTANBUL_LOCATION, getWeatherMeta, WeatherData } from "./utils/weatherService";
+import { ThemeId, applyTheme, getStoredTheme } from "./utils/theme";
+import {
+  UserPreferences,
+  getStoredPreferences,
+  savePreferences,
+  resetPreferencesToDefault,
+  applyPreferencesToDOM,
+  playNotificationChime,
+} from "./utils/preferences";
 
 import { SUBJECTS } from "./utils/subjectResources";
 import SubjectResources from "./components/SubjectResources";
@@ -263,25 +281,29 @@ export default function App() {
       }
     };
 
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+
+    return () => {
+      if (warnTimer) clearTimeout(warnTimer);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+    };
+  }, []);
+
+  // Only warn on beforeunload when user is actively in Games or Voice Room
+  useEffect(() => {
+    if (!token || (activeTab !== "games" && !isInVoiceRoom)) return;
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "Sayfayı veya aktif oyununuzu kapatmak istediğinize emin misiniz?";
       return e.returnValue;
     };
-
-    window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("beforeunload", handleBeforeUnload);
-
-    return () => {
-      if (warnTimer) clearTimeout(warnTimer);
-      window.removeEventListener("keydown", handleKeyDown, { capture: true });
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
-  }, []);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [token, activeTab, isInVoiceRoom]);
 
   // Active Screen Time Tracking Heartbeat (Every 60s, only while tab is visible)
   useEffect(() => {
-    if (!token) return;
+    if (!token || token.startsWith("demo-") || token.startsWith("mock-")) return;
 
     const intervalSeconds = 60;
     const interval = setInterval(async () => {
@@ -339,6 +361,39 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  const [preferences, setPreferences] = useState<UserPreferences>(() => getStoredPreferences());
+  const preferencesRef = useRef<UserPreferences>(preferences);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    preferencesRef.current = preferences;
+    applyPreferencesToDOM(preferences);
+  }, [preferences]);
+
+  useEffect(() => {
+    const handlePrefsEvent = (e: Event) => {
+      const custom = e as CustomEvent<UserPreferences>;
+      if (custom.detail) {
+        setPreferences(custom.detail);
+        setCurrentTheme(custom.detail.theme);
+      }
+    };
+    window.addEventListener("kaps:preferences_changed", handlePrefsEvent);
+    return () => window.removeEventListener("kaps:preferences_changed", handlePrefsEvent);
+  }, []);
+
+  // Global Command Palette Shortcut (Ctrl+K / Cmd+K)
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKey);
+    return () => window.removeEventListener("keydown", handleGlobalKey);
+  }, []);
+
   const addToast = (incoming: {
     type: string;
     title?: string;
@@ -350,12 +405,21 @@ export default function App() {
     target_id?: number | null;
     notifId?: number;
   }) => {
+    // Respect Do Not Disturb / Odak Modu
+    if (preferencesRef.current.doNotDisturb) {
+      return;
+    }
+
     const isDm = incoming.type === "new_message" || incoming.type === "dm";
     const senderId = incoming.senderId ? Number(incoming.senderId) : null;
 
     // 2. AKTİF SOHBETTE İKEN BİLDİRİMİ ENGELLE
     if (isDm && senderId && activeTabRef.current === "chats" && activeDmChatUserIdRef.current === senderId) {
       return;
+    }
+
+    if (preferencesRef.current.soundEnabled) {
+      playNotificationChime(preferencesRef.current.soundVolume);
     }
 
     const toastId = isDm && senderId ? `dm-notify-${senderId}` : `notif-${incoming.notifId || Math.random().toString(36).substring(2, 9)}`;
@@ -440,13 +504,33 @@ export default function App() {
     }
   }, [activeTab, activeDmChatUserId, socket]);
 
-  const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem("lan_theme") === "dark");
+  const [currentTheme, setCurrentTheme] = useState<ThemeId>(() => getStoredTheme());
+  const darkMode = currentTheme !== "light";
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode);
-    localStorage.setItem("lan_theme", darkMode ? "dark" : "light");
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", darkMode ? "#020617" : "#f8fafc");
-  }, [darkMode]);
+    applyTheme(currentTheme);
+  }, [currentTheme]);
+
+  const handleUpdatePreferences = (partial: Partial<UserPreferences>) => {
+    const updated = savePreferences(partial);
+    setPreferences(updated);
+    setCurrentTheme(updated.theme);
+  };
+
+  const handleResetPreferences = () => {
+    const reset = resetPreferencesToDefault();
+    setPreferences(reset);
+    setCurrentTheme(reset.theme);
+  };
+
+  const handleThemeChange = (newTheme: ThemeId) => {
+    handleUpdatePreferences({ theme: newTheme });
+  };
+
+  const handleToggleDarkMode = () => {
+    const nextTheme: ThemeId = darkMode ? "light" : "dark";
+    handleThemeChange(nextTheme);
+  };
 
   const handleNotificationClick = (notif: any) => {
     if (notif.id) {
@@ -499,13 +583,20 @@ export default function App() {
         reconnectionDelayMax: 5000,
         timeout: 20000
       };
-      const newSocket = io("https://ws.kapsapp.online", socketOptions);
+      const isDemoSession =
+        token?.startsWith("demo-") ||
+        token?.startsWith("mock-") ||
+        localStorage.getItem("lan_is_demo") === "true";
+
+      const newSocket = io(socketUrl || undefined, socketOptions);
       
       const onConnect = () => {
         setSocket(newSocket);
         newSocket.emit("heartbeat");
         newSocket.emit("get_notifications", (notifs: any[]) => {
-          setUnreadNotificationsCount(notifs.filter(n => !n.read).length);
+          if (Array.isArray(notifs)) {
+            setUnreadNotificationsCount(notifs.filter(n => !n.read).length);
+          }
         });
         newSocket.emit("get_friends", (data: any[]) => {
           if (Array.isArray(data)) {
@@ -517,14 +608,20 @@ export default function App() {
 
       newSocket.on("connect", onConnect);
 
-      newSocket.on("session_revoked", () => handleLogout());
+      newSocket.on("session_revoked", () => {
+        if (!isDemoSession) handleLogout();
+      });
 
       newSocket.on("connect_error", (err) => {
         if (err.message && (err.message.includes("DEVICE_BANNED") || err.message.includes("cihaz") || err.message.includes("yasaklanmıştır") || err.message.includes("uzaklaştırılmıştır"))) {
-          setIsDeviceBanned(true);
-          setDeviceBanReason(err.message.replace(/^DEVICE_BANNED:\s*/, ""));
+          if (!isDemoSession) {
+            setIsDeviceBanned(true);
+            setDeviceBanReason(err.message.replace(/^DEVICE_BANNED:\s*/, ""));
+          }
         } else if (err.message === "Invalid token" || err.message === "No token" || err.message.includes("askıya")) {
-          handleLogout();
+          if (!isDemoSession) {
+            handleLogout();
+          }
         }
       });
 
@@ -665,7 +762,7 @@ export default function App() {
       });
 
       // Fetch user's current roles if not set
-      if (currentUserId) {
+      if (currentUserId && !isDemoSession) {
         fetch(getApiUrl(`/api/users/${currentUserId}`), {
           headers: { Authorization: `Bearer ${token}` }
         })
@@ -779,7 +876,8 @@ export default function App() {
     setColor(newColor);
     setCurrentUserId(id);
     setViewingUserId(id);
-    window.location.reload();
+    const startTab = preferences.defaultStartTab || "dashboard";
+    handleTabChange(startTab);
   };
 
   const handleAvatarUpdated = (newAvatar: string) => {
@@ -808,6 +906,7 @@ export default function App() {
     localStorage.removeItem("lan_color");
     localStorage.removeItem("lan_user_id");
     localStorage.removeItem("lan_user_roles");
+    localStorage.removeItem("lan_is_demo");
     localStorage.removeItem("token");
     setToken(null);
     setCurrentUserRoles([]);
@@ -815,7 +914,7 @@ export default function App() {
     setAvatar(null);
     setColor(undefined);
     if (socket) socket.disconnect();
-    window.location.href = "/";
+    navigate("/");
   };
 
   const handleTabChange = (tab: AppTab) => {
@@ -1046,53 +1145,152 @@ export default function App() {
         }}
       />
 
-      {/* Mobile Top Header with Dark Mode Toggle & Quick Controls */}
+      {/* Global Command Palette (Ctrl+K / Cmd+K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigateTab={(tab: AppTab) => handleTabChange(tab)}
+        onNavigateSubject={(subject: string) => handleSubjectClick(subject)}
+        preferences={preferences}
+        onUpdatePreferences={handleUpdatePreferences}
+        isEmirgan={isEmirgan}
+      />
+
+      {/* Mobile Top Header with Command Palette Trigger, Settings & Theme Toggle */}
       <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shrink-0 z-20 transition-colors duration-200">
         <div className="flex items-center gap-2">
-          <span className="text-xl font-black text-blue-600 dark:text-blue-500 tracking-tight">KapsApp</span>
+          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-xs shadow-xs">
+            KA
+          </div>
+          <span className="text-lg font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">KapsApp</span>
           {isEmirgan && (
-            <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 rounded-md text-[9px] font-bold">
-              ROOT
+            <span className="text-[10px] font-mono font-bold text-amber-500">· ROOT</span>
+          )}
+          {preferences.doNotDisturb && (
+            <span className="text-[10px] font-bold text-amber-500 flex items-center gap-1" title="Odak Modu (Rahatsız Etmeyin) Aktif">
+              <BellOff size={12} />
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Mobile Command Search Button */}
+          <button
+            type="button"
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer"
+            title="Hızlı Arama & Komut Paleti (Ctrl+K)"
+            aria-label="Hızlı Arama & Komut Paleti"
+          >
+            <Search size={17} />
+          </button>
+
+          {/* Mobile Direct Settings Button */}
+          <Link
+            to="/ayarlar"
+            onClick={() => handleTabChange('settings')}
+            className={`p-2 rounded-xl transition-all cursor-pointer border ${
+              activeTab === 'settings'
+                ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/60 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+            title="Ayarlar & Temalar"
+          >
+            <SettingsIcon size={17} />
+          </Link>
+
           {/* Mobile Direct Dark Mode Toggle Button */}
           <button
             type="button"
-            onClick={() => setDarkMode(!darkMode)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700 transition-all cursor-pointer shadow-xs active:scale-95"
+            onClick={handleToggleDarkMode}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700 transition-all cursor-pointer shadow-xs active:scale-95"
             title={darkMode ? "Açık Temaya Geç" : "Koyu Temaya Geç"}
           >
             {darkMode ? (
-              <Sun size={17} className="text-amber-500" />
+              <Sun size={16} className="text-amber-500" />
             ) : (
-              <Moon size={17} className="text-indigo-500" />
+              <Moon size={16} className="text-indigo-500" />
             )}
             <span className="text-xs font-bold">{darkMode ? "Açık" : "Koyu"}</span>
           </button>
         </div>
       </div>
 
-      {/* Desktop Sidebar */}
-      <div className="hidden lg:flex w-24 lg:w-64 flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-colors duration-200">
-        <div className="p-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black text-blue-600 tracking-tight hidden lg:block">KapsApp</h1>
-            <h1 className="text-2xl font-black text-blue-600 tracking-tight lg:hidden">KA</h1>
+      {/* Desktop Sidebar — Collapsible & Categorized */}
+      <div
+        className={`hidden lg:flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200/90 dark:border-slate-800/90 transition-all duration-200 shrink-0 ${
+          preferences.sidebarCollapsed ? 'w-20' : 'w-64'
+        }`}
+      >
+        {/* Brand Header + Collapse Button */}
+        <div className={`h-16 px-4 flex items-center border-b border-slate-200/70 dark:border-slate-800/70 ${preferences.sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-sm shadow-blue-600/20 shrink-0">
+              KA
+            </div>
+            {!preferences.sidebarCollapsed && (
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h1 className="text-lg font-extrabold text-slate-900 dark:text-slate-100 tracking-tight truncate">
+                    KapsApp
+                  </h1>
+                  {isEmirgan && (
+                    <span className="text-[10px] font-mono font-bold text-amber-500">· ROOT</span>
+                  )}
+                </div>
+                <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 truncate">
+                  Akademik & Sosyal Çalışma Alanı
+                </p>
+              </div>
+            )}
           </div>
-          {isEmirgan && (
-            <span className="hidden lg:inline-flex px-2 py-0.5 bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 rounded-md text-[10px] font-bold">
-              ROOT
-            </span>
+          {!preferences.sidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => handleUpdatePreferences({ sidebarCollapsed: true })}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Kenar Çubuğunu Daralt"
+            >
+              <PanelLeftClose size={16} />
+            </button>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <nav className="px-4 space-y-2">
+
+        {/* Command Palette Quick Search Button */}
+        <div className="px-3 pt-3 pb-1">
+          <button
+            type="button"
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className={`w-full flex items-center ${
+              preferences.sidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2'
+            } rounded-xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 text-slate-500 dark:text-slate-400 transition-all cursor-pointer group`}
+            title="Hızlı Arama & Komut Paleti (Ctrl+K)"
+          >
+            <span className="flex items-center gap-2.5 text-xs font-semibold group-hover:text-slate-800 dark:group-hover:text-slate-200">
+              <Search size={15} className="text-slate-400 group-hover:text-blue-500 transition-colors shrink-0" />
+              {!preferences.sidebarCollapsed && <span>Hızlı Ara...</span>}
+            </span>
+            {!preferences.sidebarCollapsed && (
+              <kbd className="text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200/80 dark:border-slate-700">
+                ⌘K
+              </kbd>
+            )}
+          </button>
+        </div>
+
+        {/* Categorized Navigation Scroll Area */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 space-y-4">
+          {/* Group 1: Çalışma Alanı */}
+          <div className="space-y-1">
+            {!preferences.sidebarCollapsed && (
+              <div className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Çalışma Alanı
+              </div>
+            )}
             <NavItem 
               to="/"
-              icon={<Home className="text-blue-600 dark:text-blue-400" />} 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Home size={18} />} 
               label="Ana Sayfa" 
               active={activeTab === 'dashboard'} 
               onClick={() => handleTabChange('dashboard')} 
@@ -1100,98 +1298,233 @@ export default function App() {
             {isEmirgan && (
               <NavItem 
                 to="/emirgan"
-                icon={<Crown className="text-amber-500 animate-pulse" />} 
-                label="👑 Emirgan Panel" 
+                collapsed={preferences.sidebarCollapsed}
+                icon={<Crown size={18} className="text-amber-500" />} 
+                label="Emirgan Panel" 
                 active={activeTab === 'admin'} 
-                badge={pendingApprovalsCount}
+                badge={pendingApprovalsCount} 
                 onClick={() => handleTabChange('admin')} 
               />
             )}
             <NavItem 
-              to="/sohbetler" 
-              icon={<MessageSquare />} 
-              label="Sohbetler" 
-              active={activeTab === 'chats'} 
-              badge={unreadDmCount} 
-              onClick={() => handleTabChange('chats')} 
-            />
-            <NavItem 
               to="/duyurular"
-              icon={<Megaphone className="text-amber-500 dark:text-amber-400" />} 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Megaphone size={18} />} 
               label="Duyurular" 
               active={activeTab === 'announcements'} 
               dotBadge={hasUnreadAnnouncement} 
               onClick={() => handleTabChange('announcements')} 
             />
             <NavItem 
-              to="/ib-hesaplayici"
-              icon={<Calculator className="text-purple-500 dark:text-purple-400" />} 
-              label="KapsCulator" 
-              active={activeTab === 'ib-calculator'} 
-              onClick={() => handleTabChange('ib-calculator')} 
-            />
-            <NavItem 
-              to="/hava-durumu"
-              icon={<CloudSun className="text-sky-500" />} 
-              label="Hava Durumu" 
-              active={activeTab === 'weather'} 
-              extraBadge={
-                miniWeatherBadge ? (
-                  <span className="px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/80 text-[11px] font-mono font-bold shadow-xs flex items-center gap-1">
-                    <span>{miniWeatherBadge.emoji}</span>
-                    <span>{miniWeatherBadge.temp}°C</span>
-                  </span>
-                ) : null
-              }
-              onClick={() => handleTabChange('weather')} 
-            />
-            <NavItem 
               to="/ajanda"
-              icon={<CalendarDays className="text-blue-500 dark:text-blue-400" />} 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<CalendarDays size={18} />} 
               label="Ajanda" 
               active={activeTab === 'agenda'} 
               onClick={() => handleTabChange('agenda')} 
             />
             <NavItem 
+              to="/bildirimler" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Bell size={18} />} 
+              label="Bildirimler" 
+              active={activeTab === 'notifications'} 
+              badge={unreadNotificationsCount} 
+              onClick={() => handleTabChange('notifications')} 
+            />
+          </div>
+
+          {/* Group 2: Akademik & Kamp */}
+          <div className="space-y-1">
+            {!preferences.sidebarCollapsed && (
+              <div className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Akademik & Kamp
+              </div>
+            )}
+            <NavItem 
+              to="/dersler" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Folder size={18} />} 
+              label="Ders Klasörleri" 
+              active={activeTab === 'folders' || activeTab === 'subject'} 
+              onClick={() => handleTabChange('folders')} 
+            />
+            <NavItem 
+              to="/ib-hesaplayici"
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Calculator size={18} />} 
+              label="KapsCulator (IB)" 
+              active={activeTab === 'ib-calculator'} 
+              onClick={() => handleTabChange('ib-calculator')} 
+            />
+            <NavItem 
               to="/ayvalik-cas"
-              icon={<Compass className="text-emerald-500 animate-pulse" />} 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Compass size={18} className="text-emerald-500" />} 
               label="Ayvalık CAS" 
               active={activeTab === 'ayvalik-cas'} 
               extraBadge={
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
                   25-27 Kas
                 </span>
               }
               onClick={() => handleTabChange('ayvalik-cas')} 
             />
-            <NavItem to="/genel-sohbet" icon={<Globe />} label="Genel Sohbet" active={activeTab === 'global'} badge={unreadGlobalCount} onClick={() => handleTabChange('global')} />
-            <NavItem to="/akis" icon={<LayoutGrid />} label="Akış" active={activeTab === 'feed'} onClick={() => handleTabChange('feed')} />
-            <NavItem to="/dersler" icon={<Folder className="text-blue-500" />} label="Ders Klasörleri" active={activeTab === 'folders' || activeTab === 'subject'} onClick={() => handleTabChange('folders')} />
-            <NavItem to="/harita" icon={<MapPin className="text-emerald-500" />} label="Canlı Harita" active={activeTab === 'map'} onClick={() => handleTabChange('map')} />
-            <NavItem to="/arkadaslar" icon={<Users />} label="Arkadaşlar" active={activeTab === 'friends'} onClick={() => handleTabChange('friends')} />
-            <NavItem to="/sesli-sohbet" icon={<Radio />} label="Sesli & Görüntülü" active={activeTab === 'voice'} onClick={() => handleTabChange('voice')} />
-            <NavItem to="/oyunlar" icon={<Gamepad2 />} label="Oyunlar" active={activeTab === 'games'} onClick={() => handleTabChange('games')} />
-            <NavItem to="/bildirimler" icon={<Bell />} label="Bildirimler" active={activeTab === 'notifications'} badge={unreadNotificationsCount} onClick={() => handleTabChange('notifications')} />
-            <NavItem to="/profil" icon={<UserCircle2 />} label="Profil" active={activeTab === 'profile'} onClick={() => handleTabChange('profile')} />
+            <NavItem 
+              to="/hava-durumu"
+              collapsed={preferences.sidebarCollapsed}
+              icon={<CloudSun size={18} />} 
+              label="Hava Durumu" 
+              active={activeTab === 'weather'} 
+              extraBadge={
+                miniWeatherBadge ? (
+                  <span className="text-[11px] font-mono font-bold text-sky-600 dark:text-sky-400 tabular-nums">
+                    {miniWeatherBadge.emoji} {miniWeatherBadge.temp}°
+                  </span>
+                ) : null
+              }
+              onClick={() => handleTabChange('weather')} 
+            />
+          </div>
 
-          </nav>
+          {/* Group 3: İletişim & Sosyal */}
+          <div className="space-y-1">
+            {!preferences.sidebarCollapsed && (
+              <div className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                İletişim & Sosyal
+              </div>
+            )}
+            <NavItem 
+              to="/sohbetler" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<MessageSquare size={18} />} 
+              label="Özel Mesajlar" 
+              active={activeTab === 'chats'} 
+              badge={unreadDmCount} 
+              onClick={() => handleTabChange('chats')} 
+            />
+            <NavItem 
+              to="/genel-sohbet" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Globe size={18} />} 
+              label="Genel Sohbet" 
+              active={activeTab === 'global'} 
+              badge={unreadGlobalCount} 
+              onClick={() => handleTabChange('global')} 
+            />
+            <NavItem 
+              to="/sesli-sohbet" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Radio size={18} />} 
+              label="Sesli & Görüntülü" 
+              active={activeTab === 'voice'} 
+              onClick={() => handleTabChange('voice')} 
+            />
+            <NavItem 
+              to="/akis" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<LayoutGrid size={18} />} 
+              label="Sosyal Akış" 
+              active={activeTab === 'feed'} 
+              onClick={() => handleTabChange('feed')} 
+            />
+            <NavItem 
+              to="/arkadaslar" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Users size={18} />} 
+              label="Arkadaşlar" 
+              active={activeTab === 'friends'} 
+              onClick={() => handleTabChange('friends')} 
+            />
+            <NavItem 
+              to="/harita" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<MapPin size={18} />} 
+              label="Canlı Harita" 
+              active={activeTab === 'map'} 
+              onClick={() => handleTabChange('map')} 
+            />
+            <NavItem 
+              to="/oyunlar" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Gamepad2 size={18} />} 
+              label="Oyun Merkezi" 
+              active={activeTab === 'games'} 
+              onClick={() => handleTabChange('games')} 
+            />
+          </div>
+
+          {/* Group 4: Hesap & Sistem */}
+          <div className="space-y-1 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+            {!preferences.sidebarCollapsed && (
+              <div className="px-2.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Sistem
+              </div>
+            )}
+            <NavItem 
+              to="/profil" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<UserCircle2 size={18} />} 
+              label="Profilim" 
+              active={activeTab === 'profile'} 
+              onClick={() => handleTabChange('profile')} 
+            />
+            <NavItem 
+              to="/ayarlar" 
+              collapsed={preferences.sidebarCollapsed}
+              icon={<SettingsIcon size={18} />} 
+              label="Ayarlar & Temalar" 
+              active={activeTab === 'settings'} 
+              onClick={() => handleTabChange('settings')} 
+            />
+          </div>
         </div>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
-           <button 
-             onClick={() => setDarkMode(!darkMode)}
-             className="w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl transition-all text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-           >
-             {darkMode ? <Sun size={20} className="text-amber-500" /> : <Moon size={20} className="text-indigo-500" />}
-             <span className="hidden lg:block font-medium">{darkMode ? "Açık Tema" : "Koyu Tema"}</span>
-           </button>
-           
-           <div className="hidden lg:block px-3 py-1 text-[11px] text-slate-400 dark:text-slate-500 text-center">
-             <span>Uyar-Kaldır & Destek: </span>
-             <a href="mailto:destekkapsapp@gmail.com" className="text-blue-500 hover:underline font-semibold">
-               destekkapsapp@gmail.com
-             </a>
-           </div>
+        {/* Sidebar Footer Controls */}
+        <div className="p-3 border-t border-slate-200/80 dark:border-slate-800/80 space-y-1.5">
+          {preferences.sidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => handleUpdatePreferences({ sidebarCollapsed: false })}
+              className="w-full flex items-center justify-center p-2.5 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Kenar Çubuğunu Genişlet"
+            >
+              <PanelLeftOpen size={18} />
+            </button>
+          )}
+          <div className={`flex items-center ${preferences.sidebarCollapsed ? 'flex-col gap-1.5' : 'gap-1.5'}`}>
+            <button 
+              type="button"
+              onClick={handleToggleDarkMode}
+              className={`flex-1 flex items-center ${preferences.sidebarCollapsed ? 'justify-center p-2.5' : 'justify-start gap-2.5 px-3 py-2'} rounded-xl transition-all text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer`}
+              title={darkMode ? "Açık Temaya Geç" : "Koyu Temaya Geç"}
+            >
+              {darkMode ? <Sun size={16} className="text-amber-500 shrink-0" /> : <Moon size={16} className="text-indigo-500 shrink-0" />}
+              {!preferences.sidebarCollapsed && <span>{darkMode ? "Açık Tema" : "Koyu Tema"}</span>}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleUpdatePreferences({ doNotDisturb: !preferences.doNotDisturb })}
+              className={`p-2 rounded-xl transition-all cursor-pointer ${
+                preferences.doNotDisturb
+                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={preferences.doNotDisturb ? "Odak Modu Aktif (Bildirimler Sessiz)" : "Odak Modunu Aç"}
+            >
+              <BellOff size={15} />
+            </button>
+          </div>
+
+          {!preferences.sidebarCollapsed && (
+            <div className="px-2 py-0.5 text-[10px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
+              <span>Destek</span>
+              <a href="mailto:destekkapsapp@gmail.com" className="text-blue-500 hover:underline font-medium">
+                destekkapsapp@gmail.com
+              </a>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1213,7 +1546,9 @@ export default function App() {
             unreadDmCount={unreadDmCount} 
             unreadGlobalCount={unreadGlobalCount} 
             hasUnreadAnnouncement={hasUnreadAnnouncement} 
-            isEmirgan={isEmirgan} 
+            isEmirgan={isEmirgan}
+            preferences={preferences}
+            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           />
         )}
         {activeTab === 'admin' && isEmirgan && (
@@ -1343,7 +1678,7 @@ export default function App() {
               setActiveTab('chats');
             }}
             darkMode={darkMode}
-            onToggleDarkMode={() => setDarkMode(!darkMode)}
+            onToggleDarkMode={handleToggleDarkMode}
           />
         )}
         
@@ -1369,6 +1704,21 @@ export default function App() {
           />
         )}
 
+        {/* Ayarlar (Settings) Tab */}
+        {activeTab === 'settings' && (
+          <Settings 
+            currentTheme={currentTheme}
+            onThemeChange={handleThemeChange}
+            preferences={preferences}
+            onUpdatePreferences={handleUpdatePreferences}
+            onResetPreferences={handleResetPreferences}
+            currentUsername={username}
+            currentUserId={currentUserId}
+            currentUserRoles={currentUserRoles}
+            isEmirgan={isEmirgan}
+            onLogout={handleLogout}
+          />
+        )}
 
         {/* Persistently mounted LiveMap tab to prevent re-initialization and gray tiles when switching tabs */}
         <div className={`flex-1 flex-col relative w-full h-full ${activeTab === 'map' ? 'flex' : 'hidden'}`}>
@@ -1412,7 +1762,7 @@ export default function App() {
         unreadGlobalCount={unreadGlobalCount}
         pendingApprovalsCount={pendingApprovalsCount}
         darkMode={darkMode}
-        setDarkMode={setDarkMode}
+        setDarkMode={(v: boolean) => handleThemeChange(v ? 'dark' : 'light')}
         handleLogout={handleLogout}
         isInVoiceRoom={isInVoiceRoom}
         isChatOpen={activeTab === 'chats' && isChatOpen}
@@ -1523,6 +1873,7 @@ function NavItem({
   badge, 
   dotBadge, 
   extraBadge, 
+  collapsed = false,
   onClick 
 }: { 
   icon: React.ReactNode; 
@@ -1532,48 +1883,63 @@ function NavItem({
   badge?: number; 
   dotBadge?: boolean; 
   extraBadge?: React.ReactNode; 
+  collapsed?: boolean;
   onClick?: () => void; 
 }) {
-  const commonClass = `w-full flex items-center justify-between p-3 lg:px-4 rounded-xl transition-all relative cursor-pointer no-underline group ${active ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`;
+  const commonClass = `w-full flex items-center ${
+    collapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2'
+  } rounded-xl transition-all relative cursor-pointer no-underline group text-[13px] ${
+    active
+      ? 'bg-blue-50/90 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-bold border border-blue-200/70 dark:border-blue-800/60 shadow-2xs'
+      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 font-medium border border-transparent'
+  }`;
 
   const tooltipId = `nav-tooltip-${label.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
 
   const content = (
     <>
-      <div className="flex items-center gap-3">
-        <div className={`relative ${active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-500'}`}>
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className={`relative shrink-0 ${active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'}`}>
           {icon}
-          {badge && badge > 0 && <div className="lg:hidden absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white dark:border-slate-900"></div>}
-          {dotBadge && !badge && <div className="lg:hidden absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white dark:border-slate-900 animate-pulse"></div>}
+          {collapsed && badge && badge > 0 ? (
+            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white dark:border-slate-900" />
+          ) : null}
+          {collapsed && dotBadge && !badge ? (
+            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white dark:border-slate-900 animate-pulse" />
+          ) : null}
         </div>
-        <span className="hidden lg:block">{label}</span>
+        {!collapsed && <span className="truncate">{label}</span>}
       </div>
 
-      {/* Tablet Collapsed Sidebar Tooltip (768px - 1023px) */}
-      <div 
-        id={tooltipId}
-        role="tooltip" 
-        className="hidden md:group-hover:flex md:group-focus-visible:flex lg:hidden absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 border border-slate-700/80"
-      >
-        <span>{label}</span>
-        {badge && badge > 0 && (
-          <span className="px-1.5 py-0.2 bg-red-500 rounded-full text-[10px] font-bold">
-            {badge}
-          </span>
-        )}
-      </div>
-
-      {extraBadge ? (
-        <div className="hidden lg:flex items-center">
-          {extraBadge}
+      {/* Collapsed Sidebar Tooltip */}
+      {collapsed && (
+        <div 
+          id={tooltipId}
+          role="tooltip" 
+          className="hidden group-hover:flex group-focus-visible:flex absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none items-center gap-1.5 border border-slate-700/80"
+        >
+          <span>{label}</span>
+          {badge && badge > 0 && (
+            <span className="px-1.5 py-0.2 bg-red-500 rounded-full text-[10px] font-bold">
+              {badge}
+            </span>
+          )}
         </div>
-      ) : badge && badge > 0 ? (
-         <span className="hidden lg:flex px-1.5 min-w-[20px] h-5 bg-red-500 text-white text-[10px] items-center justify-center rounded-full font-bold shadow-sm">
-           {badge > 99 ? '99+' : badge}
-         </span>
-      ) : dotBadge ? (
-        <span className="hidden lg:flex w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm shadow-red-500/50"></span>
-      ) : null}
+      )}
+
+      {!collapsed && (
+        extraBadge ? (
+          <div className="flex items-center shrink-0">
+            {extraBadge}
+          </div>
+        ) : badge && badge > 0 ? (
+           <span className="px-1.5 min-w-[18px] h-4.5 bg-red-500 text-white text-[10px] font-mono flex items-center justify-center rounded-md font-bold tabular-nums">
+             {badge > 99 ? '99+' : badge}
+           </span>
+        ) : dotBadge ? (
+          <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+        ) : null
+      )}
     </>
   );
 

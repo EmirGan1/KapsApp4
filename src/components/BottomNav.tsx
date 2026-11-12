@@ -23,7 +23,8 @@ import {
   LogOut, 
   X,
   Calculator,
-  Compass 
+  Compass,
+  Settings as SettingsIcon
 } from "lucide-react";
 import { AppTab } from "../routes";
 
@@ -77,7 +78,8 @@ export default function BottomNav({
     'voice', 
     'games', 
     'friends', 
-    'admin'
+    'admin',
+    'settings'
   ].includes(activeTab);
 
   // Prevent background body scroll when mobile more drawer is open
@@ -280,6 +282,12 @@ export default function BottomNav({
                   onClick={() => { handleTabChange('admin'); setIsMobileMoreOpen(false); }} 
                 />
               )}
+              <DrawerGridItem 
+                icon={<SettingsIcon size={22} className="text-slate-500" />} 
+                label="Ayarlar & Temalar" 
+                active={activeTab === 'settings'} 
+                onClick={() => { handleTabChange('settings'); setIsMobileMoreOpen(false); }} 
+              />
             </div>
 
             {/* Drawer Footer Actions */}

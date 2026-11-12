@@ -28,11 +28,15 @@ export default function Avatar({ url, name, color, size = 10, className = "" }: 
 
   let initials = "?";
   if (name) {
-    const parts = name.trim().split(/\s+/);
-    if (parts.length > 1 && parts[0].length > 0 && parts[1].length > 0) {
-      initials = (parts[0][0] + parts[1][0]).toUpperCase();
-    } else {
-      initials = name.substring(0, 2).toUpperCase();
+    const cleanedWords = name
+      .replace(/[()[\]{}]/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter((w) => w.length > 0);
+    if (cleanedWords.length > 1) {
+      initials = (cleanedWords[0][0] + cleanedWords[1][0]).toLocaleUpperCase("tr-TR");
+    } else if (cleanedWords.length === 1) {
+      initials = cleanedWords[0].substring(0, 2).toLocaleUpperCase("tr-TR");
     }
   }
 
