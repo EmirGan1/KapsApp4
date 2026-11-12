@@ -1442,10 +1442,13 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
 
 /* Reserve the top corner controls even with full tactical teams. */
 @media(min-width:701px) and (max-width:900px){
- .ks-tactical-bar{width:calc(100% - 144px);gap:6px}
- .ks-bomb-team{gap:3px}.ks-bomb-player{width:40px;flex:none}
+ /* On narrow tablets, two roster rows reserve the corners for mic, pause and fullscreen. */
+ .ks-tactical-bar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:3px 6px;width:calc(100% - 144px)}
+ .ks-bomb-team{grid-row:1;gap:3px;justify-content:center;min-width:0}
+ .ks-bomb-team-CT{grid-column:1}.ks-bomb-team-T{grid-column:2}
+ .ks-bomb-player{width:40px;flex:none}
  .ks-bomb-player img,.ks-bomb-avatar{width:100%;height:34px}
- .ks-bomb-score{min-width:170px}
+ .ks-bomb-score{grid-row:2;grid-column:1/-1;justify-self:center;min-width:170px}
 }
 @media(max-width:700px){
  .ks-tactical-bar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:3px 6px;width:calc(100% - 128px)}
