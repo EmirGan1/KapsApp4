@@ -27,7 +27,7 @@ try{
  console.log('mode selected');
  await a.getByRole('button',{name:'+ Masa aç',exact:true}).click();await a.getByRole('button',{name:/Bomba Kurma/i}).click();
  // Scope the map selector to the room builder: label-based lookup can be ambiguous in CI.
- const mapSelect=a.locator('.ks-room-builder-fields label').filter({hasText:/^Harita\\s*$/}).locator('select');
+ const mapSelect=a.locator('.ks-room-builder-fields label').filter({hasText:/^Harita/}).locator('select');
  try {
   await mapSelect.waitFor({state:'visible',timeout:15000});
  } catch (error) {
