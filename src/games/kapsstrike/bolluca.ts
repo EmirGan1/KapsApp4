@@ -422,6 +422,61 @@ export function bolluca(): MapDefinition {
     solids.push({ id: "bolluca-sign-" + id, kind: "box", x, y: 3.6, z, w: 3.2, d: .12, h: .72,
       color: "#51413a", label, detail: true });
 
+  // NeoGöl Park sign & swimming pool behind it (CT/Ticket courtyard + Mid vista)
+  box("neogol-post-l", -16.8, -40.8, .16, .16, 0, 2.35, "#3a4d5c", "metal", true);
+  box("neogol-post-r", -12.8, -40.8, .16, .16, 0, 2.35, "#3a4d5c", "metal", true);
+  solids.push({
+    id: "bolluca-sign-neogol-park",
+    kind: "box",
+    x: -14.8,
+    y: 2.35,
+    z: -40.8,
+    w: 4.4,
+    d: .16,
+    h: .88,
+    color: "#1e4b6e",
+    label: "NeoGöl Park",
+    detail: true,
+  });
+  // Swimming pool directly behind NeoGöl Park sign
+  box("neogol-pool-deck", -14.8, -42.9, 6.2, 3.2, 0, .18, "#dfd2be", "stone", true);
+  box("neogol-pool-coping-n", -14.8, -41.38, 6.0, .24, .18, .22, "#f3e8d6", "stone", true);
+  box("neogol-pool-coping-s", -14.8, -44.42, 6.0, .24, .18, .22, "#f3e8d6", "stone", true);
+  box("neogol-pool-coping-w", -17.68, -42.9, .24, 3.28, .18, .22, "#f3e8d6", "stone", true);
+  box("neogol-pool-coping-e", -11.92, -42.9, .24, 3.28, .18, .22, "#f3e8d6", "stone", true);
+  box("neogol-pool-tile-basin", -14.8, -42.9, 5.52, 2.8, .02, .22, "#1976a5", "stone", true);
+  box("neogol-pool-water", -14.8, -42.9, 5.48, 2.76, .24, .10, "#299cd4", "water", true);
+  box("neogol-pool-ladder-l", -12.4, -41.55, .06, .28, .18, .65, "#cbd5e1", "metal", true);
+  box("neogol-pool-ladder-r", -12.0, -41.55, .06, .28, .18, .65, "#cbd5e1", "metal", true);
+
+  // Akyüz Residence sign on the residential facade
+  solids.push({
+    id: "bolluca-sign-akyuz-residence",
+    kind: "box",
+    x: -8.5,
+    y: 4.2,
+    z: 31.62,
+    w: 4.2,
+    d: .14,
+    h: .82,
+    color: "#2b3a4a",
+    label: "Akyüz Residence",
+    detail: true,
+  });
+  solids.push({
+    id: "bolluca-sign-akyuz-residence-mid",
+    kind: "box",
+    x: 15.0,
+    y: 4.1,
+    z: 9.62,
+    w: 4.2,
+    d: .14,
+    h: .82,
+    color: "#2b3a4a",
+    label: "Akyüz Residence",
+    detail: true,
+  });
+
   return {
     id: "bolluca", name: "Bolluca", subtitle: "Palace, Mid ve Pazar", bounds: 54, sky: "#bfd8ec", floor: "#c7b79b", floorSurface: "stone",
     solids, routes, radarFootprint: rects, landmarks: Object.keys(blocks), bombSites: sites, targets: [], hazard: { x: 120, z: 120, r: 0 },

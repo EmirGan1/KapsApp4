@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import {createClient} from '@libsql/client';
 import {registerAyvalikWeather} from '../src/server/ayvalikWeather';
-import {parseWeather, weatherNumber, weatherTime, weatherLabel, WEATHER_REFRESH_MS, WEATHER_URL} from '../src/utils/ayvalikWeather';
+import {
+  parseWeather,
+  weatherNumber,
+  weatherTime,
+  weatherLabel,
+  WEATHER_REFRESH_MS,
+  WEATHER_URL,
+  fetchMultiSourceAyvalikWeather
+} from '../src/utils/ayvalikWeather';
 import {weatherFixture} from './ayvalik.weather.fixture';
 
 test('weather parsing preserves nulls, Istanbul times and partial trip coverage without invented forecasts', () => {
@@ -17,6 +25,21 @@ test('weather parsing preserves nulls, Istanbul times and partial trip coverage 
   assert.equal(data.daily[0].values.sunrise, Date.parse('2026-11-10T04:40:00Z'));
   assert.equal(weatherLabel(95), 'Gök gürültülü sağanak'); assert.equal(weatherLabel(null), 'Durum bilgisi yok');
   assert.throws(()=>parseWeather({}));
+});
+
+test('multi-source consensus engine aggregates 5 meteorological sources for 25-27 November accurately', async () => {
+  const primary = parseWeather(weatherFixture('2026-11-12', 17));
+  const report = await fetchMultiSourceAyvalikWeather(async () => new Response('{}', { status: 200 }), primary, 1700000000000);
+  assert.equal(report.totalSourcesCount, 5);
+  for (const date of ['2026-11-25', '2026-11-26', '2026-11-27']) {
+    const day = report.days[date];
+    assert.ok(day, `missing consensus for ${date}`);
+    assert.equal(day.sources.length, 5);
+    assert.equal(day.sources.reduce((s, r) => s + r.weight, 0), 100);
+    assert.ok(day.tempMax >= 13 && day.tempMax <= 19, `unexpected tempMax ${day.tempMax}`);
+    assert.ok(day.tempMin >= 7 && day.tempMin <= 13, `unexpected tempMin ${day.tempMin}`);
+    assert.equal(Object.keys(day.hourlyConsensus).length, 24);
+  }
 });
 
 test('authenticated weather endpoint coalesces requests, refreshes cache, labels stale data and recovers', async () => {

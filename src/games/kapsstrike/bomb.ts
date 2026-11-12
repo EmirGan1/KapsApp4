@@ -21,6 +21,9 @@ export function createBombMatch(players:{id:string;team:BombSide;position:Vec3}[
 }
 export const isBombPrimary = (weapon: WeaponId) => weapon !== "pistol" && weapon !== "knife";
 export const hasBombPrimary = (weapons: WeaponId[]) => weapons.some(isBombPrimary);
+export const MAX_GRENADES = 8;
+export const totalUtility = (utility?: Partial<Record<GrenadeKind, number>>): number =>
+ Object.values(utility ?? {}).reduce((sum, count) => sum + (count || 0), 0);
 
 export function bombPurchaseError(m:BombMatch,id:string,item:string,now:number):string|undefined {
  const p=m.players[id];
@@ -28,6 +31,7 @@ export function bombPurchaseError(m:BombMatch,id:string,item:string,now:number):
  if(m.phase!=='buy'||now>=m.deadline)return 'Satın alma süresi sona erdi.';
  if(!Object.hasOwn(BOMB_SHOP,item))return 'Geçersiz ekipman.';
  if(item==='kit'&&p.team!=='CT')return 'Çözme kiti yalnızca CT için.';
+ if(isGrenade(item)&&totalUtility(p.utility)>=MAX_GRENADES)return 'En fazla 8 bomba alabilirsin.';
  if(item==='kit'?p.kit:item==='armor'?p.armor>=100:item==='halfArmor'?p.armor>=50:isGrenade(item)?false:p.weapons.includes(item as WeaponId))return 'Bu ekipmana zaten sahipsin.';
  if(!isGrenade(item)&&item!=='kit'&&item!=='armor'&&item!=='halfArmor'&&item!=='pistol'&&hasBombPrimary(p.weapons))return 'Zaten ana silahın var.';
  if(p.money<BOMB_SHOP[item as keyof typeof BOMB_SHOP])return 'Yeterli paran yok.';

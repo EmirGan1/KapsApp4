@@ -1,7 +1,7 @@
 import { GRENADE_KEYS, GRENADE_NAMES, isGrenade, type GrenadeKind } from "../../../games/kapsstrike/grenades";
 import React, {useEffect, useRef, useState} from 'react';
 import type {Socket} from 'socket.io-client';
-import {BOMB_RULES, BOMB_SHOP, bombRefundPrice, hasBombPrimary, type BombMatch} from '../../../games/kapsstrike/bomb';
+import {BOMB_RULES, BOMB_SHOP, bombRefundPrice, hasBombPrimary, MAX_GRENADES, totalUtility, type BombMatch} from '../../../games/kapsstrike/bomb';
 import {bindingFromEvent, label} from '../../../games/kapsstrike/controls';
 import type {NetworkPlayer, StrikeSnapshot} from '../../../games/kapsstrike/types';
 import {WEAPONS} from '../../../games/kapsstrike/config';
@@ -68,6 +68,7 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
   useEffect(()=>{if(shop)dialog.current?.querySelector<HTMLButtonElement>('button')?.focus();},[shop]);
   if(!bomb)return null;
   const me=bomb.players[socket?.id||''];
+  const totalOwnedGrenades = totalUtility(me?.utility);
   const buy=(item:Item, refund=false)=>{
     if(!socket||pending)return;setPending(true);setMessage(refund?'İade ediliyor…':'Satın alınıyor…');
     socket.timeout(4000).emit('strike:bomb_action',{kind:refund?'refund':'buy',item},(err:Error|null,result?:{success:boolean;error?:string})=>{
@@ -103,11 +104,15 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
         {bomb.carrier===socket?.id&&<button onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop'})}>Bombayı bırak</button>}
       </div>:<span>{label(interactKey)} basılı tut · Kur / Çöz / Al · G: Silahı bırak{bomb.carrier===socket?.id?' · 7: Bombayı ele al · Shift+G: Bombayı bırak':''}</span>)}
       {me?.alive&&['active','planted'].includes(bomb.phase)&&GRENADE_KEYS.some(item=>me.utility?.[item])&&
-        <div className="ks-utility-controls">
-          {GRENADE_KEYS.map((item,index)=>me.utility?.[item]&&(touch
-            ? <button key={item} type="button" aria-pressed={utility===item} onClick={()=>selectUtility(utility===item?undefined:item)}>{GRENADE_NAMES[item]}</button>
-            : <span key={item}>{[8,9,0][index]} · {GRENADE_NAMES[item]}</span>))}
-          {utility&&(touch?<><button type="button" onClick={()=>onThrowUtility(false)}>Uzağa at</button><button type="button" onClick={()=>onThrowUtility(true)}>Yakına at</button></>:<strong>{GRENADE_NAMES[utility]} · Sol tık: at · Sağ tık: yakına at</strong>)}
+        <div className="ks-utility-controls" aria-label={`Bomba envanteri (${totalOwnedGrenades}/${MAX_GRENADES})`}>
+          {GRENADE_KEYS.map((item,index)=>{
+            const count=me.utility?.[item]??0;
+            if(!count)return null;
+            return touch
+              ? <button key={item} type="button" aria-pressed={utility===item} onClick={()=>selectUtility(utility===item?undefined:item)}>{GRENADE_NAMES[item]} · ×{count}</button>
+              : <span key={item}>{[8,9,0][index]} · {GRENADE_NAMES[item]} <b>×{count}</b></span>;
+          })}
+          {utility&&(touch?<><button type="button" onClick={()=>onThrowUtility(false)}>Uzağa at</button><button type="button" onClick={()=>onThrowUtility(true)}>Yakına at</button></>:<strong>{GRENADE_NAMES[utility]} (×{me.utility?.[utility]??0}) · Sol tık: at · Sağ tık: yakına at</strong>)}
         </div>}
       {!shop && message && <span role="status">{message}</span>}
       {bomb.action&&<label>{bomb.action.kind==='plant'?`Bomba kuruluyor [${typedCode}]`:'Bomba çözülüyor'}<progress max={plantDuration} value={actionElapsed}/></label>}
@@ -120,9 +125,10 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
       if(e.key!=='Tab')return;const buttons=[...e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }}>
       <header><div><small>KAPSSTRIKE · {me?.team}</small><h2 id="ks-buy-title">Satın alma</h2><p>{Math.max(0,Math.ceil(bomb.deadline-now))} saniye kaldı · Raund {bomb.round}</p></div><strong>${me?.money||0}</strong><button aria-label="Satın alma menüsünü kapat" onClick={()=>changeShop(false)}>Oyuna dön · ESC</button></header>
-      <div className="ks-buy-columns">{categories.map(category=><section key={category.name}><h3>{category.name}</h3>{category.items.filter(item=>item!=='kit'||me?.team==='CT').map(item=>{
+      <div className="ks-buy-columns">{categories.map(category=><section key={category.name}><h3>{category.name==='Bombalar'?`Bombalar (${totalOwnedGrenades}/${MAX_GRENADES})`:category.name}</h3>{category.items.filter(item=>item!=='kit'||me?.team==='CT').map(item=>{
         const armorItem = item === 'armor' || item === 'halfArmor';
         const grenadeCount = isGrenade(item) ? me?.utility?.[item] ?? 0 : 0;
+        const grenadeCapReached = isGrenade(item) && totalOwnedGrenades >= MAX_GRENADES;
         const owned = isGrenade(item) ? false : item === 'kit' ? me?.kit : armorItem
           ? (me?.armor ?? 0) >= (item === 'armor' ? 100 : 50)
           : me?.weapons.includes(item);
@@ -130,7 +136,7 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
           && hasBombPrimary(me?.weapons ?? []);
         const refundPrice = bombRefundPrice(me, item);
         const affordable = (me?.money ?? 0) >= BOMB_SHOP[item];
-        return <div key={item}><button type="button" disabled={pending||owned||slotTaken||!affordable} className={owned?'is-owned':slotTaken?'is-slot-taken':''} onClick={()=>buy(item)}><span className="ks-buy-symbol" aria-hidden="true"><svg viewBox="0 0 120 40" width="110" height="38" fill="currentColor">{isGrenade(item)?<GrenadeIcon kind={item}/>:armorItem?<path d="M44 2 35 9v16l25 13 25-13V9L76 2 68 9H52z"/>:item==='kit'?<path d="M35 6h50v29H35zM50 0h20v5H50zm7 12v6h-6v6h6v6h6v-6h6v-6h-6v-6z" fillRule="evenodd"/>:item==='pistol'?<path d="M20 8h65v10H54l-5 19H34l5-19H20z"/>:item==='sniper'?<path d="M3 13h90v4h24v3H72l-8 11H52l2-11H30L9 29H3zm42-9h30v7H45z"/>:item==='shotgun'?<path d="M4 12h108v5H55v7H39v-6L8 29H3z"/>:item==='smg'?<path d="M15 10h65v5h22v5H66v16H55V21H41l-3 14H25l4-16H15z"/>:<path d="M3 9h16v5h55v-4h9v4h32v5H74l-7 15H53l4-15H40l-4 12H24l4-14L3 27z"/>}</svg></span><b>{names(item)}{grenadeCount > 0 && ` · ×${grenadeCount}`}</b><span>${BOMB_SHOP[item]}</span><small>{owned?'ENVANTERDE':slotTaken?'ZATEN ANA SİLAHIN VAR':!affordable?'YETERSİZ BAKİYE':'SATIN AL'}</small></button>{refundPrice > 0 && <button type="button" className="ks-refund-button" disabled={pending} onClick={()=>buy(item,true)}>İade et · ${refundPrice}</button>}</div>;
+        return <div key={item}><button type="button" disabled={pending||owned||slotTaken||grenadeCapReached||!affordable} className={owned?'is-owned':slotTaken||grenadeCapReached?'is-slot-taken':''} onClick={()=>buy(item)}><span className="ks-buy-symbol" aria-hidden="true"><svg viewBox="0 0 120 40" width="110" height="38" fill="currentColor">{isGrenade(item)?<GrenadeIcon kind={item}/>:armorItem?<path d="M44 2 35 9v16l25 13 25-13V9L76 2 68 9H52z"/>:item==='kit'?<path d="M35 6h50v29H35zM50 0h20v5H50zm7 12v6h-6v6h6v6h6v-6h6v-6h-6v-6z" fillRule="evenodd"/>:item==='pistol'?<path d="M20 8h65v10H54l-5 19H34l5-19H20z"/>:item==='sniper'?<path d="M3 13h90v4h24v3H72l-8 11H52l2-11H30L9 29H3zm42-9h30v7H45z"/>:item==='shotgun'?<path d="M4 12h108v5H55v7H39v-6L8 29H3z"/>:item==='smg'?<path d="M15 10h65v5h22v5H66v16H55V21H41l-3 14H25l4-16H15z"/>:<path d="M3 9h16v5h55v-4h9v4h32v5H74l-7 15H53l4-15H40l-4 12H24l4-14L3 27z"/>}</svg></span><b>{names(item)}{grenadeCount > 0 && ` · ×${grenadeCount}`}</b><span>${BOMB_SHOP[item]}</span><small>{owned?'ENVANTERDE':grenadeCapReached?'8 BOMBA DOLU':slotTaken?'ZATEN ANA SİLAHIN VAR':!affordable?'YETERSİZ BAKİYE':'SATIN AL'}</small></button>{refundPrice > 0 && <button type="button" className="ks-refund-button" disabled={pending} onClick={()=>buy(item,true)}>İade et · ${refundPrice}</button>}</div>;
       })}</section>)}</div>
       <footer role="status">{message||'Bu raund satın aldığın ekipmanı satın alma süresi bitmeden iade edebilirsin.'}</footer>
     </div></div>}
