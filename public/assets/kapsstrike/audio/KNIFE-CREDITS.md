@@ -1,0 +1,1 @@
+Knife attack recording: `knife-unsheathe-02.wav` by Vehicle, [Fantasy Sound Effects (Tinysized SFX)](https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx), [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Trimmed, faded and encoded to MP3 for KapsStrike.

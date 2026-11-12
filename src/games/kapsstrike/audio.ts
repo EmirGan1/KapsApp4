@@ -1,4 +1,5 @@
 import {StrikeSampleBank, type SampleId} from "./audioSamples";
+import type {GrenadeKind} from "./grenades";
 import type {StepSurface} from "./footsteps";
 import {WEAPONS} from "./config";
 import { WeaponId, Vec3 } from "./types";
@@ -13,6 +14,9 @@ export type AudioKind =
   | "bombTick"
   | "bombPlant"
   | "bombExplode"
+  | "grenadeFrag"
+  | "grenadeFlash"
+  | "grenadeSmoke"
   | "bombDefuseStart"
   | "bombDefuseTick"
   | "bombDefused"
@@ -111,7 +115,7 @@ export class StrikeAudio {
    * 2. Distance roll-off gain (smooth inverse-distance curve)
    * 3. Lowpass air absorption (distant sounds lose high frequencies)
    */
-  private create3DNode(sourcePos?: Vec3): {
+  private create3DNode(sourcePos?: Vec3, blastRange?: number): {
     input: AudioNode;
     distGain: number;
     cleanup: () => void;
@@ -144,7 +148,9 @@ export class StrikeAudio {
     const refDist = 2.5;
     const maxDist = 75;
     const clampedDist = Math.max(refDist, Math.min(maxDist, dist));
-    const distGain = Math.pow(refDist / clampedDist, 0.95);
+    const distGain = blastRange
+      ? Math.max(0, 1 - dist / blastRange) * Math.pow(8 / Math.max(8, dist), .55)
+      : Math.pow(refDist / clampedDist, 0.95);
 
     // Air absorption lowpass filter: distant gunshots are muffled, close ones have bright crack
     const filter = ctx.createBiquadFilter();
@@ -184,18 +190,25 @@ export class StrikeAudio {
     };
   }
 
+  grenade(kind: GrenadeKind, position: Vec3) {
+    const sounds = { frag: 'grenadeFrag', flash: 'grenadeFlash', smoke: 'grenadeSmoke' } as const;
+    this.play(sounds[kind], 0, position);
+  }
+
   play(kind: AudioKind, urgency = 0, sourcePos?: Vec3) {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== "running" || this.volume === 0 || this.voices.size >= 32) return;
 
     const profiles:Partial<Record<AudioKind,[SampleId,number,number]>>={
       rifle:['rifle',.85,1],carbine:['carbine',.85,1],smg:['smg',.72,1.05],pistol:['pistol',.8,1],
-      sniper:['sniper',1,.94],shotgun:['shotgun',1,1],lmg:['rifle',.95,.88],railgun:['sniper',1,.82]
+      knife:['knife',.85,1],sniper:['sniper',1,.94],shotgun:['shotgun',1,1],lmg:['rifle',.95,.88],railgun:['sniper',1,.82]
     };
     const profile=profiles[kind];
     if(profile&&this.sample(profile[0],sourcePos,profile[1],profile[2]*(.985+Math.random()*.03)))return;
     const t0 = ctx.currentTime;
-    const { input, distGain, cleanup } = this.create3DNode(sourcePos);
+    const blastRange = kind === 'bombExplode' ? 75 : kind === 'grenadeFrag' ? 52 :
+      kind === 'grenadeFlash' ? 42 : kind === 'grenadeSmoke' ? 32 : undefined;
+    const { input, distGain, cleanup } = this.create3DNode(sourcePos, blastRange);
     if (distGain < 0.01) {
       cleanup();
       return;
@@ -326,6 +339,21 @@ export class StrikeAudio {
     // =========================================================================
     // 5. BOMB EXPLODE (Massive Sub-bass Shockwave + Broadband Fireball Roar)
     // =========================================================================
+    if (kind === 'grenadeFrag' || kind === 'grenadeFlash' || kind === 'grenadeSmoke') {
+      if (kind === 'grenadeFrag') {
+        this.playNoiseBlast(input, t0, .10, 6200, 760, this.volume * .8);
+        this.playNoiseBlast(input, t0 + .025, .62, 950, 95, this.volume * .9);
+      } else if (kind === 'grenadeFlash') {
+        this.playNoiseBlast(input, t0, .075, 7900, 2200, this.volume * .9);
+        this.playNoiseBlast(input, t0 + .035, .14, 3400, 800, this.volume * .32);
+      } else {
+        this.playNoiseBlast(input, t0, .10, 1500, 380, this.volume * .52);
+        this.playNoiseBlast(input, t0 + .07, .46, 4200, 1100, this.volume * .38);
+      }
+      finish(.68);
+      return;
+    }
+
     if (kind === "bombExplode") {
       // 1. Sub-bass earthquake punch
       for (const [startFreq, endFreq, dur, amp, wave] of [

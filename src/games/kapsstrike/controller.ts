@@ -185,6 +185,7 @@ export class StrikeController {
   private pendingInteract=false;
   private nextBombBeep=0;
   private lastExplosionKey="";
+  private heardGrenades = new Set<string>();
   private bombEquipped=false;
   private utilityEquipped?:GrenadeKind;
   private lastDefuseAudioTick=0;
@@ -544,9 +545,6 @@ export class StrikeController {
           this.audio.play('bombPlant', 0, snapshot.bomb.position);
           this.audio.announce('Bomba kuruldu');
         }
-        if(snapshot.bomb?.reason==='Bomba patladı'&&oldBomb?.reason!=='Bomba patladı'){
-          this.audio.play('bombExplode', 0, snapshot.bomb.position || snapshot.bomb.explosion?.position);
-        }
         if(snapshot.bomb?.reason==='Bomba çözüldü'&&oldBomb?.reason!=='Bomba çözüldü'){
           this.audio.play('bombDefused', 0, snapshot.bomb.position);
           this.audio.announce('Bomba çözüldü');
@@ -888,7 +886,6 @@ export class StrikeController {
           b.reason = "Bomba patladı";
           b.explosion = { at: nowSec, radius: 18, position: { ...(b.position || this.state.player.movement.position) } };
           b.deadline = nowSec + 3.4;
-          this.audio.play("bombExplode");
           this.audio.announce("Bomba patladı");
         } else if (b.phase === "result" && nowSec >= b.deadline) {
           this.state.bomb = undefined;
@@ -896,6 +893,14 @@ export class StrikeController {
       }
 
       const bomb=this.state.bomb;
+      const detonated = new Set<string>();
+      for (const grenade of bomb?.grenades ?? []) {
+        if (grenade.expires === undefined) continue;
+        detonated.add(grenade.id);
+        if (!this.heardGrenades.has(grenade.id)) this.audio.grenade(grenade.kind, grenade.position);
+      }
+      this.heardGrenades = detonated;
+      if (!bomb?.explosion) this.lastExplosionKey = '';
       if(bomb?.explosion){
         const expKey=`${bomb.explosion.at}:${bomb.explosion.position.x}:${bomb.explosion.position.z}`;
         if(expKey!==this.lastExplosionKey){
@@ -999,6 +1004,7 @@ export class StrikeController {
         hp: p2.hp,
         connected: p2.connected,
         protectedUntil:p2.protectedUntil,
+        flashedUntil: p2.flashedUntil,
         velocity:p2.velocity,
         stance: p2.stance,
         selectedWeapon: p2.selectedWeapon,

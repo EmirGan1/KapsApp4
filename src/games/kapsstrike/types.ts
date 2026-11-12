@@ -223,6 +223,7 @@ export interface NetworkPlayer {
 }
 
 export interface PlayerSnapshot {
+  flashedUntil?: number;
   connected?: boolean;
   assists?: number;
   damage?: number;

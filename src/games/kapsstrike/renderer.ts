@@ -73,6 +73,7 @@ export class StrikeRenderer {
       tagTex?: DynamicTexture;
       tagMat?: StandardMaterial;
       shield?:Mesh;
+      blindMarker?: Mesh;
     }
   >();
   private flashes = new Map<string, number>();
@@ -1367,6 +1368,7 @@ export class StrikeRenderer {
       skin?: string;
       weaponSkin?:string;
       protectedUntil?:number;
+      flashedUntil?: number;
     }>,
     localPlayerId?: string,
     localTeam?: string,
@@ -1464,6 +1466,18 @@ export class StrikeRenderer {
         item.body.position.y = (low + high) / 2;
         item.model.neck.position.y=(TARGET_HITBOXES.body.max+TARGET_HITBOXES.head.min)/2-offset;
         item.head.position.y = (TARGET_HITBOXES.head.min + TARGET_HITBOXES.head.max) / 2 - offset;
+        const blinded = (p.flashedUntil ?? 0) > this.visualTick * C.dt;
+        if (blinded && !item.blindMarker) {
+          const marker = MeshBuilder.CreateSphere(`flash-blind-${p.id}`, { diameter: .38, segments: 10 }, this.scene);
+          marker.parent = item.root;
+          marker.material = this.material('#ffffff', true);
+          marker.isPickable = false;
+          item.blindMarker = marker;
+        }
+        if (item.blindMarker) {
+          item.blindMarker.position.y = item.head.position.y + .29;
+          item.blindMarker.setEnabled(blinded);
+        }
       }
     }
 
