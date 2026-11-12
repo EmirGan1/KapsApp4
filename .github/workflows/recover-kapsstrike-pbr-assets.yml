@@ -1,0 +1,62 @@
+name: One-time KapsStrike PBR recovery
+on:
+  push:
+    branches:
+      - recovery/bolluca-pbr-assets
+    paths:
+      - .github/workflows/recover-kapsstrike-pbr-assets.yml
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install texture converter
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y imagemagick
+      - name: Rebuild missing textures from verified Poly Haven originals
+        run: node scripts/prepare-strike-textures.mjs
+      - name: Verify all manifest textures
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, existsSync, statSync } from 'node:fs';
+          const manifest = JSON.parse(readFileSync('src/games/kapsstrike/catalogPbr.json', 'utf8'));
+          const paths = Object.keys(manifest.files).map(name => 'public/kapsstrike/catalog-v1/' + name.replace(/\.[^.]+$/, '.webp'));
+          if (paths.length !== 75 || new Set(paths).size !== 75) throw new Error('Manifest must list 75 distinct texture files');
+          for (const file of paths) {
+            if (!existsSync(file) || statSync(file).size < 100) throw new Error('Missing or empty texture: ' + file);
+            const bytes = readFileSync(file);
+            if (bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WEBP')
+              throw new Error('Invalid WebP header: ' + file);
+          }
+          console.log('Verified 75/75 texture files');
+          NODE
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run lint
+      - name: KapsStrike tests
+        run: npm run test:strike
+      - name: Production build
+        run: npm run build
+      - name: Commit and push verified assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f public/kapsstrike/catalog-v1/*.webp
+          if ! git diff --cached --quiet; then
+            git commit -m "Restore complete set of 75 verified KapsStrike PBR textures"
+            git push origin HEAD:recovery/bolluca-pbr-assets
+          fi
+          echo "PBR asset restoration completed"

@@ -48,7 +48,14 @@ try{
  for(const size of [{width:320,height:740},{width:390,height:844},{width:844,height:390},{width:768,height:1024}]){
   await b.setViewportSize(size);await b.waitForFunction(()=>document.querySelectorAll('.ks-bomb-player').length===8);
   await b.screenshot({path:'/tmp/strike-4v4-roster-'+size.width+'.png'});
-  assert.equal(await b.evaluate(()=>{const blockers=[...document.querySelectorAll('.ks-pause-gear-btn,.ks-top-left-bar')].map(n=>n.getBoundingClientRect());return [...document.querySelectorAll('.ks-bomb-player')].every(n=>{const r=n.getBoundingClientRect();return r.x>=0&&r.right<=innerWidth&&blockers.every(q=>r.right<=q.left||r.left>=q.right||r.bottom<=q.top||r.top>=q.bottom);});}),true,'all eight roster cards must clear mic/pause controls');
+  const collision=await b.evaluate(()=>{
+   const blockers=[...document.querySelectorAll('.ks-pause-gear-btn,.ks-top-left-bar')].filter(el=>getComputedStyle(el).display!=='none').map(el=>({name:el.className,box:el.getBoundingClientRect().toJSON()}));
+   const players=[...document.querySelectorAll('.ks-bomb-player')].map(el=>({name:el.getAttribute('title'),box:el.getBoundingClientRect().toJSON()}));
+   return {viewport:{width:innerWidth,height:innerHeight},blockers,players,
+    invalid:players.filter(p=>p.box.left<0||p.box.right>innerWidth||blockers.some(q=>p.box.right>q.box.left&&p.box.left<q.box.right&&p.box.bottom>q.box.top&&p.box.top<q.box.bottom))};
+  });
+  if(collision.invalid.length)console.log('roster-layout-failure',JSON.stringify(collision));
+  assert.equal(collision.invalid.length,0,'all eight roster cards must clear mic/pause controls');
   assert.equal(await b.evaluate(()=>{const r=document.querySelector('.ks-bomb-score')!.getBoundingClientRect();return [...document.querySelectorAll('.ks-health,.ks-bomb-objective,.ks-minimap')].every(n=>{const q=n.getBoundingClientRect();return r.right<=q.left||r.left>=q.right||r.bottom<=q.top||r.top>=q.bottom;});}),true,'score must clear health, objective and radar');
  }
  await b.setViewportSize({width:390,height:844});console.log('PASS 4v4 roster cards clear mic and pause buttons at four viewport sizes');

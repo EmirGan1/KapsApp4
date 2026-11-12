@@ -26,6 +26,10 @@ jobs:
       - name: Install (repository lockfile predates Babylon and Playwright)
         run: npm install --no-audit --no-fund
       - run: npm run lint
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: 4v4 desktop and touch spectator flow
+        run: npm run test:strike:4v4:browser
       - name: Auto reload, spatial parity, shared snapshots and new cases
         run: node --import tsx --test tests/kapsstrike.optimization.test.ts
       - name: 1000 geometry and bomb scenarios
@@ -37,8 +41,6 @@ jobs:
       - name: Eight real network clients and A/B objectives
         run: npm run test:strike:4v4:network
       - run: npm run build
-      - name: Install test browser
-        run: npx playwright install --with-deps chromium
       - name: Recorded weapon audio and controller footsteps
         run: node --import tsx --test tests/kapsstrike.audio.test.ts && npm run test:strike:audio
       - name: All inventory and in-game finish textures
@@ -51,8 +53,6 @@ jobs:
         env:
           STRIKE_QA_COMPACT: '1'
         run: node --import tsx tests/kapsstrike.bomb.browser.ts
-      - name: 4v4 desktop and touch spectator flow
-        run: npm run test:strike:4v4:browser
       - name: Save map and bomb screenshots
         if: always()
         uses: actions/upload-artifact@v4

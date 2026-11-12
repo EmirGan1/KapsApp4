@@ -26,7 +26,21 @@ try{
  }
  console.log('mode selected');
  await a.getByRole('button',{name:'+ Masa aç',exact:true}).click();await a.getByRole('button',{name:/Bomba Kurma/i}).click();
- await a.getByLabel('Harita',{exact:true}).selectOption(mapId);
+ // Scope the map selector to the room builder: label-based lookup can be ambiguous in CI.
+ const mapSelect=a.locator('.ks-room-builder-fields label').filter({hasText:/^Harita/}).locator('select');
+ try {
+  await mapSelect.waitFor({state:'visible',timeout:15000});
+ } catch (error) {
+  console.log('room-builder-diagnostic',JSON.stringify({
+   builderCount:await a.locator('.ks-room-builder').count(),
+   labels:await a.locator('.ks-room-builder label').allTextContents(),
+   buttons:await a.locator('.ks-room-builder button').allTextContents(),
+   errors
+  }));
+  await a.screenshot({path:'/tmp/strike-bomb-room-builder-failure.png',fullPage:true});
+  throw error;
+ }
+ await mapSelect.selectOption(mapId);
  await a.getByRole('button',{name:'Masayı oluştur',exact:true}).click();
  await a.locator('.ks-lobby-code').waitFor();
  const code=(await a.locator('.ks-lobby-code').textContent())!.trim();
@@ -45,7 +59,7 @@ try{
  assert.equal(await a.evaluate(()=>document.pointerLockElement===null),true);
  assert.equal(await a.locator('.ks-buy-columns section').count(),5);
  assert.equal(await a.locator('.ks-bomb-player').count(),2);
- await a.getByRole('button',{name:/Balistik zırh/}).click();await a.getByRole('status').filter({hasText:'Balistik zırh alındı'}).waitFor();
+ await a.getByRole('button',{name:/Yarım zırh/}).click();await a.getByRole('status').filter({hasText:'Yarım zırh · +50 alındı'}).waitFor();
  assert.equal(room.bomb!.players[(await a.evaluate(()=>(window as any).socket.id))].money,150);
  const buyerId=await a.evaluate(()=>(window as any).socket.id);
  room.bomb!.players[buyerId].money=10000;io.to(buyerId).emit('strike:snapshot',room.getSnapshotForPlayer(buyerId));

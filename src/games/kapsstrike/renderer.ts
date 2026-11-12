@@ -696,6 +696,13 @@ export class StrikeRenderer {
     if (previousQuality !== q || previousScale !== next.scale || previousDynamicScale !== this.dynamicScale) this.resize();
   }
   private renderSupplies(state:TrainingState){
+    if(this.map.id==='bolluca'){
+      for(const node of this.supplyMeshes.values())node.dispose();
+      this.supplyMeshes.clear();
+      this.plane?.setEnabled(false);this.falling?.setEnabled(false);
+      for(const puff of this.smoke)puff.setEnabled(false);
+      return;
+    }
     const world=state.world;if(!world)return;
     const ids=new Set(world.pickups.map(p=>p.id));
     for(const [id,node] of this.supplyMeshes)if(!ids.has(id)){node.dispose();this.supplyMeshes.delete(id);}

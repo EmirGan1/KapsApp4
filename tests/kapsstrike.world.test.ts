@@ -93,10 +93,25 @@ test('Bolluca does not create, respawn, or expose supply crates and airdrops', a
   const staleCrate = { id: 'old-crate', kind: 'chest', weapon: 'carbine',
     position: { ...player.movement.position }, opened: false, expires: 0 } as const;
   world.pickups.push(staleCrate);
+  world.pickups.push({ ...staleCrate, id: 'old-weapon', kind: 'dropped' });
   world.respawns = [{ at: 1, pickup: staleCrate }];
+  world.drop = { position: { ...player.movement.position }, warning: 1, landing: 2 };
   assert.equal(nearestSupply(world, map, player), undefined);
+  assert.equal(claimSupply(world, map, player, 1), false);
+  player.weapon.inventory = ['carbine'];
+  dropInventory(world, player, 2, map);
+  assert.equal(world.pickups.length, 2);
   advanceWorld(world, map, DROP_INTERVAL * 3);
   assert.equal(world.pickups.length, 0);
   assert.equal(world.respawns, undefined);
   assert.equal(world.drop, undefined);
+  const io:any = { emit(){}, to(){return {emit(){}}} };
+  const server = new KapsStrikeServerManager(io);
+  const room = server.createRoom({ id: 12, username: 'bolluca', avatar: null }, 'bolluca-1', { map: 'bolluca', mode: 'bomb' });
+  room.world.pickups.push(staleCrate);
+  assert.equal(room.getSnapshotForPlayer('bolluca-1').world!.pickups.length, 0);
+  server.tickSimulation(room);
+  assert.equal(room.world.pickups.length, 0);
+  assert.equal(room.getSnapshotForPlayer('bolluca-1').world!.pickups.length, 0);
+  server.leaveRoom('bolluca-1', 12);
 });

@@ -439,7 +439,7 @@ export class StrikeRoom {
     return {
       tick: this.tick,
       roomCode: this.roomCode,
-      world: cloneWorld(this.world),
+      world: this.map === 'bolluca' ? createWorld(MAPS.bolluca) : cloneWorld(this.world),
       serverTime: Date.now(),
       players: playerSnapshots,
       teamScores: this.mode !== "ffa" ? { ...this.teamScores } : undefined,
@@ -1102,7 +1102,9 @@ export class KapsStrikeServerManager {
   public tickSimulation(room: StrikeRoom): void {
     const mapDef = MAPS[room.map];
     room.tick++;
-    if(!room.bomb)advanceWorld(room.world,mapDef,room.tick);else room.world.pickups=room.world.pickups.filter(p=>!p.opened&&p.expires>room.tick);
+    if(mapDef.id==='bolluca')advanceWorld(room.world,mapDef,room.tick);
+    else if(!room.bomb)advanceWorld(room.world,mapDef,room.tick);
+    else room.world.pickups=room.world.pickups.filter(p=>!p.opened&&p.expires>room.tick);
     if(room.bomb){const b=room.bomb,round=b.round,phase=b.phase,explosion=b.explosion;
       for(const p of Object.values(b.players)){const live=room.players.get(p.id);p.alive=!!live&&live.state.hp>0;if(live)p.position={...live.state.movement.position};}
       stepBomb(b,room.tick*C.dt);
@@ -1476,8 +1478,8 @@ export class KapsStrikeServerManager {
       if(id!==killer.id && helper && credit.amount>=20 && room.tick-credit.tick<=8/C.dt){helper.assists++;helper.score+=25;}
     }
     victim.damageCredits.clear();
-    if(room.bomb)dropBombWeapon(room.bomb,room.world,victim.state,room.tick,true);
-    dropInventory(room.world,victim.state,room.tick);
+    if(room.bomb&&room.map!=='bolluca')dropBombWeapon(room.bomb,room.world,victim.state,room.tick,true);
+    dropInventory(room.world,victim.state,room.tick,MAPS[room.map]);
     if(room.bomb){room.bomb.players[victim.id].alive=false;dropBomb(room.bomb,victim.id);killer.state.hp=Math.min(100,killer.state.hp);const p=room.bomb.players[killer.id];if(p)p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.killReward);}
     victim.deaths++;
     victim.state.deadUntil = room.tick + C.respawnTicks;
@@ -1722,7 +1724,7 @@ export class KapsStrikeServerManager {
         reply(true);return;
       }
       if(request.kind==='pickup_weapon'){const player=room.players.get(socket.id)!;reply(pickupBombWeapon(b,room.world,MAPS[room.map],player.state,room.tick));return;}
-      if(request.kind==='drop_weapon'){const player=room.players.get(socket.id)!;const success=dropBombWeapon(b,room.world,player.state,room.tick);if(success)player.pendingFire=undefined;reply(success,success?undefined:'Bu silah bırakılamaz.');return;}
+      if(request.kind==='drop_weapon'){const player=room.players.get(socket.id)!;const success=room.map!=='bolluca'&&dropBombWeapon(b,room.world,player.state,room.tick);if(success)player.pendingFire=undefined;reply(success,success?undefined:'Bu silah bırakılamaz.');return;}
       if(request.kind==='drop'){reply(dropBomb(b,socket.id));return;}
       if(request.kind==='fast_detonate'){
         // The UI hiding this test shortcut is not an authorization boundary.
