@@ -317,26 +317,27 @@ export default function KapIBCalculator({
       
       {/* KapsCulator Navigation Bar */}
       {(onBackToHub || onSwitchToKilicKepenek) && (
-        <div className="bg-slate-900 text-white px-4 sm:px-6 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs sticky top-0 z-40 shadow-sm shrink-0">
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-slate-900 dark:text-white px-4 sm:px-6 py-2.5 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs sticky top-0 z-40 shadow-2xs shrink-0 transition-colors">
           <div className="flex items-center gap-2.5">
             {onBackToHub && (
               <button
                 onClick={onBackToHub}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold transition-all border border-slate-700 hover:border-slate-600 cursor-pointer shadow-xs active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold transition-all border border-slate-200/80 dark:border-slate-700 cursor-pointer active:scale-95"
               >
-                <ArrowLeft className="w-3.5 h-3.5 text-indigo-400" />
-                <span>KapsCulator Ana Sayfası</span>
+                <ArrowLeft className="w-3.5 h-3.5 text-indigo-500" />
+                <span>KapsCulator Stüdyosu</span>
               </button>
             )}
-            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-bold border border-indigo-500/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
-              KapsCulator Original Aktif
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span>·</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+              <span>KapsCulator Original Aktif</span>
             </span>
           </div>
           {onSwitchToKilicKepenek && (
             <button
               onClick={onSwitchToKilicKepenek}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-md shadow-emerald-600/30 cursor-pointer active:scale-95"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-xs cursor-pointer active:scale-95"
             >
               <span>Kılıç Kepenek Version'a Geç</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -358,7 +359,7 @@ export default function KapIBCalculator({
           <div className="flex items-center gap-2">
             <AlertTriangle size={15} className="text-amber-500 shrink-0" />
             <span className="font-semibold">
-              <span className="font-bold underline">Third-Party Sourced / Provisional (Geçici Veri)</span>: 
+              <span className="font-bold underline">Provisional (Geçici Veri)</span>: 
               RevisionDojo, IB Predict ve resmi 2024–2025 arşivlerinden derlenmiştir. Doğrulanmamış veriler null (—) bırakılmıştır.
             </span>
           </div>
@@ -373,26 +374,30 @@ export default function KapIBCalculator({
       </div>
 
       {/* Top Header Banner */}
-      <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 shadow-sm">
+      <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 shrink-0 shadow-2xs">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25 shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
               <Calculator size={24} />
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-                  KapsCulator
+                  KapsCulator Original
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold text-xs border border-indigo-200 dark:border-indigo-800/60">
+                <span>·</span>
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400">
                   IB Predicted Grade Simülatörü
                 </span>
                 {currentUserRoles.length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-                    <UserCheck size={12} />
-                    <span>Roller Eşlendi</span>
-                  </span>
+                  <>
+                    <span>·</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      <UserCheck size={12} />
+                      <span>Roller Eşlendi</span>
+                    </span>
+                  </>
                 )}
               </div>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">

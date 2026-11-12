@@ -65,8 +65,10 @@ export default function Feed({
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
 
-  // Folder View Mode: 'feed' or 'gallery'
-  const [folderViewMode, setFolderViewMode] = useState<"feed" | "gallery">("feed");
+  // Folder View Mode: 'all' (Unified Studio), 'files' (Course Files & IA/EE), 'feed' (Discussion), or 'gallery' (Media)
+  const [folderViewMode, setFolderViewMode] = useState<"all" | "files" | "feed" | "gallery">("all");
+  const [feedSearchQuery, setFeedSearchQuery] = useState("");
+  const [feedMediaFilter, setFeedMediaFilter] = useState<"all" | "media">("all");
 
   const [newPostCaption, setNewPostCaption] = useState("");
   const [selectedMediaList, setSelectedMediaList] = useState<SelectedMediaItem[]>([]);
@@ -765,128 +767,285 @@ export default function Feed({
 
   const mediaPosts = posts.filter(p => !!p.image);
 
+  const visiblePosts = posts.filter((p) => {
+    if (feedMediaFilter === "media" && !p.image) return false;
+    const q = feedSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (p.username || "").toLowerCase().includes(q) ||
+      (p.caption || "").toLowerCase().includes(q)
+    );
+  });
+
+  const ALL_COURSE_KEYS = [
+    "Mathematics",
+    "Physics",
+    "Turkish",
+    "Chemistry",
+    "Biology",
+    "Digital Society",
+    "English",
+    "TITC"
+  ];
+
   return (
     <div className="relative flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
       {activeSubject && <SubjectDecor subject={activeSubject} />}
-      <div className={`relative mx-auto pb-24 transition-all duration-200 ${activeSubject ? 'w-full max-w-6xl px-3 sm:px-6 lg:px-8 py-4 space-y-6' : 'max-w-xl'}`}>
+      <div className={`relative mx-auto pb-24 transition-all duration-200 ${activeSubject ? 'w-full max-w-6xl px-3 sm:px-6 lg:px-8 py-4 space-y-5' : 'max-w-2xl px-0 sm:px-4 py-0 sm:py-4'}`}>
         
-        {/* Subject Header & Folder Gallery Switch */}
+        {/* ================================================================= */}
+        {/* ACADEMIC COURSE STUDIO HEADER & QUICK COURSE SWITCHER             */}
+        {/* ================================================================= */}
         {activeSubject && (
-          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-4 sm:px-5 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800 shadow-sm sticky top-0 z-[50] transition-colors duration-200">
-            <div className="flex items-center justify-between gap-2.5 sm:gap-3">
-              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                {onBackToFolders && (
-                  <button
-                    type="button"
-                    onClick={onBackToFolders}
-                    className="p-2 -ml-1 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
-                    title="Ders Klasörlerine Dön"
+          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs sticky top-2 z-[50] transition-colors duration-200 overflow-hidden">
+            {/* Top Course Switcher Strip */}
+            <div className="px-4 py-2 bg-slate-50/80 dark:bg-slate-950/60 border-b border-slate-200/60 dark:border-slate-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+              {onBackToFolders && (
+                <button
+                  type="button"
+                  onClick={onBackToFolders}
+                  className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-200 font-bold hover:border-indigo-400 transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <ArrowLeft size={13} />
+                  <span>Tüm Klasörler</span>
+                </button>
+              )}
+              <span className="text-slate-300 dark:text-slate-700 mx-0.5">|</span>
+              {ALL_COURSE_KEYS.map((subj) => {
+                const isCurrent = subj === activeSubject;
+                return (
+                  <Link
+                    key={subj}
+                    to={`/dersler/${encodeURIComponent(subj)}`}
+                    className={`px-2.5 py-1 rounded-lg font-semibold whitespace-nowrap transition-all shrink-0 ${
+                      isCurrent
+                        ? "bg-indigo-600 text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                    }`}
                   >
-                    <ArrowLeft size={19} />
-                  </button>
-                )}
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 shadow-inner">
-                  <Folder size={19} />
+                    {subj}
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Main Subject Studio Title & Workspace Mode Tabs */}
+            <div className="px-4 sm:px-5 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Folder size={20} />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {activeSubject}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 truncate tracking-tight">
+                      {activeSubject} · Akademik Stüdyo
                     </h2>
-                    <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-full">
-                      {posts.length} Gönderi
-                    </span>
                   </div>
-                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
-                    {mediaPosts.length} Medya dosyası & arşiv
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate tabular-nums">
+                    {posts.length} tartışma & not · {mediaPosts.length} görsel materyal · Past Papers & IA/EE Arşivi
                   </p>
                 </div>
               </div>
 
-              {/* View Mode Toggle: Feed vs Gallery */}
-              <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setFolderViewMode("feed")}
-                  className={`p-1.5 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    folderViewMode === "feed"
-                      ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm"
-                      : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`}
-                  title="Akış Görünümü"
-                >
-                  <List size={14} />
-                  <span className="hidden sm:inline">Akış</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFolderViewMode("gallery")}
-                  className={`p-1.5 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    folderViewMode === "gallery"
-                      ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm"
-                      : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`}
-                  title="Galeri / Tüm Fotoğraflar"
-                >
-                  <LayoutGrid size={14} />
-                  <span className="hidden sm:inline">Galeri</span>
-                </button>
+              {/* 4-Way Segmented Academic Workspace Mode Bar */}
+              <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800/90 rounded-2xl border border-slate-200/70 dark:border-slate-700/70 overflow-x-auto no-scrollbar shrink-0">
+                {[
+                  { id: "all", label: "Birleşik Stüdyo" },
+                  { id: "files", label: "Dosyalar & IA/EE" },
+                  { id: "feed", label: `Soru & Akış (${posts.length})` },
+                  { id: "gallery", label: `Galeri (${mediaPosts.length})` },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFolderViewMode(tab.id as any)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer tabular-nums ${
+                      folderViewMode === tab.id
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                        : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
         )}
 
-        {/* Stories - Only show on main general feed */}
+        {/* Stories & Social Feed Toolbar - Only show on main general feed (/akis) */}
         {!activeSubject && (
-          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 border-b border-slate-100 dark:border-slate-800 flex gap-4 overflow-x-auto shadow-sm sticky top-0 z-[50] scrollbar-hide transition-colors duration-200">
-            <div className="flex flex-col items-center gap-1 min-w-[72px]">
-              <div className="relative w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center overflow-hidden cursor-pointer hover:border-blue-500 transition-colors">
-                <Plus size={24} className="text-slate-400 dark:text-slate-500" />
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                  onChange={handleStoryUpload}
-                />
-              </div>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Hikaye Ekle</span>
-            </div>
-            {stories.map((story) => (
-              <div
-                key={story.id}
-                className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer group"
-                onClick={() => openStoryModal(story)}
-              >
-                <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-fuchsia-600 transition-transform group-hover:scale-105">
-                  {story.image.endsWith(".mp4") || story.image.endsWith(".webm") ? (
-                    <div className="w-full h-full rounded-full border-2 border-white dark:border-slate-900 bg-black flex items-center justify-center overflow-hidden">
-                      <Film size={20} className="text-white" />
-                    </div>
-                  ) : (
-                    <img
-                      src={story.image}
-                      referrerPolicy="no-referrer"
-                      alt={story.username}
-                      className="w-full h-full rounded-full object-cover border-2 border-white dark:border-slate-900 bg-white dark:bg-slate-900"
-                    />
-                  )}
+          <div className="space-y-3">
+            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 sm:rounded-3xl border-b sm:border border-slate-200/80 dark:border-slate-800 flex gap-4 overflow-x-auto shadow-2xs sticky top-0 z-[50] scrollbar-hide transition-colors duration-200">
+              <div className="flex flex-col items-center gap-1 min-w-[72px]">
+                <div className="relative w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center overflow-hidden cursor-pointer hover:border-indigo-500 transition-colors">
+                  <Plus size={24} className="text-slate-400 dark:text-slate-500" />
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    onChange={handleStoryUpload}
+                  />
                 </div>
-                <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full text-center group-hover:underline">
-                  {story.username}
-                </span>
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Hikaye Ekle</span>
               </div>
-            ))}
+              {stories.map((story) => (
+                <div
+                  key={story.id}
+                  className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer group"
+                  onClick={() => openStoryModal(story)}
+                >
+                  <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-fuchsia-600 transition-transform group-hover:scale-105">
+                    {story.image.endsWith(".mp4") || story.image.endsWith(".webm") ? (
+                      <div className="w-full h-full rounded-full border-2 border-white dark:border-slate-900 bg-black flex items-center justify-center overflow-hidden">
+                        <Film size={20} className="text-white" />
+                      </div>
+                    ) : (
+                      <img
+                        src={story.image}
+                        referrerPolicy="no-referrer"
+                        alt={story.username}
+                        className="w-full h-full rounded-full object-cover border-2 border-white dark:border-slate-900 bg-white dark:bg-slate-900"
+                      />
+                    )}
+                  </div>
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full text-center group-hover:underline">
+                    {story.username}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Social Feed Filter & Search Bar */}
+            <div className="bg-white dark:bg-slate-900 px-4 py-3 sm:rounded-2xl border-y sm:border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl self-start">
+                <button
+                  type="button"
+                  onClick={() => setFeedMediaFilter("all")}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer tabular-nums ${
+                    feedMediaFilter === "all"
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
+                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  Tüm Akış ({posts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeedMediaFilter("media")}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer tabular-nums ${
+                    feedMediaFilter === "media"
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
+                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  Görseller ({mediaPosts.length})
+                </button>
+              </div>
+
+              <div className="relative flex-1 sm:max-w-xs">
+                <input
+                  type="text"
+                  value={feedSearchQuery}
+                  onChange={(e) => setFeedSearchQuery(e.target.value)}
+                  placeholder="Gönderi veya @kullanıcı ara..."
+                  className="w-full px-3.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {feedSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setFeedSearchQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Posts & Feed Body (relative z-10 ensures it stays under sticky top z-[50]) */}
-        <div className="relative z-10">
-        {/* Create Post Form */}
-        <div className="bg-white dark:bg-slate-900 p-4 my-4 shadow-sm border border-slate-100 dark:border-slate-800 md:rounded-2xl mx-0 md:mx-4 lg:mx-0 transition-colors duration-200">
+        {/* Posts & Studio Body */}
+        <div className="relative z-10 space-y-5">
+
+        {/* IA/EE & Course Files Section (Shown when in 'all' or 'files' mode inside a Subject) */}
+        {activeSubject && (folderViewMode === "all" || folderViewMode === "files") && (
+          <div className="space-y-4">
+            {/* IA & EE Direct Resource Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Link
+                to={subjectResourcesLink(activeSubject, "ia")}
+                className="group flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all shadow-2xs"
+              >
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-0.5">
+                    Internal Assessment
+                  </div>
+                  <div className="text-sm font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                    {activeSubject} IA Arşivi
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Puanlanmış IA örnekleri ve kriterler
+                  </div>
+                </div>
+                <ChevronRight size={18} className="shrink-0 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+
+              <Link
+                to={subjectResourcesLink(activeSubject, "ee")}
+                className="group flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all shadow-2xs"
+              >
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-0.5">
+                    Extended Essay
+                  </div>
+                  <div className="text-sm font-black text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                    {activeSubject} EE Örnekleri
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Akademik makaleler ve rehberler
+                  </div>
+                </div>
+                <ChevronRight size={18} className="shrink-0 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+
+              <Link
+                to={subjectResourcesLink(activeSubject)}
+                className="group flex items-center justify-between gap-3 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-4 hover:border-indigo-400 transition-all shadow-2xs"
+              >
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-0.5">
+                    Tam Koleksiyon
+                  </div>
+                  <div className="text-sm font-black text-slate-900 dark:text-white">
+                    IA / EE Seçim Ekranı
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                    Klasör yükleme & puanlama stüdyosu
+                  </div>
+                </div>
+                <Layers size={18} className="shrink-0 text-indigo-500" />
+              </Link>
+            </div>
+
+            {/* Course Files / PDF & Document Repository for Active Subject */}
+            <CourseFilesManager
+              courseId={activeSubject}
+              courseTitle={activeSubject}
+              socket={socket}
+              currentUserId={currentUserId}
+              currentUsername={currentUsername || 'Kullanıcı'}
+            />
+          </div>
+        )}
+
+        {/* Create Post Form (Shown on general feed OR when in 'all' or 'feed' mode inside a Subject) */}
+        {(!activeSubject || folderViewMode === "all" || folderViewMode === "feed") && (
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-2xs border border-slate-200/80 dark:border-slate-800 sm:rounded-3xl transition-colors duration-200">
           <form onSubmit={handlePostSubmit}>
             <textarea
-              placeholder={activeSubject ? `${activeSubject} klasöründe fotoğraf, video veya düşünce paylaş... (50 dosyaya kadar)` : "Ne düşünüyorsun? Fotoğraf veya video paylaş... (Ctrl+Enter ile paylaş)"}
-              className="w-full bg-transparent border-none focus:ring-0 resize-none mb-3 text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 outline-none p-2 text-base md:text-lg"
+              placeholder={activeSubject ? `${activeSubject} çalışma alanında soru sor, ders notu veya fotoğraf/video paylaş... (50 dosyaya kadar)` : "Ne düşünüyorsun? Fotoğraf, ders notu veya düşünce paylaş... (Ctrl+Enter ile paylaş)"}
+              className="w-full bg-transparent border-none focus:ring-0 resize-none mb-3 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none p-1.5 text-sm sm:text-base"
               rows={2}
               value={newPostCaption}
               onChange={(e) => setNewPostCaption(e.target.value)}
@@ -939,7 +1098,6 @@ export default function Feed({
                         />
                       )}
                       
-                      {/* Remove Button */}
                       <button
                         type="button"
                         onClick={() => handleRemoveMedia(idx)}
@@ -981,8 +1139,8 @@ export default function Feed({
 
             <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
               <div className="flex items-center gap-1">
-                <label className="text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-3 py-2 rounded-full cursor-pointer transition-colors flex items-center gap-2 text-sm font-medium">
-                  <ImagePlus size={20} />
+                <label className="text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3 py-2 rounded-xl cursor-pointer transition-colors flex items-center gap-2 text-xs sm:text-sm font-bold">
+                  <ImagePlus size={18} />
                   <span>Fotoğraf / Video Ekle</span>
                   <input
                     type="file"
@@ -997,7 +1155,7 @@ export default function Feed({
               <button
                 type="submit"
                 disabled={(!newPostCaption.trim() && selectedMediaList.length === 0) || isSubmitting}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-full shadow-md transition-colors cursor-pointer flex items-center gap-2 text-sm font-bold"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-2 text-xs sm:text-sm font-bold"
               >
                 {isSubmitting ? (
                   <>
@@ -1011,32 +1169,11 @@ export default function Feed({
             </div>
           </form>
         </div>
-
-        {activeSubject && (
-          <Link to={subjectResourcesLink(activeSubject)} className="flex w-full items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-indigo-950 hover:border-indigo-400 focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-100">
-            <Layers size={19} className="shrink-0 text-indigo-500" />
-            <span className="min-w-0 flex-1">
-              <strong className="block text-sm">IA/EE Kaynakları</strong>
-              <span className="block text-xs text-indigo-700 dark:text-indigo-300">Örnekler, kılavuzlar ve araştırma dosyaları</span>
-            </span>
-            <ChevronRight size={17} className="shrink-0" />
-          </Link>
-        )}
-
-        {/* Course Files / PDF & Document Repository for Active Subject */}
-        {activeSubject && (
-          <CourseFilesManager
-            courseId={activeSubject}
-            courseTitle={activeSubject}
-            socket={socket}
-            currentUserId={currentUserId}
-            currentUsername={currentUsername || 'Kullanıcı'}
-          />
         )}
 
         {/* Gallery View (When user selects Galeri mode inside folder) */}
         {activeSubject && folderViewMode === "gallery" ? (
-          <div className="px-3 sm:px-0">
+          <div className="px-1 sm:px-0">
             {mediaPosts.length > 0 && (
               <div className="mb-4 flex justify-end">
                 <button
@@ -1060,27 +1197,26 @@ export default function Feed({
                     const content = await zip.generateAsync({ type: 'blob' });
                     saveAs(content, 'galeri_medyalari.zip');
                   }}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-all cursor-pointer"
                 >
                   Tümünü İndir (.zip)
                 </button>
               </div>
             )}
             {mediaPosts.length === 0 ? (
-              <div className="p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <div className="p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800">
                 <Film size={36} className="mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                <p className="font-medium text-slate-700 dark:text-slate-300">Bu klasörde henüz medya bulunmuyor.</p>
-                <p className="text-xs text-slate-400 mt-1">Yukarıdaki alandan ilk fotoğraf veya videoyu yükleyebilirsiniz.</p>
+                <p className="font-bold text-slate-700 dark:text-slate-300">Bu klasörde henüz medya bulunmuyor.</p>
+                <p className="text-xs text-slate-400 mt-1">Paylaşım alanından ilk fotoğraf veya videoyu yükleyebilirsiniz.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {mediaPosts.map((post) => (
                   <div
                     key={`gal_${post.id}`}
                     onClick={() => openPostModal(post)}
-                    className="relative aspect-square bg-neutral-900 rounded-xl overflow-hidden group cursor-pointer border border-neutral-800 shadow-xs"
+                    className="relative aspect-square bg-neutral-900 rounded-2xl overflow-hidden group cursor-pointer border border-neutral-800 shadow-xs"
                   >
-                    {/* Ambient Blur */}
                     <img
                       src={post.image!}
                       alt=""
@@ -1088,7 +1224,6 @@ export default function Feed({
                       referrerPolicy="no-referrer"
                       className="absolute inset-0 w-full h-full object-cover blur-xl opacity-40 scale-125 pointer-events-none"
                     />
-                    {/* Foreground Object Contain */}
                     <img
                       src={post.image!}
                       alt={post.caption || "Medya"}
@@ -1100,7 +1235,7 @@ export default function Feed({
                         <Film size={13} />
                       </div>
                     )}
-                    <div className="absolute inset-0 z-20 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 text-white text-xs">
+                    <div className="absolute inset-0 z-20 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2.5 text-white text-xs">
                       <span className="truncate">{post.username}: {post.caption || "Medya"}</span>
                     </div>
                   </div>
@@ -1108,10 +1243,10 @@ export default function Feed({
               </div>
             )}
           </div>
-        ) : (
+        ) : (!activeSubject || folderViewMode === "all" || folderViewMode === "feed") ? (
           /* Standard Posts Feed List */
-          <div className="space-y-4 md:px-0 mx-0 md:mx-4 lg:mx-0">
-            {posts.map((post) => (
+          <div className="space-y-4">
+            {visiblePosts.map((post) => (
               <PostCard
                 key={post.id}
                 post={post}
@@ -1132,27 +1267,27 @@ export default function Feed({
               />
             ))}
 
-            {posts.length === 0 && (
-              <div className="p-8 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 md:rounded-2xl border-y md:border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-200">
-                Henüz gönderi yok.
+            {visiblePosts.length === 0 && (
+              <div className="p-10 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-2xs transition-colors duration-200">
+                {feedSearchQuery ? `"${feedSearchQuery}" aramasıyla eşleşen gönderi bulunamadı.` : "Henüz gönderi bulunmuyor."}
               </div>
             )}
           </div>
-        )}
+        ) : null}
 
         {/* Infinite Scroll Trigger & Manual Load More */}
-        {hasMore && (
+        {hasMore && (!activeSubject || folderViewMode === "all" || folderViewMode === "feed") && (
           <div ref={loadMoreRef} className="py-6 flex justify-center items-center">
             {isLoadingOlder ? (
               <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm">
-                <Loader2 size={18} className="animate-spin text-blue-500" />
+                <Loader2 size={18} className="animate-spin text-indigo-500" />
                 <span>Daha eski gönderiler yükleniyor...</span>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={loadOlderPosts}
-                className="px-5 py-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
               >
                 <ChevronDown size={14} />
                 <span>Daha Fazla Gönderi Yükle</span>

@@ -25,7 +25,9 @@ import {
   Award,
   ArrowRight,
   Star,
-  Timer
+  Timer,
+  Search,
+  ListFilter
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import { AgendaEvent, isVisibleToUser, parseTargetRoles } from "../types";
@@ -82,11 +84,12 @@ export default function Agenda({
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>("all");
   const [onlyMyExams, setOnlyMyExams] = useState<boolean>(false);
-  const [agendaViewMode, setAgendaViewMode] = useState<"calendar" | "mock_overlay">("calendar");
+  const [agendaSearchQuery, setAgendaSearchQuery] = useState<string>("");
+  const [agendaViewMode, setAgendaViewMode] = useState<"calendar" | "list" | "mock_overlay">("calendar");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Selected Day for Desktop Modal & Mobile Bottom Drawer
-  const [selectedDayDate, setSelectedDayDate] = useState<string | null>(null);
+  // Selected Day for Desktop Live Inspector & Mobile Bottom Drawer
+  const [selectedDayDate, setSelectedDayDate] = useState<string | null>(() => new Date().toISOString().split("T")[0]);
   const [isDayDrawerOpen, setIsDayDrawerOpen] = useState(false);
 
   // Dedicated Food Menu Modal State
@@ -335,9 +338,10 @@ export default function Agenda({
     return days;
   }, [year, month]);
 
-  // Group events by date string (filtered by user course roles & user selections)
+  // Group events by date string (filtered by user course roles, search & user selections)
   const eventsByDate = useMemo(() => {
     const map: Record<string, AgendaEvent[]> = {};
+    const q = agendaSearchQuery.trim().toLowerCase();
     events.forEach((ev) => {
       // Role visibility check: hidden if not visible to this user
       if (!isVisibleToUser((ev as any).targetRoles || (ev as any).target_roles, effectiveRoles, isEmirgan)) {
@@ -350,25 +354,35 @@ export default function Agenda({
       if (selectedTypeFilter !== "all" && ev.event_type !== selectedTypeFilter) {
         return;
       }
+      if (q) {
+        const hay = `${ev.title || ""} ${ev.description || ""} ${ev.event_date || ""}`.toLowerCase();
+        if (!hay.includes(q)) return;
+      }
       if (!map[ev.event_date]) map[ev.event_date] = [];
       map[ev.event_date].push(ev);
     });
     return map;
-  }, [events, selectedTypeFilter, onlyMyExams, effectiveRoles, isEmirgan]);
+  }, [events, selectedTypeFilter, onlyMyExams, agendaSearchQuery, effectiveRoles, isEmirgan]);
 
   const handlePrevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
+    const next = new Date(year, month - 1, 1);
+    setCurrentDate(next);
+    setSelectedDayDate(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`);
   };
 
   const handleNextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
+    const next = new Date(year, month + 1, 1);
+    setCurrentDate(next);
+    setSelectedDayDate(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`);
   };
 
   const handleTodayClick = () => {
     const today = new Date();
     setCurrentDate(today);
     setSelectedDayDate(today.toISOString().split("T")[0]);
-    setIsDayDrawerOpen(true);
+    if (window.innerWidth < 1024) {
+      setIsDayDrawerOpen(true);
+    }
   };
 
   const handleJumpToPreMock = () => {
@@ -376,12 +390,16 @@ export default function Agenda({
     setCurrentDate(new Date(2026, 9, 1)); // 9 = October
     setSelectedDayDate("2026-10-12");
     setSelectedTypeFilter("all");
-    setIsDayDrawerOpen(true);
+    if (window.innerWidth < 1024) {
+      setIsDayDrawerOpen(true);
+    }
   };
 
   const handleDayClick = (dateStr: string) => {
     setSelectedDayDate(dateStr);
-    setIsDayDrawerOpen(true);
+    if (window.innerWidth < 1024) {
+      setIsDayDrawerOpen(true);
+    }
   };
 
   const handleOpenAddForm = (dateStr?: string) => {
@@ -580,228 +598,239 @@ export default function Agenda({
     return list;
   }, [selectedDayDate, eventsByDate, onlyMyExams]);
 
+  const sortedEventDates = useMemo(() => {
+    return Object.keys(eventsByDate)
+      .filter((d) => (eventsByDate[d] || []).length > 0)
+      .sort((a, b) => a.localeCompare(b));
+  }, [eventsByDate]);
+
+  const totalMonthFilteredEvents = useMemo(() => {
+    return sortedEventDates.reduce((acc, d) => acc + (eventsByDate[d]?.length || 0), 0);
+  }, [sortedEventDates, eventsByDate]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200">
       
-      {/* 1. TOP PRE-MOCK 3 COUNTDOWN BANNER WIDGET */}
-      <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-indigo-950 border-b border-rose-500/30 text-white px-4 sm:px-6 py-2.5 shadow-md shrink-0 relative overflow-hidden">
-        <div className="absolute -right-8 -bottom-8 opacity-10 text-white pointer-events-none">
-          <GraduationCap size={120} />
-        </div>
-
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-500 to-amber-400 text-slate-950 flex items-center justify-center font-black text-sm shadow-md shrink-0">
-              ⏳
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/30 text-rose-300 border border-rose-500/40">
-                  {countdown.title}
-                </span>
-                <span className="text-xs text-slate-300 font-medium hidden md:inline">
-                  Resmi Sınav Kuşağı (03 - 13 Kasım 2026)
-                </span>
-              </div>
-              <p className="text-xs font-bold text-white mt-0.5 flex items-center gap-1.5">
-                <span>{countdown.subtitle}</span>
-              </p>
-            </div>
+      {/* 1. THEME-ADAPTIVE EXAM WINDOW COMMAND BAR */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 py-2.5 shrink-0 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 text-xs">
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+            <span className="font-bold text-slate-900 dark:text-white">
+              {countdown.title}
+            </span>
+            <span className="text-slate-400 hidden sm:inline">·</span>
+            <span className="text-slate-500 dark:text-slate-400 truncate">
+              {countdown.subtitle}
+            </span>
           </div>
 
-          {/* Live Countdown Timer Badges */}
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-3 self-start sm:self-auto">
             {!countdown.isPassed ? (
-              <div className="flex items-center gap-1.5 font-mono text-xs font-black">
-                <div className="px-2 py-1 rounded-lg bg-black/40 border border-rose-500/30 text-rose-300 flex flex-col items-center">
-                  <span className="text-sm leading-tight text-white">{countdown.days}</span>
-                  <span className="text-[9px] uppercase font-sans text-rose-400">Gün</span>
-                </div>
-                <span className="text-rose-400 font-bold">:</span>
-                <div className="px-2 py-1 rounded-lg bg-black/40 border border-rose-500/30 text-rose-300 flex flex-col items-center">
-                  <span className="text-sm leading-tight text-white">{String(countdown.hours).padStart(2, '0')}</span>
-                  <span className="text-[9px] uppercase font-sans text-rose-400">Saat</span>
-                </div>
-                <span className="text-rose-400 font-bold">:</span>
-                <div className="px-2 py-1 rounded-lg bg-black/40 border border-rose-500/30 text-rose-300 flex flex-col items-center">
-                  <span className="text-sm leading-tight text-white">{String(countdown.minutes).padStart(2, '0')}</span>
-                  <span className="text-[9px] uppercase font-sans text-rose-400">Dk</span>
-                </div>
-                <span className="text-rose-400 font-bold hidden xs:inline">:</span>
-                <div className="px-2 py-1 rounded-lg bg-black/40 border border-rose-500/30 text-rose-300 flex-col items-center hidden xs:flex">
-                  <span className="text-sm leading-tight text-amber-400">{String(countdown.seconds).padStart(2, '0')}</span>
-                  <span className="text-[9px] uppercase font-sans text-amber-400">Sn</span>
-                </div>
+              <div className="flex items-center gap-1.5 font-mono text-xs font-bold tabular-nums text-rose-600 dark:text-rose-400">
+                <span>{countdown.days}g</span>
+                <span>:</span>
+                <span>{String(countdown.hours).padStart(2, "0")}s</span>
+                <span>:</span>
+                <span>{String(countdown.minutes).padStart(2, "0")}d</span>
+                <span className="hidden xs:inline">:</span>
+                <span className="hidden xs:inline">{String(countdown.seconds).padStart(2, "0")}sn</span>
               </div>
             ) : (
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
-                Sınav Dönemi Aktif / Tamamlandı
+              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                Sınav Dönemi Aktif · 03–13 Kasım 2026
               </span>
             )}
 
             <button
               onClick={handleJumpToPreMock}
-              className="ml-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1 active:scale-95 whitespace-nowrap"
+              className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95 whitespace-nowrap"
             >
               <span>Ekim 2026'ya Git</span>
-              <ArrowRight size={13} />
+              <ArrowRight size={12} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. Top Header & Calendar Controls */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 shadow-xs shrink-0 z-10 transition-colors duration-200">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          
-          {/* Title & Month Navigation */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-inner shrink-0">
-              <CalendarDays size={22} />
+      {/* 2. TOP WORKSPACE TOOLBAR: MONTH NAV, SEARCH, VIEW MODES & FILTERS */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 py-4 shadow-2xs shrink-0 z-10 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto flex flex-col gap-3.5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            
+            {/* Title & Month Navigation */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 flex items-center justify-center shrink-0">
+                <CalendarDays size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                    {MONTH_NAMES_TR[month]} {year}
+                  </h1>
+                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                    <button
+                      type="button"
+                      onClick={handlePrevMonth}
+                      className="p-1 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                      title="Önceki Ay"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleTodayClick}
+                      className="px-2 py-0.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Bugün
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextMonth}
+                      className="p-1 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                      title="Sonraki Ay"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+                  Akademik Takvim, Pre-Mock Sınavları ve Yemek Menüsü · Bu ayda {totalMonthFilteredEvents} kayıt
+                </p>
+              </div>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-                  {MONTH_NAMES_TR[month]} {year}
-                </h1>
+
+            {/* Search Input + Schedule Modal + Admin Add */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative flex-1 sm:flex-initial sm:w-64">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={agendaSearchQuery}
+                  onChange={(e) => setAgendaSearchQuery(e.target.value)}
+                  placeholder="Sınav, etüt veya menü ara..."
+                  className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                />
+                {agendaSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setAgendaSearchQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsScheduleModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+                title="Kişiselleştirilmiş Günlük ve Haftalık Ders Programınızı Görüntüleyin"
+              >
+                <CalendarDays size={15} className="shrink-0" />
+                <span>Günlük Ders Programım</span>
+              </button>
+
+              {isEmirgan && (
                 <button
                   type="button"
-                  onClick={handleTodayClick}
-                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60 transition-colors cursor-pointer"
+                  onClick={() => handleOpenAddForm()}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
                 >
-                  Bugün
+                  <Plus size={15} />
+                  <span>Etkinlik Ekle</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filter Sub-Tabs & 3-Way View Mode Switcher */}
+          <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex-wrap">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              {[
+                { id: "all", label: "Tümü" },
+                { id: "exam", label: "Sınavlar", dot: "bg-rose-500" },
+                { id: "food", label: "Yemek Menüsü", dot: "bg-emerald-500" },
+                { id: "study", label: "Etütler", dot: "bg-indigo-500" },
+                { id: "homework", label: "Ödev & Proje", dot: "bg-blue-500" },
+                { id: "event", label: "Etkinlikler", dot: "bg-amber-500" },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setSelectedTypeFilter(f.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                    selectedTypeFilter === f.id
+                      ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {f.dot && <span className={`w-2 h-2 rounded-full ${f.dot}`} />}
+                  <span>{f.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              {/* 3-Way View Mode Switcher */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
+                <button
+                  type="button"
+                  onClick={() => setAgendaViewMode("calendar")}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    agendaViewMode === "calendar"
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  Ay & Gün İnceleyici
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAgendaViewMode("list")}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                    agendaViewMode === "list"
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <ListFilter size={13} />
+                  <span>Zaman Çizelgesi</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAgendaViewMode("mock_overlay")}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    agendaViewMode === "mock_overlay"
+                      ? "bg-amber-400 text-slate-950 font-black shadow-xs"
+                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <span>Mock Sınav Çizelgesi</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                 </button>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Okul Ajandası, Pre-Mock 3 Sınav Takvimi ve Yemek Menüsü
-              </p>
-            </div>
-          </div>
 
-          {/* Action Bar: Month Prev/Next & Filter & Admin Add */}
-          <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-            {/* Dynamic Daily Course Schedule Modal Button */}
-            <button
-              type="button"
-              onClick={() => setIsScheduleModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white text-xs font-black shadow-md shadow-indigo-500/20 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
-              title="Kişiselleştirilmiş Günlük ve Haftalık Ders Programınızı Görüntüleyin"
-            >
-              <CalendarDays size={15} className="text-blue-200 shrink-0" />
-              <span>📅 Günlük Ders Programım</span>
-            </button>
-
-            {/* Prev / Next Month Buttons */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+              {/* User's Own Enrolled Courses Toggle */}
               <button
-                type="button"
-                onClick={handlePrevMonth}
-                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                title="Önceki Ay"
+                onClick={() => setOnlyMyExams(prev => !prev)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shrink-0 ${
+                  onlyMyExams
+                    ? "bg-amber-500 text-slate-950 border-amber-400 shadow-xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200"
+                }`}
+                title="Sadece kayıtlı olduğunuz IB derslerinin sınavlarını görüntüler"
               >
-                <ChevronLeft size={18} />
-              </button>
-              <button
-                type="button"
-                onClick={handleNextMonth}
-                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                title="Sonraki Ay"
-              >
-                <ChevronRight size={18} />
+                <Star size={13} className={onlyMyExams ? "fill-slate-950 text-slate-950" : "text-amber-500"} />
+                <span>Yalnızca Sınavlarım</span>
               </button>
             </div>
-
-            {/* Admin Add Event Button */}
-            {isEmirgan && (
-              <button
-                type="button"
-                onClick={() => handleOpenAddForm()}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
-              >
-                <Plus size={16} />
-                <span>Etkinlik Ekle</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Filter Pills & User Role Exam Toggle */}
-        <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex-wrap">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-            <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 mr-1 shrink-0 flex items-center gap-1">
-              <Filter size={12} />
-              Filtre:
-            </span>
-            {[
-              { id: "all", label: "Tümü" },
-              { id: "exam", label: "🎓 Pre-Mock 3 Sınavları", dot: "bg-rose-500" },
-              { id: "food", label: "🍲 Yemek Menüsü", dot: "bg-emerald-500" },
-              { id: "study", label: "📚 Etütler", dot: "bg-indigo-500" },
-              { id: "homework", label: "📝 Ödev / Proje", dot: "bg-blue-500" },
-              { id: "event", label: "🎯 Etkinlik", dot: "bg-amber-500" },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setSelectedTypeFilter(f.id)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                  selectedTypeFilter === f.id
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-                }`}
-              >
-                {f.dot && <span className={`w-2 h-2 rounded-full ${f.dot}`} />}
-                <span>{f.label}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-            {/* View Mode Switcher: Genel Takvim vs Mock Sınav Çizelgesi */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-full border border-slate-200/80 dark:border-slate-700/80">
-              <button
-                type="button"
-                onClick={() => setAgendaViewMode("calendar")}
-                className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                  agendaViewMode === "calendar"
-                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
-                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                📅 Genel Takvim
-              </button>
-              <button
-                type="button"
-                onClick={() => setAgendaViewMode("mock_overlay")}
-                className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  agendaViewMode === "mock_overlay"
-                    ? "bg-amber-400 text-slate-950 font-black shadow-xs"
-                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <span>📝 Mock Sınav Çizelgesi (12-26 Ekim)</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-              </button>
-            </div>
-
-            {/* User's Own Enrolled Courses Toggle */}
-            <button
-              onClick={() => setOnlyMyExams(prev => !prev)}
-              className={`px-3.5 py-1 rounded-full text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border shrink-0 ${
-                onlyMyExams
-                  ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200"
-              }`}
-              title="Sadece kayıtlı olduğunuz IB derslerinin sınavlarını görüntüler"
-            >
-              <Star size={13} className={onlyMyExams ? "fill-slate-950 text-slate-950" : "text-amber-500"} />
-              <span>Yalnızca Sınavlarımı Göster</span>
-            </button>
           </div>
         </div>
       </div>
 
-      {/* 3. Main Calendar View Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 pb-24 sm:p-4 sm:pb-6 md:p-6 touch-pan-y overscroll-y-contain pb-safe">
+      {/* 3. MAIN MASTER-DETAIL WORKSPACE */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-24 sm:p-5 sm:pb-8 touch-pan-y overscroll-y-contain pb-safe">
         {agendaViewMode === "mock_overlay" ? (
           <div className="max-w-7xl mx-auto">
             <AgendaCalendar
@@ -811,221 +840,443 @@ export default function Agenda({
             />
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col transition-colors duration-200">
-          
-          {/* Weekday Header Row */}
-          <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 text-center py-2.5 font-bold text-xs text-slate-600 dark:text-slate-400">
-            {WEEKDAY_NAMES_TR.map((wd, i) => (
-              <div key={wd} className={i >= 5 ? "text-rose-500 dark:text-rose-400" : ""}>
-                {wd}
-              </div>
-            ))}
-          </div>
-
-          {/* Calendar Day Grid (Monday to Sunday) */}
-          <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-slate-100 dark:divide-slate-800/80 border-b border-slate-100 dark:border-slate-800/80">
-            {calendarDays.map((dayItem) => {
-              const dayEvents = eventsByDate[dayItem.dateStr] || [];
-              const isWeekend = new Date(dayItem.dateStr).getDay() === 0 || new Date(dayItem.dateStr).getDay() === 6;
-              const isAraTatil = dayItem.dateStr >= "2026-11-16" && dayItem.dateStr <= "2026-11-20";
-
-              return (
-                <div
-                  key={dayItem.dateStr}
-                  onClick={() => handleDayClick(dayItem.dateStr)}
-                  className={`min-h-[52px] sm:min-h-[120px] md:min-h-[135px] p-1 sm:p-2.5 flex flex-col justify-between transition-colors duration-150 cursor-pointer group relative ${
-                    !dayItem.isCurrentMonth
-                      ? "bg-slate-50/50 dark:bg-slate-950/40 text-slate-300 dark:text-slate-600 opacity-60"
-                      : isAraTatil
-                      ? "bg-amber-50/70 dark:bg-amber-950/25 border-amber-300/60 dark:border-amber-700/40 hover:bg-amber-100/50 dark:hover:bg-amber-950/40"
-                      : isWeekend
-                      ? "bg-slate-50/30 dark:bg-slate-900/40"
-                      : "bg-white dark:bg-slate-900 hover:bg-blue-50/30 dark:hover:bg-blue-950/20"
-                  } ${dayItem.isToday ? "ring-2 ring-blue-500 ring-inset z-10 bg-blue-50/20 dark:bg-blue-950/30" : ""}`}
-                >
-                  {/* Top Bar inside Date Box: Day Number & Today indicator & Add Button for admin */}
-                  <div className="flex items-center justify-between mb-1">
-                    <span
-                      className={`text-xs sm:text-sm font-bold w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-all ${
-                        dayItem.isToday
-                          ? "bg-blue-600 text-white shadow-xs"
-                          : isAraTatil
-                          ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 font-black"
-                          : dayItem.isCurrentMonth
-                          ? isWeekend
-                            ? "text-rose-500 dark:text-rose-400"
-                            : "text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400"
-                          : "text-slate-400 dark:text-slate-600"
-                      }`}
-                    >
-                      {dayItem.dayNumber}
-                    </span>
-
-                    {/* Quick Add icon on hover for admin */}
-                    {isEmirgan && dayItem.isCurrentMonth && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenAddForm(dayItem.dateStr);
-                        }}
-                        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 transition-all cursor-pointer"
-                        title="Bu Güne Etkinlik Ekle"
-                      >
-                        <Plus size={13} />
-                      </button>
-                    )}
+          <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            
+            {/* LEFT / MAIN ZONE (8 columns on Desktop): Month Grid OR Chronological Timeline List */}
+            <div className="lg:col-span-8 min-w-0">
+              {agendaViewMode === "list" ? (
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-5">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                        {MONTH_NAMES_TR[month]} {year} · Kronolojik Zaman Çizelgesi
+                      </h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+                        {sortedEventDates.length} aktif günde toplam {totalMonthFilteredEvents} etkinlik listeleniyor
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Desktop Event Pills */}
-                  <div className={`hidden sm:flex flex-col gap-1 overflow-hidden my-auto ${dayItem.dateStr < new Date().toISOString().split("T")[0] ? "opacity-40 grayscale-[40%] hover:opacity-100 transition-opacity" : ""}`}>
-                    {(() => {
-                      const foodEvent = dayEvents.find((e) => e.event_type === "food");
-                      const otherEvents = dayEvents.filter((e) => e.event_type !== "food" && !e.title?.toLowerCase().includes("ara tatil"));
-                      const isPast = dayItem.dateStr < new Date().toISOString().split("T")[0];
+                  {sortedEventDates.length === 0 ? (
+                    <div className="py-16 text-center">
+                      <CalendarDays size={36} className="mx-auto text-slate-300 dark:text-slate-700 mb-3" />
+                      <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                        Bu filtreyle eşleşen etkinlik bulunamadı
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Farklı bir ay seçebilir veya arama/kategori filtresini temizleyebilirsiniz.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {sortedEventDates.map((dStr) => {
+                        const dayList = eventsByDate[dStr] || [];
+                        const isSelected = selectedDayDate === dStr;
+                        return (
+                          <div
+                            key={dStr}
+                            onClick={() => handleDayClick(dStr)}
+                            className={`rounded-2xl border p-4 transition-all cursor-pointer ${
+                              isSelected
+                                ? "border-indigo-500/70 bg-indigo-50/20 dark:bg-indigo-950/20 ring-1 ring-indigo-500/30"
+                                : "border-slate-200/80 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/50 hover:border-slate-300 dark:hover:border-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                                <span className="px-2.5 py-1 rounded-lg bg-slate-200/70 dark:bg-slate-800 font-mono tabular-nums">
+                                  {dStr.split("-").reverse().join(".")}
+                                </span>
+                                <span>
+                                  {new Date(dStr).toLocaleDateString("tr-TR", {
+                                    weekday: "long",
+                                    day: "numeric",
+                                    month: "long"
+                                  })}
+                                </span>
+                              </div>
+                              <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+                                {dayList.length} kayıt
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {dayList.map((ev) => {
+                                const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
+                                const st = getEventTypeStyles(ev.event_type, isMyExam);
+                                return (
+                                  <div
+                                    key={ev.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedDayDate(dStr);
+                                      if (ev.event_type === "exam") setSelectedExamEvent(ev);
+                                      else if (ev.event_type === "food") setSelectedFoodEvent(ev);
+                                      else if (window.innerWidth < 1024) setIsDayDrawerOpen(true);
+                                    }}
+                                    className="p-3 rounded-xl bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 hover:border-indigo-400 transition-all flex flex-col justify-between gap-1.5"
+                                  >
+                                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                      <span className="font-semibold flex items-center gap-1">
+                                        {st.icon}
+                                        <span>{st.label}</span>
+                                      </span>
+                                      {ev.event_time && (
+                                        <span className="font-mono tabular-nums">{ev.event_time}</span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
+                                      {ev.title}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xs border border-slate-200/80 dark:border-slate-800 overflow-hidden flex flex-col transition-colors duration-200">
+                  {/* Weekday Header Row */}
+                  <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 text-center py-2.5 font-bold text-xs text-slate-600 dark:text-slate-400">
+                    {WEEKDAY_NAMES_TR.map((wd, i) => (
+                      <div key={wd} className={i >= 5 ? "text-rose-500 dark:text-rose-400" : ""}>
+                        {wd}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Calendar Day Grid (Monday to Sunday) */}
+                  <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-slate-100 dark:divide-slate-800/80 border-b border-slate-100 dark:border-slate-800/80">
+                    {calendarDays.map((dayItem) => {
+                      const dayEvents = eventsByDate[dayItem.dateStr] || [];
+                      const isWeekend = new Date(dayItem.dateStr).getDay() === 0 || new Date(dayItem.dateStr).getDay() === 6;
+                      const isAraTatil = dayItem.dateStr >= "2026-11-16" && dayItem.dateStr <= "2026-11-20";
+                      const isSelectedDay = selectedDayDate === dayItem.dateStr;
 
                       return (
-                        <>
-                          {/* Ara Tatil Kutucuk Göstergesi (Yemekten bağımsız) */}
-                          {isAraTatil && (
-                            <div
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedDayDate(dayItem.dateStr);
-                                setIsDayDrawerOpen(true);
-                              }}
-                              className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-black bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/40 cursor-pointer shadow-2xs hover:bg-amber-500/30 transition-all truncate"
-                              title="1. Dönem Ara Tatili"
-                            >
-                              <span>🌴</span>
-                              <span className="truncate">Ara Tatil</span>
-                            </div>
-                          )}
-
-                          {foodEvent && (
-                            <div 
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                setSelectedFoodEvent(foodEvent); 
-                              }}
-                              className={`mt-1 flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium border cursor-pointer transition-all truncate ${
-                                isPast 
-                                  ? 'bg-neutral-800/40 text-neutral-400 border-neutral-700/40 opacity-50 hover:opacity-90' 
-                                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/25'
+                        <div
+                          key={dayItem.dateStr}
+                          onClick={() => handleDayClick(dayItem.dateStr)}
+                          className={`min-h-[56px] sm:min-h-[112px] xl:min-h-[124px] p-1 sm:p-2 flex flex-col justify-between transition-colors duration-150 cursor-pointer group relative ${
+                            !dayItem.isCurrentMonth
+                              ? "bg-slate-50/50 dark:bg-slate-950/40 text-slate-300 dark:text-slate-600 opacity-60"
+                              : isAraTatil
+                              ? "bg-amber-50/70 dark:bg-amber-950/25 border-amber-300/60 dark:border-amber-700/40 hover:bg-amber-100/50 dark:hover:bg-amber-950/40"
+                              : isWeekend
+                              ? "bg-slate-50/30 dark:bg-slate-900/40"
+                              : "bg-white dark:bg-slate-900 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20"
+                          } ${dayItem.isToday ? "ring-2 ring-blue-500 ring-inset z-10 bg-blue-50/20 dark:bg-blue-950/30" : ""} ${
+                            isSelectedDay && !dayItem.isToday ? "ring-2 ring-indigo-500/80 ring-inset z-10 bg-indigo-50/25 dark:bg-indigo-950/30" : ""
+                          }`}
+                        >
+                          {/* Top Bar inside Date Box */}
+                          <div className="flex items-center justify-between mb-1">
+                            <span
+                              className={`text-xs sm:text-sm font-bold tabular-nums w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-all ${
+                                dayItem.isToday
+                                  ? "bg-blue-600 text-white shadow-xs"
+                                  : isSelectedDay
+                                  ? "bg-indigo-600 text-white shadow-xs"
+                                  : isAraTatil
+                                  ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 font-black"
+                                  : dayItem.isCurrentMonth
+                                  ? isWeekend
+                                    ? "text-rose-500 dark:text-rose-400"
+                                    : "text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400"
+                                  : "text-slate-400 dark:text-slate-600"
                               }`}
-                              title="Yemek Menüsünü Gör"
                             >
-                              <span>🍽️</span>
-                              <span className="truncate">Yemek Menüsü</span>
-                            </div>
-                          )}
+                              {dayItem.dayNumber}
+                            </span>
 
-                          {otherEvents.slice(0, (foodEvent || isAraTatil) ? 2 : 3).map((ev) => {
-                            const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
-                            const st = getEventTypeStyles(ev.event_type, isMyExam);
-
-                            return (
-                              <div
-                                key={ev.id}
-                                onMouseEnter={(e) => {
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  setHoveredEvent({
-                                    event: ev,
-                                    x: rect.left + rect.width / 2,
-                                    y: rect.top - 8,
-                                  });
-                                }}
-                                onMouseLeave={() => setHoveredEvent(null)}
+                            {isEmirgan && dayItem.isCurrentMonth && (
+                              <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (ev.event_type === "exam") {
-                                    setSelectedExamEvent(ev);
-                                  } else {
-                                    setSelectedDayDate(dayItem.dateStr);
-                                    setIsDayDrawerOpen(true);
-                                  }
+                                  handleOpenAddForm(dayItem.dateStr);
                                 }}
-                                className={`px-1.5 py-0.5 rounded-md border text-[11px] font-semibold truncate flex items-center gap-1 transition-all ${st.pill}`}
+                                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 transition-all cursor-pointer"
+                                title="Bu Güne Etkinlik Ekle"
                               >
-                                {st.icon}
-                                <span className="truncate">{ev.title}</span>
-                                {ev.event_time && (
-                                  <span className="text-[10px] opacity-75 ml-auto shrink-0 font-mono">
-                                    {ev.event_time.split(" - ")[0]}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
+                                <Plus size={13} />
+                              </button>
+                            )}
+                          </div>
 
-                          {otherEvents.length > ((foodEvent || isAraTatil) ? 2 : 3) && (
-                            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 pl-1">
-                              +{otherEvents.length - ((foodEvent || isAraTatil) ? 2 : 3)} daha...
-                            </span>
-                          )}
-                        </>
+                          {/* Desktop Event Pills */}
+                          <div className={`hidden sm:flex flex-col gap-1 overflow-hidden my-auto ${dayItem.dateStr < new Date().toISOString().split("T")[0] ? "opacity-55 hover:opacity-100 transition-opacity" : ""}`}>
+                            {(() => {
+                              const foodEvent = dayEvents.find((e) => e.event_type === "food");
+                              const otherEvents = dayEvents.filter((e) => e.event_type !== "food" && !e.title?.toLowerCase().includes("ara tatil"));
+                              const isPast = dayItem.dateStr < new Date().toISOString().split("T")[0];
+
+                              return (
+                                <>
+                                  {isAraTatil && (
+                                    <div
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDayClick(dayItem.dateStr);
+                                      }}
+                                      className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-black bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/40 cursor-pointer truncate"
+                                      title="1. Dönem Ara Tatili"
+                                    >
+                                      <span>🌴</span>
+                                      <span className="truncate">Ara Tatil</span>
+                                    </div>
+                                  )}
+
+                                  {foodEvent && (
+                                    <div 
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        setSelectedDayDate(dayItem.dateStr);
+                                        setSelectedFoodEvent(foodEvent); 
+                                      }}
+                                      className={`mt-0.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border cursor-pointer transition-all truncate ${
+                                        isPast 
+                                          ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700/50' 
+                                          : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20'
+                                      }`}
+                                      title="Yemek Menüsünü Gör"
+                                    >
+                                      <span>🍽️</span>
+                                      <span className="truncate">Menü</span>
+                                    </div>
+                                  )}
+
+                                  {otherEvents.slice(0, (foodEvent || isAraTatil) ? 2 : 3).map((ev) => {
+                                    const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
+                                    const st = getEventTypeStyles(ev.event_type, isMyExam);
+
+                                    return (
+                                      <div
+                                        key={ev.id}
+                                        onMouseEnter={(e) => {
+                                          const rect = e.currentTarget.getBoundingClientRect();
+                                          setHoveredEvent({
+                                            event: ev,
+                                            x: rect.left + rect.width / 2,
+                                            y: rect.top - 8,
+                                          });
+                                        }}
+                                        onMouseLeave={() => setHoveredEvent(null)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedDayDate(dayItem.dateStr);
+                                          if (ev.event_type === "exam") {
+                                            setSelectedExamEvent(ev);
+                                          } else if (window.innerWidth < 1024) {
+                                            setIsDayDrawerOpen(true);
+                                          }
+                                        }}
+                                        className={`px-1.5 py-0.5 rounded-md border text-[10px] font-semibold truncate flex items-center gap-1 transition-all ${st.pill}`}
+                                      >
+                                        {st.icon}
+                                        <span className="truncate">{ev.title}</span>
+                                      </div>
+                                    );
+                                  })}
+
+                                  {otherEvents.length > ((foodEvent || isAraTatil) ? 2 : 3) && (
+                                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 pl-1 tabular-nums">
+                                      +{otherEvents.length - ((foodEvent || isAraTatil) ? 2 : 3)} daha
+                                    </span>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+
+                          {/* Mobile Compact Indicators */}
+                          <div className="sm:hidden flex items-center justify-center gap-1 mt-auto flex-wrap">
+                            {(() => {
+                              const foodEvent = dayEvents.find((e) => e.event_type === "food");
+                              const otherEvents = dayEvents.filter((e) => e.event_type !== "food" && !e.title?.toLowerCase().includes("ara tatil"));
+
+                              return (
+                                <>
+                                  {isAraTatil && (
+                                    <span 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedDayDate(dayItem.dateStr);
+                                        setIsDayDrawerOpen(true);
+                                      }}
+                                      className="text-[9px] px-1 py-0.5 rounded font-black bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/40 whitespace-nowrap cursor-pointer flex items-center gap-0.5"
+                                    >
+                                      <span>🌴</span>
+                                    </span>
+                                  )}
+                                  {foodEvent && (
+                                    <span 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedFoodEvent(foodEvent);
+                                      }}
+                                      className="text-[11px] cursor-pointer"
+                                    >
+                                      🍽️
+                                    </span>
+                                  )}
+                                  {otherEvents.slice(0, (foodEvent || isAraTatil) ? 2 : 3).map((ev) => {
+                                    const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
+                                    const st = getEventTypeStyles(ev.event_type, isMyExam);
+                                    return (
+                                      <span
+                                        key={ev.id}
+                                        className={`w-1.5 h-1.5 rounded-full ${st.dot}`}
+                                      />
+                                    );
+                                  })}
+                                  {otherEvents.length > ((foodEvent || isAraTatil) ? 2 : 3) && (
+                                    <span className="text-[8px] font-bold text-indigo-600 dark:text-indigo-400 leading-none">
+                                      +{otherEvents.length - ((foodEvent || isAraTatil) ? 2 : 3)}
+                                    </span>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
                       );
-                    })()}
-                  </div>
-
-                  {/* Mobile Compact Indicators (Ara Tatil, Food Icon & Dots) */}
-                  <div className="sm:hidden flex items-center justify-center gap-1 mt-auto flex-wrap">
-                    {(() => {
-                      const foodEvent = dayEvents.find((e) => e.event_type === "food");
-                      const otherEvents = dayEvents.filter((e) => e.event_type !== "food" && !e.title?.toLowerCase().includes("ara tatil"));
-
-                      return (
-                        <>
-                          {isAraTatil && (
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedDayDate(dayItem.dateStr);
-                                setIsDayDrawerOpen(true);
-                              }}
-                              className="text-[9px] px-1 py-0.5 rounded font-black bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/40 whitespace-nowrap cursor-pointer flex items-center gap-0.5"
-                              title="Ara Tatil"
-                            >
-                              <span>🌴</span>
-                              <span className="scale-90 origin-left">Tatil</span>
-                            </span>
-                          )}
-                          {foodEvent && (
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedFoodEvent(foodEvent);
-                              }}
-                              className="text-[11px] cursor-pointer"
-                              title="Yemek Menüsü"
-                            >
-                              🍽️
-                            </span>
-                          )}
-                          {otherEvents.slice(0, (foodEvent || isAraTatil) ? 2 : 3).map((ev) => {
-                            const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
-                            const st = getEventTypeStyles(ev.event_type, isMyExam);
-                            return (
-                              <span
-                                key={ev.id}
-                                className={`w-1.5 h-1.5 rounded-full ${st.dot}`}
-                              />
-                            );
-                          })}
-                          {otherEvents.length > ((foodEvent || isAraTatil) ? 2 : 3) && (
-                            <span className="text-[8px] font-bold text-blue-600 dark:text-blue-400 leading-none">
-                              +{otherEvents.length - ((foodEvent || isAraTatil) ? 2 : 3)}
-                            </span>
-                          )}
-                        </>
-                      );
-                    })()}
+                    })}
                   </div>
                 </div>
-              );
-            })}
+              )}
+            </div>
+
+            {/* RIGHT ZONE (4 columns on Desktop): LIVE SELECTED-DAY INSPECTOR & DAILY TIMELINE */}
+            <aside className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col lg:sticky lg:top-4">
+              <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/60">
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-0.5">
+                    Seçili Gün İnceleyici
+                  </div>
+                  <h2 className="text-base font-black text-slate-900 dark:text-white">
+                    {selectedDayDate
+                      ? new Date(selectedDayDate).toLocaleDateString("tr-TR", {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric"
+                        })
+                      : "Bir Gün Seçin"}
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+                    {selectedDayEvents.length} planlanan kayıt · {selectedDayDate || ""}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {isEmirgan && selectedDayDate && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddForm(selectedDayDate)}
+                      className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-colors cursor-pointer"
+                      title="Bu Güne Etkinlik Ekle"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  )}
+                  {selectedDayDate && (
+                    <button
+                      type="button"
+                      onClick={() => setIsDayDrawerOpen(true)}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                      title="Tam Pencerede Aç"
+                    >
+                      Büyüt
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-5 space-y-3.5 max-h-[560px] overflow-y-auto">
+                {selectedDayDate && selectedDayDate >= "2026-11-16" && selectedDayDate <= "2026-11-20" && (
+                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+                    <span className="text-xl shrink-0">🌴</span>
+                    <div>
+                      <h4 className="font-bold text-amber-800 dark:text-amber-300 text-xs">
+                        1. Dönem Ara Tatili (16–20 Kasım)
+                      </h4>
+                      <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 mt-0.5 leading-relaxed">
+                        Bu tarihlerde ders ve yemek servisi yapılmamaktadır.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {selectedDayEvents.length === 0 ? (
+                  <div className="py-10 text-center">
+                    <CalendarDays size={32} className="mx-auto text-slate-300 dark:text-slate-700 mb-2.5" />
+                    <h4 className="font-bold text-slate-700 dark:text-slate-300 text-xs sm:text-sm">
+                      Bu günde kayıtlı etkinlik yok
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                      Takvimden başka bir güne tıklayarak o günün yemek menüsünü ve sınav programını anında inceleyebilirsiniz.
+                    </p>
+                  </div>
+                ) : (
+                  selectedDayEvents.map((ev) => {
+                    const isMyExam = ev.event_type === "exam" && isEnrolledInEvent(ev);
+                    const st = getEventTypeStyles(ev.event_type, isMyExam);
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={() => {
+                          if (ev.event_type === "exam") setSelectedExamEvent(ev);
+                          else if (ev.event_type === "food") setSelectedFoodEvent(ev);
+                          else setIsDayDrawerOpen(true);
+                        }}
+                        className={`rounded-2xl border p-3.5 transition-all cursor-pointer hover:shadow-sm ${
+                          isMyExam
+                            ? "border-amber-400/80 bg-amber-500/10"
+                            : "border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/50 hover:border-indigo-400/60"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400 mb-1.5">
+                          <span className="font-bold flex items-center gap-1 text-slate-700 dark:text-slate-200">
+                            {st.icon}
+                            <span>{st.label}</span>
+                          </span>
+                          {ev.event_time && (
+                            <span className="font-mono tabular-nums">{ev.event_time}</span>
+                          )}
+                        </div>
+                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white mb-1">
+                          {ev.title}
+                        </h4>
+                        {ev.description && (
+                          <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-3 whitespace-pre-line leading-relaxed">
+                            {ev.description}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 flex items-center justify-between text-xs">
+                <span className="text-slate-500 dark:text-slate-400">Haftalık Ders Çizelgesi</span>
+                <button
+                  type="button"
+                  onClick={() => setIsScheduleModalOpen(true)}
+                  className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Programı Aç</span>
+                  <ArrowRight size={12} />
+                </button>
+              </div>
+            </aside>
+
           </div>
-        </div>
         )}
       </div>
 

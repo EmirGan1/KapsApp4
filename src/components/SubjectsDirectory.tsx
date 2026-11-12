@@ -138,10 +138,10 @@ export default function SubjectsDirectory({
   socket
 }: SubjectsDirectoryProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "mine" | "stem" | "humanities">("all");
   const [counts, setCounts] = useState<Record<string, number | string>>({});
 
   useEffect(() => {
-    // Optionally fetch counts per folder
     const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
     subjects.forEach((s) => {
       fetch(getApiUrl(`/api/folders/${encodeURIComponent(s)}/posts?limit=1`), {
@@ -159,39 +159,83 @@ export default function SubjectsDirectory({
 
   const groups = new Set(sortRolesByPosition(userRoles).map(role => role.subjectGroup ?? role.id));
   const isMySubject = (subject: string) => groups.has(SUBJECT_ROLE_GROUPS[subject]);
-  const filteredSubjects = subjects.filter((s) => {
-    const meta = SUBJECT_METADATA[s];
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      s.toLowerCase().includes(q) ||
-      (meta?.trName && meta.trName.toLowerCase().includes(q)) ||
-      (meta?.desc && meta.desc.toLowerCase().includes(q)) ||
-      (meta?.tag && meta.tag.toLowerCase().includes(q))
-    );
-  }).sort((a, b) => Number(isMySubject(b)) - Number(isMySubject(a)));
+
+  const stemSubjects = new Set(["Mathematics", "Physics", "Chemistry", "Biology", "Digital Society"]);
+  const mySubjectsCount = subjects.filter((s) => isMySubject(s)).length;
+
+  const filteredSubjects = subjects
+    .filter((s) => {
+      if (categoryFilter === "mine" && !isMySubject(s)) return false;
+      if (categoryFilter === "stem" && !stemSubjects.has(s)) return false;
+      if (categoryFilter === "humanities" && stemSubjects.has(s)) return false;
+
+      const meta = SUBJECT_METADATA[s];
+      const q = searchQuery.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        s.toLowerCase().includes(q) ||
+        (meta?.trName && meta.trName.toLowerCase().includes(q)) ||
+        (meta?.desc && meta.desc.toLowerCase().includes(q)) ||
+        (meta?.tag && meta.tag.toLowerCase().includes(q))
+      );
+    })
+    .sort((a, b) => Number(isMySubject(b)) - Number(isMySubject(a)));
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
-      <div className="max-w-5xl mx-auto px-4 py-5 sm:py-7 pb-28">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-7 pb-28">
         {/* ========================================================= */}
-        {/* DERS KLASÖRLERİ HERO SECTION & KLASÖRLER LİSTESİ          */}
+        {/* ACADEMIC STUDIO DIRECTORY HEADER                          */}
         {/* ========================================================= */}
-        <div className="border border-indigo-200 dark:border-indigo-800 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950 dark:to-slate-900 rounded-3xl p-6 sm:p-8 shadow-sm mb-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 -mr-8 -mt-8 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute bottom-0 right-12 w-32 h-32 bg-indigo-400/20 rounded-full blur-xl pointer-events-none" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xs mb-6 relative overflow-hidden transition-colors duration-200">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/5 dark:bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
           
-          <div className="relative z-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900 text-xs font-semibold text-indigo-800 dark:text-indigo-200 mb-3 border border-indigo-200 dark:border-indigo-700">
-              <Layers size={13} className="text-indigo-600 dark:text-indigo-300" />
-              <span>Ders & İçerik Klasörleri</span>
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+            <div>
+              <div className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
+                <Layers size={14} className="text-indigo-500" />
+                <span>Akademik Ders Stüdyosu & Arşiv</span>
+                <span>·</span>
+                <span className="tabular-nums">{subjects.length} Branş</span>
+                {mySubjectsCount > 0 && (
+                  <>
+                    <span>·</span>
+                    <span className="text-amber-600 dark:text-amber-400 font-bold tabular-nums">
+                      {mySubjectsCount} Kayıtlı Dersiniz
+                    </span>
+                  </>
+                )}
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white mb-2">
+                Ders Arşivi, Past Papers & IA/EE Havuzu
+              </h1>
+              <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base max-w-2xl leading-relaxed">
+                Her branşın kendi çalışma stüdyosuna girerek ders materyallerine, çıkmış sorulara, puanlanmış IA/EE örneklerine ve soru-cevap akışına tek merkezden ulaşın.
+              </p>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100 mb-2">
-              Ders Klasörleri & Arşiv
-            </h1>
-            <p className="text-slate-600 dark:text-slate-300 text-sm sm:text-base max-w-lg leading-relaxed">
-              İlgilendiğin dersi seçerek paylaşılan tüm fotoğraf, video, soru çözümleri ve notlara ulaşabilirsin.
-            </p>
+
+            {/* Quick Category Filter Segmented Control */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-2xl border border-slate-200/70 dark:border-slate-700/70 self-start lg:self-auto flex-wrap">
+              {[
+                { id: "all", label: `Tümü (${subjects.length})` },
+                ...(mySubjectsCount > 0 ? [{ id: "mine", label: `Derslerim (${mySubjectsCount})` }] : []),
+                { id: "stem", label: "Sayısal & Fen" },
+                { id: "humanities", label: "Dil & Sosyal" }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setCategoryFilter(tab.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer tabular-nums ${
+                    categoryFilter === tab.id
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -202,13 +246,13 @@ export default function SubjectsDirectory({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Ders adı, konu veya anahtar kelime ara..."
-            className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 text-sm shadow-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+            placeholder="Ders adı, konu, IA/EE veya anahtar kelime ara..."
+            className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 text-sm shadow-xs focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
             >
               Temizle
             </button>
@@ -216,7 +260,7 @@ export default function SubjectsDirectory({
         </div>
 
         {/* Folders List Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 sm:gap-5">
           {filteredSubjects.map((subjectKey) => {
             const meta = SUBJECT_METADATA[subjectKey] || {
               title: subjectKey,
@@ -230,6 +274,8 @@ export default function SubjectsDirectory({
               tag: "Ders"
             };
 
+            const isMine = isMySubject(subjectKey);
+
             return (
               <div
                 key={subjectKey}
@@ -242,43 +288,55 @@ export default function SubjectsDirectory({
                   }
                 }}
                 onClick={() => onSelectSubject(subjectKey)}
-                className={`group relative bg-white dark:bg-slate-900 border rounded-2xl p-4.5 sm:p-5 shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-between ${isMySubject(subjectKey) ? "border-amber-400 ring-1 ring-amber-400/60 shadow-[0_0_16px_rgba(251,191,36,0.25)]" : `border-slate-200/80 dark:border-slate-800 ${meta.borderHover}`} active:scale-[0.985]`}
+                className={`group relative bg-white dark:bg-slate-900 border rounded-3xl p-5 sm:p-6 shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-between hover:-translate-y-0.5 ${
+                  isMine 
+                    ? "border-amber-400/80 dark:border-amber-500/60 ring-1 ring-amber-400/30" 
+                    : `border-slate-200/80 dark:border-slate-800 ${meta.borderHover}`
+                } active:scale-[0.99]`}
               >
-                {/* Background Ambient Gradient */}
-                <div className={`absolute inset-0 bg-gradient-to-br ${meta.gradient} opacity-50 group-hover:opacity-100 transition-opacity pointer-events-none`} />
-
                 <div className="relative z-10">
-                  {/* Top Row: Icon + Badge */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800/90 shadow-sm border border-slate-100 dark:border-slate-700/60 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200">
+                  {/* Top Row: Icon + Unboxed Meta */}
+                  <div className="flex items-center justify-between gap-2 mb-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-200">
                       {meta.icon}
                     </div>
-                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${meta.badgeBg} ${meta.badgeText} shrink-0`}>
-                      {meta.tag}
-                    </span>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="font-semibold">{meta.tag}</span>
+                      {isMine && (
+                        <>
+                          <span>·</span>
+                          <span className="font-bold text-amber-600 dark:text-amber-400">Kayıtlı Dersiniz</span>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {/* Titles */}
-                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center gap-1.5">
-                    <span>{subjectKey}</span>
-                    {isMySubject(subjectKey) && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-900 dark:bg-amber-400/20 dark:text-amber-300">Dersiniz</span>}
-                  </h3>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-                    {meta.trName}
-                  </p>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                      {subjectKey}
+                    </h3>
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {meta.trName}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
                     {meta.desc}
                   </p>
                 </div>
 
-                {/* Bottom Action Footer */}
-                <div className="relative z-10 pt-3.5 mt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-                  <div className="flex items-center gap-1 text-[11px]">
-                    <FileText size={13} />
-                    <span>Paylaşımları Gör</span>
+                {/* Bottom Action Footer with Quick Sub-Workspace Links */}
+                <div className="relative z-10 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                  <div className="flex items-center gap-2 text-[11px] tabular-nums">
+                    <span className="flex items-center gap-1 font-medium">
+                      <FileText size={13} className="text-slate-400" />
+                      <span>{counts[subjectKey] ? `${counts[subjectKey]} paylaşım` : "Not & Dosya Arşivi"}</span>
+                    </span>
+                    <span>·</span>
+                    <span>IA / EE</span>
                   </div>
-                  <div className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform">
-                    <span>Klasörü Aç</span>
+                  <div className="flex items-center gap-1 font-bold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform">
+                    <span>Ders Stüdyosunu Aç</span>
                     <ChevronRight size={15} />
                   </div>
                 </div>
@@ -288,11 +346,11 @@ export default function SubjectsDirectory({
         </div>
 
         {filteredSubjects.length === 0 && (
-          <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 mt-4">
+          <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 mt-4">
             <Folder size={40} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
             <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">Ders bulunamadı</h3>
             <p className="text-xs text-slate-400 mt-1">
-              "{searchQuery}" araması ile eşleşen bir ders klasörü bulunmuyor.
+              Seçili filtre veya "{searchQuery}" araması ile eşleşen bir ders klasörü bulunmuyor.
             </p>
           </div>
         )}

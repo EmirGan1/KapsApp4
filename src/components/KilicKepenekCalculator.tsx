@@ -455,7 +455,7 @@ export default function KilicKepenekCalculator({
     : 0;
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 text-slate-900 font-sans antialiased transition-colors duration-300">
+    <div className="flex-1 min-h-0 h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased transition-colors duration-300 overflow-y-auto">
 
       {/* Toast Notification */}
       {showNotification && (
@@ -467,26 +467,27 @@ export default function KilicKepenekCalculator({
 
       {/* KapsCulator Navigation Bar */}
       {(onBackToHub || onSwitchToOriginal) && (
-        <div className="bg-slate-900 text-white px-4 sm:px-6 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs shrink-0 z-40 shadow-sm">
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-slate-900 dark:text-white px-4 sm:px-6 py-2.5 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs shrink-0 sticky top-0 z-40 shadow-2xs transition-colors">
           <div className="flex items-center gap-2.5">
             {onBackToHub && (
               <button
                 onClick={onBackToHub}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold transition-all border border-slate-700 hover:border-slate-600 cursor-pointer shadow-xs active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold transition-all border border-slate-200/80 dark:border-slate-700 cursor-pointer active:scale-95"
               >
-                <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
-                <span>KapsCulator Ana Sayfası</span>
+                <ArrowLeft className="w-3.5 h-3.5 text-emerald-500" />
+                <span>KapsCulator Stüdyosu</span>
               </button>
             )}
-            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold border border-emerald-500/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Kılıç Kepenek Version Aktif
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span>·</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Kılıç Kepenek Version Aktif</span>
             </span>
           </div>
           {onSwitchToOriginal && (
             <button
               onClick={onSwitchToOriginal}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all shadow-md shadow-indigo-600/30 cursor-pointer active:scale-95"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all shadow-xs cursor-pointer active:scale-95"
             >
               <span>KapsCulator Original'a Geç</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -496,57 +497,59 @@ export default function KilicKepenekCalculator({
       )}
 
       {/* Header Bar */}
-      <header id="header-bar" className="bg-white/90 backdrop-blur-md border-b border-slate-200 shrink-0">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <header id="header-bar" className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 shrink-0 transition-colors">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-100">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
               <Calculator className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-900">IB Diploma Grade Calculator</h1>
-              <p className="text-xs text-slate-500 font-medium">Official Boundaries Mapping & NO-IA Dynamic Model</p>
+              <h1 className="text-xl font-black tracking-tight text-slate-900 dark:text-white">Kılıç Kepenek Version · IB Calculator</h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Official Boundaries Mapping & NO-IA Dynamic Model</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-            <button
-              id="btn-tab-grades"
-              onClick={() => setActiveTab("grades")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === "grades" 
-                  ? "bg-slate-900 text-white shadow-md shadow-slate-900/10" 
-                  : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              Assessments List
-            </button>
-            <button
-              id="btn-tab-boundaries"
-              onClick={() => setActiveTab("boundaries")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === "boundaries" 
-                  ? "bg-slate-900 text-white shadow-md shadow-slate-900/10" 
-                  : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              Boundary Setup
-            </button>
-            <button
-              id="btn-tab-ref"
-              onClick={() => setActiveTab("info")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === "info" 
-                  ? "bg-slate-900 text-white shadow-md shadow-slate-900/10" 
-                  : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              IB Info & Guide
-            </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/70 dark:border-slate-700/70">
+              <button
+                id="btn-tab-grades"
+                onClick={() => setActiveTab("grades")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "grades" 
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs" 
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                Assessments List
+              </button>
+              <button
+                id="btn-tab-boundaries"
+                onClick={() => setActiveTab("boundaries")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "boundaries" 
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs" 
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                Boundary Setup
+              </button>
+              <button
+                id="btn-tab-ref"
+                onClick={() => setActiveTab("info")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "info" 
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs" 
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                IB Info & Guide
+              </button>
+            </div>
             <button
               id="btn-reset-grades"
               onClick={resetToDefault}
               title="Reset scores and boundaries"
-              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+              className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
             </button>

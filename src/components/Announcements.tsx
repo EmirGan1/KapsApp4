@@ -63,6 +63,8 @@ export default function Announcements({
   const [isPublishing, setIsPublishing] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
+  const [onlyMyRoleAnnouncements, setOnlyMyRoleAnnouncements] = useState(false);
+  const [announcementSearch, setAnnouncementSearch] = useState("");
 
   // Form states for 'emirgan'
   const [title, setTitle] = useState("");
@@ -89,7 +91,22 @@ export default function Announcements({
 
   // Load announcements
   const loadAnnouncements = () => {
-    if (!socket) return;
+    if (!socket || !socket.connected) {
+      fetch(getApiUrl("/api/announcements"), { headers: getAuthHeaders() })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          setIsLoading(false);
+          const list = Array.isArray(data) ? data : data?.announcements;
+          if (Array.isArray(list)) {
+            const sorted = [...list].sort((a, b) => b.id - a.id);
+            setAnnouncements(sorted);
+          }
+        })
+        .catch(() => {
+          setIsLoading(false);
+        });
+      return;
+    }
     setIsLoading(true);
     socket.emit("get_announcements", (res: any) => {
       setIsLoading(false);
@@ -342,48 +359,100 @@ export default function Announcements({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full bg-slate-50 dark:bg-slate-950 overflow-hidden select-text">
-      {/* Header */}
-      <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between shadow-sm shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/25">
-            <Megaphone size={20} />
+      {/* Header & Search/Filter Toolbar */}
+      <div className="p-4 sm:p-6 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs shrink-0 space-y-3.5">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <Megaphone size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                  Resmi Duyuru & Bülten Merkezi
+                </h1>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                  · {announcements.length} yayın
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Platform yönetimi tarafından yayınlanan resmi bildirimler, sınav duyuruları ve güncellemeler
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              Duyurular
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400">
-                {announcements.length}
-              </span>
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Platform yöneticisi tarafından yayınlanan resmi bildirimler ve güncellemeler
-            </p>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              onClick={loadAnnouncements}
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Yenile"
+            >
+              <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+            </button>
+
+            {isEmirgan && (
+              <button
+                onClick={() => setShowEditor(!showEditor)}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+              >
+                {showEditor ? <X size={16} /> : <Plus size={16} />}
+                <span>{showEditor ? "Editörü Kapat" : "Yeni Duyuru Yayınla"}</span>
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadAnnouncements}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Yenile"
-          >
-            <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
-          </button>
-
-          {isEmirgan && (
+        {/* Search & Role Filter Bar */}
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl self-start">
             <button
-              onClick={() => setShowEditor(!showEditor)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+              type="button"
+              onClick={() => setOnlyMyRoleAnnouncements(false)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                !onlyMyRoleAnnouncements
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
             >
-              {showEditor ? <X size={16} /> : <Plus size={16} />}
-              <span>{showEditor ? "Kapat" : "Yeni Duyuru Gönder"}</span>
+              Tüm Duyurular
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setOnlyMyRoleAnnouncements(true)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                onlyMyRoleAnnouncements
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              Derslerime Özel
+            </button>
+          </div>
+
+          <div className="relative flex-1 sm:max-w-xs">
+            <input
+              type="text"
+              value={announcementSearch}
+              onChange={(e) => setAnnouncementSearch(e.target.value)}
+              placeholder="Duyuru başlığı veya içerik ara..."
+              className="w-full px-3.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            {announcementSearch && (
+              <button
+                type="button"
+                onClick={() => setAnnouncementSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Main Container */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6 touch-pan-y overscroll-y-contain">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 touch-pan-y overscroll-y-contain">
+        <div className="max-w-5xl mx-auto space-y-6">
         {/* 'emirgan' Special Rich Text Editor Panel */}
         {isEmirgan && showEditor && (
           <div className="bg-white dark:bg-slate-900 border-2 border-blue-500/40 dark:border-blue-500/30 rounded-3xl p-5 shadow-xl shadow-blue-500/5 animate-in fade-in slide-in-from-top-4 duration-200">
@@ -846,11 +915,21 @@ export default function Announcements({
           </div>
         )}
 
-        {/* Filtered Announcements List based on User IB Course Roles */}
+        {/* Filtered Announcements List based on User IB Course Roles & Search */}
         {(() => {
-          const visibleAnnouncements = announcements.filter((a) =>
-            isVisibleToUser(a.targetRoles, effectiveRoles, isEmirgan)
-          );
+          const q = announcementSearch.trim().toLowerCase();
+          const visibleAnnouncements = announcements.filter((a) => {
+            if (!isVisibleToUser(a.targetRoles, effectiveRoles, isEmirgan)) return false;
+            if (onlyMyRoleAnnouncements) {
+              const roles = parseTargetRoles(a.targetRoles);
+              if (roles.length === 0 || roles.includes("all")) return false;
+            }
+            if (q) {
+              const hay = `${a.title || ""} ${a.content || ""} ${a.author_username || ""}`.toLowerCase();
+              if (!hay.includes(q)) return false;
+            }
+            return true;
+          });
 
           if (isLoading) {
             return (
@@ -912,18 +991,19 @@ export default function Announcements({
                           {ann.author_username?.[0]?.toUpperCase() || "E"}
                         </div>
                         <div>
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
                             <span className="font-bold text-slate-900 dark:text-white text-sm">
                               {ann.author_username}
                             </span>
-                            <span className="text-[10px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-1">
-                              <ShieldAlert size={11} /> Yönetici
+                            <span>·</span>
+                            <span className="font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 text-xs">
+                              <ShieldAlert size={12} /> Yönetici
                             </span>
-                            <TargetRoleBadge targetRolesRaw={ann.targetRoles} size="sm" />
+                            <span>·</span>
+                            <span className="tabular-nums text-xs">{formattedDate}</span>
                           </div>
-                          <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
-                            <Clock size={12} />
-                            <span>{formattedDate}</span>
+                          <div className="mt-1">
+                            <TargetRoleBadge targetRolesRaw={ann.targetRoles} size="sm" />
                           </div>
                         </div>
                       </div>
@@ -965,6 +1045,7 @@ export default function Announcements({
             </div>
           );
         })()}
+        </div>
       </div>
 
       {/* Lightbox Photo Viewer Modal */}

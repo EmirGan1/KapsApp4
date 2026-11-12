@@ -118,15 +118,14 @@ export default function Friends({
               </p>
             </div>
 
-            {/* Quick Stats Badges */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="px-3 py-1 bg-emerald-500/10 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-bold flex items-center gap-1.5">
+            {/* Quick Stats Unboxed Meta */}
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>{onlineFriends.length} Çevrimiçi</span>
+                <span>{onlineFriends.length} çevrimiçi</span>
               </span>
-              <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 rounded-full text-xs font-bold">
-                {acceptedFriends.length} Arkadaş
-              </span>
+              <span>·</span>
+              <span>{acceptedFriends.length} arkadaş</span>
             </div>
           </div>
 

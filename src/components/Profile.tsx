@@ -44,7 +44,28 @@ export default function Profile({
   onToggleDarkMode?: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [profileTab, setProfileTab] = useState<"all" | "media">("all");
+  const [userProfile, setUserProfile] = useState<any>(() => {
+    if (currentUserId === viewingUserId) {
+      let parsedRoles: string[] = [];
+      try {
+        const storedRoles = localStorage.getItem("lan_user_roles");
+        if (storedRoles) parsedRoles = JSON.parse(storedRoles);
+      } catch {}
+      return {
+        id: currentUserId,
+        username: currentUsername || "Kullanıcı",
+        avatar: currentAvatar,
+        color: currentColor,
+        roles: parsedRoles,
+        followersCount: 0,
+        followingCount: 0,
+        isFollowing: false,
+        friendStatus: "none",
+      };
+    }
+    return null;
+  });
   const [userPosts, setUserPosts] = useState<any[]>([]);
   const [activeModalData, setActiveModalData] = useState<MediaModalData | null>(null);
   
@@ -76,7 +97,27 @@ export default function Profile({
   const isEmirgan = currentUsername?.trim().toLowerCase() === "emirgan";
 
   const loadProfile = () => {
-    if (!socket) return;
+    if (!socket || !socket.connected) {
+      if (isMe) {
+        let parsedRoles: string[] = [];
+        try {
+          const storedRoles = localStorage.getItem("lan_user_roles");
+          if (storedRoles) parsedRoles = JSON.parse(storedRoles);
+        } catch {}
+        setUserProfile((prev: any) => prev || {
+          id: currentUserId,
+          username: currentUsername || "Kullanıcı",
+          avatar: currentAvatar,
+          color: currentColor,
+          roles: parsedRoles,
+          followersCount: 0,
+          followingCount: 0,
+          isFollowing: false,
+          friendStatus: "none"
+        });
+      }
+      return;
+    }
     socket.emit("get_user_profile", viewingUserId, (profile: any) => {
       if (profile) {
         setUserProfile(profile);
@@ -333,21 +374,23 @@ export default function Profile({
 
   if (!userProfile) return <div className="flex-1 min-h-0 bg-slate-50 dark:bg-slate-950 transition-colors duration-200"></div>;
 
+  const displayedProfilePosts = profileTab === "media" ? userPosts.filter((p) => !!p.image) : userPosts;
+
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 flex flex-col items-center transition-colors duration-200 touch-pan-y overscroll-y-contain">
-      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 md:mt-8 md:rounded-t-3xl shadow-sm border-x border-t border-slate-100 dark:border-slate-800 p-8 pb-4 flex flex-col items-center relative transition-colors duration-200">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 flex flex-col items-center transition-colors duration-200 touch-pan-y overscroll-y-contain px-0 sm:px-4 py-0 sm:py-6">
+      <div className="w-full max-w-3xl bg-white dark:bg-slate-900 sm:rounded-3xl shadow-xs border-b sm:border border-slate-200/80 dark:border-slate-800 p-6 sm:p-8 flex flex-col items-center relative transition-colors duration-200">
         {!isMe && (
           <button
             onClick={() => onUserClick(currentUserId)}
-            className="absolute top-4 left-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 bg-slate-50 dark:bg-slate-800 rounded-full transition-colors cursor-pointer"
+            className="absolute top-5 left-5 p-2 text-slate-500 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 rounded-xl transition-colors cursor-pointer"
             title="Geri"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={18} />
           </button>
         )}
 
-        <div className="relative mb-4 mt-4">
-          <div className="w-28 h-28 md:w-32 md:h-32 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 border-4 border-white dark:border-slate-900 shadow-lg flex items-center justify-center transition-colors">
+        <div className="relative mb-4 mt-2">
+          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 border-slate-200/80 dark:border-slate-700 shadow-sm flex items-center justify-center transition-colors">
             <Avatar
               url={userProfile.avatar}
               name={userProfile.username}
@@ -356,8 +399,8 @@ export default function Profile({
             />
           </div>
           {isMe && (
-            <label className="absolute bottom-0 right-0 w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center cursor-pointer shadow-md shadow-blue-500/20 transition-colors">
-              <Camera size={20} />
+            <label className="absolute -bottom-1 -right-1 w-9 h-9 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center justify-center cursor-pointer shadow-sm transition-colors">
+              <Camera size={17} />
               <input
                 type="file"
                 accept="image/*"
@@ -370,37 +413,42 @@ export default function Profile({
           )}
         </div>
 
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-1">{userProfile.username}</h2>
-        <div className="flex items-center gap-3 sm:gap-6 text-slate-500 dark:text-slate-400 text-sm mb-3">
-          <div className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg">
-            <span className="font-bold text-slate-900 dark:text-slate-100">{userPosts.length}</span>
-            <span className="text-slate-500 text-xs sm:text-sm">Gönderi</span>
+        <div className="text-center mb-3">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-0.5">
+            KapsApp Öğrenci & Topluluk Profili
           </div>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+            {userProfile.username}
+          </h2>
+        </div>
 
+        {/* Unboxed Tabular Metrics */}
+        <div className="flex items-center gap-3 sm:gap-5 text-slate-500 dark:text-slate-400 text-xs sm:text-sm mb-4 tabular-nums">
+          <div className="flex items-center gap-1.5">
+            <span className="font-black text-slate-900 dark:text-slate-100">{userPosts.length}</span>
+            <span>gönderi</span>
+          </div>
+          <span>·</span>
           <button
             onClick={() => openFollowModal("followers")}
-            className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer group"
+            className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
             title="Takipçileri Görüntüle"
           >
-            <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <span className="font-black text-slate-900 dark:text-slate-100">
               {userProfile.followersCount || 0}
             </span>
-            <span className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-200 text-xs sm:text-sm transition-colors">
-              Takipçi
-            </span>
+            <span>takipçi</span>
           </button>
-
+          <span>·</span>
           <button
             onClick={() => openFollowModal("following")}
-            className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer group"
+            className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
             title="Takip Edilenleri Görüntüle"
           >
-            <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <span className="font-black text-slate-900 dark:text-slate-100">
               {userProfile.followingCount || 0}
             </span>
-            <span className="text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-200 text-xs sm:text-sm transition-colors">
-              Takip Edilen
-            </span>
+            <span>takip edilen</span>
           </button>
         </div>
 
@@ -447,15 +495,14 @@ export default function Profile({
         )}
 
         {!isMe && (
-          <div className="flex flex-wrap items-center justify-center gap-2.5 w-full md:w-auto mb-6">
-            {/* Follow / Unfollow Button */}
+          <div className="flex flex-wrap items-center justify-center gap-2.5 w-full md:w-auto mb-4">
             <button
               disabled={isFollowLoading}
               onClick={handleToggleFollow}
               className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold transition-all cursor-pointer text-sm shadow-sm ${
                 userProfile.isFollowing
                   ? "bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60"
-                  : "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20"
+                  : "bg-indigo-600 hover:bg-indigo-700 text-white"
               } ${isFollowLoading ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               {userProfile.isFollowing ? (
@@ -471,7 +518,6 @@ export default function Profile({
               )}
             </button>
 
-            {/* Friend Action Button */}
             <button
               disabled={isFriendLoading}
               onClick={handleFriendAction}
@@ -508,7 +554,6 @@ export default function Profile({
               )}
             </button>
 
-            {/* Direct Message Shortcut */}
             {onOpenChat && (
               <button
                 onClick={() => onOpenChat(userProfile.id)}
@@ -535,16 +580,16 @@ export default function Profile({
         )}
 
         {isMe && (
-          <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2.5 w-full md:w-auto mb-4">
+          <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2.5 w-full md:w-auto mb-2">
             {onToggleDarkMode && (
               <button
                 type="button"
                 onClick={onToggleDarkMode}
-                className="w-full sm:w-auto px-5 flex items-center justify-center gap-2 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl transition-all cursor-pointer shadow-xs active:scale-95"
+                className="w-full sm:w-auto px-4 flex items-center justify-center gap-2 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer"
                 title="Görünüm Temasını Değiştir"
               >
-                {darkMode ? <Sun size={18} className="text-amber-500" /> : <Moon size={18} className="text-indigo-500" />}
-                <span>{darkMode ? "Açık Temaya Geç" : "Koyu Temaya Geç"}</span>
+                {darkMode ? <Sun size={16} className="text-amber-500" /> : <Moon size={16} className="text-indigo-500" />}
+                <span>{darkMode ? "Açık Tema" : "Koyu Tema"}</span>
               </button>
             )}
             <button
@@ -553,30 +598,58 @@ export default function Profile({
                 setPasswordSuccess(false);
                 setPasswordError("");
               }}
-              className="w-full sm:w-auto px-5 flex items-center justify-center gap-2 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl transition-colors cursor-pointer"
+              className="w-full sm:w-auto px-4 flex items-center justify-center gap-2 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
             >
-              <Lock size={18} />
-              Şifre Değiştir
+              <Lock size={16} />
+              <span>Şifre Değiştir</span>
             </button>
             <button
               onClick={onLogout}
-              className="w-full sm:w-auto px-5 flex items-center justify-center gap-2 py-2.5 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/40 font-semibold rounded-xl transition-colors cursor-pointer"
+              className="w-full sm:w-auto px-4 flex items-center justify-center gap-2 py-2 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/40 text-xs font-bold rounded-xl transition-colors cursor-pointer"
             >
-              <LogOut size={18} />
-              Çıkış Yap
+              <LogOut size={16} />
+              <span>Çıkış Yap</span>
             </button>
           </div>
         )}
       </div>
 
-      <div className="w-full max-w-2xl bg-slate-50 dark:bg-slate-950 p-4 space-y-4 transition-colors duration-200">
-        <h3 className="font-bold text-slate-700 dark:text-slate-300 px-2 text-lg">Gönderiler</h3>
-        {userPosts.length === 0 ? (
-          <div className="text-center text-slate-400 dark:text-slate-500 p-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-200">
-            Henüz gönderi yok.
+      <div className="w-full max-w-3xl p-4 sm:px-0 sm:py-5 space-y-4 transition-colors duration-200">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="font-black text-slate-900 dark:text-white text-base sm:text-lg">
+            Paylaşımlar & İçerikler
+          </h3>
+          <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200/80 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setProfileTab("all")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer tabular-nums ${
+                profileTab === "all"
+                  ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              Tümü ({userPosts.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setProfileTab("media")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer tabular-nums ${
+                profileTab === "media"
+                  ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              Medya ({userPosts.filter((p) => !!p.image).length})
+            </button>
+          </div>
+        </div>
+        {displayedProfilePosts.length === 0 ? (
+          <div className="text-center text-slate-400 dark:text-slate-500 p-10 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-2xs transition-colors duration-200">
+            Henüz gönderi bulunmuyor.
           </div>
         ) : (
-          userPosts.map((post) => (
+          displayedProfilePosts.map((post) => (
             <div
               key={post.id}
               className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors duration-200"

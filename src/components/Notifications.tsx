@@ -227,59 +227,112 @@ export default function Notifications({
     }
   };
 
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "messages" | "social" | "system">("all");
+
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const filteredStacks = useMemo(() => {
+    if (categoryFilter === "all") return stackedNotifications;
+    if (categoryFilter === "messages") {
+      return stackedNotifications.filter(s => s.type === "new_message" || s.type === "dm" || s.type === "new_group_message");
+    }
+    if (categoryFilter === "social") {
+      return stackedNotifications.filter(s => s.type === "like" || s.type === "comment" || s.type === "follow" || s.type === "friend_request" || s.type === "friend_accept");
+    }
+    if (categoryFilter === "system") {
+      return stackedNotifications.filter(s => s.type === "PASSWORD_RESET_REQUEST" || s.type === "system" || (s.type !== "new_message" && s.type !== "dm" && s.type !== "like" && s.type !== "comment" && s.type !== "friend_request"));
+    }
+    return stackedNotifications;
+  }, [stackedNotifications, categoryFilter]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full bg-slate-50 dark:bg-slate-950 transition-colors duration-200">
       {/* Header */}
-      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm z-10 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Bell size={20} className="text-blue-600 dark:text-blue-400" />
-          <h2 className="font-bold text-lg text-slate-800 dark:text-slate-100">Bildirimler</h2>
+      <div className="p-4 sm:p-5 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs z-10 shrink-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <Bell size={19} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-black text-lg text-slate-900 dark:text-slate-100 tracking-tight">
+                  Bildirimler
+                </h2>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                  · {unreadCount > 0 ? `${unreadCount} yeni` : "Tümü okundu"}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Mesajlar, etkileşimler ve hesap güncellemeleri
+              </p>
+            </div>
+          </div>
+
           {unreadCount > 0 && (
-            <span className="text-xs font-bold text-white bg-blue-600 px-2 py-0.5 rounded-full shadow-xs">
-              {unreadCount} yeni
-            </span>
+            <button
+              onClick={handleMarkAllRead}
+              className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 px-3 py-1.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors cursor-pointer shrink-0"
+            >
+              <CheckCheck size={15} />
+              <span>Tümünü Okundu Say</span>
+            </button>
           )}
         </div>
 
-        {unreadCount > 0 && (
-          <button
-            onClick={handleMarkAllRead}
-            className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 px-3 py-1.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors cursor-pointer"
-          >
-            <CheckCheck size={15} />
-            <span>Tümünü Okundu Say</span>
-          </button>
-        )}
+        {/* Filter Sub-Tabs */}
+        <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 overflow-x-auto no-scrollbar">
+          {[
+            { id: "all", label: "Tümü" },
+            { id: "messages", label: "Mesajlar" },
+            { id: "social", label: "Beğeni & Yorum" },
+            { id: "system", label: "Sistem & Güvenlik" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setCategoryFilter(tab.id as any)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                categoryFilter === tab.id
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2.5 max-w-3xl mx-auto w-full touch-pan-y overscroll-y-contain">
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-5 space-y-2.5 max-w-3xl mx-auto w-full touch-pan-y overscroll-y-contain">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-2">
             <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
             <p className="text-xs">Bildirimler yükleniyor...</p>
           </div>
-        ) : stackedNotifications.length === 0 ? (
+        ) : filteredStacks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
-            <div className="w-14 h-14 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl flex items-center justify-center shadow-sm">
+            <div className="w-14 h-14 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl flex items-center justify-center shadow-xs">
               <Sparkles size={24} className="text-slate-300 dark:text-slate-600" />
             </div>
             <div className="text-center">
-              <p className="font-semibold text-slate-700 dark:text-slate-300 text-sm">Henüz bildirim yok</p>
-              <p className="text-xs text-slate-400 mt-0.5">Arkadaşlık istekleri, mesajlar ve beğeniler burada görünür.</p>
+              <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                {categoryFilter === "all" ? "Henüz bildirim yok" : "Bu kategoride bildirim bulunmuyor"}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Arkadaşlık istekleri, mesajlar ve beğeniler anlık olarak burada görünür.
+              </p>
             </div>
           </div>
         ) : (
-          stackedNotifications.map((stack) => (
+          filteredStacks.map((stack) => (
             <div
               key={stack.key}
               onClick={() => handleStackedItemClick(stack)}
-              className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer flex items-start gap-3.5 shadow-xs hover:shadow-md relative ${
+              className={`p-3.5 sm:p-4 rounded-3xl border transition-all cursor-pointer flex items-start gap-3.5 shadow-xs hover:shadow-md relative ${
                 stack.unreadCount > 0
                   ? "bg-white dark:bg-slate-900 border-blue-200 dark:border-blue-900/50 ring-1 ring-blue-500/20"
-                  : "bg-white/80 dark:bg-slate-900/60 border-slate-100 dark:border-slate-800/80 hover:bg-white dark:hover:bg-slate-900"
+                  : "bg-white dark:bg-slate-900/70 border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
               }`}
             >
               {getIcon(stack.type)}
@@ -290,14 +343,13 @@ export default function Notifications({
                       {stack.title}
                     </p>
                     {stack.count > 1 && (
-                      <span className="px-2 py-0.5 text-[11px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-full shrink-0 flex items-center gap-1">
-                        <Layers size={11} />
-                        {stack.count}
+                      <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0 tabular-nums">
+                        · {stack.count}x
                       </span>
                     )}
                   </div>
                   {stack.unreadCount > 0 && (
-                    <span className="w-2.5 h-2.5 bg-blue-600 rounded-full shrink-0 shadow-sm shadow-blue-500/50"></span>
+                    <span className="w-2 h-2 bg-blue-600 rounded-full shrink-0 shadow-xs"></span>
                   )}
                 </div>
 
@@ -312,11 +364,12 @@ export default function Notifications({
                   </p>
                 )}
 
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                <div className="flex items-center gap-2 mt-2 text-xs text-slate-400 dark:text-slate-500">
+                  <span className="tabular-nums text-[11px]">
                     {new Date(stack.created_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })}
                   </span>
-                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold hover:underline">
+                  <span>·</span>
+                  <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold hover:underline">
                     Görüntüle →
                   </span>
                 </div>
