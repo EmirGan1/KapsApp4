@@ -18,7 +18,7 @@ test('eight original character geometries share body/head geometry and dispose o
   assert.equal(model.head.getBoundingInfo().boundingBox.extendSize.x,.22);
   model.dispose();assert.equal(scene.meshes.length,0);assert.equal(scene.materials.filter(m=>!['default material','lineShader'].includes(m.name)).length,0);
  }
- assert.equal(variants.size,8);scene.dispose();engine.dispose();
+ assert.equal(variants.size,Object.keys(SKINS).length);assert.ok(variants.size>=16);scene.dispose();engine.dispose();
 });
 test('profile migration is idempotent and persists a skin per authenticated user identity',async()=>{
  const db=createClient({url:'file::memory:'});
@@ -28,9 +28,10 @@ test('profile migration is idempotent and persists a skin per authenticated user
   assert.equal(a.persisted.has(1),false);
   for(const skin of Object.keys(SKINS)) assert.equal(await a.set(1,skin),skin);
   assert.equal(a.persisted.has(1),true);
-  assert.equal(await b.get(1),'street');assert.equal(await b.get(2),'classic');
+  const lastSkin = Object.keys(SKINS).at(-1)!;
+  assert.equal(await b.get(1),lastSkin);assert.equal(await b.get(2),'classic');
   await assert.rejects(()=>a.set(1,'not-a-skin'));
-  await a.set(2,'cyber');assert.equal(await a.get(1),'street');assert.equal(await b.get(2),'cyber');
+  await a.set(2,'cyber');assert.equal(await a.get(1),lastSkin);assert.equal(await b.get(2),'cyber');
  } finally {db.close();}
 });
 test('legacy skin identifiers preserve all eight cosmetic choices',async()=>{

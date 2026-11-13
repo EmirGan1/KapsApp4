@@ -801,6 +801,7 @@ export class StrikeController {
           ads: !this.utilityEquipped && (this.touchAds || this.ads || this.down("ads")),
           reload: this.pendingReload || shouldAutoReload(this.state.player.weapon, this.state.tick),
           weapon: this.pendingWeapon,
+          heldItem: this.bombEquipped ? "bomb" : this.utilityEquipped,
           interact:this.pendingInteract,
         };
 
@@ -1008,6 +1009,7 @@ export class StrikeController {
         velocity:p2.velocity,
         stance: p2.stance,
         selectedWeapon: p2.selectedWeapon,
+        heldItem: p2.heldItem,
         yaw: p1.yaw + Math.atan2(Math.sin(p2.yaw-p1.yaw),Math.cos(p2.yaw-p1.yaw)) * alpha,
         pitch: p1.pitch + (p2.pitch - p1.pitch) * alpha,
         position: (()=>{

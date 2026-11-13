@@ -11,6 +11,7 @@ import {createKnifeRig,type KnifeRig} from './knifeRig';
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {cosmetic} from "./cosmetics";
 import { createCharacter } from "./character";
+import { createRemoteWeaponRig, type RemoteWeaponRig } from "./remoteWeapon";
 import { cleanSkin } from "./skins";
 import { surfaceTexture } from "./surfaceTextures";
 import { Engine } from "@babylonjs/core/Engines/engine";
@@ -69,7 +70,7 @@ export class StrikeRenderer {
       body: Mesh;
       head: Mesh;
       tagPlane?: Mesh;
-      gun?: Mesh;
+      weaponRig?: RemoteWeaponRig;
       tagTex?: DynamicTexture;
       tagMat?: StandardMaterial;
       shield?:Mesh;
@@ -1365,6 +1366,7 @@ export class StrikeRenderer {
       hp: number;
       stance?: string;
       selectedWeapon?: WeaponId;
+      heldItem?: GrenadeKind | "bomb";
       skin?: string;
       weaponSkin?:string;
       protectedUntil?:number;
@@ -1428,17 +1430,16 @@ export class StrikeRenderer {
         tagMat.disableLighting = true;
         tagPlane.material = tagMat;
 
-        const gun = MeshBuilder.CreateBox(
-          "remote-gun-" + p.id,
-          { width: 0.08, height: 0.12, depth: 0.45 },
-          this.scene
+        const weaponRig = createRemoteWeaponRig(
+          this.scene,
+          p.id,
+          model.handAnchor,
+          (color, emissive, surface) => this.material(color, emissive, surface),
+          (finish) => this.finishMaterial(finish),
         );
-        gun.position.set(0.25, 0.9, 0.25);
-        gun.parent = root;
-        gun.material = this.material("#1e293b");
 
         const shield=this.spawnShield(p.id);shield.parent=root;shield.position.y=.9;
-        item = { shield,model, skin:cleanSkin(p.skin), team:p.team || "none", root, body, head, tagPlane, gun, tagTex, tagMat };
+        item = { shield,model, skin:cleanSkin(p.skin), team:p.team || "none", root, body, head, tagPlane, weaponRig, tagTex, tagMat };
         this.remotePlayerMeshes.set(p.id, item);
       }
 
@@ -1451,13 +1452,8 @@ export class StrikeRenderer {
         item.root.position.set(p.position.x, p.position.y, p.position.z);
         item.root.rotation.y = p.yaw;
         item.head.rotation.x = p.pitch;
-        if (item.gun) {
-          item.gun.scaling.set(p.selectedWeapon === "knife" ? 0.5 : 1, p.selectedWeapon === "knife" ? 0.22 : 1, 1);
-          const finish=cosmetic(p.weaponSkin);
-          item.gun.material = finish ? this.finishMaterial(finish) : this.material(p.selectedWeapon === "knife" ? "#d8e3e9" : "#1e293b");
-        }
-
         const isCrouch = p.stance === "crouch" || p.stance === "slide";
+        item.weaponRig?.update(p.selectedWeapon || "rifle", p.heldItem, p.weaponSkin, isCrouch, p.pitch);
         const offset = isCrouch ? C.standing - C.crouching : 0;
         item.model.gearRoot.scaling.y = isCrouch ? C.crouching / C.standing : 1;
         const low = Math.max(0.08, TARGET_HITBOXES.body.min - offset);

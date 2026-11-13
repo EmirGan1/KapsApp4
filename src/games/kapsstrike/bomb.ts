@@ -4,7 +4,7 @@ export type BombSide='T'|'CT';
 export type BombPhase='buy'|'active'|'planted'|'result'|'finished';
 export const BOMB_RULES={buy:15,round:105,plant:3.2,explode:30,defuse:10,kitDefuse:5,transition:5,blastRadius:18,maxMoney:16000,startMoney:800,winReward:3250,lossReward:1400,lossStep:500,killReward:300,objectiveReward:300,plantLossBonus:300};
 export const BOMB_SITES=[{id:'A',x:34.42208,y:3.2,z:37.9984,radius:4},{id:'B',x:-33.75232,y:2.4,z:42.69232,radius:4}] as const;
-export const BOMB_SHOP={pistol:200,smg:1200,rifle:2700,shotgun:1800,sniper:4500,carbine:2200,lmg:3400,railgun:5000,halfArmor:650,armor:1200,kit:400,flash:200,frag:300,smoke:300} as const;
+export const BOMB_SHOP={pistol:200,smg:1200,rifle:2700,shotgun:1800,sniper:4500,carbine:2200,lmg:3400,railgun:5000,halfArmor:650,armor:1200,kit:400,flash:100,frag:150,smoke:150} as const;
 export const BOMB_WIN_TARGETS = [5, 7, 8, 10, 13] as const;
 export function bombWinTarget(value: unknown): number {
  return typeof value === "number" && BOMB_WIN_TARGETS.some(target => target === value) ? value : 7;
@@ -88,6 +88,7 @@ export function bombView(m:BombMatch,id:string):BombMatch {
    v.players[playerId] = {
     id: player.id, team: player.team, alive: player.alive, plants: player.plants, defuses: player.defuses,
     money: 0, armor: 0, kit: false, weapons: [], holdUntil: 0, position: { x: 0, y: 0, z: 0 },
+    flashedUntil: player.flashedUntil,
    };
   }
  }

@@ -79,6 +79,7 @@ export interface InputCommand {
   ads: boolean;
   reload: boolean;
   weapon?: WeaponId;
+  heldItem?: import("./grenades").GrenadeKind | "bomb";
   interact?: boolean;
 }
 export interface MovementState {
@@ -242,6 +243,7 @@ export interface PlayerSnapshot {
   pitch: number;
   stance: "stand" | "crouch" | "slide";
   selectedWeapon: WeaponId;
+  heldItem?: import("./grenades").GrenadeKind | "bomb";
   deadUntil: number;
   protectedUntil: number;
   kills: number;

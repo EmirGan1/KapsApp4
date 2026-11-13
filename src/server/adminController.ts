@@ -123,9 +123,6 @@ export function registerAdminController(app: Express, client: any, requireEmirga
       if (!authHeader) return res.status(401).json({ error: "Yetkisiz erişim" });
       const token = authHeader.replace("Bearer ", "").trim();
       const dateStr = new Date().toLocaleDateString("en-CA");
-      if (token.startsWith("demo-preview-token-") || token.startsWith("mock-")) {
-        return res.json({ today_seconds: 3600, date: dateStr });
-      }
       const userRes = await client.execute({
         sql: "SELECT id FROM users WHERE token = ?",
         args: [token]

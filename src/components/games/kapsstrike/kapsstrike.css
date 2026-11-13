@@ -1256,8 +1256,9 @@ html:not(.dark) .ks-root button:hover {
 .ks-low-health { position:absolute; left:25px;bottom:100px;color:#ff857c;font-size:12px;font-weight:800; }
 .ks-health { transition:color .12s, background-color .12s; }
 
-.ks-skin-preview { display:block;width:100%;height:260px;touch-action:none;border-radius:12px; }
-.ks-skin-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:12px 0; }
+.ks-skin-preview { display:block;width:100%;height:236px;touch-action:none;border-radius:12px; }
+.ks-skin-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0; }
+@media (max-width: 640px) { .ks-skin-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .ks-skin-grid button[aria-pressed=true] { background:#315763;box-shadow:inset 0 0 0 1px #a3e4df; }
 
 

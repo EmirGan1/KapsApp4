@@ -212,6 +212,7 @@ export class StrikeServerPlayer {
   pendingFire?:{weapon:WeaponId;index:number;until:number;command:InputCommand;received?:{receivedAt:number;receivedTick:number}};
   activeCommand?:InputCommand;
   activeReceive?:{receivedAt:number;receivedTick:number};
+  heldItem?: import("../games/kapsstrike/grenades").GrenadeKind | "bomb";
   isSpeaking = false;
   isMuted = false;
 
@@ -425,6 +426,7 @@ export class StrikeRoom {
       pitch: p.state.pitch,
       stance: p.state.movement.stance,
       selectedWeapon: p.state.weapon.selected,
+      heldItem: p.heldItem,
       deadUntil: p.state.deadUntil,
       protectedUntil: p.state.protectedUntil,
       flashedUntil: this.bomb?.players[p.id]?.flashedUntil,
@@ -1072,6 +1074,7 @@ export class KapsStrikeServerManager {
       !Number.isSafeInteger(command.tick) || command.tick < 0 ||
       Math.abs(command.moveX) > 1 || Math.abs(command.moveZ) > 1 ||
       (command.weapon !== undefined && !WEAPON_ORDER.includes(command.weapon)) ||
+      (command.heldItem !== undefined && command.heldItem !== "bomb" && !isGrenade(command.heldItem)) ||
       ![command.yaw, command.pitch, command.moveX, command.moveZ].every(Number.isFinite) ||
       [command.jump, command.sprint, command.crouch, command.fire, command.ads, command.reload].some(
         (v) => typeof v !== "boolean"
@@ -1091,7 +1094,7 @@ export class KapsStrikeServerManager {
     player.inputQueue.push({ sequence:command.sequence, tick:command.tick,viewTick:command.viewTick,shot:command.shot,
       yaw:command.yaw, pitch:command.pitch, moveX:command.moveX, moveZ:command.moveZ,
       jump:command.jump, sprint:command.sprint, crouch:command.crouch,
-      fire:command.fire, ads:command.ads, reload:command.reload, weapon:command.weapon, interact:command.interact });
+      fire:command.fire, ads:command.ads, reload:command.reload, weapon:command.weapon, heldItem:command.heldItem, interact:command.interact });
   }
 
   /**
@@ -1126,7 +1129,7 @@ export class KapsStrikeServerManager {
           p.inputQueue=[];p.receivedInputs.clear();p.heldInput=undefined;p.lastInputTick=room.tick;
           p.state.weapon.selected=bp.weapons.find(w=>w!=='knife'&&w!=='pistol')||(bp.weapons.includes('pistol')?'pistol':'knife');p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;
           for(const w of WEAPON_ORDER)p.state.weapon.ammo[w]=WEAPONS[w].capacity;
-          p.history=[];p.pendingFire=undefined;room.addEvent({actor:p.id,kind:'respawn',from:spawn});
+          p.history=[];p.pendingFire=undefined;p.heldItem=undefined;room.addEvent({actor:p.id,kind:'respawn',from:spawn});
         }
       }
     }
@@ -1146,10 +1149,12 @@ export class KapsStrikeServerManager {
           if(command.weapon&&owned.includes(command.weapon))player.state.weapon.selected=command.weapon;
           player.lastSequence=command.sequence;player.receivedInputs.delete(command.sequence);
         }
+        player.heldItem=undefined;
         player.inputQueue=[];player.heldInput=undefined;player.pendingFire=undefined;return;
       }
       // Handle respawn when dead
       if (player.state.hp <= 0) {
+        player.heldItem=undefined;
         if (!room.bomb && room.tick >= player.state.deadUntil) {
           const spawnPos = room.getSpawnPosition(player.team, Math.floor(Math.random() * 100000));
           player.state.movement = newMovement(spawnPos);
@@ -1198,6 +1203,21 @@ export class KapsStrikeServerManager {
             player.state.weapon.selected = input.weapon;
             player.state.weapon.switchUntil = room.tick + 24;
           }
+        }
+        // Validate held non-gun item (utility grenade or carried bomb)
+        if (room.bomb) {
+          const member = room.bomb.players[player.id];
+          if (room.bomb.action?.kind === "plant" && room.bomb.action.player === player.id) {
+            player.heldItem = "bomb";
+          } else if (input.heldItem === "bomb" && room.bomb.carrier === player.id && room.bomb.phase === "active") {
+            player.heldItem = "bomb";
+          } else if (isGrenade(input.heldItem) && (member?.utility?.[input.heldItem] ?? 0) > 0) {
+            player.heldItem = input.heldItem;
+          } else {
+            player.heldItem = undefined;
+          }
+        } else {
+          player.heldItem = undefined;
         }
 
         // Shared prediction/authority timing, including empty magazines and bot weapons.

@@ -1,11 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getAuthUserFromRequest } from '../src/server/courseController.ts';
+import { resolveAyvalikUser } from '../src/server/ayvalikAuth.ts';
+import { isAiStudioDemoEnvironment } from '../src/utils/authDemoGate.ts';
 import { formatMessageDate } from '../src/utils/messageDate.ts';
 test('caller supplied identity and IP cannot authenticate', async () => {
  const req: any = {headers:{'x-username':'emirgan','x-forwarded-for':'127.0.0.1'},query:{userId:1},body:{},socket:{remoteAddress:'127.0.0.1'}};
  const client = {execute:async()=>{throw new Error('Unauthenticated identity must not query users');}};
  assert.equal(await getAuthUserFromRequest(req,client), null);
+});
+test('resolveAyvalikUser rejects demo and mock tokens without bypassing DB lookup', async () => {
+ for (const token of ['demo-preview-token-123', 'mock-admin-token']) {
+  let queried = false;
+  const req: any = { headers: { authorization: `Bearer ${token}` }, query: {}, body: {} };
+  const client = {
+   execute: async ({ args }: { args: unknown[] }) => {
+    queried = true;
+    assert.equal(args[0], token);
+    return { rows: [] };
+   },
+  };
+  assert.equal(await resolveAyvalikUser(req, client), null);
+  assert.equal(queried, true);
+ }
+});
+test('isAiStudioDemoEnvironment permits demo button only in AI Studio dev iframe', () => {
+ const topWin = { top: null as any };
+ topWin.top = topWin;
+ assert.equal(isAiStudioDemoEnvironment(false, { self: {}, top: {}, location: { ancestorOrigins: ['https://aistudio.google.com'] } }, { referrer: 'https://aistudio.google.com/' }), false);
+ assert.equal(isAiStudioDemoEnvironment(true, { self: topWin, top: topWin }, { referrer: 'https://aistudio.google.com/' }), false);
+ assert.equal(isAiStudioDemoEnvironment(true, { self: {}, top: {}, location: { ancestorOrigins: ['https://evil.example.com'] } }, { referrer: 'https://evil.example.com/' }), false);
+ assert.equal(isAiStudioDemoEnvironment(true, { self: {}, top: {} }, { referrer: 'https://aistudio.google.com/app/prompts' }), true);
+ assert.equal(isAiStudioDemoEnvironment(true, { self: {}, top: {}, location: { ancestorOrigins: ['https://aistudio.google.com'] } }, { referrer: '' }), true);
 });
 test('message calendar dates', () => {
  const today=new Date(); today.setHours(12,0,0,0);
@@ -14,3 +40,4 @@ test('message calendar dates', () => {
  assert.equal(formatMessageDate(old),old.toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'}));
  assert.equal(formatMessageDate('invalid'),'');
 });
+
