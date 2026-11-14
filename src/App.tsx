@@ -1,4 +1,5 @@
-import { NotificationPermissionPrompt, showDeviceNotification } from "./components/DeviceNotifications";
+import { dismissDeviceNotification, NotificationPermissionPrompt, showDeviceNotification } from "./components/DeviceNotifications";
+import { useChatViewport } from "./utils/chatViewport";
 import { IncomingActivityInvites } from "./components/ActivityInvites";
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
@@ -92,6 +93,7 @@ import { SUBJECTS } from "./utils/subjectResources";
 import SubjectResources from "./components/SubjectResources";
 
 export default function App() {
+  useChatViewport();
   const [token, setToken] = useState<string | null>(localStorage.getItem("lan_token"));
   const [username, setUsername] = useState<string>(localStorage.getItem("lan_username") || "");
   const [avatar, setAvatar] = useState<string | null>(() => {
@@ -416,7 +418,7 @@ export default function App() {
     const senderId = incoming.senderId ? Number(incoming.senderId) : null;
 
     // 2. AKTİF SOHBETTE İKEN BİLDİRİMİ ENGELLE
-    if (isDm && senderId && activeTabRef.current === "chats" && activeDmChatUserIdRef.current === senderId) {
+    if (document.visibilityState === "visible" && document.hasFocus() && isDm && senderId && activeTabRef.current === "chats" && activeDmChatUserIdRef.current === senderId) {
       return;
     }
 
@@ -680,13 +682,16 @@ export default function App() {
           else if (notif.type === "friend_request") title = "Arkadaşlık İsteği";
           else if (notif.type === "friend_accept") title = "İstek Kabul Edildi";
 
-          if (!isDemoSession) showDeviceNotification(title, notif.content, notif.id);
+          if (!isDemoSession && notif.type !== "new_message" && notif.type !== "dm") {
+            void showDeviceNotification(title, notif.content, notif.id);
+          }
 
           const colonIdx = notif.content.indexOf(":");
           const hasColon = colonIdx !== -1;
           const senderName = hasColon ? notif.content.substring(0, colonIdx).trim() : undefined;
           const text = hasColon ? notif.content.substring(colonIdx + 1).trim() : notif.content;
 
+          if (notif.type === "new_message" || notif.type === "dm") return;
           addToast({
             type: notif.type,
             title,
@@ -707,13 +712,36 @@ export default function App() {
 
       newSocket.on("new_message", (msg: any) => {
         const senderId = Number(msg?.sender);
-        if (activeTabRef.current === 'chats' && activeDmChatUserIdRef.current && activeDmChatUserIdRef.current === senderId) {
+        if (!senderId || senderId === Number(localStorage.getItem("lan_user_id"))) return;
+        if (document.visibilityState === "visible" && document.hasFocus() &&
+          activeTabRef.current === 'chats' && activeDmChatUserIdRef.current === senderId) {
           return; // Suppress unread count for current open DM
         }
-        if (activeTabRef.current !== 'chats') {
-          setUnreadDmCount(prev => prev + 1);
+        const senderName = msg.sender_name || "Bir kullanıcı";
+        const preview = msg.type === "image" ? "📷 Fotoğraf" :
+          msg.type === "voice" ? "🎤 Ses kaydı" :
+          msg.type === "file" ? `📎 ${msg.file_name || "Dosya"}` :
+          String(msg.content ?? "");
+        const avatar = typeof msg.sender_avatar === "string" ? msg.sender_avatar : undefined;
+        if (!isDemoSession) {
+          void showDeviceNotification(senderName, preview, `dm-${senderId}`, false, avatar);
         }
+        addToast({ type: "dm", senderId, senderName, senderAvatar: avatar,
+          senderColor: msg.sender_color, text: preview.slice(0, 220) });
+        setUnreadDmCount(prev => prev + 1);
       });
+
+      newSocket.on("direct_call_incoming", (call: { callId: string; callerUsername: string; callerAvatar?: string }) => {
+        if (isDemoSession || !call?.callId || (document.visibilityState === "visible" && document.hasFocus())) return;
+        void showDeviceNotification("Gelen arama", `${call.callerUsername || "Bir kullanıcı"} arıyor`,
+          call.callId, false, call.callerAvatar, true);
+      });
+      const closeCallAlert = (call: { callId?: string }) => {
+        if (call?.callId) void dismissDeviceNotification(call.callId);
+      };
+      for (const event of ["direct_call_timeout", "direct_call_ended", "direct_call_rejected", "direct_call_accepted"]) {
+        newSocket.on(event, closeCallAlert);
+      }
 
       const fetchPendingApprovals = async () => {
         if (isDemoSession) return;
@@ -1122,7 +1150,7 @@ export default function App() {
         });
       }}
     >
-      <div className="app-shell flex flex-col lg:flex-row h-[100dvh] w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <div className="app-shell kapsapp-viewport flex flex-col lg:flex-row w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
       <NotificationPermissionPrompt />
       <IncomingActivityInvites key={currentUserId} socket={socket} />
       {/* Semantic Top Heading for Search Crawlers & Accessibility */}
@@ -1779,6 +1807,7 @@ export default function App() {
       </div>
 
       {/* Mobile Bottom Nav Bar (4 Ana Sekme + 1 'Daha Fazla' Çekmecesi) */}
+      <div className="kaps-chat-bottom-nav contents">
       <BottomNav
         activeTab={activeTab}
         unreadDmCount={unreadDmCount}
@@ -1797,6 +1826,7 @@ export default function App() {
         isInVoiceRoom={isInVoiceRoom}
         isChatOpen={activeTab === 'chats' && isChatOpen}
       />
+      </div>
 
       {/* Global Birebir Sesli Arama ve Sesli Oda Davet Modülü Katmanları */}
       <IncomingCallNotification />

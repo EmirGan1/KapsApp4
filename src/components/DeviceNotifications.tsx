@@ -53,13 +53,34 @@ export async function enableDeviceNotifications() {
   }
 }
 
-export async function showDeviceNotification(title: string, body: string, id?: number | string, preview = false) {
+function notificationIcon(avatar?: string) {
+  if (avatar) {
+    try {
+      const url = new URL(avatar, window.location.origin);
+      if (url.protocol === "https:" || (url.protocol === "http:" && url.origin === location.origin) ||
+          (url.protocol === "data:" && /^data:image\/(png|jpeg|webp|gif);/i.test(avatar))) return url.href;
+    } catch {}
+  }
+  return "/brand/kapsapp-mark.png";
+}
+
+export async function dismissDeviceNotification(id: string) {
+  if (!supported() || Notification.permission !== "granted") return;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const notifications = await registration?.getNotifications({ tag: `kapsapp-notification-${id}` });
+    notifications?.forEach(notification => notification.close());
+  } catch {}
+}
+
+export async function showDeviceNotification(title: string, body: string, id?: number | string, preview = false, avatar?: string, incomingCall = false) {
   const prefs = getStoredPreferences();
   if (!supported() || Notification.permission !== "granted" ||
       !prefs.desktopNotifs || (!preview && prefs.doNotDisturb)) return false;
   const options: NotificationOptions = {
     body: body.slice(0, 220),
-    icon: "/brand/kapsapp-mark.png",
+    icon: notificationIcon(avatar),
+    requireInteraction: incomingCall,
     tag: id == null ? undefined : `kapsapp-notification-${id}`,
   };
   try {

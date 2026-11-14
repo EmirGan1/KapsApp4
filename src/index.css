@@ -367,3 +367,14 @@ html, body, #root {
 @media (max-width: 1023px) and (pointer: coarse) {
   .mobile-window button, .app-shell > header button { min-height: 44px; }
 }
+
+.kapsapp-viewport { height: 100dvh; }
+html[data-chat-keyboard] .kapsapp-viewport {
+  position: fixed;
+  inset-inline: 0;
+  top: var(--kaps-chat-top, 0px);
+  height: var(--kaps-chat-height, 100dvh);
+  padding-bottom: 0;
+}
+html[data-chat-keyboard] .kaps-chat-composer { padding-bottom: 0; }
+html[data-chat-keyboard] .kaps-chat-bottom-nav { display: none; }

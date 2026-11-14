@@ -1,3 +1,4 @@
+import Avatar from "./Avatar";
 import React, { useState } from "react";
 import { MessageSquare, Heart, MessageCircle, UserPlus, UserCheck, Bell, Users, X, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
 
@@ -112,7 +113,7 @@ export default function ToastContainer({
           >
             {/* Top Row: Icon, Sender / Title, Actions */}
             <div className="flex items-start gap-3">
-              {getToastIcon(toast.type)}
+              {isDm ? <Avatar key={toast.senderAvatar || "initials"} url={toast.senderAvatar} name={toast.senderName} color={toast.senderColor} size={9} className="shrink-0" /> : getToastIcon(toast.type)}
 
               <div className="flex-1 min-w-0 pt-0.5">
                 <div className="flex items-center gap-1.5 flex-wrap">

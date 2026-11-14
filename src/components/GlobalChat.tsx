@@ -340,9 +340,9 @@ export default function GlobalChat({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFile = e.target.files?.[0];
-    if (rawFile && socket) {
+  const uploadLock = useRef(false);
+  const uploadFile = async (rawFile: File) => {
+    if (socket && !uploadLock.current) {
       // 1. Önce dosyanın megabayt (MB) cinsinden gerçek değerini hesapla:
       const fileSizeInMB = (rawFile.size || 0) / (1024 * 1024);
       console.log(`[Upload Debug] Genel sohbet dosya adı: ${rawFile.name}, Tip: ${rawFile.type}, Ham Boyut (Bytes): ${rawFile.size || 0}, MB Karşılığı: ${fileSizeInMB.toFixed(2)} MB`);
@@ -351,9 +351,10 @@ export default function GlobalChat({
       if (fileSizeInMB > 300) {
         console.error('[HATA NEREDE - GlobalChat.tsx:handleFileUpload] Dosya engellendi! Dosya:', rawFile.name, 'MB:', fileSizeInMB.toFixed(2));
         alert(`Dosya boyutu çok büyük (Maksimum 300MB). Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB`);
-        e.target.value = "";
+
         return;
       }
+      uploadLock.current = true;
       setIsUploading(true);
       try {
         let fileToUpload = rawFile;
@@ -389,10 +390,37 @@ export default function GlobalChat({
         console.error("Upload error", err);
         alert(err.message || "Dosya yüklenirken bir hata oluştu.");
       } finally {
+        uploadLock.current = false;
         setIsUploading(false);
-        e.target.value = "";
+
       }
     }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = "";
+    if (file) void uploadFile(file);
+  };
+
+  const imageTransfer = {
+    onPaste: (event: React.ClipboardEvent) => {
+      if (!socket) return;
+      const image = Array.from(event.clipboardData.files).find(file => file.type.startsWith("image/")) ??
+        Array.from(event.clipboardData.items).find(item => item.kind === "file" && item.type.startsWith("image/"))?.getAsFile();
+      if (!image) return;
+      event.preventDefault();
+      void uploadFile(image);
+    },
+    onDragOver: (event: React.DragEvent) => {
+      if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+    },
+    onDrop: (event: React.DragEvent) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      const image = Array.from(event.dataTransfer.files).find(file => file.type.startsWith("image/"));
+      if (image) void uploadFile(image);
+    },
   };
 
   const startRecording = async () => {
@@ -494,7 +522,7 @@ export default function GlobalChat({
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden w-full max-w-full bg-slate-50 dark:bg-slate-950 relative transition-colors duration-200">
       {/* Messages Feed */}
-      <div className="flex-1 flex flex-col min-h-0 h-full w-full min-w-0 max-w-full bg-white dark:bg-slate-950 shadow-sm border-r border-slate-200 dark:border-slate-800 transition-colors duration-200 overflow-hidden">
+      <div {...imageTransfer} className="flex-1 flex flex-col min-h-0 h-full w-full min-w-0 max-w-full bg-white dark:bg-slate-950 shadow-sm border-r border-slate-200 dark:border-slate-800 transition-colors duration-200 overflow-hidden">
         <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between shadow-sm z-10 shrink-0 transition-colors duration-200">
           <div className="min-w-0 pr-2">
             <h1 className="font-bold text-slate-800 dark:text-slate-100 text-base sm:text-lg truncate">Genel Sohbet</h1>
@@ -856,7 +884,7 @@ export default function GlobalChat({
         </div>
 
         {/* Input Bar - Sticky to bottom with safe-area padding for mobile virtual keyboards */}
-        <div className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 relative pb-safe shrink-0 z-10">
+        <div className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 kaps-chat-composer relative pb-safe shrink-0 z-10">
           {replyTo && (
             <div className="absolute bottom-full left-0 w-full bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-2 px-3 sm:px-4 flex justify-between items-center text-xs sm:text-sm shadow-md">
               <div className="truncate pr-2">
@@ -912,21 +940,22 @@ export default function GlobalChat({
                 </div>
               ) : (
                 <input
-                  type="text"
+                  type="text" data-chat-composer enterKeyHint="send"
                   placeholder="Mesaj yaz... (maks 1000)"
                   value={newMessage}
                   maxLength={1000}
                   onChange={handleTyping}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
+                    if (e.key === "Enter" && e.nativeEvent.isComposing) { e.preventDefault(); return; }
+                          if (e.key === "Enter" && !e.shiftKey) {
                       const prefs = loadPreferences();
-                      if (prefs.chatSendOnEnter) {
+                      if (prefs.chatSendOnEnter || matchMedia("(pointer: coarse)").matches) {
                         e.preventDefault();
                         handleSend();
                       }
                     }
                   }}
-                  className="flex-1 bg-transparent border-none focus:outline-none text-sm sm:text-[15px] py-1 text-slate-800 dark:text-slate-100 min-w-0"
+                  className="flex-1 bg-transparent border-none focus:outline-none text-base sm:text-[15px] py-1 text-slate-800 dark:text-slate-100 min-w-0"
                 />
               )}
               {newMessage.length > 700 && (

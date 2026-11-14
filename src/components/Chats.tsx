@@ -394,11 +394,25 @@ export default function Chats({
     socket.on("dm:mark_read", handleDmMessagesRead);
 
     // Enter DM chat Presence tracking
-    if (activeTab === "friends" && activeChat) {
-      socket.emit("dm:enter_chat", { partnerId: activeChat.id });
-    }
+    const syncDmPresence = () => {
+      if (activeTab !== "friends" || !activeChat || !socket.connected) return;
+      if (document.visibilityState === "visible" && document.hasFocus()) {
+        socket.emit("dm:enter_chat", { partnerId: activeChat.id });
+      } else {
+        socket.emit("dm:leave_chat");
+      }
+    };
+    syncDmPresence();
+    document.addEventListener("visibilitychange", syncDmPresence);
+    window.addEventListener("focus", syncDmPresence);
+    window.addEventListener("blur", syncDmPresence);
+    socket.on("connect", syncDmPresence);
 
-    return () => { 
+    return () => {
+      document.removeEventListener("visibilitychange", syncDmPresence);
+      window.removeEventListener("focus", syncDmPresence);
+      window.removeEventListener("blur", syncDmPresence);
+      socket.off("connect", syncDmPresence);
       if (activeTab === "friends") {
         socket.emit("dm:leave_chat");
       }
@@ -566,9 +580,9 @@ export default function Chats({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFile = e.target.files?.[0];
-    if (!rawFile || !activeChat || !socket) return;
+  const uploadLock = useRef(false);
+  const uploadFile = async (rawFile: File) => {
+    if (!activeChat || !socket || uploadLock.current) return;
     
     // 1. Önce dosyanın megabayt (MB) cinsinden gerçek değerini hesapla:
     const fileSizeInMB = (rawFile.size || 0) / (1024 * 1024);
@@ -578,9 +592,10 @@ export default function Chats({
     if (fileSizeInMB > 300) {
       console.error('[HATA NEREDE - Chats.tsx:handleFileUpload] Dosya engellendi! Dosya:', rawFile.name, 'MB:', fileSizeInMB.toFixed(2));
       alert(`Dosya boyutu çok büyük (Maksimum 300MB). Seçilen Dosya: ${rawFile.name}\nTip: ${rawFile.type || 'Bilinmiyor'}\nBoyut: ${fileSizeInMB.toFixed(2)} MB`);
-      e.target.value = '';
+
       return;
     }
+    uploadLock.current = true;
     setIsUploading(true);
     try {
       let fileToUpload = rawFile;
@@ -620,9 +635,36 @@ export default function Chats({
       console.error("File upload error:", err); 
       alert(err.message || "Dosya yüklenirken bir hata oluştu.");
     } finally {
+      uploadLock.current = false;
       setIsUploading(false);
-      e.target.value = '';
+
     }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = "";
+    if (file) void uploadFile(file);
+  };
+
+  const imageTransfer = {
+    onPaste: (event: React.ClipboardEvent) => {
+      if (!activeChat || !socket) return;
+      const image = Array.from(event.clipboardData.files).find(file => file.type.startsWith("image/")) ??
+        Array.from(event.clipboardData.items).find(item => item.kind === "file" && item.type.startsWith("image/"))?.getAsFile();
+      if (!image) return;
+      event.preventDefault();
+      void uploadFile(image);
+    },
+    onDragOver: (event: React.DragEvent) => {
+      if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+    },
+    onDrop: (event: React.DragEvent) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      const image = Array.from(event.dataTransfer.files).find(file => file.type.startsWith("image/"));
+      if (image) void uploadFile(image);
+    },
   };
 
   const openMediaModal = (msg: any) => {
@@ -882,7 +924,7 @@ export default function Chats({
       </div>
 
       {/* Chat Area */}
-      <div className={`flex-1 flex flex-col bg-[#F0F2F5] dark:bg-slate-950 relative transition-colors duration-200 ${!activeChat ? 'hidden lg:flex' : 'flex'}`}>
+      <div {...imageTransfer} className={`flex-1 flex flex-col min-h-0 min-w-0 bg-[#F0F2F5] dark:bg-slate-950 relative transition-colors duration-200 ${!activeChat ? 'hidden lg:flex' : 'flex'}`}>
         {!activeChat ? (
           <div className="flex-1 flex items-center justify-center text-slate-400 flex-col gap-4">
             <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-colors">
@@ -1228,7 +1270,7 @@ export default function Chats({
             </div>
 
             {/* Input */}
-            <div className="bg-[#f0f2f5] dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 relative pb-safe shrink-0 z-10">
+            <div className="bg-[#f0f2f5] dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 kaps-chat-composer relative pb-safe shrink-0 z-10">
               {replyTo && (
                 <div className="absolute bottom-full left-0 w-full bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-2 px-3 sm:px-4 flex justify-between items-center text-xs sm:text-sm shadow-md">
                    <div className="truncate pr-2"><span className="font-semibold text-blue-600 dark:text-blue-400">{replyTo.sender_name || (activeTab === 'friends' ? (activeChat as Friend).username : 'Biri')}</span> kişisine yanıtlanıyor: <span className="text-slate-500 dark:text-slate-400 truncate max-w-[150px] sm:max-w-xs inline-block align-bottom">{replyTo.type === 'text' ? replyTo.content : 'Medya'}</span></div>
@@ -1257,16 +1299,17 @@ export default function Chats({
                   ) : (
                     <form onSubmit={handleSendText}>
                       <input 
-                        type="text" 
+                        type="text" data-chat-composer enterKeyHint="send" 
                         placeholder="Mesaj yazın... (maks 1000)" 
                         maxLength={1000}
-                        className="w-full bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl shadow-sm text-sm sm:text-[15px]"
+                        className="w-full bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl shadow-sm text-base sm:text-[15px]"
                         value={text}
                         onChange={handleTyping}
                         onKeyDown={(e) => {
+                          if (e.key === "Enter" && e.nativeEvent.isComposing) { e.preventDefault(); return; }
                           if (e.key === "Enter" && !e.shiftKey) {
                             const prefs = loadPreferences();
-                            if (!prefs.chatSendOnEnter) {
+                            if (!prefs.chatSendOnEnter && !matchMedia("(pointer: coarse)").matches) {
                               e.preventDefault();
                             }
                           }
