@@ -1,3 +1,4 @@
+import { disableDeviceNotifications, enableDeviceNotifications, showDeviceNotification } from "./DeviceNotifications";
 import React, { useState } from "react";
 import {
   Palette,
@@ -157,18 +158,26 @@ export default function Settings({
     (localStorage.getItem("lan_is_demo") === "true" ||
       (localStorage.getItem("lan_token") || "").startsWith("demo-"));
 
+  const [deviceNotice, setDeviceNotice] = useState("");
+  const [deviceBusy, setDeviceBusy] = useState(false);
+  const deviceEnabled = activePrefs.desktopNotifs && typeof Notification !== "undefined" &&
+    Notification.permission === "granted";
+
   const handleToggleDesktopNotifs = async () => {
-    const current = activePrefs.desktopNotifs;
-    if (!current && typeof window !== "undefined" && "Notification" in window) {
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission === "granted") {
-          updatePref({ desktopNotifs: true });
-          return;
-        }
-      } catch {}
+    setDeviceNotice("");
+    if (deviceEnabled) {
+      disableDeviceNotifications();
+      updatePref({ desktopNotifs: false });
+      return;
     }
-    updatePref({ desktopNotifs: !current });
+    setDeviceBusy(true);
+    try {
+      const message = await enableDeviceNotifications();
+      updatePref({ desktopNotifs: !message });
+      setDeviceNotice(message || "Sistem bildirimleri açık.");
+    } finally {
+      setDeviceBusy(false);
+    }
   };
 
   const handleTestSound = () => {
@@ -761,25 +770,31 @@ export default function Settings({
                       <div>
                         <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
                           <Monitor size={16} className="text-indigo-500" />
-                          <span>Masaüstü Tarayıcı Bildirimleri</span>
+                          <span>Cihaz Bildirimleri</span>
                         </h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          KapsApp sekmesi arka plandayken gelen önemli duyuru ve çağrıları sistem tepsisinde göster.
+                          KapsApp açıkken yeni mesajları ve bildirimleri cihazında göster.
                         </p>
+                        {deviceNotice && <p role="status" className="mt-2 text-xs text-slate-600 dark:text-slate-300">{deviceNotice}</p>}
+                        {deviceEnabled && <button type="button" className="mt-2 text-xs font-medium text-blue-600 dark:text-blue-400" onClick={async () => {
+                          const shown = await showDeviceNotification("Test bildirimi", "KapsApp cihaz bildirimleri çalışıyor.", undefined, true);
+                          setDeviceNotice(shown ? "Test bildirimi gönderildi." : "Test bildirimi gönderilemedi.");
+                        }}>Test bildirimi gönder</button>}
                       </div>
                       <button
                         type="button"
                         role="switch"
-                        aria-checked={activePrefs.desktopNotifs}
-                        aria-label="Masaüstü Tarayıcı Bildirimleri"
+                        aria-checked={deviceEnabled}
+                        disabled={deviceBusy}
+                        aria-label="Cihaz Bildirimleri"
                         onClick={handleToggleDesktopNotifs}
                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                          activePrefs.desktopNotifs ? "bg-blue-600" : "bg-slate-300 dark:bg-slate-700"
+                          deviceEnabled ? "bg-blue-600" : "bg-slate-300 dark:bg-slate-700"
                         }`}
                       >
                         <span
                           className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-                            activePrefs.desktopNotifs ? "translate-x-5" : "translate-x-0"
+                            deviceEnabled ? "translate-x-5" : "translate-x-0"
                           }`}
                         />
                       </button>
