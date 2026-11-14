@@ -1,4 +1,9 @@
 import { GRENADE_NAMES } from "../../../games/kapsstrike/grenades";
+import {
+  getTouchCombatButtonState,
+  getTopRightEquipmentSlots,
+  getReadOnlyInventoryContents,
+} from "../../../games/kapsstrike/hudEquipment";
 import { BOMB_WIN_TARGETS } from "../../../games/kapsstrike/bomb";
 import { Maximize, Minimize } from "lucide-react";
 import StrikeDamageFeedback from "./StrikeDamageFeedback";
@@ -1066,209 +1071,421 @@ export default function KapsStrikeGame({
             }}
           />
 
-          {/* Main Fire Button */}
-          <button
-            type="button"
-            className="ks-touch-btn-custom ks-touch-fire-btn"
-            style={{
-              left: `${touchLayout.fire.x}%`,
-              top: `${touchLayout.fire.y}%`,
-              transform: `translate(-50%, -50%) scale(${touchLayout.fire.size})`,
-              opacity: touchLayout.fire.opacity,
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              game.current?.setTouchFire(true);
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              game.current?.setTouchFire(false);
-            }}
-            onTouchCancel={() => game.current?.setTouchFire(false)}
-          >
-            <span className="text-base leading-none">💥</span>
-            <span>ATEŞ</span>
-          </button>
+          {(() => {
+            const touchCombat = getTouchCombatButtonState(hud);
+            const equipData = getTopRightEquipmentSlots(
+              hud,
+              settings.hiddenWeapons || [],
+              isBombRoom
+            );
+            const readOnlyInv = getReadOnlyInventoryContents({
+              weapons: hud?.inventory,
+              utility: hud?.utilityInventory,
+              armor: hud?.armor,
+              isCarrier: hud?.isBombCarrier,
+            });
 
-          {/* ADS / Dürbün Button */}
-          <button
-            type="button"
-            className="ks-touch-btn-custom ks-touch-ads-btn"
-            style={{
-              left: `${touchLayout.ads.x}%`,
-              top: `${touchLayout.ads.y}%`,
-              transform: `translate(-50%, -50%) scale(${touchLayout.ads.size})`,
-              opacity: touchLayout.ads.opacity,
-              background: touchAdsActive ? "rgba(236, 193, 123, 0.45)" : undefined,
-              borderColor: touchAdsActive ? "#ecc17b" : undefined,
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              const next = hud?.weapon === "knife" ? true : !touchAdsActive;
-              setTouchAdsActive(next);
-              game.current?.setTouchAds(next);
-            }}
-            onTouchEnd={() => {
-              if (hud?.weapon === "knife") {
-                setTouchAdsActive(false);
-                game.current?.setTouchAds(false);
-              }
-            }}
-            onTouchCancel={() => {
-              setTouchAdsActive(false);
-              game.current?.setTouchAds(false);
-            }}
-          >
-            <span className="text-base leading-none">🎯</span>
-            <span>{hud?.weapon === "knife" ? "GÜÇLÜ" : "DÜRBÜN"}</span>
-          </button>
+            return (
+              <>
+                {/* Read-Only Inventory Box on Top-Left (when not in Bomb mode; Bomb mode renders its own read-only .ks-bomb-objective) */}
+                {currentRoom?.mode !== "bomb" && (
+                  <aside
+                    className="ks-readonly-inventory-card"
+                    aria-label="Envanter İçeriği"
+                  >
+                    <span className="ks-inv-header">ENVANTER İÇERİĞİ</span>
+                    <div className="ks-inv-readonly-list">
+                      {readOnlyInv.weaponNames.length > 0 && (
+                        <span className="ks-inv-readonly-item">
+                          Silahlar: <b>{readOnlyInv.weaponNames.slice(0, 3).join(" · ")}</b>
+                        </span>
+                      )}
+                      {readOnlyInv.grenadeItems.length > 0 && (
+                        <span className="ks-inv-readonly-item">
+                          Bombalar:{" "}
+                          {readOnlyInv.grenadeItems.map((g) => (
+                            <b key={g.kind} className="ks-inv-grenade-badge">
+                              {g.label} ×{g.count}
+                            </b>
+                          ))}
+                        </span>
+                      )}
+                    </div>
+                  </aside>
+                )}
 
-          {/* Şarjör Değiştir (Reload) Button */}
-          <button
-            type="button"
-            className="ks-touch-btn-custom ks-touch-reload-btn"
-            style={{
-              left: `${touchLayout.reload.x}%`,
-              top: `${touchLayout.reload.y}%`,
-              transform: `translate(-50%, -50%) scale(${touchLayout.reload.size})`,
-              opacity: touchLayout.reload.opacity,
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              game.current?.triggerReload();
-            }}
-          >
-            <span className="text-base leading-none">🔄</span>
-            <span>YENİLE</span>
-          </button>
-
-          {/* Zıpla (Jump) Button */}
-          <button
-            type="button"
-            aria-label="Zıpla"
-            className="ks-touch-btn-custom ks-touch-jump-btn"
-            style={{
-              left: `${touchLayout.jump.x}%`,
-              top: `${touchLayout.jump.y}%`,
-              transform: `translate(-50%, -50%) scale(${touchLayout.jump.size})`,
-              opacity: touchLayout.jump.opacity,
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              game.current?.setTouchJump(true);
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              game.current?.setTouchJump(false);
-            }}
-            onTouchCancel={() => game.current?.setTouchJump(false)}
-          >
-            <span className="text-base leading-none">🦘</span>
-            <span>ZIPLA</span>
-          </button>
-
-          {/* Çömel / Kay (Crouch) Button */}
-          <button
-            type="button"
-            className="ks-touch-btn-custom ks-touch-crouch-btn"
-            style={{
-              left: `${touchLayout.crouch.x}%`,
-              top: `${touchLayout.crouch.y}%`,
-              transform: `translate(-50%, -50%) scale(${touchLayout.crouch.size})`,
-              opacity: touchLayout.crouch.opacity,
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              game.current?.setTouchCrouch(true);
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              game.current?.setTouchCrouch(false);
-            }}
-            onTouchCancel={() => game.current?.setTouchCrouch(false)}
-          >
-            <span className="text-base leading-none">🔻</span>
-            <span>KAY</span>
-          </button>
-
-          {/* Silahı İncele (Inspect) Button - Requested by user */}
-          <button
-            type="button"
-            className="ks-touch-btn-custom ks-touch-inspect-btn"
-            style={{
-              left: `${touchLayout.inspect.x}%`,
-              top: `${touchLayout.inspect.y}%`,
-              transform: `translate(-50%, -50%) scale(${touchLayout.inspect.size})`,
-              opacity: touchLayout.inspect.opacity,
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              game.current?.triggerInspect();
-            }}
-          >
-            <span className="text-base leading-none">👁️</span>
-            <span>İNCELE</span>
-          </button>
-
-          {/* Quick Weapon Selector Wheel Popup Menu */}
-          {weaponMenuOpen && (
-            <div
-              className="ks-weapon-wheel"
-              style={{
-                position: "absolute",
-                left: `${touchLayout.weapon.x}%`,
-                top: `calc(${touchLayout.weapon.y}% - 85px)`,
-                transform: `translateX(-50%) scale(${touchLayout.weapon.size})`,
-              }}
-            >
-              {(hud?.inventory || WEAPON_ORDER.slice(0, 6)).filter(w=>isBombRoom||!settings.hiddenWeapons?.includes(w)).map((wId) => (
-                <button
-                  key={wId}
-                  type="button"
-                  className={`ks-weapon-wheel-btn ${hud?.weapon === wId ? "active" : ""}`}
-                  onClick={() => {
-                    game.current?.selectWeapon(wId);
-                    setWeaponMenuOpen(false);
-                  }}
+                {/* TOP-RIGHT WEAPON & EQUIPMENT SWITCHER */}
+                <div
+                  className="ks-topright-equip"
+                  aria-label="Sağ Üst Silah ve Ekipman Değiştirici"
                 >
-                  <span className="font-bold">{WEAPONS[wId].name.split(" ")[0]}</span>
-                  <span className="text-[10px] opacity-75">
-                    {wId === "knife" ? "Sınırsız" : `${WEAPONS[wId].capacity} Mermi`}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+                  <div className="ks-topright-equip-header">
+                    <button
+                      type="button"
+                      data-testid="ks-topright-equip-btn"
+                      className={`ks-topright-equip-btn ${
+                        equipData.activeSummary.isGrenade ? "is-grenade" : ""
+                      }`}
+                      onClick={() => setWeaponMenuOpen((prev) => !prev)}
+                      title="Silah / Ekipman Değiştir"
+                    >
+                      <span
+                        className="ks-topright-equip-dot"
+                        style={{ backgroundColor: equipData.activeSummary.badgeColor }}
+                      />
+                      <div className="ks-topright-equip-info">
+                        <span className="ks-topright-equip-title">
+                          {equipData.activeSummary.isGrenade ? "💣 " : "🔫 "}
+                          {equipData.activeSummary.title}
+                        </span>
+                        <span className="ks-topright-equip-sub">
+                          {equipData.activeSummary.subtitle}
+                        </span>
+                      </div>
+                      <span className="ks-topright-equip-badge">
+                        Ekipman {weaponMenuOpen ? "▲" : "▼"}
+                      </span>
+                    </button>
 
-          {/* Single Compact Active Weapon Card */}
-          <div
-            className="ks-compact-weapon-card"
-            style={{
-              position: "absolute",
-              left: `${touchLayout.weapon.x}%`,
-              top: `${touchLayout.weapon.y}%`,
-              transform: `translate(-50%, -50%) scale(${touchLayout.weapon.size})`,
-              opacity: touchLayout.weapon.opacity,
-            }}
-            onClick={() => setWeaponMenuOpen((prev) => !prev)}
-            title="Silah Değiştir"
-          >
-            <span
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: WEAPONS[hud?.weapon || "rifle"]?.color || "#ecc17b" }}
-            />
-            <div className="flex flex-col">
-              <span className="font-bold text-xs text-slate-100">
-                {WEAPONS[hud?.weapon || "rifle"]?.name || "Silah"}
-              </span>
-              <span className="text-[11px] font-mono text-amber-400">
-                {hud?.weapon === "knife" ? "Taktik Bıçak" : `${hud?.ammo || 0} / ${hud?.capacity || 0}`}
-              </span>
-            </div>
-            <span className="text-xs text-slate-400 font-bold ml-1">
-              {weaponMenuOpen ? "▲" : "▼"}
-            </span>
-          </div>
+                    {/* 1-Tap Quick Weapon Cycle Button */}
+                    <button
+                      type="button"
+                      className="ks-topright-cycle-btn"
+                      title="Hızlı Silah Değiştir"
+                      aria-label="Hızlı Silah Değiştir"
+                      onClick={() => {
+                        const wList = equipData.weapons;
+                        if (wList.length === 0) return;
+                        const curIdx = wList.findIndex((w) => w.id === hud?.weapon);
+                        const nextW = wList[(curIdx + 1) % wList.length];
+                        if (nextW) {
+                          game.current?.selectWeapon(nextW.id);
+                        }
+                      }}
+                    >
+                      🔄
+                    </button>
+                  </div>
+
+                  {/* Quick 1-Tap Grenade & Weapon Pills under Top-Right Switcher */}
+                  <div className="ks-topright-quick-pills">
+                    {equipData.weapons.slice(0, 3).map((w) => (
+                      <button
+                        key={w.id}
+                        type="button"
+                        className={`ks-topright-pill ${w.active ? "active" : ""}`}
+                        onClick={() => {
+                          game.current?.selectWeapon(w.id);
+                          setWeaponMenuOpen(false);
+                        }}
+                      >
+                        {w.label.split(" ")[0]}
+                      </button>
+                    ))}
+                    {equipData.grenades.map((g) => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        data-testid={`ks-equip-grenade-${g.id}`}
+                        className={`ks-topright-pill is-grenade ${g.active ? "active" : ""}`}
+                        onClick={() => {
+                          game.current?.selectUtility(g.active ? undefined : g.id);
+                          setWeaponMenuOpen(false);
+                        }}
+                      >
+                        💣 {g.label.split(" ")[0]} ×{g.count}
+                      </button>
+                    ))}
+                    {equipData.bombSlot && (
+                      <button
+                        type="button"
+                        className={`ks-topright-pill is-bomb ${equipData.bombSlot.active ? "active" : ""}`}
+                        onClick={() => {
+                          game.current?.equipBomb();
+                          setWeaponMenuOpen(false);
+                        }}
+                      >
+                        📟 C4
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Expanded Top-Right Equipment Selection Tray */}
+                  {weaponMenuOpen && (
+                    <div
+                      className="ks-topright-equip-tray"
+                      role="dialog"
+                      aria-label="Silah ve Ekipman Seçim Menüsü"
+                    >
+                      <div className="ks-equip-tray-section">
+                        <span className="ks-equip-tray-label">SİLAHLAR</span>
+                        <div className="ks-equip-tray-grid">
+                          {equipData.weapons.map((w) => (
+                            <button
+                              key={w.id}
+                              type="button"
+                              className={`ks-weapon-wheel-btn ${w.active ? "active" : ""}`}
+                              onClick={() => {
+                                game.current?.selectWeapon(w.id);
+                                setWeaponMenuOpen(false);
+                              }}
+                            >
+                              <span className="font-bold">{w.label}</span>
+                              <span className="text-[10px] opacity-75">{w.sublabel}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {(equipData.grenades.length > 0 || equipData.bombSlot) && (
+                        <div className="ks-equip-tray-section">
+                          <span className="ks-equip-tray-label">BOMBALAR & GÖREV EKİPMANI</span>
+                          <div className="ks-equip-tray-grid">
+                            {equipData.grenades.map((g) => (
+                              <button
+                                key={g.id}
+                                type="button"
+                                className={`ks-weapon-wheel-btn is-grenade-slot ${
+                                  g.active ? "active" : ""
+                                }`}
+                                onClick={() => {
+                                  game.current?.selectUtility(g.active ? undefined : g.id);
+                                  setWeaponMenuOpen(false);
+                                }}
+                              >
+                                <span className="font-bold">💣 {g.label}</span>
+                                <span className="text-[10px] opacity-80">
+                                  Adet: ×{g.count} · {g.active ? "Elde" : "Ele Al"}
+                                </span>
+                              </button>
+                            ))}
+                            {equipData.bombSlot && (
+                              <button
+                                type="button"
+                                className={`ks-weapon-wheel-btn is-bomb-slot ${
+                                  equipData.bombSlot.active ? "active" : ""
+                                }`}
+                                onClick={() => {
+                                  game.current?.equipBomb();
+                                  setWeaponMenuOpen(false);
+                                }}
+                              >
+                                <span className="font-bold">📟 {equipData.bombSlot.label}</span>
+                                <span className="text-[10px] opacity-80">
+                                  {equipData.bombSlot.sublabel}
+                                </span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* COMBAT ACTION BUTTONS:
+                    When holding a weapon -> Show normal Attack (ATEŞ), ADS (DÜRBÜN), Reload (YENİLE).
+                    When holding a grenade -> Hide Attack button completely and show ONLY "UZAĞA AT" & "YAKINA AT"! */}
+                {touchCombat.showAttackButton && (
+                  <>
+                    {/* Main Fire Button */}
+                    <button
+                      type="button"
+                      data-testid="ks-touch-fire-btn"
+                      className="ks-touch-btn-custom ks-touch-fire-btn"
+                      style={{
+                        left: `${touchLayout.fire.x}%`,
+                        top: `${touchLayout.fire.y}%`,
+                        transform: `translate(-50%, -50%) scale(${touchLayout.fire.size})`,
+                        opacity: touchLayout.fire.opacity,
+                      }}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        game.current?.setTouchFire(true);
+                      }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        game.current?.setTouchFire(false);
+                      }}
+                      onTouchCancel={() => game.current?.setTouchFire(false)}
+                    >
+                      <span className="text-base leading-none">💥</span>
+                      <span>ATEŞ</span>
+                    </button>
+
+                    {/* ADS / Dürbün Button */}
+                    <button
+                      type="button"
+                      className="ks-touch-btn-custom ks-touch-ads-btn"
+                      style={{
+                        left: `${touchLayout.ads.x}%`,
+                        top: `${touchLayout.ads.y}%`,
+                        transform: `translate(-50%, -50%) scale(${touchLayout.ads.size})`,
+                        opacity: touchLayout.ads.opacity,
+                        background: touchAdsActive ? "rgba(236, 193, 123, 0.45)" : undefined,
+                        borderColor: touchAdsActive ? "#ecc17b" : undefined,
+                      }}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        const next = hud?.weapon === "knife" ? true : !touchAdsActive;
+                        setTouchAdsActive(next);
+                        game.current?.setTouchAds(next);
+                      }}
+                      onTouchEnd={() => {
+                        if (hud?.weapon === "knife") {
+                          setTouchAdsActive(false);
+                          game.current?.setTouchAds(false);
+                        }
+                      }}
+                      onTouchCancel={() => {
+                        setTouchAdsActive(false);
+                        game.current?.setTouchAds(false);
+                      }}
+                    >
+                      <span className="text-base leading-none">🎯</span>
+                      <span>{hud?.weapon === "knife" ? "GÜÇLÜ" : "DÜRBÜN"}</span>
+                    </button>
+
+                    {/* Şarjör Değiştir (Reload) Button */}
+                    <button
+                      type="button"
+                      className="ks-touch-btn-custom ks-touch-reload-btn"
+                      style={{
+                        left: `${touchLayout.reload.x}%`,
+                        top: `${touchLayout.reload.y}%`,
+                        transform: `translate(-50%, -50%) scale(${touchLayout.reload.size})`,
+                        opacity: touchLayout.reload.opacity,
+                      }}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        game.current?.triggerReload();
+                      }}
+                    >
+                      <span className="text-base leading-none">🔄</span>
+                      <span>YENİLE</span>
+                    </button>
+                  </>
+                )}
+
+                {touchCombat.showGrenadeThrowButtons && (
+                  <div
+                    className="ks-touch-grenade-throw-group"
+                    aria-label={`${touchCombat.activeGrenadeName || "Bomba"} Atış Tuşları`}
+                  >
+                    {/* UZAĞA AT Button (replaces Attack button position) */}
+                    <button
+                      type="button"
+                      data-testid="ks-touch-throw-far"
+                      className="ks-touch-btn-custom ks-touch-throw-far-btn"
+                      style={{
+                        left: `${touchLayout.fire.x}%`,
+                        top: `${touchLayout.fire.y}%`,
+                        transform: `translate(-50%, -50%) scale(${touchLayout.fire.size})`,
+                      }}
+                      onClick={() => game.current?.throwUtility(false)}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        game.current?.throwUtility(false);
+                      }}
+                    >
+                      <span className="text-base leading-none">🎯</span>
+                      <span>UZAĞA AT</span>
+                    </button>
+
+                    {/* YAKINA AT Button */}
+                    <button
+                      type="button"
+                      data-testid="ks-touch-throw-near"
+                      className="ks-touch-btn-custom ks-touch-throw-near-btn"
+                      style={{
+                        left: `${Math.max(58, touchLayout.fire.x - 13)}%`,
+                        top: `${Math.min(88, touchLayout.fire.y + 4)}%`,
+                        transform: `translate(-50%, -50%) scale(${touchLayout.fire.size})`,
+                      }}
+                      onClick={() => game.current?.throwUtility(true)}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        game.current?.throwUtility(true);
+                      }}
+                    >
+                      <span className="text-base leading-none">🤏</span>
+                      <span>YAKINA AT</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Zıpla (Jump) Button */}
+                <button
+                  type="button"
+                  aria-label="Zıpla"
+                  className="ks-touch-btn-custom ks-touch-jump-btn"
+                  style={{
+                    left: `${touchLayout.jump.x}%`,
+                    top: `${touchLayout.jump.y}%`,
+                    transform: `translate(-50%, -50%) scale(${touchLayout.jump.size})`,
+                    opacity: touchLayout.jump.opacity,
+                  }}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    game.current?.setTouchJump(true);
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    game.current?.setTouchJump(false);
+                  }}
+                  onTouchCancel={() => game.current?.setTouchJump(false)}
+                >
+                  <span className="text-base leading-none">🦘</span>
+                  <span>ZIPLA</span>
+                </button>
+
+                {/* Çömel / Kay (Crouch) Button */}
+                <button
+                  type="button"
+                  className="ks-touch-btn-custom ks-touch-crouch-btn"
+                  style={{
+                    left: `${touchLayout.crouch.x}%`,
+                    top: `${touchLayout.crouch.y}%`,
+                    transform: `translate(-50%, -50%) scale(${touchLayout.crouch.size})`,
+                    opacity: touchLayout.crouch.opacity,
+                  }}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    game.current?.setTouchCrouch(true);
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    game.current?.setTouchCrouch(false);
+                  }}
+                  onTouchCancel={() => game.current?.setTouchCrouch(false)}
+                >
+                  <span className="text-base leading-none">🔻</span>
+                  <span>KAY</span>
+                </button>
+
+                {/* Silahı İncele (Inspect) Button */}
+                {!touchCombat.showGrenadeThrowButtons && (
+                  <button
+                    type="button"
+                    className="ks-touch-btn-custom ks-touch-inspect-btn"
+                    style={{
+                      left: `${touchLayout.inspect.x}%`,
+                      top: `${touchLayout.inspect.y}%`,
+                      transform: `translate(-50%, -50%) scale(${touchLayout.inspect.size})`,
+                      opacity: touchLayout.inspect.opacity,
+                    }}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      game.current?.triggerInspect();
+                    }}
+                  >
+                    <span className="text-base leading-none">👁️</span>
+                    <span>İNCELE</span>
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

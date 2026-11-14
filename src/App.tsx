@@ -551,21 +551,23 @@ export default function App() {
     const groupId = notif.chatId || notif.groupId || notif.group_id || notif.roomId || notif.room_id || (notif.type === "new_group_message" ? notif.target_id : null);
 
     if (notif.type === "new_group_message" || notif.type === "group_invite" || groupId) {
+      setActiveTab("chats");
+      setActiveSubject(null);
       if (groupId) {
         setTargetGroupId(groupId);
         navigate(`/sohbetler?room=${groupId}`);
-      } else {
+      } else if (location.pathname !== "/sohbetler") {
         navigate("/sohbetler");
       }
-      handleTabChange("chats");
     } else if (notif.type === "new_message" || notif.type === "dm") {
+      setActiveTab("chats");
+      setActiveSubject(null);
       if (senderId) {
         setTargetChatUserId(senderId);
         navigate(`/sohbetler?dm=${senderId}`);
-      } else {
+      } else if (location.pathname !== "/sohbetler") {
         navigate("/sohbetler");
       }
-      handleTabChange("chats");
     } else if (notif.type === "like" || notif.type === "comment") {
       handleTabChange("notifications");
     }
@@ -734,7 +736,15 @@ export default function App() {
       });
 
       newSocket.on("direct_call_incoming", (call: { callId: string; callerUsername: string; callerAvatar?: string }) => {
-        if (isDemoSession || hasDevicePush() || !call?.callId || (document.visibilityState === "visible" && document.hasFocus())) return;
+        if (!call?.callId) return;
+        const isStandalonePwa =
+          window.matchMedia?.("(display-mode: standalone)")?.matches ||
+          (window.navigator as any)?.standalone === true;
+        if (document.visibilityState === "visible" || isStandalonePwa) {
+          void dismissDeviceNotification(call.callId);
+          return;
+        }
+        if (isDemoSession || hasDevicePush()) return;
         void showDeviceNotification("Gelen arama", `${call.callerUsername || "Bir kullanıcı"} arıyor`,
           call.callId, false, call.callerAvatar, true);
       });
@@ -1170,7 +1180,10 @@ export default function App() {
         });
       }}
     >
-      <div className="app-shell kapsapp-viewport flex flex-col lg:flex-row w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <div
+        data-bottom-nav-hidden={(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || activeTab === "games") ? "true" : undefined}
+        className="app-shell kapsapp-viewport flex flex-col lg:flex-row w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] lg:pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+      >
       <NotificationPermissionPrompt />
       <IncomingActivityInvites key={currentUserId} socket={socket} />
       {/* Semantic Top Heading for Search Crawlers & Accessibility */}
@@ -1244,7 +1257,10 @@ export default function App() {
           {/* Mobile Direct Settings Button */}
           <Link
             to="/ayarlar"
-            onClick={() => handleTabChange('settings')}
+            onClick={(e) => {
+              e.preventDefault();
+              handleTabChange('settings');
+            }}
             className={`p-2 rounded-xl transition-all cursor-pointer border ${
               activeTab === 'settings'
                 ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800'
@@ -2027,7 +2043,12 @@ function NavItem({
     return (
       <Link 
         to={to}
-        onClick={onClick}
+        onClick={(e) => {
+          if (onClick) {
+            e.preventDefault();
+            onClick();
+          }
+        }}
         className={commonClass}
         title={label}
         aria-label={label}

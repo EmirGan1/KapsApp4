@@ -68,18 +68,44 @@ export default function Chats({
     }
   }, [activeChat, activeTab, onActiveChatUserChange, onActiveChatChange]);
 
-  // Android Hardware Back Button integration to exit active DM chat
+  const pushedChatHistoryRef = useRef(false);
+
   useEffect(() => {
+    if (activeChat && typeof window !== "undefined" && window.innerWidth < 1024) {
+      if (!window.history.state?.kapsChatOpen) {
+        window.history.pushState(
+          { ...(window.history.state || {}), kapsChatOpen: true },
+          "",
+          window.location.href
+        );
+        pushedChatHistoryRef.current = true;
+      }
+    } else if (!activeChat) {
+      pushedChatHistoryRef.current = false;
+    }
+  }, [activeChat]);
+
+  // iOS Edge-Swipe Back (popstate) & Android Hardware Back Button integration to exit active DM/Group chat
+  useEffect(() => {
+    const handlePopState = () => {
+      if (activeChatRef.current && !window.history.state?.kapsChatOpen) {
+        pushedChatHistoryRef.current = false;
+        setActiveChat(null);
+      }
+    };
     const handleBack = (e: any) => {
       if (activeChatRef.current) {
+        pushedChatHistoryRef.current = false;
         setActiveChat(null);
         if (e.detail) {
           e.detail.handled = true;
         }
       }
     };
+    window.addEventListener("popstate", handlePopState);
     window.addEventListener("kaps:hardware_back", handleBack);
     return () => {
+      window.removeEventListener("popstate", handlePopState);
       window.removeEventListener("kaps:hardware_back", handleBack);
     };
   }, []);
@@ -165,7 +191,44 @@ export default function Chats({
   const [activeModalData, setActiveModalData] = useState<MediaModalData | null>(null);
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      if (currentUserId <= 0 || localStorage.getItem("lan_is_demo") === "true") {
+        setFriends([
+          {
+            id: 101,
+            username: "Deniz Yılmaz",
+            avatar: null,
+            color: "#3b82f6",
+            status: 1,
+            is_sender: false,
+            lastMessageText: "Fizik HL Paper 2 soru çözümlerini yükledim!",
+            lastMessageTime: new Date(Date.now() - 15 * 60000).toISOString(),
+            unreadCount: 1,
+          },
+          {
+            id: 102,
+            username: "Zeynep Kaya",
+            avatar: null,
+            color: "#10b981",
+            status: 1,
+            is_sender: true,
+            lastMessageText: "Matematik deneme analizine saat 14:00'te bakalım mı?",
+            lastMessageTime: new Date(Date.now() - 45 * 60000).toISOString(),
+            unreadCount: 0,
+          },
+        ]);
+        setGroups([
+          {
+            id: 201,
+            name: "IB M27 Fizik & Matematik Çalışma Grubu",
+            creator: 101,
+            members: [-1, 101, 102],
+            created_at: new Date(Date.now() - 86400000).toISOString(),
+          },
+        ]);
+      }
+      return;
+    }
     const loadFriends = () => socket.emit("get_friends", (data: Friend[]) => setFriends(data.filter(f => f.status === 1)));
     const loadGroups = () => socket.emit("get_groups", (data: Group[]) => setGroups(data));
     socket.emit("get_all_users", (allUsers: any[]) => setUsers(allUsers));
@@ -938,7 +1001,14 @@ export default function Chats({
             <div className="bg-white dark:bg-slate-900 px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 shadow-sm z-10 transition-colors duration-200">
               <button 
                 className="lg:hidden px-2.5 py-1.5 -ml-1 text-blue-600 dark:text-blue-400 font-bold text-xs rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 cursor-pointer shrink-0" 
-                onClick={() => setActiveChat(null)}
+                onClick={() => {
+                  if (pushedChatHistoryRef.current && window.history.state?.kapsChatOpen) {
+                    pushedChatHistoryRef.current = false;
+                    window.history.back();
+                  } else {
+                    setActiveChat(null);
+                  }
+                }}
                 aria-label="Sohbet listesine geri dön"
               >
                 ← Sohbetler

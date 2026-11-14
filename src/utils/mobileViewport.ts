@@ -12,7 +12,22 @@ export function installMobileViewport() {
     root.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
     const active = document.activeElement;
     const editing = active instanceof HTMLElement && active.matches('input, textarea, [contenteditable="true"]');
-    root.dataset.keyboardOpen = String(editing && window.innerHeight - height > 100);
+    root.dataset.keyboardOpen = String(editing && window.innerHeight - height > 60);
+  };
+  const origPushState = window.history.pushState.bind(window.history);
+  const origReplaceState = window.history.replaceState.bind(window.history);
+  window.history.pushState = function (data: any, unused: string, url?: string | URL | null) {
+    if (url && !(data && typeof data === 'object' && 'kapsChatOpen' in data)) {
+      try {
+        const resolved = new URL(String(url), window.location.href);
+        const currentPath = window.location.pathname + window.location.search + window.location.hash;
+        const targetPath = resolved.pathname + resolved.search + resolved.hash;
+        if (targetPath === currentPath) {
+          return origReplaceState(data, unused, url);
+        }
+      } catch {}
+    }
+    return origPushState(data, unused, url);
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
   viewport?.addEventListener('resize', schedule);
@@ -23,6 +38,7 @@ export function installMobileViewport() {
   update();
   return () => {
     cancelAnimationFrame(frame);
+    window.history.pushState = origPushState;
     viewport?.removeEventListener('resize', schedule);
     viewport?.removeEventListener('scroll', schedule);
     window.removeEventListener('resize', schedule);

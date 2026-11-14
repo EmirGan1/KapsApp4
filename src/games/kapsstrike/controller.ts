@@ -1,4 +1,4 @@
-import { GRENADE_KEYS, type GrenadeKind } from "./grenades";
+import { GRENADE_KEYS, grenadeLaunch, stepGrenade, type Grenade, type GrenadeKind } from "./grenades";
 import {FootstepTracker,stepSurface} from "./footsteps";
 import {touchAimDelta, TouchCombatAssist, type TouchCombatTarget} from './aimAssist';
 import {TeamSpectator} from './spectator';
@@ -64,8 +64,10 @@ export interface StrikeNetworkSample {
 
 export interface StrikeHUD {
   bombEquipped?:boolean;
+  isBombCarrier?:boolean;
   utilityCount?: number;
   utilityEquipped?:GrenadeKind;
+  utilityInventory?:Partial<Record<GrenadeKind, number>>;
   spectating?:string;
   spectatorCount?:number;
   spectatorNumber?:number;
@@ -188,6 +190,8 @@ export class StrikeController {
   private heardGrenades = new Set<string>();
   private bombEquipped=false;
   private utilityEquipped?:GrenadeKind;
+  private localUtility: Partial<Record<GrenadeKind, number>> = { frag: 2, flash: 2, smoke: 2 };
+  private localGrenades: Grenade[] = [];
   private lastDefuseAudioTick=0;
   private lastActionKind?: 'plant' | 'defuse';
   equipBomb(){this.bombEquipped=!this.bombEquipped;this.clearInput();}
@@ -893,9 +897,20 @@ export class StrikeController {
         }
       }
 
+      if (!this.isMultiplayer && this.localGrenades.length > 0) {
+        const nowSec = this.state.tick * C.dt;
+        for (const g of this.localGrenades) {
+          stepGrenade(g, MAPS[this.state.map], C.dt, nowSec);
+        }
+        this.localGrenades = this.localGrenades.filter(
+          (g) => g.expires === undefined || g.expires > nowSec
+        );
+      }
+
       const bomb=this.state.bomb;
+      const activeGrenades = bomb?.grenades ?? (!this.isMultiplayer ? this.localGrenades : undefined);
       const detonated = new Set<string>();
-      for (const grenade of bomb?.grenades ?? []) {
+      for (const grenade of activeGrenades ?? []) {
         if (grenade.expires === undefined) continue;
         detonated.add(grenade.id);
         if (!this.heardGrenades.has(grenade.id)) this.audio.grenade(grenade.kind, grenade.position);
@@ -1182,10 +1197,16 @@ export class StrikeController {
         }
       : undefined;
 
+    const utilInv = this.getUtilityInventory();
+    const isCarrier = Boolean(
+      s.bomb && s.bomb.carrier === (this.isMultiplayer ? this.socket?.id : p.id)
+    );
     this.onHUD({
       utilityEquipped:this.utilityEquipped,
-      utilityCount:this.utilityEquipped ? this.state.bomb?.players[this.socket?.id ?? ""]?.utility?.[this.utilityEquipped] : undefined,
-      bombEquipped:this.bombEquipped&&s.bomb?.carrier===this.socket?.id,
+      utilityCount:this.utilityEquipped ? utilInv?.[this.utilityEquipped] : undefined,
+      utilityInventory:utilInv ? { ...utilInv } : undefined,
+      bombEquipped:this.bombEquipped && isCarrier,
+      isBombCarrier:isCarrier,
       spectating:this.spectator?.username,
       spectatorCount:this.teamSpectator.count,
       spectatorNumber:this.teamSpectator.index+1,
@@ -1370,9 +1391,22 @@ export class StrikeController {
   public triggerReload() { this.pendingReload = true; }
   public triggerInspect() { this.renderer.inspect(); }
   public selectWeapon(w: WeaponId) { this.utilityEquipped=undefined; if(this.state.bomb||!this.settings.hiddenWeapons?.includes(w)) this.pendingWeapon = w; }
-  private canEquipUtility(item: GrenadeKind) {
+  private getUtilityInventory(): Partial<Record<GrenadeKind, number>> | undefined {
+    if (!this.isMultiplayer && !this.state.bomb) {
+      return this.localUtility;
+    }
     const bomb = this.state.bomb;
-    return !!(this.state.player.hp>0 && bomb && ['active','planted'].includes(bomb.phase) && bomb.players[this.socket?.id??'']?.utility?.[item]);
+    const playerId = this.isMultiplayer ? (this.socket?.id ?? "") : this.state.player.id;
+    return bomb?.players[playerId]?.utility;
+  }
+  private canEquipUtility(item: GrenadeKind) {
+    if (this.state.player.hp <= 0) return false;
+    if (!this.isMultiplayer && !this.state.bomb) {
+      return (this.localUtility[item] ?? 0) > 0;
+    }
+    const bomb = this.state.bomb;
+    const playerId = this.isMultiplayer ? (this.socket?.id ?? "") : this.state.player.id;
+    return !!(bomb && ['active','planted'].includes(bomb.phase) && bomb.players[playerId]?.utility?.[item]);
   }
   public selectUtility(item?: GrenadeKind) {
     if (item && !this.canEquipUtility(item)) return;
@@ -1384,7 +1418,41 @@ export class StrikeController {
     const item=this.utilityEquipped;
     if(!this.active||this.menuOverlay||!item||!this.canEquipUtility(item))return;
     this.selectUtility();
-    this.socket?.emit('strike:bomb_action',{kind:'throw_utility',item,short});
+    if (this.isMultiplayer) {
+      this.socket?.emit('strike:bomb_action',{kind:'throw_utility',item,short});
+    } else {
+      const inv = this.getUtilityInventory();
+      if (inv && inv[item]) {
+        const rem = (inv[item] ?? 0) - 1;
+        if (rem > 0) inv[item] = rem;
+        else delete inv[item];
+        const p = this.state.player;
+        const nowSec = this.state.tick * C.dt;
+        const origin = short ? { ...p.movement.position, y: p.movement.position.y + 0.65 } : eye(p);
+        const dir = {
+          x: Math.sin(this.yaw) * Math.cos(this.pitch),
+          y: Math.sin(this.pitch),
+          z: Math.cos(this.yaw) * Math.cos(this.pitch),
+        };
+        const launched = grenadeLaunch(
+          `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          item,
+          p.id,
+          "T",
+          origin,
+          dir,
+          nowSec,
+          short,
+          p.movement.velocity
+        );
+        if (this.state.bomb) {
+          (this.state.bomb.grenades ??= []).push(launched);
+        } else {
+          this.localGrenades.push(launched);
+        }
+        this.pushHUD();
+      }
+    }
   }
   public triggerDemoBomb() {
     if (this.isMultiplayer) {

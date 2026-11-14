@@ -1392,27 +1392,61 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
 /* Bomb controls occupy their own lane; pointer-locked desktop uses keyboard hints. */
 .ks-root:has(.ks-bomb-objective) .ks-minimap{top:100px;left:auto;right:16px;width:150px;z-index:43}
 .ks-bomb-objective.is-desktop{pointer-events:none;max-width:330px}
-.ks-bomb-objective.is-touch{top:78px;left:8px;width:min(220px,48vw);max-width:none;z-index:90}
+.ks-bomb-objective.is-touch{top:64px;left:128px;width:min(230px,44vw);max-width:none;z-index:42;pointer-events:none;padding:6px 10px;gap:3px;font-size:10px}
+.ks-readonly-inventory-card{position:absolute;top:64px;left:128px;width:min(225px,44vw);z-index:42;pointer-events:none;background:#101d2be8;border:1px solid #ffffff20;border-radius:10px;padding:6px 10px;font-size:10px;display:flex;flex-direction:column;gap:3px;color:#e6f1f4}
+.ks-inv-header{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9bb2bd}
+.ks-inv-readonly-list{display:flex;flex-direction:column;gap:2px}
+.ks-inv-readonly-item{font-size:10px;color:#cbd5e1;line-height:1.3}
+.ks-inv-readonly-item b{color:#f8fafc;font-weight:700}
+.ks-inv-grenade-badge{display:inline-block;background:rgba(245,158,11,0.18);border:1px solid rgba(245,158,11,0.45);color:#fde68a!important;border-radius:5px;padding:1px 5px;margin-right:4px;font-size:9.5px}
+.ks-bomb-touch-strip{position:absolute;top:max(58px,calc(env(safe-area-inset-top) + 50px));left:50%;transform:translateX(-50%);z-index:95;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;pointer-events:auto;max-width:min(92vw,520px)}
+.ks-bomb-touch-strip button{min-height:38px;padding:6px 11px;font-size:11px;font-weight:800;border-radius:10px;background:rgba(15,23,42,0.92);border:1.5px solid rgba(236,193,123,0.55);color:#f8fafc;box-shadow:0 4px 14px rgba(0,0,0,0.45);touch-action:none}
+.ks-bomb-touch-strip .ks-bomb-strip-buy{background:rgba(16,185,129,0.28);border-color:#34d399;color:#ecfdf5}
+.ks-bomb-touch-strip .ks-bomb-strip-hold{background:rgba(245,158,11,0.28);border-color:#fbbf24;color:#fef3c7}
 .ks-bomb-touch-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .ks-bomb-touch-actions button{margin:0;padding:8px;min-height:48px;font-size:11px}
 .ks-bomb-touch-actions button:first-child{grid-column:1/-1}
-@media(max-width:700px){.ks-root:has(.ks-bomb-objective) .ks-minimap{top:78px;right:8px;width:100px}.ks-root:has(.ks-bomb-objective) .ks-top-left-bar{display:none}.ks-touch-arc-container{width:210px;height:210px;right:max(8px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom))}.ks-touch-btn-fire-main{width:78px;height:78px}.ks-bomb-objective.is-touch{font-size:10px}.ks-bomb-objective.is-touch>span{line-height:1.4}}
-@media(max-height:500px){.ks-bomb-objective.is-touch{top:62px;width:200px;gap:3px;padding:6px}.ks-root:has(.ks-bomb-objective) .ks-minimap{top:62px;width:84px}.ks-bomb-touch-actions button{min-height:40px;padding:5px}.ks-bomb-objective.is-touch>strong{font-size:10px}}
-@media(pointer:coarse){
- .ks-root:has(.ks-bomb-objective) .ks-health{position:absolute;top:62px;left:8px;padding:4px 8px!important;width:108px;background:#102431dd}
- .ks-root:has(.ks-bomb-objective) .ks-health strong{font-size:22px;line-height:1}
- .ks-root:has(.ks-bomb-objective) .ks-health small{font-size:9px}
- .ks-root:has(.ks-bomb-objective) .ks-health>span{display:none}
- .ks-root:has(.ks-bomb-objective) .ks-bomb-objective{top:130px}
- .ks-root:has(.ks-bomb-objective) .ks-compact-weapon-card{bottom:auto;top:230px;left:auto;right:8px;transform:none;max-width:145px;font-size:11px}
-}
-@media(pointer:coarse) and (max-height:500px){
- .ks-root:has(.ks-bomb-objective) .ks-health{top:64px}
- .ks-root:has(.ks-bomb-objective) .ks-bomb-objective{top:124px;width:200px}
- .ks-root:has(.ks-bomb-objective) .ks-compact-weapon-card{top:8px;right:70px;max-width:125px}
-}
-@media(pointer:coarse){.ks-root:has(.ks-bomb-objective) .ks-bottom{position:static}}
-@media(pointer:coarse){.ks-root:has(.ks-bomb-objective) .ks-health strong{white-space:nowrap}.ks-root:has(.ks-bomb-objective) .ks-health strong span{font-size:12px}.ks-root:has(.ks-bomb-objective) .ks-health meter{width:100%}}
+
+/* Top-Right Weapon & Equipment Switcher */
+.ks-topright-equip{position:absolute;top:max(62px,calc(env(safe-area-inset-top) + 52px));right:max(12px,env(safe-area-inset-right));z-index:115;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:auto;max-width:min(310px,52vw)}
+.ks-topright-equip-header{display:flex;align-items:center;gap:6px}
+.ks-topright-equip-btn{display:flex;align-items:center;gap:8px;padding:7px 12px;min-height:44px;border-radius:13px;background:rgba(15,23,42,0.92);backdrop-filter:blur(12px);border:1.5px solid rgba(236,193,123,0.65);color:#f8fafc;box-shadow:0 6px 20px rgba(0,0,0,0.55);cursor:pointer;touch-action:none;text-align:left}
+.ks-topright-equip-btn.is-grenade{border-color:#f59e0b;background:rgba(69,26,3,0.9);box-shadow:0 0 20px rgba(245,158,11,0.35)}
+.ks-topright-equip-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.ks-topright-equip-info{display:flex;flex-direction:column;min-width:0}
+.ks-topright-equip-title{font-size:12px;font-weight:800;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ks-topright-equip-sub{font-size:10px;font-family:monospace;color:#fbbf24;white-space:nowrap}
+.ks-topright-equip-badge{font-size:10px;font-weight:800;color:#cbd5e1;background:rgba(255,255,255,0.1);padding:3px 7px;border-radius:8px;white-space:nowrap}
+.ks-topright-cycle-btn{width:44px;height:44px;min-height:44px;border-radius:13px;background:rgba(15,23,42,0.92);border:1.5px solid rgba(56,189,248,0.55);color:#e0f2fe;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:none;box-shadow:0 4px 14px rgba(0,0,0,0.5)}
+.ks-topright-quick-pills{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
+.ks-topright-pill{min-height:32px!important;padding:4px 9px!important;border-radius:9px!important;font-size:10.5px;font-weight:800;background:rgba(15,23,42,0.88)!important;border:1px solid rgba(148,163,184,0.35)!important;color:#e2e8f0!important;cursor:pointer;touch-action:none}
+.ks-topright-pill.active{background:rgba(236,193,123,0.28)!important;border-color:#ecc17b!important;color:#fef3c7!important}
+.ks-topright-pill.is-grenade{border-color:rgba(245,158,11,0.5)!important;color:#fde68a!important}
+.ks-topright-pill.is-grenade.active{background:rgba(245,158,11,0.38)!important;border-color:#fbbf24!important;color:#fff!important}
+.ks-topright-pill.is-bomb{border-color:rgba(239,68,68,0.55)!important;color:#fecaca!important}
+.ks-topright-equip-tray{background:rgba(15,23,42,0.96);backdrop-filter:blur(16px);border:1.5px solid rgba(236,193,123,0.5);border-radius:16px;padding:10px;width:min(310px,82vw);box-shadow:0 14px 40px rgba(0,0,0,0.8);display:flex;flex-direction:column;gap:8px;z-index:125}
+.ks-equip-tray-section{display:flex;flex-direction:column;gap:5px}
+.ks-equip-tray-label{font-size:9px;font-weight:900;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase}
+.ks-equip-tray-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.ks-weapon-wheel-btn.is-grenade-slot.active{background:rgba(245,158,11,0.32);border-color:#fbbf24;color:#fef3c7}
+.ks-weapon-wheel-btn.is-bomb-slot.active{background:rgba(239,68,68,0.32);border-color:#f87171;color:#fee2e2}
+
+/* Grenade Throw Action Buttons (Shown exclusively when holding a grenade, replacing Attack) */
+.ks-touch-throw-far-btn{width:82px;height:82px;background:rgba(245,158,11,0.92)!important;border:2.5px solid #fde68a!important;color:#fff!important;font-size:11px;font-weight:900;box-shadow:0 0 26px rgba(245,158,11,0.65)}
+.ks-touch-throw-near-btn{width:72px;height:72px;background:rgba(14,165,233,0.9)!important;border:2px solid #bae6fd!important;color:#fff!important;font-size:10.5px;font-weight:900;box-shadow:0 0 22px rgba(14,165,233,0.55)}
+
+/* Ensure Health & Inventory never overlap bottom-left joystick on any touch device */
+.ks-touch-layout .ks-bottom{position:static}
+.ks-touch-layout .ks-health{position:absolute;top:max(58px,calc(env(safe-area-inset-top) + 50px));bottom:auto;left:max(10px,env(safe-area-inset-left));width:112px;padding:6px 8px!important;background:#102431dd;pointer-events:none;z-index:41}
+.ks-touch-layout .ks-health strong{font-size:20px;line-height:1;white-space:nowrap}
+.ks-touch-layout .ks-health strong span{font-size:11px}
+.ks-touch-layout .ks-health small{font-size:9px}
+.ks-touch-layout .ks-health meter{width:100%}
+.ks-touch-layout .ks-health>span{display:none}
+.ks-touch-layout .ks-minimap{display:none}
+
+@media(max-width:700px){.ks-root:has(.ks-bomb-objective) .ks-top-left-bar{display:none}.ks-touch-arc-container{width:210px;height:210px;right:max(8px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom))}.ks-touch-btn-fire-main{width:78px;height:78px}.ks-bomb-objective.is-touch{top:58px;left:128px;font-size:9.5px;width:min(185px,42vw)}.ks-readonly-inventory-card{top:58px;left:128px;font-size:9.5px;width:min(185px,42vw)}}
+@media(max-height:500px){.ks-bomb-objective.is-touch,.ks-readonly-inventory-card{top:56px;left:124px;width:175px;gap:2px;padding:5px 7px}.ks-bomb-objective.is-touch>strong{font-size:9.5px}}
 
 .ks-shield{color:#70caff;margin-top:4px}.ks-shield meter{accent-color:#41b6fa;width:100%}.ks-loot-notice{position:absolute;bottom:24%;left:50%;transform:translateX(-50%);max-width:80%;padding:9px 16px;border-radius:12px;background:#112b40eb;color:#a9e7ff;pointer-events:none;text-align:center}
 
@@ -1422,22 +1456,16 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
 .ks-round-banner{position:absolute;z-index:100;top:24%;left:50%;transform:translateX(-50%);width:min(420px,80%);padding:16px 24px;border:1px solid var(--round-color);border-radius:12px;background:linear-gradient(110deg,#101d2bf5,color-mix(in srgb,var(--round-color) 25%,#101d2bf5));box-shadow:0 12px 35px #0005;text-align:center;pointer-events:none;display:grid;gap:6px;color:#fff}.ks-round-banner b{font-size:24px;color:var(--round-color)}.ks-round-banner small{color:#dbe7ef}.ks-round-T{--round-color:#efb564}.ks-round-CT{--round-color:#58b8f7}
 /* Tablet layouts follow the selected input mode, including iPad desktop user agents. */
 @media(min-width:700px){
- .ks-touch-layout .ks-health{position:absolute;top:100px;bottom:auto;left:max(16px,env(safe-area-inset-left));width:156px;padding:10px!important}
- .ks-touch-layout .ks-health strong{font-size:30px}.ks-touch-layout .ks-health>span{display:none}
- .ks-touch-layout .ks-minimap{left:auto;right:max(16px,env(safe-area-inset-right));top:100px;width:140px}
- .ks-touch-layout .ks-compact-weapon-card{bottom:max(22px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);max-width:220px}
+ .ks-touch-layout .ks-health{position:absolute;top:max(64px,calc(env(safe-area-inset-top) + 56px));bottom:auto;left:max(16px,env(safe-area-inset-left));width:140px;padding:8px 10px!important;pointer-events:none}
+ .ks-touch-layout .ks-health strong{font-size:24px}.ks-touch-layout .ks-health>span{display:none}
+ .ks-touch-layout .ks-bomb-objective.is-touch,.ks-touch-layout .ks-readonly-inventory-card{top:max(64px,calc(env(safe-area-inset-top) + 56px));left:168px;width:220px;pointer-events:none}
  .ks-touch-layout .ks-pause-gear-btn{top:max(14px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));min-width:48px;min-height:48px}
  .ks-touch-layout .ks-bottom{position:static}.ks-touch-layout button{min-height:44px}
- .ks-touch-layout .ks-bomb-objective.is-touch{top:270px;left:16px;width:215px}
  .ks-touch-layout .ks-panel-content{padding-bottom:max(20px,env(safe-area-inset-bottom))}
  .ks-touch-layout .ks-feature-card{max-height:calc(100dvh - 32px);width:min(920px,calc(100vw - 32px))}
  .ks-touch-layout .ks-supply-prompt{bottom:265px;max-width:50vw;left:50%;transform:translateX(-50%)}
 }
-@media(min-width:700px) and (orientation:portrait){.ks-touch-layout .ks-touch-joystick-zone{bottom:max(30px,env(safe-area-inset-bottom))}.ks-touch-layout .ks-round-banner{top:35%}.ks-touch-layout .ks-bomb-objective.is-touch{top:275px}}
-@media(min-width:700px){
- .ks-root.ks-touch-layout:has(.ks-bomb-objective) .ks-health{top:100px;left:16px;width:156px;padding:10px!important}
- .ks-root.ks-touch-layout:has(.ks-bomb-objective) .ks-compact-weapon-card{top:auto;right:auto;left:50%;bottom:max(22px,env(safe-area-inset-bottom));transform:translateX(-50%);max-width:220px}
-}
+@media(min-width:700px) and (orientation:portrait){.ks-touch-layout .ks-touch-joystick-zone{bottom:max(30px,env(safe-area-inset-bottom))}.ks-touch-layout .ks-round-banner{top:35%}}
 
 .ks-inventory-toolbar{display:flex;flex-wrap:wrap;gap:12px;padding:16px;border:1px solid #334155;border-radius:16px;background:#0f172a;margin:12px 0 24px;align-items:center}.ks-inventory-toolbar input:not([type=checkbox]),.ks-inventory-toolbar select{background:#020617;color:#e2e8f0;border:1px solid #475569;border-radius:10px;padding:10px;min-width:140px;flex:1}.ks-inventory-toolbar label{display:flex;gap:8px;align-items:center}.ks-loot-grid article{border-radius:16px;background:linear-gradient(145deg,#182234,#080d18);border-top:3px solid var(--rarity);transition:transform .15s}.ks-loot-grid article:focus-within{outline:2px solid var(--rarity)}.ks-loadout-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.ks-loadout-grid button{display:flex;flex-direction:column;gap:8px;padding:18px;border:1px solid #475569;border-radius:14px}.ks-loadout-grid button[aria-pressed=true]{border-color:#34d399;background:#063b34}.ks-loadout-grid small{color:#cbd5e1}
 
@@ -1572,3 +1600,4 @@ html .ks-root.ks-experience{color:var(--ks-ink);background:var(--ks-bg)}
     right:auto;
   }
 }
+

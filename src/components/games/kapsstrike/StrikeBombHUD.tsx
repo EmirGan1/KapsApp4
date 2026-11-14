@@ -92,35 +92,74 @@ export default function StrikeBombHUD({socket,players,interactKey,onShopChange,t
     {(me?.flashedUntil ?? 0)>now && <div className="ks-utility-flash" style={{opacity:Math.min(.94,((me?.flashedUntil ?? 0)-now)/.38)}} aria-hidden="true" />}
     <header className="ks-tactical-bar">{cards('CT')}<div className="ks-bomb-score"><div><b>CT {bomb.scores.CT}</b><strong>{Math.max(0,Math.ceil(bomb.deadline-now))}<small>sn</small></strong><b>{bomb.scores.T} T</b></div><small>RAUND {bomb.round} · {phases[bomb.phase]}</small></div>{cards('T')}</header>
     {(bomb.phase==='result'||bomb.phase==='finished')&&bomb.winner&&<div className={`ks-round-banner ks-round-${bomb.winner}`} role="status"><b>{bomb.explosion?'💥 C4 PATLADI · ':''}{bomb.winner==='CT'?'CT · Savunma':'T · Saldırı'} kazandı</b><span>{bomb.reason}</span><small>{bomb.phase==='finished'?'Maç tamamlandı':`Yeni raund ${Math.max(0,Math.ceil(bomb.deadline-now))} sn içinde`}</small></div>}
-    <aside className={`ks-bomb-objective ${touch?'is-touch':'is-desktop'}`}>
-      <span>{me?.team==='CT'?'CT · Savunma':'T · Saldırı'} · ${me?.money||0}</span>
+    <aside className={`ks-bomb-objective ${touch?'is-touch':'is-desktop'}`} aria-label="Envanter İçeriği">
+      <span className="ks-inv-header">{me?.team==='CT'?'CT · Savunma':'T · Saldırı'} · ${me?.money||0} · Envanter</span>
       {bomb.carrier===socket?.id&&<strong>Bomba sende · A veya B bölgesine ilerle</strong>}
-      {bomb.phase==='buy'&&me?.alive&&(touch?<button onClick={()=>changeShop(true)}>Satın al <kbd>B</kbd></button>:<span>B · Satın alma menüsü</span>)}
-      {me?.alive&&(bomb.phase==='active'||bomb.phase==='planted')&&(touch?<div className="ks-bomb-touch-actions">
-        <button onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);holding.current=true;socket?.emit('strike:bomb_action',{kind:'hold',held:true});}} onPointerUp={release} onPointerCancel={release}>Basılı tut: {me.team==='CT'?'Çöz':'Kur / Al'} <kbd>{label(interactKey)}</kbd></button>
-        {bomb.carrier===socket?.id&&<button onClick={onEquipBomb}>Bombayı ele al</button>}
-        <button onClick={()=>socket?.emit('strike:bomb_action',{kind:'pickup_weapon'})}>Yerden silah al</button>
-        <button onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop_weapon'})}>Silahı bırak · G</button>
-        {bomb.carrier===socket?.id&&<button onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop'})}>Bombayı bırak</button>}
-      </div>:<span>{label(interactKey)} basılı tut · Kur / Çöz / Al · G: Silahı bırak{bomb.carrier===socket?.id?' · 7: Bombayı ele al · Shift+G: Bombayı bırak':''}</span>)}
-      {me?.alive&&['active','planted'].includes(bomb.phase)&&GRENADE_KEYS.some(item=>me.utility?.[item])&&
-        <div className="ks-utility-controls" aria-label={`Bomba envanteri (${totalOwnedGrenades}/${MAX_GRENADES})`}>
-          {GRENADE_KEYS.map((item,index)=>{
-            const count=me.utility?.[item]??0;
-            if(!count)return null;
-            return touch
-              ? <button key={item} type="button" aria-pressed={utility===item} onClick={()=>selectUtility(utility===item?undefined:item)}>{GRENADE_NAMES[item]} · ×{count}</button>
-              : <span key={item}>{[8,9,0][index]} · {GRENADE_NAMES[item]} <b>×{count}</b></span>;
-          })}
-          {utility&&(touch?<><button type="button" onClick={()=>onThrowUtility(false)}>Uzağa at</button><button type="button" onClick={()=>onThrowUtility(true)}>Yakına at</button></>:<strong>{GRENADE_NAMES[utility]} (×{me.utility?.[utility]??0}) · Sol tık: at · Sağ tık: yakına at</strong>)}
-        </div>}
+      {me && (
+        <div className="ks-inv-readonly-list" aria-label={`Bomba envanteri (${totalOwnedGrenades}/${MAX_GRENADES})`}>
+          {me.weapons?.length > 0 && (
+            <span className="ks-inv-readonly-item">
+              Silahlar: <b>{me.weapons.map(w => WEAPONS[w]?.name || w).join(' · ')}</b>
+            </span>
+          )}
+          {(me.armor > 0 || me.kit) && (
+            <span className="ks-inv-readonly-item">
+              Ekipman: <b>{[me.armor > 0 ? `Zırh +${me.armor}` : '', me.kit ? 'Çözme Kiti' : ''].filter(Boolean).join(' · ')}</b>
+            </span>
+          )}
+          {GRENADE_KEYS.some(item=>me.utility?.[item]) && (
+            <span className="ks-inv-readonly-item">
+              Bombalar: {GRENADE_KEYS.map((item,index)=>{
+                const count=me.utility?.[item]??0;
+                if(!count)return null;
+                return <b key={item} className="ks-inv-grenade-badge">{!touch && `${[8,9,0][index]} · `}{GRENADE_NAMES[item]} ×{count}</b>;
+              })}
+            </span>
+          )}
+        </div>
+      )}
+      {!touch && bomb.phase==='buy' && me?.alive && <span>B · Satın alma menüsü</span>}
+      {!touch && me?.alive && (bomb.phase==='active'||bomb.phase==='planted') && (
+        <span>{label(interactKey)} basılı tut · Kur / Çöz / Al · G: Silahı bırak{bomb.carrier===socket?.id?' · 7: Bombayı ele al · Shift+G: Bombayı bırak':''}</span>
+      )}
+      {!touch && utility && me?.alive && (
+        <strong>{GRENADE_NAMES[utility]} (×{me.utility?.[utility]??0}) · Sol tık: at · Sağ tık: yakına at</strong>
+      )}
       {!shop && message && <span role="status">{message}</span>}
       {bomb.action&&<label>{bomb.action.kind==='plant'?`Bomba kuruluyor [${typedCode}]`:'Bomba çözülüyor'}<progress max={plantDuration} value={actionElapsed}/></label>}
       {bomb.phase==='planted'&&<strong role="alert">💣 Bomba {bomb.site} bölgesine kuruldu! ({Math.max(0,Math.ceil(bomb.deadline-now))} sn)</strong>}
-      {bomb.phase==='planted'&&soloOrBotMatch&&<button type="button" onClick={()=>socket?.emit('strike:bomb_action',{kind:'fast_detonate'})} style={{marginTop:4,padding:'4px 10px',fontSize:12,background:'rgba(239,68,68,0.28)',border:'1px solid rgba(248,113,113,0.6)',borderRadius:6,color:'#fecaca',fontWeight:700}}>💥 Hızlı Patlat (Test)</button>}
       {bomb.reason&&<strong role="status">{bomb.winner} kazandı · {bomb.reason}</strong>}
       {!me?.alive&&<span>Elendin · Yeni raundda yeniden doğacaksın.</span>}
     </aside>
+    {touch && me?.alive && (
+      <div className="ks-bomb-touch-strip" role="toolbar" aria-label="Bomba Görev İşlemleri">
+        {bomb.phase==='buy' && (
+          <button type="button" className="ks-bomb-strip-buy" onClick={()=>changeShop(true)}>🛒 Satın Al <kbd>B</kbd></button>
+        )}
+        {(bomb.phase==='active'||bomb.phase==='planted') && (
+          <>
+            <button
+              type="button"
+              className="ks-bomb-strip-hold"
+              onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);holding.current=true;socket?.emit('strike:bomb_action',{kind:'hold',held:true});}}
+              onPointerUp={release}
+              onPointerCancel={release}
+            >
+              Basılı Tut: {me.team==='CT'?'Çöz':'Kur / Al'} <kbd>{label(interactKey)}</kbd>
+            </button>
+            <button type="button" onClick={()=>socket?.emit('strike:bomb_action',{kind:'pickup_weapon'})}>Yerden Silah Al</button>
+            <button type="button" onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop_weapon'})}>Silahı Bırak</button>
+            {bomb.carrier===socket?.id&&<button type="button" onClick={()=>socket?.emit('strike:bomb_action',{kind:'drop'})}>C4 Bırak</button>}
+          </>
+        )}
+        {bomb.phase==='planted'&&soloOrBotMatch&&(
+          <button type="button" onClick={()=>socket?.emit('strike:bomb_action',{kind:'fast_detonate'})} style={{background:'rgba(239,68,68,0.32)',borderColor:'rgba(248,113,113,0.65)',color:'#fecaca'}}>💥 Hızlı Patlat</button>
+        )}
+      </div>
+    )}
+    {!touch && bomb.phase==='planted' && soloOrBotMatch && (
+      <button type="button" onClick={()=>socket?.emit('strike:bomb_action',{kind:'fast_detonate'})} style={{position:'absolute',top:95,left:'50%',transform:'translateX(-50%)',zIndex:95,padding:'4px 10px',fontSize:12,background:'rgba(239,68,68,0.28)',border:'1px solid rgba(248,113,113,0.6)',borderRadius:6,color:'#fecaca',fontWeight:700}}>💥 Hızlı Patlat (Test)</button>
+    )}
     {shop&&bomb.phase==='buy'&&<div className="ks-buy-scrim"><div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="ks-buy-title" className="ks-buy-menu" onKeyDown={e=>{
       if(e.key!=='Tab')return;const buttons=[...e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }}>

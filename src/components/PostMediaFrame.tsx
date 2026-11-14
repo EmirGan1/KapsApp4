@@ -64,20 +64,20 @@ export default function PostMediaFrame({
 
       {/* 2. Main Foreground Media: NEVER cropped (object-contain), strictly fits within the frame with exact aspect ratio */}
       {isVideo ? (
-        <div className="relative z-10 w-full h-full flex items-center justify-center p-1">
+        <div className="relative z-10 w-full h-full min-h-0 min-w-0 flex items-center justify-center p-1">
           <video
             src={src}
             autoPlay
             muted
             loop
             playsInline
-            className={`max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-lg pointer-events-none ${className}`}
+            className={`w-full h-full max-h-full max-w-full object-contain rounded-xl shadow-lg pointer-events-none ${className}`}
             onLoadedData={() => setIsLoaded(true)}
             onError={() => setHasError(true)}
           />
         </div>
       ) : (
-        <div className="relative z-10 w-full h-full flex items-center justify-center p-1">
+        <div className="relative z-10 w-full h-full min-h-0 min-w-0 flex items-center justify-center p-1">
           <img
             src={src}
             alt={alt}
@@ -85,7 +85,7 @@ export default function PostMediaFrame({
             loading="lazy"
             onLoad={() => setIsLoaded(true)}
             onError={() => setHasError(true)}
-            className={`max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-lg transition-transform duration-300 group-hover/media:scale-[1.01] ${className}`}
+            className={`w-full h-full max-h-full max-w-full object-contain rounded-xl shadow-lg transition-transform duration-300 group-hover/media:scale-[1.01] ${className}`}
           />
         </div>
       )}

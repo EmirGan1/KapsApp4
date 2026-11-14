@@ -229,7 +229,7 @@ export default function Dashboard({
 
   useEffect(() => {
     const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-    if (!token) return;
+    if (!token || token.startsWith("demo-") || token.startsWith("mock-") || localStorage.getItem("lan_is_demo") === "true") return;
 
     fetch(getApiUrl("/api/user/my-screen-time"), {
       headers: { Authorization: `Bearer ${token}` },

@@ -353,9 +353,24 @@ html, body, #root {
 @media (max-width: 1023px) {
   html, body, #root { touch-action: pan-x pan-y pinch-zoom; }
   .app-shell { height: var(--visible-height, 100dvh); }
-  .app-content { padding-bottom: 56px; }
-  html[data-keyboard-open="true"] .app-content { padding-bottom: 0; }
-  html[data-keyboard-open="true"] nav[aria-label="Mobil alt gezinti menüsü"] { display: none; }
+  .app-content { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  .app-shell[data-bottom-nav-hidden="true"] .app-content,
+  html[data-keyboard-open="true"] .app-content,
+  html[data-chat-keyboard] .app-content {
+    padding-bottom: 0 !important;
+  }
+  /* When BottomNav is visible, .app-content already reserves bottom space; prevent double padding inside scroll views and chat composers */
+  .app-shell:not([data-bottom-nav-hidden="true"]) .kaps-chat-composer {
+    padding-bottom: 0 !important;
+  }
+  .app-shell:not([data-bottom-nav-hidden="true"]) .app-content > .overflow-y-auto,
+  .app-shell:not([data-bottom-nav-hidden="true"]) .app-content > div > .overflow-y-auto {
+    padding-bottom: 1.25rem !important;
+  }
+  html[data-keyboard-open="true"] nav[aria-label="Mobil alt gezinti menüsü"],
+  html[data-chat-keyboard] nav[aria-label="Mobil alt gezinti menüsü"] {
+    display: none !important;
+  }
   .app-content > * { min-width: 0; }
   .mobile-window { top: var(--visible-top, 0px); bottom: auto; height: var(--visible-height, 100dvh); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
   .mobile-window > div:last-child { max-height: calc(var(--visible-height, 100dvh) - 24px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
@@ -374,7 +389,11 @@ html[data-chat-keyboard] .kapsapp-viewport {
   inset-inline: 0;
   top: var(--kaps-chat-top, 0px);
   height: var(--kaps-chat-height, 100dvh);
-  padding-bottom: 0;
+  padding-bottom: 0 !important;
 }
-html[data-chat-keyboard] .kaps-chat-composer { padding-bottom: 0; }
-html[data-chat-keyboard] .kaps-chat-bottom-nav { display: none; }
+html[data-chat-keyboard] .kaps-chat-composer,
+html[data-keyboard-open="true"] .kaps-chat-composer {
+  padding-bottom: 0 !important;
+}
+html[data-chat-keyboard] .kaps-chat-bottom-nav { display: none !important; }
+

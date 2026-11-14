@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCall } from '../context/CallContext';
-import { Phone, X } from 'lucide-react';
+import { Phone, PhoneOff, ShieldCheck } from 'lucide-react';
 import Avatar from './Avatar';
 
 const IncomingCallNotification: React.FC = () => {
@@ -26,68 +26,97 @@ const IncomingCallNotification: React.FC = () => {
         .animate-phone-shake {
           animation: phone-shake 1.2s infinite ease-in-out;
         }
-        @keyframes slide-down {
-          0% { transform: translate(-50%, -100%) scale(0.9); opacity: 0; }
-          100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+        @keyframes call-sonar {
+          0% { transform: scale(1); opacity: 0.65; }
+          100% { transform: scale(1.85); opacity: 0; }
         }
-        .animate-slide-down {
-          animation: slide-down 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        .animate-call-sonar-1 {
+          animation: call-sonar 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        .animate-call-sonar-2 {
+          animation: call-sonar 2s cubic-bezier(0, 0, 0.2, 1) 0.7s infinite;
         }
       `}</style>
 
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] w-[92%] max-w-md animate-slide-down">
-        <div className="bg-slate-900/95 backdrop-blur-xl border border-emerald-500/40 shadow-2xl shadow-emerald-500/20 rounded-2xl p-4 text-white flex flex-col gap-4">
-          
-          {/* Header Info */}
-          <div className="flex items-center gap-4">
-            {/* Avatar with Waving Rings */}
-            <div className="relative shrink-0">
-              <span className="absolute inset-0 rounded-full animate-ping ring-2 ring-emerald-400 opacity-75"></span>
-              <div className="relative z-10 ring-2 ring-emerald-400 rounded-full overflow-hidden">
-                <Avatar 
-                  name={peer.peerUsername} 
-                  url={peer.peerAvatar} 
-                  size={12} 
-                  color={peer.peerColor || '#10b981'}
-                />
-              </div>
-              <div className="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-1 text-white border border-slate-900 animate-bounce">
-                <Phone size={10} className="fill-current" />
-              </div>
-            </div>
+      {/* Full-Screen Native Phone Call Experience on Mobile/Tablet (<1024px) & Floating Card on Desktop (lg+) */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${peer.peerUsername} gelen sesli arama`}
+        data-testid="incoming-call-screen"
+        className="fixed inset-0 lg:inset-auto lg:top-5 lg:left-1/2 lg:-translate-x-1/2 z-[999999] w-full h-[100dvh] lg:h-auto lg:w-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-emerald-950/95 lg:bg-slate-900/95 backdrop-blur-2xl lg:border lg:border-emerald-500/40 lg:shadow-2xl lg:shadow-emerald-500/20 lg:rounded-3xl flex flex-col justify-between lg:justify-start items-center pt-[max(3rem,calc(env(safe-area-inset-top)+1.5rem))] pb-[max(3.25rem,calc(env(safe-area-inset-bottom)+1.75rem))] px-8 lg:p-6 text-white select-none"
+      >
+        {/* Top Call Badge (Mobile Full-Screen Header) */}
+        <div className="flex flex-col items-center gap-1.5 lg:hidden">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs font-bold tracking-wide uppercase">
+            <ShieldCheck size={14} className="text-emerald-400" />
+            <span>KapsApp Sesli Arama</span>
+          </div>
+          <span className="text-xs text-slate-400 font-medium">
+            Gelen Doğrudan Arama...
+          </span>
+        </div>
 
-            {/* Caller Details */}
-            <div className="flex-1 min-w-0">
-              <h4 className="font-bold text-white text-base truncate">
-                {peer.peerUsername}
-              </h4>
-              <p className="text-emerald-400 text-xs font-semibold animate-pulse flex items-center gap-1">
-                <span>📞 Gelen Sesli Arama...</span>
-              </p>
+        {/* Center Caller Profile & Sonar Rings */}
+        <div className="flex flex-col lg:flex-row items-center gap-6 lg:gap-4 my-auto lg:my-0 lg:w-full">
+          <div className="relative flex items-center justify-center shrink-0">
+            <span className="absolute w-28 h-28 lg:w-14 lg:h-14 rounded-full border-2 border-emerald-400/60 animate-call-sonar-1 pointer-events-none" />
+            <span className="absolute w-28 h-28 lg:w-14 lg:h-14 rounded-full border border-emerald-300/40 animate-call-sonar-2 pointer-events-none" />
+            <div className="relative z-10 ring-4 lg:ring-2 ring-emerald-400/90 rounded-full overflow-hidden shadow-2xl shadow-emerald-500/30 transform scale-150 lg:scale-100 my-4 lg:my-0">
+              <Avatar
+                name={peer.peerUsername}
+                url={peer.peerAvatar}
+                size={16}
+                color={peer.peerColor || '#10b981'}
+              />
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-between gap-3 pt-1">
-            {/* Reject Button */}
+          <div className="flex flex-col items-center lg:items-start text-center lg:text-left min-w-0 flex-1 mt-3 lg:mt-0">
+            <h2 className="font-black text-white text-3xl lg:text-lg tracking-tight truncate max-w-[85vw] lg:max-w-full">
+              {peer.peerUsername}
+            </h2>
+            <p className="text-emerald-400 text-sm lg:text-xs font-semibold animate-pulse mt-1 flex items-center gap-1.5">
+              <span>📞 Seni Arıyor...</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Bottom Ergonomic Native Call Action Buttons */}
+        <div className="w-full max-w-xs lg:max-w-none flex items-center justify-around lg:justify-between gap-6 lg:gap-3 lg:mt-5">
+          {/* Reject Call Button */}
+          <div className="flex flex-col items-center gap-2 lg:flex-1">
             <button
+              type="button"
+              data-testid="incoming-call-reject"
               onClick={rejectCall}
-              className="flex-1 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2 animate-phone-shake transition-all duration-150 group"
+              className="w-20 h-20 lg:w-full lg:h-11 rounded-full lg:rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold shadow-2xl shadow-rose-600/40 flex items-center justify-center gap-2 transition-all duration-150 cursor-pointer"
+              aria-label="Aramayı Reddet"
             >
-              <X size={18} className="group-hover:rotate-90 transition-transform duration-200" />
-              <span>Reddet</span>
+              <PhoneOff size={28} className="lg:w-[18px] lg:h-[18px]" />
+              <span className="hidden lg:inline text-sm">Reddet</span>
             </button>
-
-            {/* Accept Button */}
-            <button
-              onClick={acceptCall}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 animate-phone-shake transition-all duration-150"
-            >
-              <Phone size={18} className="animate-bounce" />
-              <span>Kabul Et</span>
-            </button>
+            <span className="text-xs font-bold text-rose-300 lg:hidden">
+              Reddet
+            </span>
           </div>
 
+          {/* Accept Call Button */}
+          <div className="flex flex-col items-center gap-2 lg:flex-1">
+            <button
+              type="button"
+              data-testid="incoming-call-accept"
+              onClick={acceptCall}
+              className="w-20 h-20 lg:w-full lg:h-11 rounded-full lg:rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-bold shadow-2xl shadow-emerald-500/40 flex items-center justify-center gap-2 animate-phone-shake transition-all duration-150 cursor-pointer"
+              aria-label="Aramayı Kabul Et"
+            >
+              <Phone size={28} className="lg:w-[18px] lg:h-[18px]" />
+              <span className="hidden lg:inline text-sm">Kabul Et</span>
+            </button>
+            <span className="text-xs font-bold text-emerald-300 lg:hidden">
+              Kabul Et
+            </span>
+          </div>
         </div>
       </div>
     </>
@@ -95,3 +124,4 @@ const IncomingCallNotification: React.FC = () => {
 };
 
 export default IncomingCallNotification;
+

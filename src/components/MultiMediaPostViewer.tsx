@@ -197,14 +197,14 @@ export default function MultiMediaPostViewer({ post, onOpenModal }: MultiMediaPo
 
           {/* Foreground Media */}
           {currentItem.type === "video" ? (
-            <div className="relative z-10 w-full h-full flex items-center justify-center p-1">
+            <div className="relative z-10 w-full h-full min-h-0 min-w-0 flex items-center justify-center p-1">
               <video
                 src={currentItem.url}
                 autoPlay
                 muted
                 loop
                 playsInline
-                className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-lg pointer-events-none"
+                className="w-full h-full max-h-full max-w-full object-contain rounded-xl shadow-lg pointer-events-none"
               />
               <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full text-white text-xs flex items-center gap-1.5">
                 <Film size={13} className="text-cyan-400" />
@@ -212,13 +212,13 @@ export default function MultiMediaPostViewer({ post, onOpenModal }: MultiMediaPo
               </div>
             </div>
           ) : (
-            <div className="relative z-10 w-full h-full flex items-center justify-center p-1">
+            <div className="relative z-10 w-full h-full min-h-0 min-w-0 flex items-center justify-center p-1">
               <img
                 src={currentItem.url}
                 alt={post.caption || "Gönderi"}
                 referrerPolicy="no-referrer"
                 loading="lazy"
-                className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-lg transition-transform duration-300 group-hover/media:scale-[1.01]"
+                className="w-full h-full max-h-full max-w-full object-contain rounded-xl shadow-lg transition-transform duration-300 group-hover/media:scale-[1.01]"
               />
             </div>
           )}
@@ -262,14 +262,14 @@ export default function MultiMediaPostViewer({ post, onOpenModal }: MultiMediaPo
                     className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-30 scale-125 pointer-events-none"
                   />
                   {/* Foreground Video */}
-                  <div className="relative z-10 w-full h-full flex items-center justify-center p-1">
+                  <div className="relative z-10 w-full h-full min-h-0 min-w-0 flex items-center justify-center p-1">
                     <video
                       src={item.url}
                       autoPlay={idx === currentIndex}
                       muted
                       loop
                       playsInline
-                      className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-lg pointer-events-none"
+                      className="w-full h-full max-h-full max-w-full object-contain rounded-xl shadow-lg pointer-events-none"
                     />
                   </div>
                 </>
@@ -284,13 +284,13 @@ export default function MultiMediaPostViewer({ post, onOpenModal }: MultiMediaPo
                     className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-35 scale-125 pointer-events-none"
                   />
                   {/* Foreground Image */}
-                  <div className="relative z-10 w-full h-full flex items-center justify-center p-1">
+                  <div className="relative z-10 w-full h-full min-h-0 min-w-0 flex items-center justify-center p-1">
                     <img
                       src={item.url}
                       alt={post.caption || item.name || "Fotoğraf"}
                       referrerPolicy="no-referrer"
                       loading="lazy"
-                      className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-lg"
+                      className="w-full h-full max-h-full max-w-full object-contain rounded-xl shadow-lg"
                     />
                   </div>
                 </>

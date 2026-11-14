@@ -391,7 +391,12 @@ function BottomNavItem({
     return (
       <Link
         to={to}
-        onClick={onClick}
+        onClick={(e) => {
+          if (onClick) {
+            e.preventDefault();
+            onClick();
+          }
+        }}
         className={commonClass}
         aria-label={label}
         aria-current={active ? "page" : undefined}

@@ -71,14 +71,23 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
   };
 
   useEffect(() => {
+    if (!data) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
       if (e.key === "ArrowLeft") handlePrevItem();
       if (e.key === "ArrowRight") handleNextItem();
     };
+    const handleHardwareBack = (e: any) => {
+      onClose();
+      if (e?.detail) e.detail.handled = true;
+    };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, items.length]);
+    window.addEventListener("kaps:hardware_back", handleHardwareBack);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("kaps:hardware_back", handleHardwareBack);
+    };
+  }, [data, onClose, items.length]);
 
   if (!data || !currentItem) return null;
 
@@ -99,7 +108,7 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
   return (
     <div
       id="media-modal-backdrop"
-      className="mobile-window fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-0 md:p-6 select-none animate-fadeIn"
+      className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md flex items-center justify-center p-0 md:p-6 select-none animate-fadeIn"
       onClick={(e) => {
         if ((e.target as HTMLElement).id === "media-modal-backdrop") {
           onClose();
@@ -108,22 +117,24 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
     >
       {/* Close button top right */}
       <button
+        type="button"
         onClick={onClose}
-        className="absolute top-4 right-4 z-50 text-white/80 hover:text-white bg-black/40 hover:bg-black/70 p-2 rounded-full backdrop-blur-sm transition-colors cursor-pointer"
+        className="absolute top-[max(0.75rem,env(safe-area-inset-top))] right-3 md:top-4 md:right-4 z-[70] text-white/90 hover:text-white bg-black/60 hover:bg-black/80 p-2.5 rounded-full backdrop-blur-md border border-white/15 transition-colors cursor-pointer"
         title="Kapat (Esc)"
+        aria-label="Medya penceresini kapat"
       >
-        <X size={24} />
+        <X size={22} />
       </button>
 
       {/* Modal Container */}
-      <div className="bg-black md:bg-white dark:md:bg-slate-900 text-slate-800 dark:text-slate-200 w-full h-full md:h-[88vh] md:max-w-5xl md:rounded-2xl overflow-hidden shadow-2xl flex flex-col md:flex-row border border-white/10 md:border-slate-200 dark:md:border-slate-800 transition-colors duration-200">
+      <div className="bg-black md:bg-white dark:md:bg-slate-900 text-slate-800 dark:text-slate-200 w-full h-[100dvh] max-h-[100dvh] md:h-[88dvh] md:max-h-[88dvh] md:max-w-5xl md:rounded-2xl overflow-hidden shadow-2xl flex flex-col md:flex-row border-0 md:border md:border-slate-200 dark:md:border-slate-800 transition-colors duration-200">
         
-        {/* Media Section (Left/Center) */}
+        {/* Media Section (Top on Mobile, Left/Center on Desktop) */}
         <div 
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
-          className="flex-1 bg-black flex items-center justify-center relative overflow-hidden min-h-[45vh] md:min-h-0 touch-pan-y select-none"
+          className="w-full h-[54dvh] sm:h-[58dvh] md:h-full md:flex-1 shrink-0 md:shrink bg-black flex items-center justify-center relative overflow-hidden pt-[env(safe-area-inset-top,0px)] md:pt-0 touch-pan-y select-none"
         >
           {currentItem.type === "video" ? (
             <video
@@ -132,7 +143,7 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
               controls
               autoPlay
               playsInline
-              className="max-h-full max-w-full object-contain"
+              className="w-full h-full max-h-full max-w-full object-contain"
             />
           ) : currentItem.type === "file" ? (
             <div className="flex flex-col items-center justify-center p-6 text-center text-white max-w-md">
@@ -252,8 +263,8 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
           </a>
         </div>
 
-        {/* Sidebar / Info Details (Instagram Style Right Panel) */}
-        <div className="w-full md:w-[380px] lg:w-[420px] bg-white dark:bg-slate-900 flex flex-col h-full flex-shrink-0 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 transition-colors duration-200">
+        {/* Sidebar / Info Details (Bottom Panel on Mobile, Right Panel on Desktop) */}
+        <div className="w-full flex-1 min-h-0 md:h-full md:w-[380px] lg:w-[420px] md:flex-none bg-white dark:bg-slate-900 flex flex-col overflow-hidden border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom,0px)] md:pb-0 transition-colors duration-200">
           
           {/* Header */}
           <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">

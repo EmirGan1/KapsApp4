@@ -226,6 +226,45 @@ export const CallProvider: React.FC<{
     }
   };
 
+  const triggerIncomingCall = (data: {
+    callId: string;
+    callerId: number;
+    callerUsername: string;
+    callerAvatar?: string | null;
+    callerColor?: string;
+  }) => {
+    if (callState !== 'idle') return;
+    setCallState('incoming_ringing');
+    setCurrentCall({
+      callId: data.callId,
+      peer: {
+        peerId: data.callerId,
+        peerUsername: data.callerUsername,
+        peerAvatar: data.callerAvatar,
+        peerColor: data.callerColor
+      },
+      isCaller: false
+    });
+    callSoundEngine.startIncomingRing();
+  };
+
+  useEffect(() => {
+    const onSimulateIncoming = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      triggerIncomingCall({
+        callId: detail.callId || `sim-call-${Date.now()}`,
+        callerId: detail.callerId || 999,
+        callerUsername: detail.callerUsername || 'Emirgan',
+        callerAvatar: detail.callerAvatar || null,
+        callerColor: detail.callerColor || '#10b981',
+      });
+    };
+    window.addEventListener('kaps:simulate_incoming_call', onSimulateIncoming);
+    return () => {
+      window.removeEventListener('kaps:simulate_incoming_call', onSimulateIncoming);
+    };
+  }, [callState]);
+
   // Listen for socket signaling events
   useEffect(() => {
     if (!socket) return;
@@ -237,31 +276,27 @@ export const CallProvider: React.FC<{
       callerAvatar?: string | null;
       callerColor?: string;
     }) => {
-      if (callState !== 'idle') {
-        // We are already in a call/calling!
-        // The server blocks incoming, but as a safety guard:
-        return;
-      }
-
-      setCallState('incoming_ringing');
-      setCurrentCall({
-        callId: data.callId,
-        peer: {
-          peerId: data.callerId,
-          peerUsername: data.callerUsername,
-          peerAvatar: data.callerAvatar,
-          peerColor: data.callerColor
-        },
-        isCaller: false
-      });
-
-      // Play ringing
-      callSoundEngine.startIncomingRing();
+      triggerIncomingCall(data);
     };
     socket.on('direct_call_incoming', incoming);
-    const checkPending = () => socket.emit('direct_call_pending');
+    const checkPending = () => {
+      if (socket.connected) socket.emit('direct_call_pending');
+    };
     socket.on('connect', checkPending);
     if (callState === 'idle' && socket.connected) checkPending();
+
+    const onSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'kaps:incoming_call_push') {
+        checkPending();
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && callState === 'idle') {
+        checkPending();
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', onSwMessage);
+    document.addEventListener('visibilitychange', onVisibility);
 
     socket.on('direct_call_accepted', async (data: {
       callId: string;
@@ -462,6 +497,8 @@ export const CallProvider: React.FC<{
       socket.off('direct_call_rejected');
       socket.off('direct_call_timeout');
       socket.off('direct_call_ended');
+      navigator.serviceWorker?.removeEventListener('message', onSwMessage);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [socket, callState, currentCall]);
 
@@ -502,7 +539,12 @@ export const CallProvider: React.FC<{
   };
 
   const acceptCall = async () => {
-    if (!socket || !currentCall || callState !== 'incoming_ringing') return;
+    if (!currentCall || callState !== 'incoming_ringing') return;
+    if (!socket || !socket.connected) {
+      callSoundEngine.stopAll();
+      setCallState('connected');
+      return;
+    }
 
     socket.emit('direct_call_accept', { callId: currentCall.callId }, (res: any) => {
       if (res.error) {
@@ -522,14 +564,18 @@ export const CallProvider: React.FC<{
   };
 
   const rejectCall = () => {
-    if (!socket || !currentCall) return;
-    socket.emit('direct_call_reject', { callId: currentCall.callId });
+    if (!currentCall) return;
+    if (socket?.connected) {
+      socket.emit('direct_call_reject', { callId: currentCall.callId });
+    }
     cleanupCall();
   };
 
   const endCall = () => {
-    if (!socket || !currentCall) return;
-    socket.emit('direct_call_end', { callId: currentCall.callId });
+    if (!currentCall) return;
+    if (socket?.connected) {
+      socket.emit('direct_call_end', { callId: currentCall.callId });
+    }
     callSoundEngine.playDisconnectTone();
     cleanupCall();
   };

@@ -107,17 +107,57 @@ export default function Feed({
         });
       } else {
         const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
+        const isDemo = token?.startsWith("demo-") || token?.startsWith("mock-") || localStorage.getItem("lan_is_demo") === "true";
+        const seedDemoPosts = () => {
+          setPosts([
+            {
+              id: 9001,
+              user_id: 101,
+              username: "Deniz Yılmaz",
+              avatar: null,
+              color: "#3b82f6",
+              subject: "Physics",
+              caption: "IB Physics HL dalga girişimi ve harmonik hareket simülasyon kaydı 🎬",
+              image: "/brand/kapsapp-mark.png",
+              media_type: "video",
+              likes_count: 18,
+              comments_count: 4,
+              is_liked: false,
+              created_at: new Date(Date.now() - 25 * 60000).toISOString(),
+            },
+            {
+              id: 9002,
+              user_id: 102,
+              username: "Zeynep Kaya",
+              avatar: null,
+              color: "#10b981",
+              subject: "Mathematics",
+              caption: "Matematik AA HL Paper 2 türev ve integral özet kartları hazır!",
+              image: "/brand/kapsapp-mark.png",
+              media_type: "image",
+              likes_count: 24,
+              comments_count: 6,
+              is_liked: true,
+              created_at: new Date(Date.now() - 90 * 60000).toISOString(),
+            },
+          ]);
+          setHasMore(false);
+        };
         fetch(getApiUrl(`/api/feed?limit=50${activeSubject ? `&subject=${encodeURIComponent(activeSubject)}` : ""}`), {
           headers: token ? { Authorization: `Bearer ${token}` } : {}
         })
           .then((res) => res.json())
           .then((data) => {
-            if (Array.isArray(data)) {
+            if (Array.isArray(data) && data.length > 0) {
               setPosts(data);
               if (data.length < 50) setHasMore(false);
+            } else if (isDemo) {
+              seedDemoPosts();
             }
           })
-          .catch((err) => console.error("Feed fetch error:", err));
+          .catch(() => {
+            if (isDemo) seedDemoPosts();
+          });
       }
     };
 
