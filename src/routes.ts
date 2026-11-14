@@ -4,7 +4,7 @@ export { safeDecodeURI };
 
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
-export type AppTab = "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ayvalik-cas" | "settings";
+export type AppTab = "ib-m27" | "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ayvalik-cas" | "settings";
 
 export interface RouteMeta {
   path: string;
@@ -19,6 +19,13 @@ export interface RouteMeta {
 }
 
 export const APP_ROUTES: Record<string, RouteMeta> = {
+  ibM27: {
+    path: "/ib-m27-sinavlari",
+    tab: "ib-m27",
+    title: "IB M27 Resmi Sınav Takvimi (Nisan – Mayıs 2027) | KapsApp",
+    description: "IB Diploma Programı Mayıs 2027 (M27) resmi sınav tarihleri, ilk sınava canlı geri sayım ve ders rollerinize göre kişiselleştirilmiş sınav ajandası.",
+    canonical: "https://kapsapp.online/ib-m27-sinavlari",
+  },
   home: {
     path: "/",
     tab: "dashboard",
@@ -156,6 +163,16 @@ export function getTabFromPathname(pathname: string): {
 } {
   const cleanPath = pathname.replace(/\/+$/, "") || "/";
 
+  // IB M27 Exam Schedule aliases
+  if (
+    cleanPath === "/ib-m27-sinavlari" ||
+    cleanPath === "/ib-m27" ||
+    cleanPath === "/m27" ||
+    cleanPath === "/ib-sinavlari"
+  ) {
+    return { tab: "ib-m27" };
+  }
+
   // Dynamic course folder route: /dersler/:courseId
   if (cleanPath.startsWith("/dersler/")) {
     const rawCourse = cleanPath.slice("/dersler/".length);
@@ -230,6 +247,7 @@ export function getPathFromTab(
   }
 
   switch (tab) {
+    case "ib-m27": return "/ib-m27-sinavlari";
     case "dashboard": return "/";
     case "ayvalik-cas": return "/ayvalik-cas";
     case "chats": return "/sohbetler";

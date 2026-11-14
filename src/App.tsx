@@ -58,6 +58,7 @@ import Settings from "./components/Settings";
 import CommandPalette from "./components/CommandPalette";
 import Announcements, { AnnouncementItem } from "./components/Announcements";
 import KapsculatorHub from "./components/KapsculatorHub";
+import IbM27ExamsPanel from "./components/IbM27ExamsPanel";
 import AnnouncementModal from "./components/AnnouncementModal";
 import ToastContainer, { ToastItem } from "./components/ToastContainer";
 import DeviceBanScreen from "./components/DeviceBanScreen";
@@ -711,6 +712,7 @@ export default function App() {
       });
 
       const fetchPendingApprovals = async () => {
+        if (isDemoSession) return;
         if (localStorage.getItem("lan_username")?.toLowerCase() !== "emirgan") return;
         try {
           const token = localStorage.getItem("lan_token") || "";
@@ -1280,6 +1282,23 @@ export default function App() {
 
         {/* Categorized Navigation Scroll Area */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 space-y-4">
+          {/* En Üst Özel Bölüm: IB M27 Sınavları */}
+          <div className="space-y-1">
+            <NavItem 
+              to="/ib-m27-sinavlari"
+              collapsed={preferences.sidebarCollapsed}
+              icon={<GraduationCap size={18} className="text-amber-500" />} 
+              label="IB M27 Sınavları" 
+              active={activeTab === 'ib-m27'} 
+              extraBadge={
+                <span className="text-[10px] font-mono font-extrabold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 tabular-nums">
+                  M27
+                </span>
+              }
+              onClick={() => handleTabChange('ib-m27')} 
+            />
+          </div>
+
           {/* Group 1: Çalışma Alanı */}
           <div className="space-y-1">
             {!preferences.sidebarCollapsed && (
@@ -1570,6 +1589,13 @@ export default function App() {
               localStorage.setItem("latest_read_announcement_id", String(latestId));
               setHasUnreadAnnouncement(false);
             }}
+          />
+        )}
+        {activeTab === 'ib-m27' && (
+          <IbM27ExamsPanel 
+            currentUserRoles={currentUserRoles} 
+            onUpdateUserRoles={setCurrentUserRoles}
+            onNavigateCalculator={() => handleTabChange('ib-calculator')}
           />
         )}
         {activeTab === 'ib-calculator' && (

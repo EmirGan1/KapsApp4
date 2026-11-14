@@ -81,6 +81,19 @@ export default function CommandPalette({
   const items: CommandItem[] = useMemo(() => {
     const list: CommandItem[] = [
       {
+        id: "nav-ib-m27",
+        category: "Sayfalar & Modüller",
+        title: "IB M27 Sınavları (Nisan – Mayıs 2027 Resmi Ajanda)",
+        subtitle: "Resmi IB M27 sınav tarihleri, ilk sınava geri sayım ve Kayıtlı Sınavınız takvimi",
+        keywords: "ib m27 sınavları mayıs 2027 nisan takvim ajanda geri sayım",
+        icon: <CalendarDays size={16} className="text-amber-500" />,
+        badge: "23 Nis – 18 May",
+        action: () => {
+          onNavigateTab("ib-m27");
+          onClose();
+        },
+      },
+      {
         id: "nav-dashboard",
         category: "Sayfalar & Modüller",
         title: "Ana Sayfa (Kampüs Paneli)",

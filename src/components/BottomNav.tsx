@@ -66,6 +66,7 @@ export default function BottomNav({
   isChatOpen = false,
 }: BottomNavProps) {
   const isMoreTabActive = isMobileMoreOpen || [
+    'ib-m27',
     'profile', 
     'notifications', 
     'announcements', 
@@ -198,6 +199,12 @@ export default function BottomNav({
 
             {/* Drawer Module Grid */}
             <div className="grid grid-cols-3 gap-2.5">
+              <DrawerGridItem 
+                icon={<GraduationCap size={22} className="text-amber-500" />} 
+                label="IB M27 Sınavları" 
+                active={activeTab === 'ib-m27'} 
+                onClick={() => { handleTabChange('ib-m27'); setIsMobileMoreOpen(false); }} 
+              />
               <DrawerGridItem 
                 icon={<UserCircle2 size={22} className="text-blue-500" />} 
                 label="Profilim" 
