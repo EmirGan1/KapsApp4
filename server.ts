@@ -8,6 +8,7 @@ import { Server } from "socket.io";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import crypto from "crypto";
+import { createDevicePush, validSubscription } from "./src/server/devicePush";
 import fs from "fs";
 import os from "os";
 import { createClient } from "@libsql/client";
@@ -160,6 +161,8 @@ const client = createClient({
   url: process.env.TURSO_DATABASE_URL || process.env.LIBSQL_URL || "file:local.db",
   authToken: process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN,
 });
+
+const devicePush = createDevicePush(client);
 
 async function initDb() {
   await client.execute(`CREATE TABLE IF NOT EXISTS users (
@@ -1089,6 +1092,32 @@ async function startServer() {
   app.use(express.json({ limit: "300mb" }));
   app.use(express.urlencoded({ extended: true, limit: "300mb" }));
 
+  app.get("/api/device-push/key", async (_req, res) => {
+    try { res.json({ key: await devicePush.publicKey() }); }
+    catch { res.status(503).json({ error: "Web Push kullanılamıyor." }); }
+  });
+
+  app.post("/api/device-push/subscription", async (req, res) => {
+    const token = req.headers.authorization?.match(/^Bearer (\S{1,512})$/)?.[1];
+    if (!token) return res.sendStatus(401);
+    try {
+      const auth = await client.execute({
+        sql: `SELECT u.id FROM users u WHERE COALESCE(u.is_banned,0)=0
+          AND COALESCE(u.isBanned,0)=0 AND COALESCE(u.status,'approved')='approved'
+          AND (u.token=? OR EXISTS (SELECT 1 FROM user_sessions s WHERE s.user_id=u.id
+            AND s.token=? AND (s.expires_at IS NULL OR s.expires_at > ?)))`,
+        args: [token, token, new Date().toISOString()],
+      });
+      if (!auth.rows.length) return res.sendStatus(401);
+      if (req.body?.enabled === false) await devicePush.unsubscribeSession(token);
+      else {
+        if (!validSubscription(req.body?.subscription)) return res.sendStatus(400);
+        await devicePush.subscribe(Number(auth.rows[0].id), token, req.body.subscription);
+      }
+      return res.sendStatus(204);
+    } catch { return res.sendStatus(503); }
+  });
+
   // Helper to determine accurate content-type for media streaming
   const getMediaType = (filename: string, fallbackMime?: string): string => {
     const ext = path.extname(filename).toLowerCase();
@@ -1598,6 +1627,7 @@ async function startServer() {
     try {
       const authHeader = req.headers.authorization?.replace("Bearer ", "") || req.body?.token;
       if (authHeader) {
+        await devicePush.unsubscribeSession(authHeader).catch(() => {});
         // user_sessions tablosundan oturumu revoke et
         await client.execute({
           sql: "DELETE FROM user_sessions WHERE token = ?",
@@ -6294,6 +6324,16 @@ async function startServer() {
     socket.emit("your_id", userIdNum);
     io.emit("online_users", Array.from(onlineUsers.keys()));
 
+    socket.on("direct_call_pending", () => {
+      const callId = userActiveCallId.get(userIdNum);
+      const call = callId ? directCalls.get(callId) : undefined;
+      if (!call || call.receiverId !== userIdNum || call.status !== "ringing" || Date.now() - call.startedAt >= 30_000) return;
+      socket.emit("direct_call_incoming", {
+        callId: call.callId, callerId: call.callerId, callerUsername: call.callerUsername,
+        callerAvatar: call.callerAvatar, callerColor: call.callerColor,
+      });
+    });
+
     // Register KapsPool Billiards socket events
     billiardsManager.registerSocketEvents(socket);
 
@@ -8836,6 +8876,15 @@ async function startServer() {
         console.error("Async DM persist error:", err);
       });
 
+      void devicePush.deliver(receiverIdNum, {
+        title: String(sUser?.username || user.username),
+        body: type === "text" ? String(content).slice(0, 120) :
+          type === "image" ? "📷 Fotoğraf" : type === "voice" ? "🎤 Ses kaydı" : "📎 Yeni ek",
+        avatar: typeof sUser?.avatar === "string" && sUser.avatar.length <= 250 ? sUser.avatar : undefined,
+        tag: `dm-${userIdNum}`, url: `/?pushDm=${userIdNum}`,
+        expiresAt: Date.now() + 3600_000,
+      }).catch(() => {});
+
       // 4. Suppress notification if receiver is already actively inside this DM chat
       if (!isReceiverInActiveChat) {
         let notifPreview = content;
@@ -9189,6 +9238,11 @@ async function startServer() {
             const groupMsgPayload = { ...popMsg, chatId: group_id, groupId: group_id };
             if (targetSocket) io.to(targetSocket).emit("new_group_message", groupMsgPayload);
             if (memberId !== user.id) {
+              void devicePush.deliver(memberId, {
+                title: String(group.name).slice(0, 100), body: `${user.username}: Yeni grup mesajı`,
+                tag: `group-${group_id}`, url: `/?pushGroup=${Number(group_id)}`,
+                expiresAt: Date.now() + 3600_000,
+              }).catch(() => {});
               addNotification(memberId, "new_group_message", `${group.name} grubuna yeni bir mesaj geldi.`, user.id, group_id).catch(() => {});
             }
           });
@@ -10692,7 +10746,7 @@ async function startServer() {
 
       // Check if receiver is online
       const receiverSocketId = onlineUsers.get(receiverId);
-      if (!receiverSocketId) {
+      if (!receiverSocketId && !(await devicePush.endpoints(receiverId).catch(() => [])).length) {
         return cb && cb({ error: "Kullanıcı şu an çevrimdışı." });
       }
 
@@ -10707,6 +10761,9 @@ async function startServer() {
           return cb && cb({ error: "Kullanıcı bulunamadı." });
         }
 
+        if (userActiveCallId.has(callerId) || userActiveCallId.has(receiverId)) {
+          return cb && cb({ error: "Görüşme zaten başlatıldı." });
+        }
         const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         
         const session: DirectCallSession = {
@@ -10776,13 +10833,19 @@ async function startServer() {
         userActiveCallId.set(receiverId, callId);
 
         // Emit direct_call_incoming to the receiver
-        io.to(receiverSocketId).emit("direct_call_incoming", {
+        if (receiverSocketId) io.to(receiverSocketId).emit("direct_call_incoming", {
           callId,
           callerId,
           callerUsername: user.username,
           callerAvatar: user.avatar,
           callerColor: user.color
         });
+        void devicePush.deliver(receiverId, {
+          title: "Gelen sesli arama", body: `${user.username} arıyor`,
+          avatar: typeof user.avatar === "string" && user.avatar.length <= 250 ? user.avatar : undefined,
+          tag: callId, url: `/?pushCall=${encodeURIComponent(callId)}`,
+          expiresAt: session.startedAt + 30_000,
+        }).catch(() => {});
 
         if (cb) {
           cb({
@@ -12241,7 +12304,7 @@ async function startServer() {
       const activeCallId = userActiveCallId.get(userIdNum);
       if (activeCallId) {
         const session = directCalls.get(activeCallId);
-        if (session) {
+        if (session && !(session.receiverId === userIdNum && session.status === "ringing")) {
           if (session.timeoutTimer) {
             clearTimeout(session.timeoutTimer);
           }

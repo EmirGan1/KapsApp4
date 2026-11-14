@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getApiUrl } from "../utils/api";
 import { getStoredPreferences, savePreferences } from "../utils/preferences";
 
 let worker: Promise<ServiceWorkerRegistration> | undefined;
@@ -30,9 +31,68 @@ function supported() {
   return window.isSecureContext && "Notification" in window && "serviceWorker" in navigator;
 }
 
+let pushReadyToken: string | null = null;
+let pushSync: { token: string; promise: Promise<boolean> } | undefined;
+
+export function hasDevicePush() {
+  return !!pushReadyToken && pushReadyToken === localStorage.getItem("lan_token");
+}
+
+export function syncDevicePush() {
+  const token = localStorage.getItem("lan_token");
+  if (!token || localStorage.getItem(disabledKey) || /^(demo|mock)-/.test(token) || !supported() ||
+      !("PushManager" in window) || Notification.permission !== "granted") return Promise.resolve(false);
+  if (pushSync?.token === token) return pushSync.promise;
+  const promise = (async () => {
+    await notificationWorker();
+    const registration = await navigator.serviceWorker.ready;
+    const keyResponse = await fetch(getApiUrl("/api/device-push/key"), { signal: AbortSignal.timeout(8000) });
+    if (!keyResponse.ok) return false;
+    const { key } = await keyResponse.json();
+    const decoded = Uint8Array.from(atob(key.replace(/-/g, "+").replace(/_/g, "/")), ch => ch.charCodeAt(0));
+    let subscription = await registration.pushManager.getSubscription();
+    if (subscription?.options.applicationServerKey &&
+        new Uint8Array(subscription.options.applicationServerKey).join() !== decoded.join()) {
+      await subscription.unsubscribe();
+      subscription = null;
+    }
+    subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decoded });
+    if (localStorage.getItem("lan_token") !== token || localStorage.getItem(disabledKey)) return false;
+    const response = await fetch(getApiUrl("/api/device-push/subscription"), {
+      method: "POST", signal: AbortSignal.timeout(8000), headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ subscription: subscription.toJSON() }),
+    });
+    if (response.ok && localStorage.getItem("lan_token") === token && !localStorage.getItem(disabledKey)) {
+      pushReadyToken = token;
+      return true;
+    }
+    return false;
+  })().catch(() => false).finally(() => {
+    if (pushSync?.promise === promise) pushSync = undefined;
+  });
+  pushSync = { token, promise };
+  return promise;
+}
+
+export async function removeDevicePush(token = localStorage.getItem("lan_token")) {
+  pushReadyToken = null;
+  if (pushSync) await pushSync.promise;
+  pushReadyToken = null;
+  const registration = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration().catch(() => undefined) : undefined;
+  const subscription = await registration?.pushManager?.getSubscription().catch(() => null);
+  await Promise.allSettled([
+    subscription?.unsubscribe(),
+    token ? fetch(getApiUrl("/api/device-push/subscription"), {
+      method: "POST", signal: AbortSignal.timeout(8000), headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ enabled: false }),
+    }) : undefined,
+  ]);
+}
+
 export function disableDeviceNotifications() {
   localStorage.setItem(disabledKey, "1");
   savePreferences({ desktopNotifs: false });
+  void removeDevicePush();
 }
 
 export async function enableDeviceNotifications() {
@@ -47,6 +107,7 @@ export async function enableDeviceNotifications() {
     await notificationWorker();
     localStorage.removeItem(disabledKey);
     savePreferences({ desktopNotifs: true });
+    await syncDevicePush();
     return "";
   } catch {
     return "Sistem bildirimleri başlatılamadı. Sayfayı yenileyip tekrar dene.";

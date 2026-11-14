@@ -51,6 +51,7 @@
     "test:strike:presence": "node --import tsx tests/kapsstrike.presence.browser.ts"
   },
   "dependencies": {
+    "web-push": "^3.6.7",
     "@babylonjs/core": "8.50.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.2",
@@ -90,6 +91,7 @@
     "vite": "^8.3.0"
   },
   "devDependencies": {
+    "@types/web-push": "^3.6.4",
     "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/better-sqlite3": "^9.6.0",

@@ -230,7 +230,7 @@ export const CallProvider: React.FC<{
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('direct_call_incoming', (data: {
+    const incoming = (data: {
       callId: string;
       callerId: number;
       callerUsername: string;
@@ -257,7 +257,11 @@ export const CallProvider: React.FC<{
 
       // Play ringing
       callSoundEngine.startIncomingRing();
-    });
+    };
+    socket.on('direct_call_incoming', incoming);
+    const checkPending = () => socket.emit('direct_call_pending');
+    socket.on('connect', checkPending);
+    if (callState === 'idle' && socket.connected) checkPending();
 
     socket.on('direct_call_accepted', async (data: {
       callId: string;
@@ -449,7 +453,8 @@ export const CallProvider: React.FC<{
     });
 
     return () => {
-      socket.off('direct_call_incoming');
+      socket.off('direct_call_incoming', incoming);
+      socket.off('connect', checkPending);
       socket.off('direct_call_accepted');
       socket.off('direct_call_signal_offer');
       socket.off('direct_call_signal_answer');

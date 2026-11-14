@@ -1,4 +1,4 @@
-import { dismissDeviceNotification, NotificationPermissionPrompt, showDeviceNotification } from "./components/DeviceNotifications";
+import { dismissDeviceNotification, hasDevicePush, NotificationPermissionPrompt, removeDevicePush, showDeviceNotification, syncDevicePush } from "./components/DeviceNotifications";
 import { useChatViewport } from "./utils/chatViewport";
 import { IncomingActivityInvites } from "./components/ActivityInvites";
 import { useState, useEffect, useRef } from "react";
@@ -596,6 +596,7 @@ export default function App() {
       
       const onConnect = () => {
         setSocket(newSocket);
+        if (!isDemoSession && preferencesRef.current.desktopNotifs) void syncDevicePush();
         newSocket.emit("heartbeat");
         newSocket.emit("get_notifications", (notifs: any[]) => {
           if (Array.isArray(notifs)) {
@@ -682,7 +683,8 @@ export default function App() {
           else if (notif.type === "friend_request") title = "Arkadaşlık İsteği";
           else if (notif.type === "friend_accept") title = "İstek Kabul Edildi";
 
-          if (!isDemoSession && notif.type !== "new_message" && notif.type !== "dm") {
+          if (!isDemoSession && notif.type !== "new_message" && notif.type !== "dm" &&
+              !(notif.type === "new_group_message" && hasDevicePush())) {
             void showDeviceNotification(title, notif.content, notif.id);
           }
 
@@ -723,7 +725,7 @@ export default function App() {
           msg.type === "file" ? `📎 ${msg.file_name || "Dosya"}` :
           String(msg.content ?? "");
         const avatar = typeof msg.sender_avatar === "string" ? msg.sender_avatar : undefined;
-        if (!isDemoSession) {
+        if (!isDemoSession && !hasDevicePush()) {
           void showDeviceNotification(senderName, preview, `dm-${senderId}`, false, avatar);
         }
         addToast({ type: "dm", senderId, senderName, senderAvatar: avatar,
@@ -732,7 +734,7 @@ export default function App() {
       });
 
       newSocket.on("direct_call_incoming", (call: { callId: string; callerUsername: string; callerAvatar?: string }) => {
-        if (isDemoSession || !call?.callId || (document.visibilityState === "visible" && document.hasFocus())) return;
+        if (isDemoSession || hasDevicePush() || !call?.callId || (document.visibilityState === "visible" && document.hasFocus())) return;
         void showDeviceNotification("Gelen arama", `${call.callerUsername || "Bir kullanıcı"} arıyor`,
           call.callId, false, call.callerAvatar, true);
       });
@@ -922,6 +924,7 @@ export default function App() {
   const handleLogout = async () => {
     const curToken = token || localStorage.getItem("lan_token") || localStorage.getItem("token");
     if (curToken) {
+      await removeDevicePush(curToken).catch(() => {});
       try {
         await fetch(getApiUrl("/api/auth/logout"), {
           method: "POST",
@@ -1095,6 +1098,23 @@ export default function App() {
       }
     };
   }, [activeAnnouncementModal, activeSubject, activeTab, currentUserId, viewingUserId, isDeviceBanned, token, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!socket || !token) return;
+    const params = new URLSearchParams(location.search);
+    if (params.has("pushCall")) {
+      navigate(location.pathname, { replace: true });
+      return;
+    }
+    const dm = Number(params.get("pushDm"));
+    const group = Number(params.get("pushGroup"));
+    if (dm > 0 || group > 0) {
+      handleNotificationClick(dm > 0
+        ? { type: "dm", senderId: dm }
+        : { type: "new_group_message", groupId: group });
+      navigate(location.pathname, { replace: true });
+    }
+  }, [socket, token, location.pathname, location.search]);
 
   if (isDeviceBanned) {
     return <DeviceBanScreen reason={deviceBanReason} onRetry={() => window.location.reload()} />;
