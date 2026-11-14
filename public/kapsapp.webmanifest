@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "KapsApp",
+  "short_name": "KapsApp",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0F172B",
+  "theme_color": "#0F172B",
+  "icons": [
+    {
+      "src": "/brand/kapsapp-mark.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

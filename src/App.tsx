@@ -1,3 +1,4 @@
+import { NotificationPermissionPrompt, showDeviceNotification } from "./components/DeviceNotifications";
 import { IncomingActivityInvites } from "./components/ActivityInvites";
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
@@ -662,21 +663,24 @@ export default function App() {
       });
       
       newSocket.on("new_notification", (notif: any) => {
+        if (!notif) return;
         // Smart suppression: If user is actively inside the DM chat with the sender, do NOT show toast or increment badge
         const senderId = Number(notif?.sender_id || notif?.senderId);
-        if ((notif.type === "new_message" || notif.type === "dm") && activeTabRef.current === "chats" && activeDmChatUserIdRef.current && activeDmChatUserIdRef.current === senderId) {
+        if (document.visibilityState === "visible" && document.hasFocus() && (notif.type === "new_message" || notif.type === "dm") && activeTabRef.current === "chats" && activeDmChatUserIdRef.current && activeDmChatUserIdRef.current === senderId) {
           return;
         }
 
         setUnreadNotificationsCount(prev => prev + 1);
         if (notif && notif.content) {
           let title = "Yeni Bildirim";
-          if (notif.type === "new_message") title = "Yeni Mesaj";
+          if (notif.type === "new_message" || notif.type === "dm") title = "Yeni Mesaj";
           else if (notif.type === "like") title = "Yeni Beğeni";
           else if (notif.type === "comment") title = "Yeni Yorum";
           else if (notif.type === "follow") title = "Yeni Takipçi";
           else if (notif.type === "friend_request") title = "Arkadaşlık İsteği";
           else if (notif.type === "friend_accept") title = "İstek Kabul Edildi";
+
+          if (!isDemoSession) showDeviceNotification(title, notif.content, notif.id);
 
           const colonIdx = notif.content.indexOf(":");
           const hasColon = colonIdx !== -1;
@@ -1090,6 +1094,8 @@ export default function App() {
 
   if (!token) {
     return (
+      <>
+      <NotificationPermissionPrompt />
       <Auth 
         onAuthSuccess={handleAuthSuccess} 
         onNavigateToReset={(tok) => {
@@ -1097,6 +1103,7 @@ export default function App() {
           navigate(`/sifre-sifirla?token=${tok}`);
         }}
       />
+      </>
     );
   }
 
@@ -1116,6 +1123,7 @@ export default function App() {
       }}
     >
       <div className="app-shell flex flex-col lg:flex-row h-[100dvh] w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <NotificationPermissionPrompt />
       <IncomingActivityInvites key={currentUserId} socket={socket} />
       {/* Semantic Top Heading for Search Crawlers & Accessibility */}
       <h1 className="sr-only">KapsApp - Canlı Harita ve Çevrimiçi Oyun Platformu</h1>
