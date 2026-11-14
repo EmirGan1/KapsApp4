@@ -105,7 +105,7 @@ export default function Auth({ onAuthSuccess, onNavigateToReset }: AuthProps) {
       {/* Dynamic SEO Header / Logo for crawlers */}
       <header className="text-center max-w-2xl mt-4">
         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center justify-center gap-3">
-          <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3.5 py-1.5 rounded-2xl shadow-md">K</span>
+          <img src="/brand/kapsapp-mark.png" alt="" width={192} height={192} className="h-12 w-12 rounded-2xl shrink-0" />
           <span>KapsApp</span>
         </h1>
         <p className="text-slate-500 dark:text-slate-400 text-sm mt-2 font-medium leading-relaxed">

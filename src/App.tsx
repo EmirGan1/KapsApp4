@@ -1161,9 +1161,7 @@ export default function App() {
       {/* Mobile Top Header with Command Palette Trigger, Settings & Theme Toggle */}
       <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shrink-0 z-20 transition-colors duration-200">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-xs shadow-xs">
-            KA
-          </div>
+          <img src="/brand/kapsapp-mark.png" alt="" width={192} height={192} className="w-7 h-7 rounded-lg shrink-0" />
           <span className="text-lg font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">KapsApp</span>
           {isEmirgan && (
             <span className="text-[10px] font-mono font-bold text-amber-500">· ROOT</span>
@@ -1227,9 +1225,7 @@ export default function App() {
         {/* Brand Header + Collapse Button */}
         <div className={`h-16 px-4 flex items-center border-b border-slate-200/70 dark:border-slate-800/70 ${preferences.sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-sm shadow-blue-600/20 shrink-0">
-              KA
-            </div>
+            <img src="/brand/kapsapp-mark.png" alt="" width={192} height={192} className="w-8 h-8 rounded-xl shrink-0" />
             {!preferences.sidebarCollapsed && (
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
