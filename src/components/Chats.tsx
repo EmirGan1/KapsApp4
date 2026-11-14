@@ -306,7 +306,34 @@ export default function Chats({
   }, [friends, onUnreadDMsChange]);
 
   useEffect(() => {
-    if (!socket || !activeChat) return;
+    if (!activeChat) return;
+    if (!socket) {
+      if (currentUserId <= 0 || localStorage.getItem("lan_is_demo") === "true") {
+        setHasMore(false);
+        setIsLoadingOlder(false);
+        setMessages([
+          {
+            id: 5001,
+            sender: activeChat.id,
+            receiver: currentUserId,
+            username: "username" in activeChat ? activeChat.username : "Deniz Yılmaz",
+            content: "Merhaba! IB Fizik HL Paper 2 soru çözümlerini ders klasörüne yükledim.",
+            type: "text",
+            created_at: new Date(Date.now() - 20 * 60000).toISOString(),
+          },
+          {
+            id: 5002,
+            sender: currentUserId,
+            receiver: activeChat.id,
+            username: currentUsername || "Önizleme Kullanıcı",
+            content: "Harika, hemen inceliyorum! Teşekkürler 🙌",
+            type: "text",
+            created_at: new Date(Date.now() - 12 * 60000).toISOString(),
+          },
+        ]);
+      }
+      return;
+    }
     
     const roomId = activeTab === "friends" ? `dm_${Math.min(currentUserId, activeChat.id)}_${Math.max(currentUserId, activeChat.id)}` : `group_${activeChat.id}`;
     

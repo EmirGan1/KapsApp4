@@ -1392,14 +1392,14 @@ export default function KapsStrikeGame({
                       <span>UZAĞA AT</span>
                     </button>
 
-                    {/* YAKINA AT Button */}
+                    {/* YAKINA AT Button (stacked cleanly above UZAĞA AT, never overlapping KAY) */}
                     <button
                       type="button"
                       data-testid="ks-touch-throw-near"
                       className="ks-touch-btn-custom ks-touch-throw-near-btn"
                       style={{
-                        left: `${Math.max(58, touchLayout.fire.x - 13)}%`,
-                        top: `${Math.min(88, touchLayout.fire.y + 4)}%`,
+                        left: `${touchLayout.fire.x}%`,
+                        top: `${Math.max(46, touchLayout.fire.y - 16)}%`,
                         transform: `translate(-50%, -50%) scale(${touchLayout.fire.size})`,
                       }}
                       onClick={() => game.current?.throwUtility(true)}
@@ -1626,7 +1626,7 @@ export default function KapsStrikeGame({
       {/* IN-GAME HUD */}
       {view === "play" && hud && (
         <div className="ks-hud" aria-live="off">
-          <div className="ks-top" style={currentRoom?.mode==='bomb'?{visibility:'hidden'}:undefined}>
+          <div className="ks-top" style={(currentRoom?.mode==='bomb' || isMobile)?{visibility:'hidden'}:undefined}>
             <div>
               <strong><span className="text-slate-100">KAPS</span><span className="text-amber-400">STRIKE</span> 3D</strong>
               <span>

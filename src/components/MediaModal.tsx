@@ -249,13 +249,15 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
             </div>
           )}
 
-          {/* Quick download button on media */}
+          {/* Quick download button on media (placed at top-right next to close button for videos so it never overlaps native video timeline controls) */}
           <a
             href={currentItem.url}
             download={currentItem.name || `kapsapp-${Date.now()}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="absolute bottom-3 right-3 bg-black/60 hover:bg-black/80 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors cursor-pointer border border-white/10"
+            className={`absolute ${
+              currentItem.type === "video" ? "top-3 right-16" : "bottom-3 right-3"
+            } z-30 bg-black/60 hover:bg-black/80 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors cursor-pointer border border-white/10`}
             title="İndir"
           >
             <Download size={14} />
