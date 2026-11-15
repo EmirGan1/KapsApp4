@@ -4,7 +4,7 @@ export { safeDecodeURI };
 
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
-export type AppTab = "ib-m27" | "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ayvalik-cas" | "settings";
+export type AppTab = "ib-m27" | "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ai-checker" | "ayvalik-cas" | "settings";
 
 export interface RouteMeta {
   path: string;
@@ -110,6 +110,14 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     title: "KapsCulator - IB Diploma ve Puan Hesaplayıcı | KapsApp",
     description: "KapsApp KapsCulator - IB Diploma puan hesaplama aracı. Turkish A, English B, TITC, Math AA, Physics ve Digital Society sınav, IA ve diploma simülatörü.",
     canonical: "https://kapsapp.online/ib-hesaplayici",
+  },
+  aiChecker: {
+    path: "/ai-checker",
+    tab: "ai-checker",
+    title: "AI Checker | KapsApp",
+    description: "Tarayıcı belleğinde yerel ONNX modeliyle deneysel metin analizi. Metin sunucuya gönderilmez.",
+    canonical: "https://kapsapp.online/ai-checker",
+    noindex: true,
   },
   feed: {
     path: "/akis",
@@ -260,6 +268,7 @@ export function getPathFromTab(
     case "agenda": return "/ajanda";
     case "announcements": return "/duyurular";
     case "ib-calculator": return "/ib-hesaplayici";
+    case "ai-checker": return "/ai-checker";
     case "feed": return "/akis";
     case "map": return "/harita";
     case "voice": return "/sesli-sohbet";

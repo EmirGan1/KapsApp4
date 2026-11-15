@@ -40,7 +40,8 @@ import {
   PanelLeft,
   BellOff,
   ChevronLeft,
-  Smartphone
+  Smartphone,
+  BrainCircuit
 } from "lucide-react";
 import { APP_ROUTES, getTabFromPathname, getPathFromTab, AppTab } from "./routes";
 import { useSEO } from "./components/SEO";
@@ -96,6 +97,7 @@ import {
 
 import { SUBJECTS } from "./utils/subjectResources";
 import SubjectResources from "./components/SubjectResources";
+import AiChecker from "./components/AiChecker";
 
 export default function App() {
   useChatViewport();
@@ -1596,6 +1598,14 @@ export default function App() {
               active={activeTab === 'ib-calculator'} 
               onClick={() => handleTabChange('ib-calculator')} 
             />
+            <NavItem
+              to="/ai-checker"
+              collapsed={preferences.sidebarCollapsed}
+              icon={<BrainCircuit size={18} className="text-indigo-500" />}
+              label="AI Checker"
+              active={activeTab === 'ai-checker'}
+              onClick={() => handleTabChange('ai-checker')}
+            />
             <NavItem 
               to="/ayvalik-cas"
               collapsed={preferences.sidebarCollapsed}
@@ -1821,6 +1831,7 @@ export default function App() {
         {activeTab === 'ib-calculator' && (
           <KapsculatorHub currentUserRoles={currentUserRoles} />
         )}
+        {activeTab === 'ai-checker' && <AiChecker />}
         {activeTab === 'agenda' && (
           <Agenda 
             socket={socket} 

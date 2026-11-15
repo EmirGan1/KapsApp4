@@ -78,6 +78,7 @@ export default function BottomNav({
     'announcements', 
     'ayvalik-cas',
     'ib-calculator',
+    'ai-checker',
     'agenda', 
     'global', 
     'weather', 
@@ -276,6 +277,12 @@ export default function BottomNav({
                   label="KapsCulator" 
                   active={activeTab === 'ib-calculator'} 
                   onClick={() => { handleTabChange('ib-calculator'); setIsMobileMoreOpen(false); }} 
+                />
+                <DrawerGridItem
+                  icon={<Sparkles size={21} className="text-indigo-500" />}
+                  label="AI Checker"
+                  active={activeTab === 'ai-checker'}
+                  onClick={() => { handleTabChange('ai-checker'); setIsMobileMoreOpen(false); }}
                 />
                 <DrawerGridItem 
                   icon={<CalendarDays size={21} className="text-indigo-500" />} 
