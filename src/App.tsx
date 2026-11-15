@@ -97,7 +97,7 @@ import {
 
 import { SUBJECTS } from "./utils/subjectResources";
 import SubjectResources from "./components/SubjectResources";
-import AiChecker from "./components/AiChecker";
+import AiChecker, { clearLegacyAiCheckerData } from "./components/AiChecker";
 
 export default function App() {
   useChatViewport();
@@ -133,6 +133,8 @@ export default function App() {
   const initialResolved = getTabFromPathname(location.pathname);
   const [activeTab, setActiveTab] = useState<AppTab>(initialResolved.tab);
   const [hasOpenedAiChecker, setHasOpenedAiChecker] = useState(false);
+
+  useEffect(clearLegacyAiCheckerData, []);
 
   useEffect(() => {
     if (activeTab === "ai-checker") setHasOpenedAiChecker(true);

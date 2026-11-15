@@ -23,6 +23,7 @@ import { registerActivityGames } from "./src/server/activityGames";
 import { initAyvalikCasTables, registerAyvalikCasRoutes } from "./src/server/ayvalikController";
 import { setupChatSocketHandlers } from "./src/server/socket";
 import { initPasswordResetDb, registerPasswordResetRoutes } from "./src/server/passwordResetController";
+import { AI_CHECKER_PATH, AiCheckerError, createAiChecker } from "./src/server/aiChecker";
 
 import { 
   generateDeck, 
@@ -1089,6 +1090,14 @@ async function startServer() {
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Hardware-Fingerprint", "X-Device-Id"]
   }));
 
+  app.post(AI_CHECKER_PATH,
+    (req: express.Request, res: express.Response, next: express.NextFunction) =>
+      req.is("application/json") ? next() : res.sendStatus(415),
+    express.json({ limit: "128kb", inflate: false }),
+    (error: { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(error.status === 413 ? 413 : 400).json({ error: "Geçersiz analiz isteği." });
+    },
+  );
   app.use(express.json({ limit: "300mb" }));
   app.use(express.urlencoded({ extended: true, limit: "300mb" }));
 
@@ -2489,6 +2498,25 @@ async function startServer() {
       return null;
     }
   }
+
+  const aiChecker = createAiChecker();
+  app.post(AI_CHECKER_PATH, async (req, res) => {
+    if (!await authenticateToken(req)) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
+    const input = req.body?.text;
+    req.body = undefined;
+    if (typeof input !== "string" || input.length > 20000 || !input.trim()) {
+      return res.status(400).json({ error: "1 ile 20.000 karakter arasında metin gir." });
+    }
+    try {
+      const result = await aiChecker.analyze(input.trim());
+      if (!res.destroyed) res.json(result);
+    } catch (error) {
+      if (!res.destroyed) {
+        const failure = error instanceof AiCheckerError ? error : new AiCheckerError(503, "Model şu anda kullanılamıyor.");
+        res.status(failure.status).json({ error: failure.message });
+      }
+    }
+  });
 
   // Free Virtual Chip Refill (500 Chips when broke)
   app.post("/api/chips/refill", async (req, res) => {
@@ -12769,6 +12797,7 @@ async function startServer() {
   };
 
   httpServer.listen(PORT, "0.0.0.0", () => {
+    try { aiChecker.warm(); } catch { console.warn("AI Checker worker could not start."); }
     console.log(`\n=====================================`);
     console.log(`✅ Server running on LAN`);
     console.log(`➡️  Connect via: http://${getLocalIP()}:${PORT}`);

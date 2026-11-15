@@ -1,35 +1,29 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
-import { join } from 'node:path';
 import { test } from 'node:test';
-import * as ort from 'onnxruntime-web/wasm';
-import { Tokenizer } from '@huggingface/tokenizers';
+import { createAiChecker } from '../src/server/aiChecker';
 
-test('packaged model and tokenizer run locally with two finite outputs', async () => {
-  const root = join(process.cwd(), 'public/ai-checker');
-  const runtime = Buffer.concat(Array.from({ length: 3 }, (_, i) => readFileSync(join(root, `runtime/part-${String(i).padStart(2, '0')}`))));
-  const compressed = Buffer.concat(Array.from({ length: 17 }, (_, i) => readFileSync(join(root, `model/part-${String(i).padStart(2, '0')}`))));
-  const model = gunzipSync(compressed);
-  assert.equal(model.length, 125855418);
-  ort.env.wasm.numThreads = 1;
-  ort.env.wasm.wasmBinary = runtime;
-  const tokenizer = new Tokenizer(
-    JSON.parse(readFileSync(join(root, 'tokenizer.json'), 'utf8')),
-    JSON.parse(readFileSync(join(root, 'tokenizer_config.json'), 'utf8')),
-  );
-  const ids = tokenizer.encode('I wrote this sentence myself.').ids;
-  const session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
+test('the warm server model handles short and truncated inputs without returning the text', async () => {
+  const checker = createAiChecker();
+  checker.warm();
   try {
-    assert.deepEqual(session.inputNames, ['input_ids', 'attention_mask']);
-    const result = await session.run({
-      input_ids: new ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, ids.length]),
-      attention_mask: new ort.Tensor('int64', BigInt64Array.from(ids, () => 1n), [1, ids.length]),
-    });
-    const scores = Array.from(result.logits.data as Float32Array);
-    assert.equal(scores.length, 2);
-    assert.ok(scores.every(Number.isFinite));
+    const first = checker.analyze('I wrote this sentence myself.');
+    assert.throws(() => checker.analyze('Concurrent input'), { status: 429 });
+    const short = await first;
+    assert.ok(short.tokens > 0 && short.tokens < 512);
+    assert.equal(short.truncated, false);
+
+    const start = performance.now();
+    const long = await checker.analyze('This is a sample sentence. '.repeat(160));
+    console.log(`Warm 512-token request: ${Math.round(performance.now() - start)} ms`);
+    assert.equal(long.tokens, 512);
+    assert.equal(long.truncated, true);
+    for (const result of [short, long]) {
+      assert.deepEqual(Object.keys(result).sort(), ['scores', 'tokens', 'truncated']);
+      assert.equal(result.scores.length, 2);
+      assert.ok(result.scores.every(Number.isFinite));
+      assert.ok(Math.abs(result.scores[0] + result.scores[1] - 1) < 1e-9);
+    }
   } finally {
-    await session.release();
+    checker.stop();
   }
 });

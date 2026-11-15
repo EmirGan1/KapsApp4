@@ -1,162 +1,99 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrainCircuit, LockKeyhole, RotateCcw } from 'lucide-react';
+import { getApiUrl, getAuthHeaders } from '../utils/api';
 
 type Result = { scores: number[]; tokens: number; truncated: boolean };
-type SavedAnalysis = { text: string; pendingId: string | null; result: Result | null };
-type WorkerReply =
-  | ({ type: 'result'; id: string } & Result)
-  | { type: 'error'; id: string; message: string; retryable: boolean };
+const STORAGE_PREFIX = 'kapsapp.ai-checker.v1.';
 
-const EMPTY_ANALYSIS: SavedAnalysis = { text: '', pendingId: null, result: null };
+function isResult(value: unknown): value is Result {
+  const result = value as Result | null;
+  return Array.isArray(result?.scores) && result.scores.length === 2
+    && result.scores.every(Number.isFinite) && typeof result.tokens === 'number'
+    && typeof result.truncated === 'boolean';
+}
 
-function readAnalysis(storageKey: string): SavedAnalysis {
+export function clearLegacyAiCheckerData() {
   try {
-    const saved = JSON.parse(localStorage.getItem(storageKey) || 'null') as SavedAnalysis | null;
-    if (saved && typeof saved.text === 'string' && (saved.pendingId === null || typeof saved.pendingId === 'string')) {
-      const result = saved.result;
-      return {
-        text: saved.text.slice(0, 20000),
-        pendingId: saved.text.trim() ? saved.pendingId : null,
-        result: Array.isArray(result?.scores) && result.scores.length === 2 && result.scores.every(Number.isFinite)
-          && typeof result.tokens === 'number' && typeof result.truncated === 'boolean' ? result : null,
-      };
+    for (const key of Object.keys(localStorage)) {
+      if (!key.startsWith(STORAGE_PREFIX)) continue;
+      let value;
+      try { value = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+      const result = isResult(value) ? value : value?.result;
+      if (isResult(result)) {
+        const { scores, tokens, truncated } = result;
+        localStorage.setItem(key, JSON.stringify({ scores, tokens, truncated }));
+      } else {
+        localStorage.removeItem(key);
+      }
     }
-  } catch {
-    // Storage can be unavailable in private mode or disabled by the browser.
-  }
-  return EMPTY_ANALYSIS;
+  } catch {}
+  void globalThis.caches?.delete('kapsapp-ai-checker-4c66198').catch(() => {});
 }
 
 export default function AiChecker({ account, active }: { account: string; active: boolean }) {
-  const storageKey = `kapsapp.ai-checker.v1.${account}`;
-  const [saved, setSaved] = useState(() => readAnalysis(storageKey));
-  const [text, setText] = useState(saved.text);
+  const storageKey = `${STORAGE_PREFIX}${account}`;
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [resume, setResume] = useState(0);
-  const [storageUnavailable, setStorageUnavailable] = useState(false);
-  const savedRef = useRef(saved);
-  const workerRef = useRef<Worker | null>(null);
-  const runningId = useRef<string | null>(null);
-  const backgroundedId = useRef<string | null>(null);
-  const retriedId = useRef<string | null>(null);
-  const busy = saved.pendingId !== null;
-  const result = saved.result;
-
-  const saveAnalysis = useCallback((analysis: SavedAnalysis, completedId?: string) => {
-    savedRef.current = analysis;
-    setSaved(analysis);
+  const [result, setResult] = useState<Result | null>(() => {
     try {
-      // An older tab must not overwrite an analysis started or cleared in a newer tab.
-      if (completedId && readAnalysis(storageKey).pendingId !== completedId) return;
-      if (analysis === EMPTY_ANALYSIS) localStorage.removeItem(storageKey);
-      else localStorage.setItem(storageKey, JSON.stringify(analysis));
-      setStorageUnavailable(false);
-    } catch {
-      setStorageUnavailable(true);
-    }
-  }, [storageKey]);
+      const stored = JSON.parse(localStorage.getItem(storageKey) || 'null');
+      if (isResult(stored)) return stored;
+      if (isResult(stored?.result)) return stored.result;
+    } catch {}
+    return null;
+  });
+  const requestRef = useRef<AbortController | null>(null);
 
-  const stopWorker = useCallback(() => {
-    workerRef.current?.terminate();
-    workerRef.current = null;
-    runningId.current = null;
-  }, []);
-
-  const handleFailure = useCallback((id: string, message: string, retryable = false) => {
-    stopWorker();
-    if (savedRef.current.pendingId !== id) return;
-    if (backgroundedId.current === id || (retryable && retriedId.current !== id)) {
-      backgroundedId.current = null;
-      retriedId.current = id;
-      setResume(value => value + 1);
-      return;
-    }
-    saveAnalysis({ ...savedRef.current, pendingId: null }, id);
-    setError(message);
-  }, [saveAnalysis, stopWorker]);
-
-  const getWorker = useCallback(() => {
-    if (workerRef.current) return workerRef.current;
-    const worker = new Worker(new URL('../workers/aiChecker.worker.ts', import.meta.url), { type: 'module' });
-    workerRef.current = worker;
-    worker.onmessage = (event: MessageEvent<WorkerReply>) => {
-      const data = event.data;
-      if (workerRef.current !== worker || data.id !== runningId.current || data.id !== savedRef.current.pendingId) return;
-      if (data.type === 'error') {
-        handleFailure(data.id, data.message, data.retryable);
-        return;
-      }
-      runningId.current = null;
-      backgroundedId.current = null;
-      const { scores, tokens, truncated } = data;
-      saveAnalysis({ ...savedRef.current, pendingId: null, result: { scores, tokens, truncated } }, data.id);
-    };
-    worker.onerror = () => {
-      if (workerRef.current !== worker) return;
-      const id = runningId.current;
-      if (id) handleFailure(id, 'Tarayıcı yerel modeli çalıştıramadı.');
-      else stopWorker();
-    };
-    return worker;
-  }, [handleFailure, saveAnalysis, stopWorker]);
-
-  useEffect(() => {
-    const markBackgrounded = () => { backgroundedId.current = runningId.current; };
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') markBackgrounded();
-      else setResume(value => value + 1);
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('pagehide', markBackgrounded);
-    window.addEventListener('pageshow', onVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('pagehide', markBackgrounded);
-      window.removeEventListener('pageshow', onVisibilityChange);
-      stopWorker();
-    };
-  }, [stopWorker]);
-
-  useEffect(() => {
-    if (!active && !saved.pendingId) {
-      stopWorker();
-      return;
-    }
-    if (document.visibilityState === 'hidden') return;
-    const timer = window.setTimeout(() => {
-      if (document.visibilityState === 'hidden') return;
-      const { pendingId, text: submittedText } = savedRef.current;
-      if (runningId.current || (!pendingId && (workerRef.current || error))) return;
-      try {
-        const worker = getWorker();
-        if (pendingId) {
-          runningId.current = pendingId;
-          worker.postMessage({ type: 'analyze', id: pendingId, text: submittedText });
-        } else {
-          worker.postMessage({ type: 'preload' });
-        }
-      } catch {
-        if (pendingId) handleFailure(pendingId, 'Tarayıcı yerel modeli çalıştıramadı.');
-        else stopWorker();
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [active, error, getWorker, handleFailure, resume, saved.pendingId, stopWorker]);
+  useEffect(() => () => requestRef.current?.abort(), []);
 
   const reset = () => {
-    if (busy) stopWorker();
-    backgroundedId.current = null;
-    saveAnalysis(EMPTY_ANALYSIS);
+    requestRef.current?.abort();
+    requestRef.current = null;
     setText('');
+    setResult(null);
     setError('');
+    setBusy(false);
+    try { localStorage.removeItem(storageKey); } catch {}
   };
 
-  const analyze = () => {
+  const analyze = async () => {
     const input = text.trim();
-    if (!input || savedRef.current.pendingId) return;
-    backgroundedId.current = null;
+    if (!input || requestRef.current) return;
+    const request = new AbortController();
+    requestRef.current = request;
+    setBusy(true);
     setError('');
-    saveAnalysis({ ...savedRef.current, text: input, pendingId: crypto.randomUUID() });
+    const timeout = window.setTimeout(() => request.abort(), 11000);
+    try {
+      const response = await fetch(getApiUrl('/api/ai-checker/analyze'), {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        cache: 'no-store',
+        body: JSON.stringify({ text: input }),
+        signal: request.signal,
+      });
+      const data = await response.json().catch(() => null);
+      if (requestRef.current !== request) return;
+      if (!response.ok || !isResult(data)) {
+        setError(typeof data?.error === 'string' ? data.error : 'Analiz şu anda kullanılamıyor. Tekrar dene.');
+        return;
+      }
+      const { scores, tokens, truncated } = data;
+      const summary = { scores, tokens, truncated };
+      setResult(summary);
+      try { localStorage.setItem(storageKey, JSON.stringify(summary)); } catch {}
+    } catch {
+      if (requestRef.current === request) {
+        setError(request.signal.aborted ? 'Analiz zamanında tamamlanmadı. Tekrar dene.' : 'Sunucu bağlantısı kesildi. Tekrar dene.');
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (requestRef.current === request) {
+        requestRef.current = null;
+        setBusy(false);
+      }
+    }
   };
 
   return (
@@ -167,7 +104,7 @@ export default function AiChecker({ account, active }: { account: string; active
           <div><h1 className="text-2xl font-bold">AI Checker</h1><p className="text-sm text-slate-500 dark:text-slate-400">Tarayıcında çalışan deneysel metin analizi</p></div>
         </div>
         <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300 mb-5">
-          Analiz cihazında çalışır. Son gönderdiğin metin ve son sonuç bu tarayıcıda saklanır.
+          Model KapsApp’te hazır. Metnini yazıp doğrudan analiz edebilirsin.
         </p>
         <label htmlFor="ai-checker-input" className="block text-sm font-semibold mb-2">İncelenecek metin</label>
         <textarea id="ai-checker-input" value={text} disabled={busy} onChange={event => setText(event.target.value)}
@@ -181,7 +118,6 @@ export default function AiChecker({ account, active }: { account: string; active
           </div>
         </div>
         {busy && <p role="status" className="sr-only">Metin işleniyor.</p>}
-        {storageUnavailable && <p role="status" className="mt-4 text-sm text-slate-500">Tarayıcı depolamaya izin vermedi. Son analiz bu sayfa açıkken korunur.</p>}
         {error && <p role="alert" className="mt-4 text-sm text-rose-500">{error}</p>}
       </div>
 
@@ -194,7 +130,7 @@ export default function AiChecker({ account, active }: { account: string; active
         <p className="text-xs mt-4 text-slate-500">{result.tokens} token işlendi.{result.truncated ? ' Modelin 512 token sınırı nedeniyle metnin devamı işlenmedi.' : ''} Skorlar doğruluk oranı değildir; özellikle kısa metinlerde sonuçları kesin kanıt sayma.</p>
       </section>}
 
-      <div className="flex gap-2 text-xs text-slate-500 dark:text-slate-400"><LockKeyhole size={16} className="shrink-0" /><span>Metin sunucuya gönderilmez. Bu tarayıcıdaki metni ve sonucu silmek için Temizle’ye bas.</span></div>
+      <div className="flex gap-2 text-xs text-slate-500 dark:text-slate-400"><LockKeyhole size={16} className="shrink-0" /><span>Metin yalnızca analiz için sunucunun belleğinde işlenir. Bu tarayıcıda yalnızca son sonuç saklanır.</span></div>
     </main>
   );
 }
