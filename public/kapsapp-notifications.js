@@ -1,4 +1,5 @@
 self.addEventListener("install", event => event.waitUntil(self.skipWaiting()));
+self.addEventListener("activate", event => event.waitUntil(self.clients.claim()));
 
 self.addEventListener("push", event => {
   event.waitUntil((async () => {
@@ -14,8 +15,14 @@ self.addEventListener("push", event => {
       }
       const visibleClient = windows.find(client => client.visibilityState === "visible");
       if (visibleClient) {
-        // App or standalone PWA is already open on screen: show full-screen native call UI instead of a notification banner
+        // App or standalone PWA is already open on screen: full-screen native call UI is already active
         return;
+      }
+      // Try bringing backgrounded PWA window forward if permitted by the OS/browser
+      if (windows[0] && typeof windows[0].focus === "function") {
+        try {
+          await windows[0].focus();
+        } catch {}
       }
     }
 
@@ -26,33 +33,63 @@ self.addEventListener("push", event => {
         if (avatar.origin === self.location.origin) icon = avatar.href;
       } catch {}
     }
-    await self.registration.showNotification(alert.title, {
+
+    const notificationOptions = {
       body: alert.body,
       icon,
+      badge: "/brand/kapsapp-tab.png",
       tag: "kapsapp-notification-" + alert.tag,
+      renotify: isIncomingCall,
       requireInteraction: isIncomingCall,
+      vibrate: isIncomingCall ? [500, 250, 500, 250, 500, 250, 500, 250, 500] : [200, 100, 200],
+      actions: isIncomingCall
+        ? [
+            { action: "accept", title: "📞 Yanıtla" },
+            { action: "reject", title: "✕ Reddet" },
+          ]
+        : [],
       data: { url: alert.url, isIncomingCall, alert },
-    });
+    };
+
+    await self.registration.showNotification(alert.title, notificationOptions);
   })());
 });
 
 self.addEventListener("notificationclick", event => {
   event.notification.close();
   event.waitUntil((async () => {
-    const target = new URL(event.notification.data?.url || "/", self.location.origin);
+    const data = event.notification.data || {};
+    const action = event.action || "open";
+    const target = new URL(data.url || "/", self.location.origin);
     if (target.origin !== self.location.origin) return;
+
+    if (data.isIncomingCall && (action === "accept" || action === "reject" || action === "open")) {
+      target.searchParams.set("callAction", action);
+    }
+
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const page = windows.find(client => client.visibilityState === "visible") || windows[0];
-    if (!page) return self.clients.openWindow(target.href);
-    if (event.notification.data?.isIncomingCall) {
-      page.postMessage({ type: "kaps:incoming_call_push", alert: event.notification.data?.alert });
+    if (!page) {
+      if (data.isIncomingCall && action === "reject") {
+        return;
+      }
+      return self.clients.openWindow(target.href);
+    }
+    if (data.isIncomingCall) {
+      page.postMessage({
+        type: "kaps:incoming_call_action",
+        action,
+        alert: data.alert,
+      });
+      if (action === "reject") {
+        return;
+      }
       return page.focus();
     }
-    if (event.notification.data?.url && page.url !== target.href) {
+    if (data.url && page.url !== target.href) {
       const navigated = await page.navigate(target.href);
       return navigated?.focus();
     }
     return page.focus();
   })());
 });
-

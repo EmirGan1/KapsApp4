@@ -370,8 +370,8 @@ export default function VoiceChat({
   };
 
   // Join Room Handler with batched peer initiation
-  const handleJoinRoom = async (roomId: string) => {
-    if (!socket) return;
+  const handleJoinRoom = useCallback(async (roomId: string) => {
+    if (!socket || !roomId) return;
     await setupLocalMedia(false);
 
     socket.emit('join_voice_room', { roomId }, async (res: any) => {
@@ -380,10 +380,22 @@ export default function VoiceChat({
         // Existing peers will receive voice_user_joined and initiate offers to this new participant
       } else {
         cleanupWebRTC();
-        alert(res?.message || 'Odaya katılınamadı.');
       }
     });
-  };
+  }, [socket, setupLocalMedia, cleanupWebRTC]);
+
+  useEffect(() => {
+    const onExternalJoin = (e: Event) => {
+      const roomId = (e as CustomEvent)?.detail?.roomId;
+      if (roomId) {
+        void handleJoinRoom(roomId);
+      }
+    };
+    window.addEventListener('kaps:join_voice_room', onExternalJoin);
+    return () => {
+      window.removeEventListener('kaps:join_voice_room', onExternalJoin);
+    };
+  }, [handleJoinRoom]);
 
   // Leave Room Handler
   const handleLeaveRoom = () => {

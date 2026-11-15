@@ -1,17 +1,48 @@
 {
   "id": "/",
-  "name": "KapsApp",
+  "name": "KapsApp — Akademik & Sosyal Platform",
   "short_name": "KapsApp",
+  "description": "Gerçek zamanlı sesli/görüntülü sohbet, IB M27 sınav ajandası, ders klasörleri, canlı harita ve sosyal oyunlar.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0F172B",
-  "theme_color": "#0F172B",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "categories": ["education", "social", "communication"],
   "icons": [
     {
       "src": "/brand/kapsapp-mark.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/kapsapp-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Özel Mesajlar",
+      "short_name": "Mesajlar",
+      "url": "/sohbetler",
+      "icons": [{ "src": "/brand/kapsapp-mark.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Sesli & Görüntülü Sohbet",
+      "short_name": "Sesli Oda",
+      "url": "/sesli-sohbet",
+      "icons": [{ "src": "/brand/kapsapp-mark.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "IB M27 Sınav Takvimi",
+      "short_name": "IB M27",
+      "url": "/ib-m27-sinavlari",
+      "icons": [{ "src": "/brand/kapsapp-mark.png", "sizes": "192x192" }]
     }
   ]
 }

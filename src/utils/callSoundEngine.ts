@@ -1,8 +1,15 @@
+function hasUserActivation(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = (navigator as any).userActivation;
+  return ua ? Boolean(ua.hasBeenActive) : true;
+}
+
 class CallSoundEngine {
   private ctx: AudioContext | null = null;
   private intervalId: any = null;
 
   initContext(): AudioContext | null {
+    if (!hasUserActivation()) return null;
     if (!this.ctx && typeof window !== 'undefined') {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
@@ -17,6 +24,7 @@ class CallSoundEngine {
 
   // Ensure AudioContext is resumed before playing any procedural tones
   private async ensureActiveContext(): Promise<boolean> {
+    if (!hasUserActivation()) return false;
     this.initContext();
     if (this.ctx && this.ctx.state === 'suspended') {
       try {
@@ -34,6 +42,7 @@ class CallSoundEngine {
     await this.ensureActiveContext();
 
     const playChime = () => {
+      if (!hasUserActivation()) return;
       this.ensureActiveContext();
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
@@ -59,7 +68,7 @@ class CallSoundEngine {
       });
 
       // Mobil cihazlar için nazik titreşim
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      if (hasUserActivation() && typeof navigator !== 'undefined' && navigator.vibrate) {
         try {
           navigator.vibrate([250, 100, 250]);
         } catch (e) {}
@@ -76,6 +85,7 @@ class CallSoundEngine {
     await this.ensureActiveContext();
 
     const playTone = () => {
+      if (!hasUserActivation()) return;
       this.ensureActiveContext();
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
@@ -161,7 +171,7 @@ class CallSoundEngine {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    if (hasUserActivation() && typeof navigator !== 'undefined' && navigator.vibrate) {
       try {
         navigator.vibrate(0);
       } catch (e) {}

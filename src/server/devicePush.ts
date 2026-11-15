@@ -24,6 +24,14 @@ export function validSubscription(value: unknown): value is webpush.PushSubscrip
 export type PushAlert = {
   title: string; body: string; tag: string; url: string;
   avatar?: string; expiresAt: number;
+  callType?: "direct" | "voice_room";
+  callId?: string;
+  callerId?: number;
+  callerUsername?: string;
+  callerAvatar?: string | null;
+  callerColor?: string;
+  roomId?: string;
+  roomName?: string;
 };
 
 export function createDevicePush(db: Client) {

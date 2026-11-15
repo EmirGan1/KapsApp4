@@ -15,6 +15,9 @@ import {
   Search,
   Settings as SettingsIcon,
   BellOff,
+  GraduationCap,
+  Gamepad2,
+  MapPin,
 } from "lucide-react";
 import Avatar from "./Avatar";
 import RoleBadges from "./RoleBadges";
@@ -255,27 +258,81 @@ export default function Dashboard({
   const focusPercent = Math.min(100, Math.round((todayScreenSeconds / focusTargetSeconds) * 100));
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-5 md:p-8 space-y-6 md:space-y-7 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 touch-pan-y overscroll-y-contain">
+    <div className="flex-1 overflow-y-auto px-3.5 py-4 md:p-8 space-y-4 md:space-y-7 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 touch-pan-y overscroll-y-contain">
+      {/* ========================================================================= */}
+      {/* MOBİL ÖZEL HIZLI UYGULAMA GEÇİŞ ŞERİDİ (Phone Native Super-App Dock)      */}
+      {/* ========================================================================= */}
+      <div className="lg:hidden -mx-3.5 px-3.5 overflow-x-auto no-scrollbar flex items-center gap-2 pb-0.5">
+        <button
+          type="button"
+          onClick={() => onNavigate("ib-m27")}
+          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-amber-500/12 dark:bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
+        >
+          <GraduationCap size={16} className="text-amber-500 shrink-0" />
+          <span>IB M27 Sınavları</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("voice")}
+          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-violet-500/12 dark:bg-violet-500/15 border border-violet-500/30 text-violet-700 dark:text-violet-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
+        >
+          <Radio size={16} className="text-violet-500 shrink-0" />
+          <span>Sesli & Görüntülü</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("games")}
+          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-pink-500/12 dark:bg-pink-500/15 border border-pink-500/30 text-pink-700 dark:text-pink-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
+        >
+          <Gamepad2 size={16} className="text-pink-500 shrink-0" />
+          <span>Oyunlar</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("map")}
+          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-teal-500/12 dark:bg-teal-500/15 border border-teal-500/30 text-teal-700 dark:text-teal-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
+        >
+          <MapPin size={16} className="text-teal-500 shrink-0" />
+          <span>Canlı Harita</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("ib-calculator")}
+          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-purple-500/12 dark:bg-purple-500/15 border border-purple-500/30 text-purple-700 dark:text-purple-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
+        >
+          <Calculator size={16} className="text-purple-500 shrink-0" />
+          <span>KapsCulator</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("agenda")}
+          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-sky-500/12 dark:bg-sky-500/15 border border-sky-500/30 text-sky-700 dark:text-sky-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
+        >
+          <CalendarDays size={16} className="text-sky-500 shrink-0" />
+          <span>Ajanda</span>
+        </button>
+      </div>
+
       {/* ========================================================================= */}
       {/* 1. ÜST KARŞILAMA PANELİ: AKADEMİK ÇALIŞMA ALANI & HAVA DURUMU             */}
       {/* ========================================================================= */}
-      <section className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      <section className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-4 sm:p-8 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6">
           {/* Sol: Avatar, Karşılama & Günün Sözü */}
-          <div className="flex items-start sm:items-center gap-4 sm:gap-5">
+          <div className="flex items-start sm:items-center gap-3.5 sm:gap-5">
             <div className="relative shrink-0">
               <Avatar
                 url={avatar}
                 name={currentUsername}
                 color={color}
                 size={16}
-                className="w-16 h-16 sm:w-20 sm:h-20 ring-2 ring-slate-200 dark:ring-slate-800 shadow-sm"
+                className="w-13 h-13 sm:w-20 sm:h-20 ring-2 ring-slate-200 dark:ring-slate-800 shadow-sm"
               />
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1 min-w-0 flex-1">
               {/* Unboxed Metadata Line (Zero-Pill Discipline) */}
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
                 <span>{dateString}</span>
                 <span aria-hidden="true">·</span>
                 <span className="font-mono font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
@@ -301,16 +358,16 @@ export default function Dashboard({
                 )}
               </div>
 
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+              <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white truncate">
                 {greeting}, {currentUsername}
               </h1>
 
               {/* Dinamik Günün Sözü */}
-              <div className="pt-1 max-w-2xl">
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 italic leading-relaxed">
+              <div className="pt-0.5 max-w-2xl">
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 italic leading-snug sm:leading-relaxed line-clamp-2 sm:line-clamp-none">
                   "{dailyQuote.quote_text}"
                   {dailyQuote.author && (
-                    <span className="not-italic font-semibold text-slate-500 dark:text-slate-400 ml-2">
+                    <span className="not-italic font-semibold text-slate-500 dark:text-slate-400 ml-1.5">
                       — {dailyQuote.author}
                     </span>
                   )}
@@ -331,22 +388,22 @@ export default function Dashboard({
             <Link
               to="/hava-durumu"
               onClick={() => onNavigate("weather")}
-              className="group flex items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 transition-colors cursor-pointer"
+              className="group flex items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <span className="text-3xl sm:text-4xl select-none">
+                <span className="text-2xl sm:text-4xl select-none">
                   {weatherMeta?.emoji || "🌤️"}
                 </span>
                 <div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-xl sm:text-2xl font-extrabold font-mono text-slate-900 dark:text-white">
+                    <span className="text-lg sm:text-2xl font-extrabold font-mono text-slate-900 dark:text-white">
                       {weatherData?.current ? `${weatherData.current.temperature}°C` : "16°C"}
                     </span>
                     <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                       {weatherMeta?.label || "Parçalı Bulutlu"}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-[210px] line-clamp-1 mt-0.5">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-[230px] line-clamp-1 mt-0.5">
                     {smartAdvice?.message || "Kampüs genelinde dengeli hava koşulları."}
                   </p>
                 </div>
@@ -359,8 +416,8 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* Hızlı Modül Araç Çubuğu (Quick Action Strip) */}
-        <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+        {/* Hızlı Modül Araç Çubuğu (Desktop Quick Action Strip) */}
+        <div className="hidden lg:flex mt-6 pt-5 border-t border-slate-100 dark:border-slate-800/80 flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to="/dersler"

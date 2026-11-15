@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Socket } from 'socket.io-client';
-import { Search, UserPlus, Check, X, Users, Loader2 } from 'lucide-react';
+import { Search, PhoneCall, Check, X, Users, Loader2 } from 'lucide-react';
 import Avatar from './Avatar';
+import { callSoundEngine } from '../utils/callSoundEngine';
 
 interface VoiceInviteModalProps {
   isOpen: boolean;
@@ -31,7 +32,7 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [users, setUsers] = useState<UserItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [invitedMap, setInvitedMap] = useState<Record<number, boolean>>({});
+  const [invitedMap, setInvitedMap] = useState<Record<number, 'ringing' | 'accepted' | 'rejected'>>({});
 
   useEffect(() => {
     if (!isOpen || !socket) return;
@@ -49,6 +50,20 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
       }
       setIsLoading(false);
     });
+
+    const handleResponse = (data: { accepted: boolean; roomId: string; responder?: { id: number; username: string } }) => {
+      if (data?.responder?.id) {
+        setInvitedMap(prev => ({
+          ...prev,
+          [data.responder!.id]: data.accepted ? 'accepted' : 'rejected'
+        }));
+      }
+    };
+
+    socket.on("voice:invite_response", handleResponse);
+    return () => {
+      socket.off("voice:invite_response", handleResponse);
+    };
   }, [isOpen, socket]);
 
   const handleSearch = (q: string) => {
@@ -61,9 +76,10 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
     });
   };
 
-  const handleInvite = (targetUser: UserItem) => {
-    if (!socket || invitedMap[targetUser.id]) return;
-    setInvitedMap(prev => ({ ...prev, [targetUser.id]: true }));
+  const handleRingUser = (targetUser: UserItem) => {
+    if (!socket || invitedMap[targetUser.id] === 'ringing') return;
+    setInvitedMap(prev => ({ ...prev, [targetUser.id]: 'ringing' }));
+    callSoundEngine.playConnectTone();
     socket.emit("voice:invite_user", {
       targetUserId: targetUser.id,
       roomId,
@@ -79,25 +95,28 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
   );
 
   return (
-    <div className="mobile-window fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl max-w-md w-full text-slate-900 dark:text-slate-100 flex flex-col max-h-[85vh]">
+    <div className="mobile-window fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-slate-900 border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl max-w-md w-full text-slate-900 dark:text-slate-100 flex flex-col max-h-[85dvh]">
         
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <UserPlus size={20} />
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <PhoneCall size={20} />
             </div>
             <div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">Kullanıcı Davet Et</h3>
+              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">
+                Odaya Davet Et / Çaldır
+              </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[220px]">
-                Oda: {roomName}
+                {roomName} • Telefona arama gönderir
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X size={20} />
           </button>
@@ -109,7 +128,7 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
             <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Kullanıcı adına göre ara..."
+              placeholder="Çaldırmak istediğin arkadaşı ara..."
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               className="w-full min-h-[44px] pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-800 dark:text-slate-100"
@@ -127,11 +146,11 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2 text-center">
               <Users size={32} className="text-slate-300 dark:text-slate-600" />
-              <p className="text-xs">Davet edilecek kullanıcı bulunamadı.</p>
+              <p className="text-xs">Aranacak kullanıcı bulunamadı.</p>
             </div>
           ) : (
             filtered.map((u) => {
-              const isInvited = !!invitedMap[u.id];
+              const status = invitedMap[u.id];
               return (
                 <div
                   key={u.id}
@@ -143,33 +162,53 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
                       <p className="font-bold text-sm truncate text-slate-800 dark:text-slate-200">
                         {u.username}
                       </p>
-                      {u.isOnline && (
+                      {u.isOnline ? (
                         <span className="text-[10px] text-emerald-500 font-semibold flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                           Çevrimiçi
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          Uygulama dışı (Telefonu çaldırılır)
                         </span>
                       )}
                     </div>
                   </div>
 
                   <button
-                    onClick={() => handleInvite(u)}
-                    disabled={isInvited}
-                    className={`min-h-[38px] px-3.5 py-1.5 rounded-xl font-semibold text-xs transition-all flex items-center gap-1.5 shadow-xs ${
-                      isInvited
+                    type="button"
+                    data-testid={`voice-ring-user-${u.id}`}
+                    onClick={() => handleRingUser(u)}
+                    disabled={status === 'ringing' || status === 'accepted'}
+                    className={`min-h-[40px] px-3.5 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                      status === 'accepted'
                         ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 cursor-default'
-                        : 'bg-blue-600 hover:bg-blue-500 active:scale-95 text-white shadow-blue-500/20'
+                        : status === 'ringing'
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 cursor-default animate-pulse'
+                        : status === 'rejected'
+                        ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                        : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-emerald-600/20'
                     }`}
                   >
-                    {isInvited ? (
+                    {status === 'accepted' ? (
                       <>
                         <Check size={14} />
-                        <span>Davet Edildi</span>
+                        <span>Katıldı</span>
+                      </>
+                    ) : status === 'ringing' ? (
+                      <>
+                        <PhoneCall size={14} className="animate-bounce" />
+                        <span>Çaldırılıyor...</span>
+                      </>
+                    ) : status === 'rejected' ? (
+                      <>
+                        <PhoneCall size={14} />
+                        <span>Tekrar Çaldır</span>
                       </>
                     ) : (
                       <>
-                        <UserPlus size={14} />
-                        <span>Davet Gönder</span>
+                        <PhoneCall size={14} />
+                        <span>Çaldır</span>
                       </>
                     )}
                   </button>
@@ -182,8 +221,9 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
         {/* Footer */}
         <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+            className="min-h-[40px] px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
           >
             Kapat
           </button>

@@ -5116,6 +5116,18 @@ async function startServer() {
 
   const directCalls = new Map<string, DirectCallSession>();
   const userActiveCallId = new Map<number, string>(); // userId -> callId
+  const pendingVoiceInvites = new Map<number, {
+    callId: string;
+    roomId: string;
+    roomName: string;
+    inviter: {
+      id: number;
+      username: string;
+      avatar: string | null;
+      color?: string;
+    };
+    expiresAt: number;
+  }>();
 
   const voiceRooms = new Map<string, ServerVoiceRoom>();
   const voiceDisconnectGraceTimers = new Map<number, NodeJS.Timeout>();
@@ -6327,11 +6339,24 @@ async function startServer() {
     socket.on("direct_call_pending", () => {
       const callId = userActiveCallId.get(userIdNum);
       const call = callId ? directCalls.get(callId) : undefined;
-      if (!call || call.receiverId !== userIdNum || call.status !== "ringing" || Date.now() - call.startedAt >= 30_000) return;
-      socket.emit("direct_call_incoming", {
-        callId: call.callId, callerId: call.callerId, callerUsername: call.callerUsername,
-        callerAvatar: call.callerAvatar, callerColor: call.callerColor,
-      });
+      if (call && call.receiverId === userIdNum && call.status === "ringing" && Date.now() - call.startedAt < 30_000) {
+        socket.emit("direct_call_incoming", {
+          callId: call.callId, callerId: call.callerId, callerUsername: call.callerUsername,
+          callerAvatar: call.callerAvatar, callerColor: call.callerColor,
+        });
+      }
+      const pendingVoice = pendingVoiceInvites.get(userIdNum);
+      if (pendingVoice) {
+        if (pendingVoice.expiresAt > Date.now()) {
+          socket.emit("voice:invite_user", {
+            roomId: pendingVoice.roomId,
+            roomName: pendingVoice.roomName,
+            inviter: pendingVoice.inviter,
+          });
+        } else {
+          pendingVoiceInvites.delete(userIdNum);
+        }
+      }
     });
 
     // Register KapsPool Billiards socket events
@@ -10651,32 +10676,75 @@ async function startServer() {
       });
     });
 
-    socket.on("voice:invite_user", (data: { targetUserId: number; roomId: string; roomName: string; inviter?: any }, cb?: any) => {
+    socket.on("voice:invite_user", async (data: { targetUserId: number; roomId: string; roomName: string; inviter?: any }, cb?: any) => {
       const { targetUserId, roomId, roomName } = data || {};
-      if (!targetUserId || !roomId) {
+      const targetIdNum = Number(targetUserId);
+      if (!targetIdNum || !roomId) {
         if (cb) cb({ success: false, message: "Eksik parametre." });
         return;
       }
-      const targetSocket = onlineUsers.get(Number(targetUserId));
+      const safeRoomName = roomName || "Sesli Sohbet Odası";
+      const inviteId = `call_voice_${roomId}_${user.id}_${Date.now()}`;
+      const inviterPayload = {
+        id: user.id,
+        username: user.username,
+        avatar: user.avatar || null,
+        color: user.color
+      };
+
+      pendingVoiceInvites.set(targetIdNum, {
+        callId: inviteId,
+        roomId,
+        roomName: safeRoomName,
+        inviter: inviterPayload,
+        expiresAt: Date.now() + 45_000,
+      });
+
+      const targetSocket = onlineUsers.get(targetIdNum);
       if (targetSocket) {
         io.to(targetSocket).emit("voice:invite_user", {
           roomId,
-          roomName: roomName || "Sesli Sohbet Odası",
-          inviter: {
-            id: user.id,
-            username: user.username,
-            avatar: user.avatar,
-            color: user.color
-          }
+          roomName: safeRoomName,
+          inviter: inviterPayload
         });
-        if (cb) cb({ success: true });
-      } else {
-        if (cb) cb({ success: false, message: "Kullanıcı çevrimdışı." });
       }
+
+      const callParams = new URLSearchParams({
+        incomingCall: "voice_room",
+        callId: inviteId,
+        roomId: String(roomId),
+        roomName: safeRoomName,
+        callerId: String(user.id),
+        callerUsername: String(user.username || "Kullanıcı"),
+      });
+      if (user.color) callParams.set("callerColor", String(user.color));
+      if (typeof user.avatar === "string" && user.avatar.length <= 200 && !user.avatar.startsWith("data:")) {
+        callParams.set("callerAvatar", user.avatar);
+      }
+
+      void devicePush.deliver(targetIdNum, {
+        title: "📞 Gelen Sesli Oda Araması",
+        body: `${user.username} sizi "${safeRoomName}" sesli/görüntülü sohbetine çağırıyor`,
+        avatar: typeof user.avatar === "string" && user.avatar.length <= 250 ? user.avatar : undefined,
+        tag: inviteId,
+        url: `/?${callParams.toString()}`,
+        expiresAt: Date.now() + 45_000,
+        callType: "voice_room",
+        callId: inviteId,
+        callerId: Number(user.id),
+        callerUsername: String(user.username || "Kullanıcı"),
+        callerAvatar: typeof user.avatar === "string" && user.avatar.length <= 250 ? user.avatar : null,
+        callerColor: user.color,
+        roomId: String(roomId),
+        roomName: safeRoomName,
+      }).catch(() => {});
+
+      if (cb) cb({ success: true, callId: inviteId });
     });
 
     socket.on("voice:invite_response", (data: { accepted: boolean; roomId: string; inviterId: number }) => {
       const { accepted, roomId, inviterId } = data || {};
+      pendingVoiceInvites.delete(userIdNum);
       if (inviterId) {
         const inviterSocket = onlineUsers.get(Number(inviterId));
         if (inviterSocket) {
@@ -10840,11 +10908,28 @@ async function startServer() {
           callerAvatar: user.avatar,
           callerColor: user.color
         });
+        const directCallParams = new URLSearchParams({
+          incomingCall: "direct",
+          callId,
+          callerId: String(callerId),
+          callerUsername: String(user.username || "Kullanıcı"),
+        });
+        if (user.color) directCallParams.set("callerColor", String(user.color));
+        if (typeof user.avatar === "string" && user.avatar.length <= 200 && !user.avatar.startsWith("data:")) {
+          directCallParams.set("callerAvatar", user.avatar);
+        }
+
         void devicePush.deliver(receiverId, {
-          title: "Gelen sesli arama", body: `${user.username} arıyor`,
+          title: "📞 Gelen Sesli Arama", body: `${user.username} sizi arıyor`,
           avatar: typeof user.avatar === "string" && user.avatar.length <= 250 ? user.avatar : undefined,
-          tag: callId, url: `/?pushCall=${encodeURIComponent(callId)}`,
+          tag: callId, url: `/?${directCallParams.toString()}`,
           expiresAt: session.startedAt + 30_000,
+          callType: "direct",
+          callId,
+          callerId,
+          callerUsername: String(user.username || "Kullanıcı"),
+          callerAvatar: typeof user.avatar === "string" && user.avatar.length <= 250 ? user.avatar : null,
+          callerColor: user.color,
         }).catch(() => {});
 
         if (cb) {

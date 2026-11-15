@@ -38,10 +38,15 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelLeft,
-  BellOff
+  BellOff,
+  ChevronLeft,
+  Smartphone
 } from "lucide-react";
 import { APP_ROUTES, getTabFromPathname, getPathFromTab, AppTab } from "./routes";
 import { useSEO } from "./components/SEO";
+import Avatar from "./components/Avatar";
+import MobileInstallSheet, { isRunningStandalone } from "./components/MobileInstallSheet";
+import { ParsedIncomingCallPayload } from "./utils/incomingCallPayload";
 import Auth from "./components/Auth";
 import ResetPasswordView from "./components/ResetPasswordView";
 import Dashboard from "./components/Dashboard";
@@ -332,7 +337,19 @@ export default function App() {
   }, [token]);
 
 
+  const [isInstallSheetOpen, setIsInstallSheetOpen] = useState(false);
+  const [isStandalonePwa, setIsStandalonePwa] = useState<boolean>(() => isRunningStandalone());
+  const pendingAutoAcceptVoiceRoomRef = useRef<VoiceCallInvite | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia?.("(display-mode: standalone)");
+    const onChange = () => setIsStandalonePwa(isRunningStandalone());
+    mq?.addEventListener?.("change", onChange);
+    return () => mq?.removeEventListener?.("change", onChange);
+  }, []);
+
   const handleAcceptVoiceInvite = (invite: VoiceCallInvite) => {
+    void dismissDeviceNotification(`call_voice_${invite.roomId}`);
     if (socket) {
       socket.emit("voice:invite_response", {
         accepted: true,
@@ -343,9 +360,17 @@ export default function App() {
     }
     setVoiceInvite(null);
     handleTabChange("voice");
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("kaps:join_voice_room", {
+          detail: { roomId: invite.roomId }
+        })
+      );
+    }, 80);
   };
 
   const handleRejectVoiceInvite = (invite: VoiceCallInvite) => {
+    void dismissDeviceNotification(`call_voice_${invite.roomId}`);
     if (socket) {
       socket.emit("voice:invite_response", {
         accepted: false,
@@ -355,6 +380,41 @@ export default function App() {
     }
     setVoiceInvite(null);
   };
+
+  useEffect(() => {
+    const onIncomingVoicePayload = (e: Event) => {
+      const parsed = (e as CustomEvent<ParsedIncomingCallPayload>)?.detail;
+      if (!parsed || parsed.callType !== "voice_room" || !parsed.roomId) return;
+      const inviteObj: VoiceCallInvite = {
+        roomId: parsed.roomId,
+        roomName: parsed.roomName || "Sesli Sohbet Odası",
+        inviter: {
+          id: parsed.callerId,
+          username: parsed.callerUsername,
+          avatar: parsed.callerAvatar,
+          color: parsed.callerColor,
+        },
+      };
+      if (parsed.autoAction === "reject") {
+        handleRejectVoiceInvite(inviteObj);
+        return;
+      }
+      if (parsed.autoAction === "accept") {
+        pendingAutoAcceptVoiceRoomRef.current = inviteObj;
+      }
+      setVoiceInvite(inviteObj);
+    };
+    window.addEventListener("kaps:incoming_voice_invite", onIncomingVoicePayload);
+    return () => window.removeEventListener("kaps:incoming_voice_invite", onIncomingVoicePayload);
+  }, [socket]);
+
+  useEffect(() => {
+    if (pendingAutoAcceptVoiceRoomRef.current && socket?.connected) {
+      const inv = pendingAutoAcceptVoiceRoomRef.current;
+      pendingAutoAcceptVoiceRoomRef.current = null;
+      handleAcceptVoiceInvite(inv);
+    }
+  }, [voiceInvite, socket?.connected]);
 
   const dismissToast = (id: string) => {
     const timer = toastTimersRef.current.get(id);
@@ -786,6 +846,22 @@ export default function App() {
 
       newSocket.on("voice:invite_user", (data: VoiceCallInvite) => {
         setVoiceInvite(data);
+        const isStandalone =
+          window.matchMedia?.("(display-mode: standalone)")?.matches ||
+          (window.navigator as any)?.standalone === true;
+        if (document.visibilityState === "visible" || isStandalone) {
+          void dismissDeviceNotification(`call_voice_${data.roomId}`);
+          return;
+        }
+        if (isDemoSession || hasDevicePush()) return;
+        void showDeviceNotification(
+          "📞 Gelen Sesli Oda Araması",
+          `${data.inviter?.username || "Bir kullanıcı"} sizi "${data.roomName}" odasına çağırıyor`,
+          `call_voice_${data.roomId}`,
+          false,
+          data.inviter?.avatar || undefined,
+          true
+        );
       });
 
       newSocket.on("pending_count_updated", fetchPendingApprovals);
@@ -1227,66 +1303,142 @@ export default function App() {
         isEmirgan={isEmirgan}
       />
 
-      {/* Mobile Top Header with Command Palette Trigger, Settings & Theme Toggle */}
-      <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shrink-0 z-20 transition-colors duration-200">
-        <div className="flex items-center gap-2">
-          <img src="/brand/kapsapp-mark.png" alt="" width={192} height={192} className="w-7 h-7 rounded-lg shrink-0" />
-          <span className="text-lg font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">KapsApp</span>
-          {isEmirgan && (
-            <span className="text-[10px] font-mono font-bold text-amber-500">· ROOT</span>
-          )}
-          {preferences.doNotDisturb && (
-            <span className="text-[10px] font-bold text-amber-500 flex items-center gap-1" title="Odak Modu (Rahatsız Etmeyin) Aktif">
-              <BellOff size={12} />
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {/* Mobile Command Search Button */}
-          <button
-            type="button"
-            onClick={() => setIsCommandPaletteOpen(true)}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer"
-            title="Hızlı Arama & Komut Paleti (Ctrl+K)"
-            aria-label="Hızlı Arama & Komut Paleti"
-          >
-            <Search size={17} />
-          </button>
-
-          {/* Mobile Direct Settings Button */}
-          <Link
-            to="/ayarlar"
-            onClick={(e) => {
-              e.preventDefault();
-              handleTabChange('settings');
-            }}
-            className={`p-2 rounded-xl transition-all cursor-pointer border ${
-              activeTab === 'settings'
-                ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/60 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-            }`}
-            title="Ayarlar & Temalar"
-          >
-            <SettingsIcon size={17} />
-          </Link>
-
-          {/* Mobile Direct Dark Mode Toggle Button */}
-          <button
-            type="button"
-            onClick={handleToggleDarkMode}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700 transition-all cursor-pointer shadow-xs active:scale-95"
-            title={darkMode ? "Açık Temaya Geç" : "Koyu Temaya Geç"}
-          >
-            {darkMode ? (
-              <Sun size={16} className="text-amber-500" />
+      {/* Native Mobile Top Navigation Bar (Automatically hidden during full-screen Chat thread, Voice Room, or Game) */}
+      {!(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || activeTab === "games") && (
+        <header
+          data-testid="mobile-top-app-bar"
+          className="lg:hidden flex items-center justify-between px-3 h-[54px] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 shrink-0 z-30 select-none transition-colors duration-200"
+        >
+          {/* Left Slot: Brand on Dashboard OR Contextual Back + Page Title on Sub-Screens */}
+          <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+            {activeTab !== "dashboard" ? (
+              <button
+                type="button"
+                data-testid="mobile-header-back"
+                onClick={() => {
+                  if (activeTab === "subject") {
+                    handleTabChange("folders");
+                  } else if (activeTab === "profile" && viewingUserId !== currentUserId) {
+                    setViewingUserId(currentUserId);
+                    navigate("/profil");
+                  } else {
+                    handleTabChange("dashboard");
+                  }
+                }}
+                className="min-w-[38px] min-h-[38px] -ml-1 rounded-xl bg-slate-100/90 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-slate-800 flex items-center justify-center active:scale-95 transition-all cursor-pointer shrink-0"
+                aria-label="Geri Dön"
+              >
+                <ChevronLeft size={20} />
+              </button>
             ) : (
-              <Moon size={16} className="text-indigo-500" />
+              <img
+                src="/brand/kapsapp-mark.png"
+                alt=""
+                width={192}
+                height={192}
+                className="w-8 h-8 rounded-xl shadow-xs shrink-0"
+              />
             )}
-            <span className="text-xs font-bold">{darkMode ? "Açık" : "Koyu"}</span>
-          </button>
-        </div>
-      </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight truncate">
+                  {activeTab === "dashboard"
+                    ? "KapsApp"
+                    : activeTab === "subject" && activeSubject
+                    ? activeSubject
+                    : (Object.values(APP_ROUTES).find(r => r.tab === activeTab)?.title || "KapsApp").split(" | ")[0]}
+                </span>
+                {activeTab === "dashboard" && isEmirgan && (
+                  <span className="text-[9px] font-mono font-extrabold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500">
+                    ROOT
+                  </span>
+                )}
+                {preferences.doNotDisturb && (
+                  <span className="text-amber-500 shrink-0" title="Odak Modu Aktif">
+                    <BellOff size={13} />
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 leading-tight">
+                {activeTab === "dashboard" ? (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span>{onlineUsers.length} çevrimiçi</span>
+                    {miniWeatherBadge && (
+                      <>
+                        <span>·</span>
+                        <span className="font-mono">{miniWeatherBadge.emoji} {miniWeatherBadge.temp}°C</span>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span>KapsApp Mobil</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Slot: Install App (if browser), Search, Notifications, and User Profile Avatar */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {!isStandalonePwa && (
+              <button
+                type="button"
+                data-testid="mobile-install-app-btn"
+                onClick={() => setIsInstallSheetOpen(true)}
+                className="min-h-[38px] px-2.5 rounded-xl bg-blue-600/12 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25 font-extrabold text-[11px] flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                title="Uygulamayı Ana Ekrana Ekle"
+                aria-label="Uygulamayı Ana Ekrana Ekle"
+              >
+                <Smartphone size={14} />
+                <span className="hidden xs:inline">Uygulama</span>
+              </button>
+            )}
+
+            {/* Quick Search */}
+            <button
+              type="button"
+              onClick={() => setIsCommandPaletteOpen(true)}
+              className="min-w-[38px] min-h-[38px] rounded-xl bg-slate-100/90 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-slate-800 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+              title="Hızlı Arama"
+              aria-label="Hızlı Arama"
+            >
+              <Search size={17} />
+            </button>
+
+            {/* Notifications Bell with Live Badge */}
+            <button
+              type="button"
+              onClick={() => handleTabChange("notifications")}
+              className={`relative min-w-[38px] min-h-[38px] rounded-xl border flex items-center justify-center active:scale-95 transition-all cursor-pointer ${
+                activeTab === "notifications"
+                  ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800"
+                  : "bg-slate-100/90 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200/70 dark:border-slate-800"
+              }`}
+              title="Bildirimler"
+              aria-label="Bildirimler"
+            >
+              <Bell size={17} />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 px-1 min-w-[16px] h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-950">
+                  {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+
+            {/* User Profile / Settings Trigger */}
+            <button
+              type="button"
+              onClick={() => handleTabChange(activeTab === "profile" ? "settings" : "profile")}
+              className="min-w-[38px] min-h-[38px] rounded-xl p-0.5 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+              title="Profilim ve Ayarlar"
+              aria-label="Profilim ve Ayarlar"
+            >
+              <Avatar url={avatar} name={username || "K"} color={color} size={8} />
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* Desktop Sidebar — Collapsible & Categorized */}
       <div
@@ -1861,8 +2013,16 @@ export default function App() {
         handleLogout={handleLogout}
         isInVoiceRoom={isInVoiceRoom}
         isChatOpen={activeTab === 'chats' && isChatOpen}
+        onOpenInstallGuide={() => setIsInstallSheetOpen(true)}
+        isStandalone={isStandalonePwa}
       />
       </div>
+
+      {/* Mobil Uygulama (Ana Ekrana Ekle) Kurulum Çekmecesi */}
+      <MobileInstallSheet
+        isOpen={isInstallSheetOpen}
+        onClose={() => setIsInstallSheetOpen(false)}
+      />
 
       {/* Global Birebir Sesli Arama ve Sesli Oda Davet Modülü Katmanları */}
       <IncomingCallNotification />

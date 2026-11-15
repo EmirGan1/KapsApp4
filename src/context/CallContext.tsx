@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import { callSoundEngine } from '../utils/callSoundEngine';
+import {
+  parseIncomingCallFromSearch,
+  parseIncomingCallFromPushAlert,
+  ParsedIncomingCallPayload,
+} from '../utils/incomingCallPayload';
 
 export type CallState = 'idle' | 'incoming_ringing' | 'outgoing_calling' | 'connecting' | 'connected' | 'ended';
 
@@ -226,6 +231,8 @@ export const CallProvider: React.FC<{
     }
   };
 
+  const pendingAutoAcceptCallIdRef = useRef<string | null>(null);
+
   const triggerIncomingCall = (data: {
     callId: string;
     callerId: number;
@@ -233,7 +240,8 @@ export const CallProvider: React.FC<{
     callerAvatar?: string | null;
     callerColor?: string;
   }) => {
-    if (callState !== 'idle') return;
+    if (callState !== 'idle' && currentCall?.callId === data.callId) return;
+    if (callState !== 'idle' && callState !== 'incoming_ringing') return;
     setCallState('incoming_ringing');
     setCurrentCall({
       callId: data.callId,
@@ -247,6 +255,74 @@ export const CallProvider: React.FC<{
     });
     callSoundEngine.startIncomingRing();
   };
+
+  const applyParsedIncomingPayload = (parsed: ParsedIncomingCallPayload | null) => {
+    if (!parsed) return;
+    if (parsed.callType === 'voice_room' && parsed.roomId) {
+      window.dispatchEvent(
+        new CustomEvent('kaps:incoming_voice_invite', {
+          detail: parsed,
+        })
+      );
+      return;
+    }
+
+    if (parsed.autoAction === 'reject') {
+      if (socket?.connected) {
+        socket.emit('direct_call_reject', { callId: parsed.callId });
+      }
+      cleanupCall();
+      return;
+    }
+
+    if (parsed.autoAction === 'accept') {
+      pendingAutoAcceptCallIdRef.current = parsed.callId;
+    }
+
+    triggerIncomingCall({
+      callId: parsed.callId,
+      callerId: parsed.callerId,
+      callerUsername: parsed.callerUsername,
+      callerAvatar: parsed.callerAvatar,
+      callerColor: parsed.callerColor,
+    });
+  };
+
+  // Immediately inspect URL query parameters on boot (before socket connects)
+  useEffect(() => {
+    const parsed = parseIncomingCallFromSearch(window.location.search);
+    if (parsed) {
+      applyParsedIncomingPayload(parsed);
+      // Clean URL query params while preserving history state
+      try {
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState(window.history.state, '', cleanUrl);
+      } catch {}
+    }
+  }, []);
+
+  // Listen to Service Worker push/action messages even if socket is still connecting
+  useEffect(() => {
+    const onSwMessage = (event: MessageEvent) => {
+      const msgType = event.data?.type;
+      if (msgType === 'kaps:incoming_call_push' || msgType === 'kaps:incoming_call_action') {
+        const parsed = parseIncomingCallFromPushAlert(
+          event.data?.alert,
+          event.data?.action || 'open'
+        );
+        if (parsed) {
+          applyParsedIncomingPayload(parsed);
+        }
+        if (socket?.connected) {
+          socket.emit('direct_call_pending');
+        }
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', onSwMessage);
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', onSwMessage);
+    };
+  }, [socket, callState, currentCall]);
 
   useEffect(() => {
     const onSimulateIncoming = (event: Event) => {
@@ -264,6 +340,20 @@ export const CallProvider: React.FC<{
       window.removeEventListener('kaps:simulate_incoming_call', onSimulateIncoming);
     };
   }, [callState]);
+
+  // Auto-accept when user tapped "📞 Yanıtla" on the background notification and socket connects
+  useEffect(() => {
+    if (
+      pendingAutoAcceptCallIdRef.current &&
+      currentCall &&
+      currentCall.callId === pendingAutoAcceptCallIdRef.current &&
+      callState === 'incoming_ringing' &&
+      socket?.connected
+    ) {
+      pendingAutoAcceptCallIdRef.current = null;
+      void acceptCall();
+    }
+  }, [callState, currentCall, socket?.connected]);
 
   // Listen for socket signaling events
   useEffect(() => {
@@ -285,17 +375,11 @@ export const CallProvider: React.FC<{
     socket.on('connect', checkPending);
     if (callState === 'idle' && socket.connected) checkPending();
 
-    const onSwMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'kaps:incoming_call_push') {
-        checkPending();
-      }
-    };
     const onVisibility = () => {
       if (document.visibilityState === 'visible' && callState === 'idle') {
         checkPending();
       }
     };
-    navigator.serviceWorker?.addEventListener('message', onSwMessage);
     document.addEventListener('visibilitychange', onVisibility);
 
     socket.on('direct_call_accepted', async (data: {
@@ -497,7 +581,6 @@ export const CallProvider: React.FC<{
       socket.off('direct_call_rejected');
       socket.off('direct_call_timeout');
       socket.off('direct_call_ended');
-      navigator.serviceWorker?.removeEventListener('message', onSwMessage);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [socket, callState, currentCall]);
