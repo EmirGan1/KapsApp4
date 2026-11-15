@@ -1,4 +1,7 @@
-@import "tailwindcss";
+/* Scan application markup only. Binary assets can produce invalid utility candidates. */
+@import "tailwindcss" source(none);
+@source "./";
+@source "../index.html";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
