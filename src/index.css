@@ -352,7 +352,8 @@ html, body, #root {
 /* Mobile/tablet layout only: desktop geometry is kept intact. */
 @media (max-width: 1023px) {
   html, body, #root { touch-action: pan-x pan-y pinch-zoom; }
-  .app-shell { height: var(--visible-height, 100dvh); }
+  .app-shell.kapsapp-viewport { position: relative; height: var(--app-shell-height, 100dvh); }
+  .app-shell .kapsapp-bottom-nav { position: absolute; }
   .app-content { padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
   .app-shell[data-bottom-nav-hidden="true"] .app-content,
   html[data-keyboard-open="true"] .app-content,

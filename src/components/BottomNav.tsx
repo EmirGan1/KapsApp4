@@ -108,7 +108,7 @@ export default function BottomNav({
   return (
     <>
       {/* Native Mobile Fixed Bottom Dock Bar (4 Ana Sekme + 1 'Menü' Çekmecesi) */}
-      <div className="lg:hidden fixed bottom-0 inset-x-0 border-t border-slate-200/80 dark:border-slate-800/80 bg-white/92 dark:bg-slate-950/92 backdrop-blur-xl pb-safe shrink-0 z-40 select-none shadow-[0_-8px_30px_rgba(2,6,23,0.12)]">
+      <div className="kapsapp-bottom-nav lg:hidden fixed bottom-0 inset-x-0 border-t border-slate-200/80 dark:border-slate-800/80 bg-white/92 dark:bg-slate-950/92 backdrop-blur-xl pb-safe shrink-0 z-40 select-none shadow-[0_-8px_30px_rgba(2,6,23,0.12)]">
         <nav 
           aria-label="Mobil alt gezinti menüsü"
           className="grid grid-cols-5 items-center px-1.5 h-[60px] relative"
