@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCall } from '../context/CallContext';
-import { Mic, MicOff, Volume2, VolumeX, PhoneOff, Maximize2, Minimize2, MessageSquare, ShieldAlert } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Volume1, Video, VideoOff, PhoneOff, Maximize2, Minimize2 } from 'lucide-react';
 import Avatar from './Avatar';
 
 const ActiveCallPanel: React.FC = () => {
@@ -17,6 +17,12 @@ const ActiveCallPanel: React.FC = () => {
     endCall,
     toggleMute,
     toggleDeafen,
+    isCameraOn,
+    toggleCamera,
+    audioOutputMode,
+    toggleAudioOutput,
+    localStream,
+    remoteStream,
   } = useCall();
 
   if (callState === 'idle' || callState === 'incoming_ringing' || !currentCall) {
@@ -124,8 +130,8 @@ const ActiveCallPanel: React.FC = () => {
         }
       `}</style>
 
-      <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-        <div className="bg-slate-900 border border-slate-800 shadow-2xl rounded-3xl w-full max-w-sm overflow-hidden flex flex-col text-white">
+      <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))', paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
+        <div className="bg-slate-900 border border-slate-800 shadow-2xl rounded-3xl w-full max-w-sm max-h-full overflow-y-auto flex flex-col text-white">
           
           {/* Header Bar */}
           <div className="px-6 py-4 flex items-center justify-between border-b border-slate-800/60 bg-slate-950/20">
@@ -146,6 +152,12 @@ const ActiveCallPanel: React.FC = () => {
 
           {/* Center Call Panel */}
           <div className="flex-1 py-10 flex flex-col items-center justify-center relative px-6">
+            {remoteStream?.getVideoTracks().length ? (
+              <video autoPlay playsInline ref={element => { if (element && element.srcObject !== remoteStream) element.srcObject = remoteStream; }} className="w-full max-h-52 rounded-xl object-contain mb-4 bg-black" />
+            ) : null}
+            {isCameraOn && localStream?.getVideoTracks().length ? (
+              <video autoPlay muted playsInline ref={element => { if (element && element.srcObject !== localStream) element.srcObject = localStream; }} className="w-24 h-32 object-cover rounded-xl mb-3" />
+            ) : null}
             
             {/* Visual Call Pulse */}
             <div className="relative mb-6">
@@ -230,7 +242,7 @@ const ActiveCallPanel: React.FC = () => {
           {/* Bottom Interactive Dashboard Controller */}
           <div className="bg-slate-950 p-6 flex flex-col gap-4 border-t border-slate-800/80">
             {/* Control Panel Grid */}
-            <div className="flex items-center justify-around gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {/* Mute toggle */}
               <button
                 onClick={toggleMute}
@@ -255,6 +267,15 @@ const ActiveCallPanel: React.FC = () => {
               >
                 {isDeafened ? <VolumeX size={22} /> : <Volume2 size={22} />}
                 <span className="text-[10px] font-bold uppercase tracking-wider">{isDeafened ? 'Sağır' : 'Ses Kapat'}</span>
+              </button>
+
+              <button onClick={() => void toggleCamera()} disabled={!isConnected} className="p-3 rounded-2xl border border-slate-800 bg-slate-900 text-slate-300 disabled:opacity-40 flex flex-col items-center gap-1">
+                {isCameraOn ? <Video size={22} /> : <VideoOff size={22} />}
+                <span className="text-[10px]">Kamera</span>
+              </button>
+              <button onClick={() => void toggleAudioOutput()} className="p-3 rounded-2xl border border-slate-800 bg-slate-900 text-slate-300 flex flex-col items-center gap-1">
+                {audioOutputMode === 'speaker' ? <Volume2 size={22} /> : <Volume1 size={22} />}
+                <span className="text-[10px]">{audioOutputMode === 'speaker' ? 'Hoparlör' : 'Ahize'}</span>
               </button>
 
               {/* Local Voice Indicator Preview */}

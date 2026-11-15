@@ -6,6 +6,7 @@ import {
   parseIncomingCallFromPushAlert,
   ParsedIncomingCallPayload,
 } from '../utils/incomingCallPayload';
+import { ICE_SERVERS, AUDIO_CONSTRAINTS } from '../utils/webrtcConfig';
 
 export type CallState = 'idle' | 'incoming_ringing' | 'outgoing_calling' | 'connecting' | 'connected' | 'ended';
 
@@ -40,17 +41,15 @@ interface CallContextType {
   endCall: () => void;
   toggleMute: () => void;
   toggleDeafen: () => void;
+  isCameraOn: boolean;
+  toggleCamera: () => Promise<void>;
+  audioOutputMode: 'speaker' | 'earpiece';
+  toggleAudioOutput: () => Promise<void>;
 }
 
 const CallContext = createContext<CallContextType | undefined>(undefined);
 
-const pcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-  ],
-};
+const pcConfig = ICE_SERVERS;
 
 export const CallProvider: React.FC<{
   children: React.ReactNode;
@@ -67,6 +66,8 @@ export const CallProvider: React.FC<{
   
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(false);
+  const [audioOutputMode, setAudioOutputMode] = useState<'speaker' | 'earpiece'>('speaker');
   
   const [isSpeakingLocal, setIsSpeakingLocal] = useState(false);
   const [isSpeakingRemote, setIsSpeakingRemote] = useState(false);
@@ -87,6 +88,37 @@ export const CallProvider: React.FC<{
   const remoteAnalysisIntervalRef = useRef<any>(null);
 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
+  const videoSenderRef = useRef<RTCRtpSender | null>(null);
+
+  const flushIce = async (pc: RTCPeerConnection) => {
+    const candidates = pendingIceRef.current.splice(0);
+    for (const candidate of candidates) {
+      try { await pc.addIceCandidate(candidate); }
+      catch (error) { console.warn('Arama ICE adayı eklenemedi:', error); }
+    }
+  };
+
+  const attachRemoteTrack = (event: RTCTrackEvent) => {
+    const stream = event.streams[0] || new MediaStream([event.track]);
+    if (event.track.kind === 'video') {
+      setRemoteStream(stream);
+      return;
+    }
+    remoteStreamRef.current = stream;
+    setupSpeakingDetection(stream, false);
+    let audio = remoteAudioRef.current;
+    if (!audio) {
+      audio = document.createElement('audio');
+      audio.autoplay = true;
+      audio.setAttribute('playsinline', '');
+      document.body.appendChild(audio);
+      remoteAudioRef.current = audio;
+    }
+    audio.srcObject = new MediaStream([event.track]);
+    audio.muted = isDeafenedRef.current;
+    void audio.play().catch(error => console.warn('Arama sesi başlatılamadı:', error));
+  };
 
   // Mute state sync ref
   const isMutedRef = useRef(isMuted);
@@ -102,6 +134,19 @@ export const CallProvider: React.FC<{
       remoteAudioRef.current.muted = isDeafened;
     }
   }, [isDeafened]);
+
+  useEffect(() => {
+    const resumeAudio = () => {
+      const audio = remoteAudioRef.current;
+      if (audio?.paused && audio.srcObject) void audio.play().catch(() => {});
+    };
+    window.addEventListener('pointerdown', resumeAudio, { passive: true });
+    window.addEventListener('touchstart', resumeAudio, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', resumeAudio);
+      window.removeEventListener('touchstart', resumeAudio);
+    };
+  }, []);
 
   // Duration timer
   useEffect(() => {
@@ -166,7 +211,12 @@ export const CallProvider: React.FC<{
 
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null;
+      remoteAudioRef.current.remove();
+      remoteAudioRef.current = null;
     }
+    pendingIceRef.current = [];
+    videoSenderRef.current = null;
+    setIsCameraOn(false);
 
     if (peerConnectionRef.current) {
       peerConnectionRef.current.onicecandidate = null;
@@ -397,7 +447,7 @@ export const CallProvider: React.FC<{
       // If we are the caller, we initiate the WebRTC Offer
       if (currentCall && currentCall.isCaller) {
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch((err) => {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS }).catch((err) => {
             console.warn("Microphone permission denied or unavailable:", err);
             return null;
           });
@@ -415,6 +465,7 @@ export const CallProvider: React.FC<{
           peerConnectionRef.current = pc;
 
           stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+          videoSenderRef.current = pc.addTransceiver('video', { direction: 'sendrecv' }).sender;
 
           pc.onicecandidate = (event) => {
             if (event.candidate) {
@@ -422,25 +473,7 @@ export const CallProvider: React.FC<{
             }
           };
 
-          pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-              const rStream = event.streams[0];
-              setRemoteStream(rStream);
-              remoteStreamRef.current = rStream;
-              setupSpeakingDetection(rStream, false);
-
-              // Audio output element
-              let audio = remoteAudioRef.current;
-              if (!audio) {
-                audio = document.createElement('audio');
-                audio.autoplay = true;
-                remoteAudioRef.current = audio;
-              }
-              audio.srcObject = rStream;
-              audio.muted = isDeafenedRef.current;
-              audio.play().catch(() => {});
-            }
-          };
+          pc.ontrack = attachRemoteTrack;
 
           pc.oniceconnectionstatechange = () => {
             if (pc.iceConnectionState === 'connected') {
@@ -472,7 +505,7 @@ export const CallProvider: React.FC<{
       setCallState('connecting');
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch((err) => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS }).catch((err) => {
           console.warn("Microphone permission denied or unavailable:", err);
           return null;
         });
@@ -490,6 +523,7 @@ export const CallProvider: React.FC<{
         peerConnectionRef.current = pc;
 
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        videoSenderRef.current = pc.addTransceiver('video', { direction: 'sendrecv' }).sender;
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {
@@ -497,24 +531,7 @@ export const CallProvider: React.FC<{
           }
         };
 
-        pc.ontrack = (event) => {
-          if (event.streams && event.streams[0]) {
-            const rStream = event.streams[0];
-            setRemoteStream(rStream);
-            remoteStreamRef.current = rStream;
-            setupSpeakingDetection(rStream, false);
-
-            let audio = remoteAudioRef.current;
-            if (!audio) {
-              audio = document.createElement('audio');
-              audio.autoplay = true;
-              remoteAudioRef.current = audio;
-            }
-            audio.srcObject = rStream;
-            audio.muted = isDeafenedRef.current;
-            audio.play().catch(() => {});
-          }
-        };
+        pc.ontrack = attachRemoteTrack;
 
         pc.oniceconnectionstatechange = () => {
           if (pc.iceConnectionState === 'connected') {
@@ -525,11 +542,11 @@ export const CallProvider: React.FC<{
         };
 
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        await flushIce(pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
         socket.emit('direct_call_signal_answer', { callId: data.callId, answer });
-        setCallState('connected');
 
       } catch (err) {
         console.error("WebRTC receiver connection error:", err);
@@ -544,16 +561,15 @@ export const CallProvider: React.FC<{
         await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer)).catch((e) => {
           console.error("Failed to set remote answer:", e);
         });
-        setCallState('connected');
+        if (peerConnectionRef.current.remoteDescription) await flushIce(peerConnectionRef.current);
       }
     });
 
     socket.on('direct_call_signal_ice', async (data: { callId: string; candidate: any }) => {
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate)).catch((e) => {
-          // Soft ignore potential candidate errors
-        });
-      }
+      if (!data.candidate) return;
+      const pc = peerConnectionRef.current;
+      if (!pc?.remoteDescription) pendingIceRef.current.push(data.candidate);
+      else await pc.addIceCandidate(data.candidate).catch(error => console.warn('Arama ICE hatası:', error));
     });
 
     socket.on('direct_call_rejected', (data: { callId: string; reason?: string }) => {
@@ -625,7 +641,7 @@ export const CallProvider: React.FC<{
     if (!currentCall || callState !== 'incoming_ringing') return;
     if (!socket || !socket.connected) {
       callSoundEngine.stopAll();
-      setCallState('connected');
+      onShowToast?.('Aramayı yanıtlamak için bağlantı bekleniyor.', 'info');
       return;
     }
 
@@ -677,6 +693,53 @@ export const CallProvider: React.FC<{
     setIsDeafened((prev) => !prev);
   };
 
+  const toggleCamera = async () => {
+    const sender = videoSenderRef.current;
+    if (!sender || callState !== 'connected') return;
+    if (sender.track) {
+      const oldTrack = sender.track;
+      await sender.replaceTrack(null);
+      oldTrack.stop();
+      localStreamRef.current?.removeTrack(oldTrack);
+      setLocalStream(current => current ? new MediaStream(current.getAudioTracks()) : null);
+      setIsCameraOn(false);
+      return;
+    }
+    try {
+      const camera = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      const track = camera.getVideoTracks()[0];
+      if (!track) throw new Error('Kamera bulunamadı');
+      try { await sender.replaceTrack(track); }
+      catch (error) { track.stop(); throw error; }
+      track.onended = () => { setIsCameraOn(false); };
+      setLocalStream(current => new MediaStream([...(current?.getAudioTracks() || []), track]));
+      localStreamRef.current?.addTrack(track);
+      setIsCameraOn(true);
+    } catch (error) {
+      console.warn('Arama kamerası açılamadı:', error);
+      onShowToast?.('Kamera açılamadı. Kamera iznini kontrol edin.', 'error');
+    }
+  };
+
+  const toggleAudioOutput = async () => {
+    const next = audioOutputMode === 'speaker' ? 'earpiece' : 'speaker';
+    const audio = remoteAudioRef.current;
+    const outputs = await navigator.mediaDevices?.enumerateDevices?.().catch(() => []);
+    const target = outputs?.find(device => device.kind === 'audiooutput' && (
+      next === 'earpiece' ? /earpiece|receiver|ahize/i.test(device.label) : /speaker|hoparlör/i.test(device.label)
+    ));
+    if (!audio?.setSinkId || !target) {
+      onShowToast?.('Bu tarayıcı ahize/hoparlör seçimini sunmuyor. Telefonun ses ayarlarını kullanın.', 'info');
+      return;
+    }
+    try {
+      await audio.setSinkId(target.deviceId);
+      setAudioOutputMode(next);
+    } catch {
+      onShowToast?.('Ses çıkışı değiştirilemedi.', 'error');
+    }
+  };
+
   return (
     <CallContext.Provider
       value={{
@@ -697,6 +760,10 @@ export const CallProvider: React.FC<{
         endCall,
         toggleMute,
         toggleDeafen,
+        isCameraOn,
+        toggleCamera,
+        audioOutputMode,
+        toggleAudioOutput,
       }}
     >
       {children}

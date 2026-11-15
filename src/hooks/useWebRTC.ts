@@ -107,15 +107,25 @@ export function useWebRTC({
     return 'speaker';
   });
 
-  const toggleAudioOutputMode = useCallback(() => {
-    setAudioOutputMode((prev) => {
-      const next = prev === 'speaker' ? 'earpiece' : 'speaker';
-      if (audioFilterNodesRef.current?.masterGainNode && audioContextRef.current) {
-        const gainVal = next === 'speaker' ? 2.0 : 1.0;
-        audioFilterNodesRef.current.masterGainNode.gain.setValueAtTime(gainVal, audioContextRef.current.currentTime);
-      }
-      return next;
-    });
+  const toggleAudioOutputMode = useCallback(async () => {
+    const next = audioOutputModeRef.current === 'speaker' ? 'earpiece' : 'speaker';
+    const audio = [...remoteAudioElementsRef.current.values()];
+    const devices = await navigator.mediaDevices?.enumerateDevices?.().catch(() => []);
+    const outputs = devices?.filter(device => device.kind === 'audiooutput') || [];
+    const target = next === 'earpiece'
+      ? outputs.find(device => /earpiece|receiver|ahize/i.test(device.label))
+      : outputs.find(device => /speaker|hoparlör/i.test(device.label)) || outputs.find(device => device.deviceId === 'default');
+    if (!target || audio.length === 0 || audio.some(element => typeof element.setSinkId !== 'function')) {
+      alert('Bu tarayıcı ahize/hoparlör seçimini desteklemiyor. Ses çıkışını telefonun sistem ayarlarından değiştirin.');
+      return;
+    }
+    try {
+      await Promise.all(audio.map(element => element.setSinkId(target.deviceId)));
+      audioOutputModeRef.current = next;
+      setAudioOutputMode(next);
+    } catch {
+      alert('Ses çıkışı değiştirilemedi. Cihazın ses ayarlarını kontrol edin.');
+    }
   }, []);
 
   // Camera Facing Mode ('user' vs 'environment') and Zoom States
@@ -721,9 +731,6 @@ export function useWebRTC({
       }
     }
     pendingCandidatesRef.current.delete(remoteSocketId);
-    cameraSendersRef.current.delete(remoteSocketId);
-    screenSendersRef.current.delete(remoteSocketId);
-    remoteScreenIdsRef.current.delete(remoteSocketId);
   };
 
   // Setup Local Media (Audio + Video) with flexible constraints to prevent camera crashes
@@ -975,34 +982,8 @@ export function useWebRTC({
         const savedVolume = userVolumesRef.current[uId] ?? 100;
         audioEl.volume = Math.max(0, Math.min(1, savedVolume / 100));
 
-        // Connect Web Audio GainNode for up to 200% volume boost
-        try {
-          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-          if (AudioCtx) {
-            let ctx = audioContextRef.current;
-            if (!ctx || ctx.state === 'closed') {
-              ctx = new AudioCtx();
-              audioContextRef.current = ctx;
-            }
-            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-
-            let gainNode = remoteGainNodesRef.current.get(remoteSocketId);
-            if (!gainNode) {
-              const source = ctx.createMediaStreamSource(new MediaStream([track]));
-              gainNode = ctx.createGain();
-              gainNode.gain.setValueAtTime(savedVolume / 100, ctx.currentTime);
-              source.connect(gainNode);
-              gainNode.connect(ctx.destination);
-              remoteGainNodesRef.current.set(remoteSocketId, gainNode);
-              audioEl.muted = true;
-            } else {
-              gainNode.gain.setValueAtTime(savedVolume / 100, ctx.currentTime);
-            }
-          }
-        } catch (e) {
-          audioEl.volume = Math.max(0, Math.min(1, savedVolume / 100));
-        }
-
+        // Play through the media element only. A parallel Web Audio connection
+        // bypassed mute, output selection, and kept playing stale tracks.
         audioEl.play().catch((e) => console.debug('[WebRTC] Remote audio autoplay:', e));
       }
     };
