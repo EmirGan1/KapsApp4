@@ -2,18 +2,31 @@ import * as ort from 'onnxruntime-web/wasm';
 import { Tokenizer } from '@huggingface/tokenizers';
 
 const ASSET_ROOT = '/ai-checker';
+// Bump when the shipped model, runtime or tokenizer files change.
+const ASSET_VERSION = '4c66198';
 const MODEL_PARTS = 17;
 const RUNTIME_PARTS = 3;
 const PARTS_PER_BATCH = 4;
-type WorkerRequest = { type: 'preload' } | { type: 'analyze'; id: number; text: string };
+type WorkerRequest = { type: 'preload' } | { type: 'analyze'; id: string; text: string };
 let modelPromise: Promise<{ session: ort.InferenceSession; tokenizer: Tokenizer }> | undefined;
+const assetCache = globalThis.caches?.open(`kapsapp-ai-checker-${ASSET_VERSION}`).catch(() => undefined);
 
 async function fetchAsset(path: string, signal: AbortSignal) {
-  const response = await fetch(`${ASSET_ROOT}/${path}`, { cache: 'no-store', credentials: 'omit', signal });
+  const url = new URL(`${ASSET_ROOT}/${path}?v=${ASSET_VERSION}`, self.location.origin).href;
+  const cache = await assetCache;
+  const cached = await cache?.match(url).catch(() => undefined);
+  if (cached) return cached;
+  let response = await fetch(url, { cache: 'force-cache', credentials: 'omit', signal });
+  if (!response.ok || response.headers.get('content-type')?.includes('text/html')) {
+    // A previous deployment may have returned an error or SPA fallback at this URL.
+    await response.body?.cancel();
+    response = await fetch(url, { cache: 'reload', credentials: 'omit', signal });
+  }
   if (!response.ok) throw new Error(`Model dosyası yüklenemedi (${response.status}).`);
   if (response.headers.get('content-type')?.includes('text/html')) {
     throw new Error('Model dosyası eksik veya geçersiz.');
   }
+  await cache?.put(url, response.clone()).catch(() => {});
   return response;
 }
 
@@ -103,6 +116,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     const sum = exp[0] + exp[1];
     self.postMessage({ type: 'result', id, scores: exp.map(value => value / sum), tokens: ids.length, truncated });
   } catch (error) {
-    self.postMessage({ type: 'error', id, message: error instanceof Error ? error.message : 'Model çalıştırılamadı.' });
+    const retryable = error instanceof TypeError || (error instanceof DOMException && error.name === 'AbortError');
+    self.postMessage({
+      type: 'error', id, retryable,
+      message: retryable ? 'Model yüklenemedi. Bağlantını kontrol edip tekrar dene.'
+        : error instanceof Error ? error.message : 'Model çalıştırılamadı.',
+    });
   }
 };

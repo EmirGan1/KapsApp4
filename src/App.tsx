@@ -132,6 +132,11 @@ export default function App() {
   // Resolve initial tab & params directly from current URL path
   const initialResolved = getTabFromPathname(location.pathname);
   const [activeTab, setActiveTab] = useState<AppTab>(initialResolved.tab);
+  const [hasOpenedAiChecker, setHasOpenedAiChecker] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === "ai-checker") setHasOpenedAiChecker(true);
+  }, [activeTab]);
   const [activeSubject, setActiveSubject] = useState<string | null>(initialResolved.subject || null);
   const [viewingUserId, setViewingUserId] = useState<number>(initialResolved.userId || currentUserId);
   const [targetChatUserId, setTargetChatUserId] = useState<number | null>(null);
@@ -1831,7 +1836,9 @@ export default function App() {
         {activeTab === 'ib-calculator' && (
           <KapsculatorHub currentUserRoles={currentUserRoles} />
         )}
-        {activeTab === 'ai-checker' && <AiChecker />}
+        {(activeTab === 'ai-checker' || hasOpenedAiChecker) && (
+          <AiChecker key={username.toLowerCase()} account={username.toLowerCase()} active={activeTab === 'ai-checker'} />
+        )}
         {activeTab === 'agenda' && (
           <Agenda 
             socket={socket} 
