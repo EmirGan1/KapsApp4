@@ -1,65 +1,102 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BrainCircuit, LockKeyhole, RotateCcw } from 'lucide-react';
 
 type Result = { scores: number[]; tokens: number; truncated: boolean };
 type WorkerReply =
-  | { type: 'progress'; stage: 'runtime' | 'model' | 'initializing'; done: number; total: number }
   | { type: 'result'; id: number; scores: number[]; tokens: number; truncated: boolean }
   | { type: 'error'; id: number; message: string };
 
 export default function AiChecker() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
   const [result, setResult] = useState<Result | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const requestId = useRef(0);
+  const pendingRequest = useRef<number | null>(null);
 
-  useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null; }, []);
-
-  const reset = () => {
-    requestId.current++;
+  const stopWorker = useCallback(() => {
     workerRef.current?.terminate();
     workerRef.current = null;
-    setText(''); setResult(null); setError(''); setProgress(''); setBusy(false);
-  };
+    pendingRequest.current = null;
+  }, []);
 
-  const analyze = () => {
-    if (!text.trim() || busy) return;
-    setResult(null); setError(''); setBusy(true);
-    const worker = workerRef.current || new Worker(new URL('../workers/aiChecker.worker.ts', import.meta.url), { type: 'module' });
+  const getWorker = useCallback(() => {
+    if (workerRef.current) return workerRef.current;
+    const worker = new Worker(new URL('../workers/aiChecker.worker.ts', import.meta.url), { type: 'module' });
     workerRef.current = worker;
-    const id = ++requestId.current;
     worker.onmessage = (event: MessageEvent<WorkerReply>) => {
       const data = event.data;
-      if (data.type === 'progress') {
-        const stage = data.stage === 'runtime' ? 'Çalıştırıcı' : data.stage === 'model' ? 'Model' : 'Model hazırlanıyor';
-        setProgress(data.stage === 'initializing' ? stage : `${stage} indiriliyor: ${data.done}/${data.total}`);
-      } else if (data.id === requestId.current && data.type === 'result') {
-        setResult(data); setBusy(false); setProgress('');
-      } else if (data.id === requestId.current && data.type === 'error') {
-        setError(data.message); setBusy(false); setProgress('');
-        worker.terminate(); workerRef.current = null;
+      if (workerRef.current !== worker || data.id !== pendingRequest.current) return;
+      pendingRequest.current = null;
+      setBusy(false);
+      if (data.type === 'result') {
+        setResult(data);
+      } else {
+        setError(data.message);
+        stopWorker();
       }
     };
     worker.onerror = () => {
-      setError('Tarayıcı model işçisini çalıştıramadı. Bellek veya tarayıcı desteğini kontrol edin.');
-      setBusy(false); setProgress(''); worker.terminate(); workerRef.current = null;
+      if (workerRef.current !== worker) return;
+      if (pendingRequest.current !== null) {
+        setError('Tarayıcı yerel modeli çalıştıramadı.');
+        setBusy(false);
+      }
+      stopWorker();
     };
-    worker.postMessage({ id, text: text.trim() });
+    return worker;
+  }, [stopWorker]);
+
+  useEffect(() => {
+    const preload = window.setTimeout(() => {
+      if (workerRef.current) return;
+      try {
+        getWorker().postMessage({ type: 'preload' });
+      } catch {
+        stopWorker();
+      }
+    }, 0);
+    return () => {
+      window.clearTimeout(preload);
+      stopWorker();
+    };
+  }, [getWorker, stopWorker]);
+
+  const reset = () => {
+    if (pendingRequest.current !== null) stopWorker();
+    setText('');
+    setResult(null);
+    setError('');
+    setBusy(false);
+  };
+
+  const analyze = () => {
+    const input = text.trim();
+    if (!input || pendingRequest.current !== null) return;
+    const id = ++requestId.current;
+    pendingRequest.current = id;
+    setResult(null);
+    setError('');
+    setBusy(true);
+    try {
+      getWorker().postMessage({ type: 'analyze', id, text: input });
+    } catch {
+      stopWorker();
+      setError('Tarayıcı yerel modeli çalıştıramadı.');
+      setBusy(false);
+    }
   };
 
   return (
-    <main className="w-full max-w-3xl mx-auto p-4 sm:p-8 pb-28 space-y-6 text-slate-900 dark:text-slate-100">
+    <main className="flex-1 min-h-0 w-full max-w-3xl mx-auto overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y p-4 sm:p-8 space-y-6 text-slate-900 dark:text-slate-100">
       <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-12 h-12 flex items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500"><BrainCircuit size={25} /></div>
           <div><h1 className="text-2xl font-bold">AI Checker</h1><p className="text-sm text-slate-500 dark:text-slate-400">Tarayıcında çalışan deneysel metin analizi</p></div>
         </div>
         <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300 mb-5">
-          Metni buraya yapıştır. Model yalnızca Analiz Et dediğinde cihazına indirilir; metin sunucuya gönderilmez ve KapsApp tarafından kaydedilmez.
-          İlk kullanımda yaklaşık 111 MB model ve çalıştırıcı indirilir, işlem cihazının belleğinde yapılır.
+          Model arka planda hazırlanır. Metnini yazıp doğrudan analiz edebilirsin. Analiz cihazının belleğinde yapılır.
         </p>
         <label htmlFor="ai-checker-input" className="block text-sm font-semibold mb-2">İncelenecek metin</label>
         <textarea id="ai-checker-input" value={text} disabled={busy} onChange={event => { setText(event.target.value); setResult(null); }}
@@ -72,7 +109,7 @@ export default function AiChecker() {
             <button type="button" onClick={analyze} disabled={busy || !text.trim()} className="min-h-11 px-5 rounded-xl bg-indigo-600 text-white font-semibold disabled:opacity-50">{busy ? 'İşleniyor…' : 'Analiz Et'}</button>
           </div>
         </div>
-        {progress && <p role="status" className="mt-4 text-sm text-indigo-500">{progress}</p>}
+        {busy && <p role="status" className="sr-only">Metin işleniyor.</p>}
         {error && <p role="alert" className="mt-4 text-sm text-rose-500">{error}</p>}
       </div>
 
