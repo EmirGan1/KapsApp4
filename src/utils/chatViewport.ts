@@ -1,5 +1,9 @@
 import { useEffect } from "react";
 
+export function isChatKeyboardOpen(editingChat: boolean, viewportScale: number, sharedKeyboardOpen: boolean, heightDiff: number) {
+  return editingChat && Math.abs(viewportScale - 1) < 0.05 && (sharedKeyboardOpen || heightDiff > 60);
+}
+
 export function useChatViewport() {
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -12,10 +16,7 @@ export function useChatViewport() {
         (focused.hasAttribute("data-chat-composer") ||
           Boolean(focused.closest(".kaps-chat-composer")));
       const heightDiff = window.innerHeight - viewport.height;
-      const keyboardOpen =
-        editingChat &&
-        heightDiff > 60 &&
-        Math.abs((viewport.scale || 1) - 1) < 0.05;
+      const keyboardOpen = isChatKeyboardOpen(editingChat, viewport.scale || 1, root.dataset.keyboardOpen === "true", heightDiff);
       root.toggleAttribute("data-chat-keyboard", keyboardOpen);
       if (keyboardOpen) {
         root.style.setProperty("--kaps-chat-height", `${Math.round(viewport.height)}px`);
@@ -26,19 +27,21 @@ export function useChatViewport() {
       }
     };
     let frame = 0;
-    const afterFocusChange = () => {
+    const schedule = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(update);
     };
-    viewport.addEventListener("resize", update);
-    viewport.addEventListener("scroll", update);
-    document.addEventListener("focusin", update);
-    document.addEventListener("focusout", afterFocusChange);
+    viewport.addEventListener("resize", schedule);
+    viewport.addEventListener("scroll", schedule);
+    window.addEventListener("resize", schedule);
+    document.addEventListener("focusin", schedule);
+    document.addEventListener("focusout", schedule);
     return () => {
-      viewport.removeEventListener("resize", update);
-      viewport.removeEventListener("scroll", update);
-      document.removeEventListener("focusin", update);
-      document.removeEventListener("focusout", update);
+      viewport.removeEventListener("resize", schedule);
+      viewport.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("focusin", schedule);
+      document.removeEventListener("focusout", schedule);
       cancelAnimationFrame(frame);
       root.removeAttribute("data-chat-keyboard");
       root.style.removeProperty("--kaps-chat-height");

@@ -384,7 +384,7 @@ export default function Chats({
           });
           // Scroll to bottom on new message if near bottom
           setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            chatContainerRef.current?.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: "smooth" });
           }, 50);
         }
       } else {
@@ -400,7 +400,7 @@ export default function Chats({
             return [...prev, msg];
           });
           setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            chatContainerRef.current?.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: "smooth" });
           }, 50);
         }
       }
@@ -526,7 +526,7 @@ export default function Chats({
   // Handle Initial Scroll & Infinite Scroll Up
   useEffect(() => {
     if (messages.length > 0 && isInitialScrollRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      if (chatContainerRef.current) chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
       isInitialScrollRef.current = false;
     }
     if (messages.length > 0 && socket && activeChat) {
