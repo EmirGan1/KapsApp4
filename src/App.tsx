@@ -137,11 +137,13 @@ export default function App() {
   const initialResolved = getTabFromPathname(location.pathname);
   const [activeTab, setActiveTab] = useState<AppTab>(initialResolved.tab);
   const [hasOpenedAiChecker, setHasOpenedAiChecker] = useState(false);
+  const [hasOpenedKapsAi, setHasOpenedKapsAi] = useState(false);
 
   useEffect(clearLegacyAiCheckerData, []);
 
   useEffect(() => {
     if (activeTab === "ai-checker") setHasOpenedAiChecker(true);
+    if (activeTab === "kapsapp-ai") setHasOpenedKapsAi(true);
   }, [activeTab]);
   const [activeSubject, setActiveSubject] = useState<string | null>(initialResolved.subject || null);
   const [viewingUserId, setViewingUserId] = useState<number>(initialResolved.userId || currentUserId);
@@ -1854,9 +1856,9 @@ export default function App() {
         {activeTab === 'ib-calculator' && (
           <KapsculatorHub currentUserRoles={currentUserRoles} />
         )}
-        {activeTab === 'kapsapp-ai' && (
-          <Suspense fallback={<p role="status" className="m-auto text-sm text-slate-500">Sohbet açılıyor…</p>}>
-            <KapsAppAi key={token} />
+        {(activeTab === 'kapsapp-ai' || hasOpenedKapsAi) && (
+          <Suspense fallback={activeTab === 'kapsapp-ai' ? <p role="status" className="m-auto text-sm text-slate-500">Sohbet açılıyor…</p> : null}>
+            <KapsAppAi key={token} active={activeTab === 'kapsapp-ai'} />
           </Suspense>
         )}
         {(activeTab === 'ai-checker' || hasOpenedAiChecker) && (
