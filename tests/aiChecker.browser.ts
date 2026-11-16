@@ -32,7 +32,8 @@ const base = `http://127.0.0.1:${port}`;
 const jobs = base + '/api/ai-checker/jobs';
 const token = 'desklib-browser-test';
 const auth = { Authorization: `Bearer ${token}` };
-const input = "The neighbors arrived before the storm and waited in the kitchen for the bus driver. I was still looking for the keys when a woman outside called to say the road would reopen before dark. ".repeat(16);
+const longInput = process.env.DESKLIB_BROWSER_LONG === "1";
+const input = "The neighbors arrived before the storm and waited in the kitchen for the bus driver. I was still looking for the keys when a woman outside called to say the road would reopen before dark. ".repeat(longInput ? 149 : 16);
 const engine = process.env.DESKLIB_BROWSER === 'webkit' ? webkit : chromium;
 let browser: Awaited<ReturnType<typeof engine.launch>> | undefined;
 
@@ -52,8 +53,10 @@ try {
   assert.equal((await fetch(jobs)).status, 401);
   const wrong = await fetch(jobs, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: '{"text":"private invalid JSON' });
   assert.equal(wrong.status, 400);
-  const large = await fetch(jobs, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'x'.repeat(140 * 1024) }) });
+  const large = await fetch(jobs, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'x'.repeat(330 * 1024) }) });
   assert.equal(large.status, 413);
+  const tooManyChars = await fetch(jobs, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'x'.repeat(50_001) }) });
+  assert.equal(tooManyChars.status, 400);
 
   browser = await engine.launch();
   const { defaultBrowserType: _defaultBrowserType, ...mobile } = devices['iPhone 13'];
@@ -82,7 +85,7 @@ try {
   await page.goto(base + '/ajanda');
   await page.goto(base + '/ai-checker');
   const copy = page.getByRole('button', { name: 'Sonucu kopyala' });
-  await copy.waitFor({ timeout: 60_000 });
+  await copy.waitFor({ timeout: longInput ? 240_000 : 60_000 });
   const panel = page.locator('main').filter({ has: field });
   const before = await panel.evaluate(el => el.scrollTop);
   await copy.scrollIntoViewIfNeeded();
@@ -93,6 +96,8 @@ try {
   const job = await finished.json();
   assert.equal(job.result.model, 'desklib/ai-text-detector-v1.01');
   assert.equal(job.status, 'done');
+  assert.ok(job.result.tokens > 0 && job.result.scores);
+  if (longInput) assert.ok(job.result.words > 3500);
   assert.ok(!JSON.stringify(job).includes('The neighbors arrived'));
   assert.ok(!logs.includes('The neighbors arrived') && !logs.includes('private invalid JSON'));
   assert.ok(await page.evaluate(() => [localStorage, sessionStorage].every(store =>

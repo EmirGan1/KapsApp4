@@ -17,8 +17,8 @@ from transformers import AutoConfig, AutoModel, AutoTokenizer, PreTrainedModel
 
 MODEL_ID = "desklib/ai-text-detector-v1.01"
 REVISION = "5fdea974cd4287c61674951ec78803aa274e2fb7"
-MAX_CHARS = 20_000
-MAX_SEGMENTS = 16
+MAX_CHARS = 50_000
+MAX_SEGMENTS = 32
 MIN_WORDS = 120
 
 
@@ -39,6 +39,21 @@ class DesklibAIDetectionModel(PreTrainedModel):
         return self.classifier(pooled)
 
 
+class PositionCachedLinear(nn.Module):
+    """Reuse the projection of the model's immutable relative positions."""
+
+    def __init__(self, linear, positions):
+        super().__init__()
+        self.linear = linear
+        self.positions_ptr = positions.data_ptr()
+        self.register_buffer("projected", linear(positions), persistent=False)
+
+    def forward(self, inputs):
+        if inputs.data_ptr() == self.positions_ptr:
+            return self.projected
+        return self.linear(inputs)
+
+
 class Detector:
     def __init__(self):
         threads = int(os.environ.get("DESKLIB_THREADS", "2"))
@@ -57,6 +72,8 @@ class Detector:
         if any(loading.get(key) for key in failures):
             raise RuntimeError(f"Desklib checkpoint mismatch: {loading}")
         self.model.to(self.device).eval()
+        if self.device.type == "cpu" and config.relative_attention and config.share_att_key:
+            self.cache_relative_projections()
         self.segment_size = min(512, config.max_position_embeddings) - self.tokenizer.num_special_tokens_to_add()
         self.languages = (
             LanguageDetectorBuilder.from_all_languages()
@@ -68,6 +85,19 @@ class Detector:
         self.language("In the late afternoon the neighbors walked beside the river together.")
         self.language("Akşam üzeri mahalledeki komşular nehrin kenarında birlikte yürüdüler.")
         self.score(self.tokenizer.encode("The model is ready for local inference."))
+
+    @torch.inference_mode()
+    def cache_relative_projections(self):
+        # Transformers 4.51.3 slices this shared tensor and passes it through
+        # the layer's query/key projections with dropout disabled in eval mode.
+        encoder = self.model.model.encoder
+        positions = encoder.get_rel_embedding()
+        encoder.get_rel_embedding = lambda: positions
+        for layer in encoder.layer:
+            attention = layer.attention.self
+            relative = positions[:attention.pos_ebd_size * 2].unsqueeze(0)
+            attention.query_proj = PositionCachedLinear(attention.query_proj, relative)
+            attention.key_proj = PositionCachedLinear(attention.key_proj, relative)
 
     def language(self, text):
         language = self.languages.detect_language_of(text)

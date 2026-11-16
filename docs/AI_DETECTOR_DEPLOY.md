@@ -53,7 +53,7 @@ is unavailable, check the local firewall or equivalent service isolation.
 
 1. Run `npm ci`, `npm run lint`, `npm run test:ai`, and `npm run build` in staging.
 2. Apply the detector block from the matching Nginx template to the active server and
-   check `nginx -t`. Limit detector bodies to 128 KiB in memory. Disable detector
+   check `nginx -t`. Limit detector bodies to 320 KiB in memory. Disable detector
    request/response body collection and caching at every proxy, CDN and APM layer.
    Keep the active proxy configuration ready for rollback.
 3. Activate the verified bundle with the existing PM2 working directory and database
@@ -66,20 +66,41 @@ is unavailable, check the local firewall or equivalent service isolation.
    restart the corresponding processes. Stop the new systemd service if it is unused.
    Retain the older model files during the rollback window.
 
+## Upgrade an existing detector
+
+After deploying the matching KapsApp build, update the existing Python worker
+from the repository checkout. The model and Python packages are already in place.
+
+```bash
+cd /var/www/KapsApp
+sudo install -m 0644 services/desklib/{model.py,service.py} /opt/kapsapp-desklib/app/
+sudo systemctl restart kapsapp-desklib
+sudo systemctl status kapsapp-desklib --no-pager
+curl --fail --silent --retry 5 --retry-connrefused http://127.0.0.1:8765/healthz
+```
+
+If the active Nginx site has a 128 KiB detector body limit, update only the
+detector location's `client_max_body_size` and `client_body_buffer_size` to
+`320k`, then run `sudo nginx -t && sudo systemctl reload nginx`.
+
 ## Limits and data handling
 
 Authenticated accounts get one job at a time and four submissions per minute, shared
 with the legacy synchronous route. Node runs one job and queues at most six.
-Queued text expires after two minutes. An inference request times out after 75
-seconds. Results and statuses are account-scoped, stored in Node memory for at
+Queued text expires after ten minutes. The inference time budget scales from
+90 seconds up to eight minutes based on input length. The browser uses the
+asynchronous jobs API for long analyses. Results and statuses are account-scoped, stored in Node memory for at
 most 30 minutes, and may be evicted sooner under load or at restart. API responses
 use no-store. The frontend restores recent jobs from Node and does not persist text
 or results in browser storage. The detector uses neither SQLite nor an external
 inference API.
 
 English samples under 120 words, Turkish and unrecognized languages do not receive
-scores. Up to 16 contiguous windows of at most 512 tokens including special tokens
-cover the text. An input exceeding this token budget receives no partial score.
+scores. Inputs can contain up to 50,000 characters. Up to 32 contiguous windows of
+at most 512 tokens including special tokens cover the text. The text token budget
+is 16,320. An input exceeding this budget receives no partial score. CPU inference
+reuses the fixed relative-position projections of the loaded checkpoint across
+windows. User text and its projections are excluded from this cache.
 The model card's 0.5 cutoff describes signal direction. Window disagreement results
 in an inconclusive assessment. Neither the cutoff nor the minimum length is a
 locally validated accuracy threshold.
@@ -123,3 +144,11 @@ It reduced time on five scored inputs but changed the AI score for the verified
 Austen excerpt from 0.4637 to 0.9999 and changed a window score by up to 0.6619.
 The service uses the original float32 checkpoint. ONNX would require exporting the
 custom pooling and classifier and independently checking score parity.
+
+## CPU validation for the longer input limit
+
+On a two-thread CPU staging run, two repeated measurements per sample gave
+median inference times of 6.16 → 5.18 seconds for 4,493 characters and 15.17 →
+14.38 seconds for 12,494 characters. Both samples kept their original segment
+scores. A 49,996-character sample with 7,954 words completed in 54.5 seconds.
+The longer run peaked at 2,064 MiB RSS. Actual VDS latency depends on CPU load.
