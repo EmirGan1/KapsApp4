@@ -4,9 +4,9 @@ KapsAI opens at `/kapsapp-ai` from the desktop sidebar or the mobile **Menü**. 
 
 ## Limits and data handling
 
-- PM2 runs one Node worker. It accepts a single active generation across accounts and up to four generation attempts per account per minute. A busy request gets a retry response. Stopping a reply or leaving the page closes the Ollama request.
-- CPU threads are capped at four. The request uses a 2,048-token context and a 45-second keep-alive. The app leaves the output length to Ollama and the model. It includes at most three recent exchanges within the input byte budget. The model has 120 seconds to produce its first token and up to 60 seconds between later tokens. The browser also checks for a silent connection. Heartbeats do not extend the model deadline.
-- On Linux, the endpoint checks `MemAvailable` on admission. A cold start requires at least 3 GiB available. A loaded Llama can accept a request with at least 1 GiB available. These are admission thresholds for the VDS. Systemd applies the Ollama service limit during generation.
+- PM2 runs one Node worker. It accepts a single active generation across accounts and up to two queued requests by default, with up to four requests per account per minute. Stopping a reply closes the Ollama request.
+- CPU threads are capped at four. The request uses a 2,048-token context, expanded to 4,096 tokens for large prompts, and a default 45-second keep-alive. The app leaves the output length to Ollama and the model. It includes at most three recent exchanges within the input byte budget. The TCP connection deadline defaults to 10 seconds and ends when the socket connects. Ollama can send HTTP headers after loading its model, so the separate first-token budget covers that wait. This budget starts at 180 seconds and allows extra time for cold models and large prompts. Token inactivity defaults to 60 seconds and the overall request limit to 420 seconds. Heartbeats keep the browser connection open.
+- On Linux, the endpoint checks `MemAvailable` on admission. A cold start requires at least 2,560 MiB available by default. A loaded Llama can accept a request with at least 1 GiB available. These are admission thresholds for the VDS. Systemd applies the Ollama service limit during generation.
 - The active chat is held in React memory. Navigation away, reload or **Yeni sohbet** clears the view. The endpoint reads existing authentication records. It does not store messages or sources in SQLite, browser storage or application logs. Optional `KAPSAPP_AI_METRICS=1` logs only timing and token counts.
 - **Kaynak ekle** attaches a title and excerpt to the current request. The backend supplies it as untrusted evidence and streams a separate source label with the response. An additional provider can feed validated excerpts into this boundary. It should return bounded text and stable attribution and must not hand retrieved instructions or tools to the model. The current provider is manual text input. The model has no web search, file or command access. Turkish and English reach the model directly.
 
@@ -62,6 +62,22 @@ The Ollama listener should be `127.0.0.1:11434`. Keep the public proxy directed 
 5. To pause chat admission without restoring the app bundle, set `KAPSAPP_AI_ENABLED=0` in the app's `.env` and restart the existing PM2 process. The previous verified build can be restored through the app's release workflow while keeping the database and uploads in place.
 
 [Ollama chat API](https://docs.ollama.com/api/chat) · [Ollama local deployment settings](https://docs.ollama.com/faq) · [systemd resource controls](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)
+
+## Diagnose a model that will not answer
+
+Use the same loopback address and model tag used by KapsAI.
+
+```bash
+curl -fsS --max-time 5 http://127.0.0.1:11434/api/tags
+sudo journalctl -u ollama -n 40 --no-pager
+pm2 logs kapsapp-production --lines 40 --nostream
+```
+
+KapsAI records a request ID, reason and elapsed time for failed upstream
+requests. The reason distinguishes an unreachable Ollama service, a missing
+model, an upstream error and a timeout. Keep Ollama's own logs for runner or
+memory diagnostics. KapsAI never includes the submitted prompt in these
+diagnostic entries.
 
 ## Staging verification
 

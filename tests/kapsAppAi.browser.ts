@@ -40,6 +40,7 @@ assert.ok(normalizedStreaming.includes("$$\n\\lim_{n \\to \\infty} \\frac{1}{n}\
 
 const mock = live ? undefined : createServer(async (req, res) => {
   if (req.url === "/api/ps") {
+    if (simulateColdModel) res.setHeader("Connection", "close");
     res.end(JSON.stringify({ models: simulateColdModel ? [] : [{ name: KAPSAPP_AI_MODEL }] }));
     return;
   }
@@ -47,9 +48,17 @@ const mock = live ? undefined : createServer(async (req, res) => {
   for await (const chunk of req) chunks.push(chunk);
   upstream.request = JSON.parse(Buffer.concat(chunks).toString());
   const prompt = upstream.request?.messages.at(-1)?.content ?? "";
+  if (prompt === "missing-model-fixture") {
+    res.writeHead(404).end(JSON.stringify({ error: "model not found" }));
+    return;
+  }
   if (prompt === "memory-fixture") {
     res.writeHead(500).end(JSON.stringify({ error: "unable to allocate memory" }));
     return;
+  }
+  if (prompt.startsWith("cold-math-fixture")) {
+    // The TCP connection is ready, but Ollama has yet to send HTTP headers.
+    await sleep(1_400);
   }
   res.writeHead(200, { "Content-Type": "application/x-ndjson" });
   if (prompt.startsWith("cold-math-fixture")) {
@@ -114,6 +123,7 @@ const env = {
   TURSO_DATABASE_URL: url,
   KAPSAPP_AI_METRICS: "1",
   KAPSAPP_AI_MAX_QUEUE: "1",
+  ...(!live ? { KAPSAPP_AI_CONNECT_TIMEOUT_MS: "500" } : {}),
 };
 const child = spawn(process.execPath, [join(root, "dist/server.cjs")], { cwd: directory, env });
 const exited = once(child, "exit");
@@ -154,7 +164,7 @@ async function collect(response: Response) {
 let browser: Awaited<ReturnType<typeof engine.launch>> | undefined;
 try {
   await waitFor(() => fetch(base + "/api/health", { signal: AbortSignal.timeout(1000) }).then(r => r.ok, () => false));
-  for (const name of ["tr", "en", "one", "two", "three", "browser", "banned", "source", "expired"]) {
+  for (const name of ["tr", "en", "one", "two", "three", "browser", "screenshot", "banned", "source", "expired"]) {
     const { lastInsertRowid } = await db.execute({
       sql: "INSERT INTO users (username,password,status,is_banned) VALUES (?, 'fixture', 'approved', ?)",
       args: [name, Number(name === "banned")],
@@ -227,6 +237,9 @@ try {
     assert.ok(!upstream.request?.messages.at(-1)?.content.includes("<|eot_id|>"));
     assert.ok(!JSON.stringify(upstream.request).includes("hold-fixture"));
 
+    const missing = await collect(await ask("missing-model-fixture", "three"));
+    assert.match(JSON.stringify(missing.at(-1)), /sunucuda kurulu değil/);
+
     const broken = await collect(await ask("close-fixture", "one"));
     assert.equal(broken.at(-1)?.type, "error");
     const memory = await collect(await ask("memory-fixture", "one"));
@@ -237,6 +250,13 @@ try {
     assert.equal(longReply.at(-1)?.type, "done");
     assert.equal(longReply.reduce((length, event) => length + (event.type === "delta" ? event.text.length : 0), 0), 24_000);
   } else {
+    const expression = String.raw`$$X = \frac{3^2 + 4 \times (5 - 2)}{2^3 - 1} + \sqrt{144}$$`;
+    const screenshot = await collect(await ask(expression + "\n\nsolve this", "screenshot"));
+    assert.equal(screenshot.at(-1)?.type, "done");
+    const answer = screenshot.flatMap(event => event.type === "delta" ? [event.text] : []).join("");
+    assert.ok(answer.trim());
+    console.log("Screenshot prompt response:", answer);
+
     const scenarios: { name: string; prompt: string; expected: RegExp; format?: RegExp; account: "tr" | "en" }[] = [
       { name: "TR matematik", prompt: "18 × 7 − 25 kaç eder? Sadece sayıyı yaz.", expected: /(?:^|=\s*)\$?101(?:\$|\.)*$/, format: /^101[.]?$/, account: "tr" },
       { name: "EN arithmetic", prompt: "A ticket costs 17 dollars. What is the final cost of 9 tickets after a 28-dollar total discount? Reply with just the number.", expected: /(?:^|=\s*)\$?125(?:\$|\.)*$/, format: /^125[.]?$/, account: "en" },
@@ -391,6 +411,11 @@ try {
     await waitFor(() => upstream.cancelled);
     assert.equal((await collect(await ask("timeout recovery", "source"))).at(-1)?.type, "done");
     console.log("PASS upstream timeout, cancellation and generation slot recovery");
+  }
+  if (mock) {
+    await new Promise<void>(resolve => mock.close(() => resolve()));
+    const offline = await collect(await ask("offline-fixture", "screenshot"));
+    assert.match(JSON.stringify(offline.at(-1)), /Ollama servisine bağlanamadı/);
   }
   if (live) {
     const metrics = [...logs.matchAll(/\[KapsAI\] \{[^}]+\}/g)].map(item => item[0]);
