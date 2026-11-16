@@ -19,11 +19,9 @@ const engine = process.env.KAPSAPP_AI_BROWSER === "webkit" ? webkit : chromium;
 const answerFixture = "**Örnek yanıt** ve $x^2$.\n\n```js\nconsole.log('test');\n```\n\n<img src=https://example.com/private> ![görsel](https://example.com/private)";
 const mathAnswerFixture = "İntegral ve limit çözümü:\n\\[ \\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} \\]\nve türev: \\( \\frac{d}{dx}\\sin(x) = \\cos(x) \\) ayrıca $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$";
 
-const qwen = "qwen3:0.6b";
+const qwen: KapsAiModel = "qwen3.5:2b-q4_K_M";
 const percentagePrompt = "A product costs 100 TL. Its price increases by 20%, then the increased price is discounted by 20%. What is the final price? Show the calculation.";
 let warmedModel: string | undefined = KAPSAPP_AI_MODEL;
-let qwenInstalled = true;
-const unloads: string[] = [];
 let simulateColdModel = false;
 let completeSaved: (() => void) | undefined;
 let savedAborted = false;
@@ -56,7 +54,7 @@ const mock = live ? undefined : createServer(async (req, res) => {
     return;
   }
   if (req.url === "/api/tags") {
-    res.end(JSON.stringify({ models: [KAPSAPP_AI_MODEL, ...(qwenInstalled ? [qwen] : [])].map(name => ({ name })) }));
+    res.end(JSON.stringify({ models: [{ name: KAPSAPP_AI_MODEL }] }));
     return;
   }
   const chunks = [];
@@ -65,7 +63,6 @@ const mock = live ? undefined : createServer(async (req, res) => {
   if (req.url === "/api/generate") {
     assert.equal(body.keep_alive, 0);
     assert.equal(body.model, warmedModel);
-    unloads.push(body.model);
     warmedModel = undefined;
     res.end(JSON.stringify({ done: true, done_reason: "unload" }));
     return;
@@ -304,10 +301,12 @@ try {
     assert.ok(!JSON.stringify(frames).includes("Private excerpt"));
     assert.equal(upstream.request?.model, KAPSAPP_AI_MODEL);
     assert.equal(upstream.request?.stream, true);
-    assert.equal(upstream.request?.keep_alive, "45s");
+    assert.equal(upstream.request?.keep_alive, "10m");
     assert.equal(upstream.request?.options.num_gpu, 0);
     assert.equal(upstream.request?.options.num_ctx, 2048);
-    assert.equal(upstream.request?.options.num_predict, -1);
+    assert.equal(upstream.request?.options.num_predict, 2048);
+    assert.equal(upstream.request?.options.num_thread, 3);
+    assert.equal(upstream.request?.think, false);
     assert.equal(upstream.request?.tools, undefined);
     assert.ok(upstream.request?.messages[0].content.startsWith(KAPSAPP_AI_SYSTEM_PROMPT));
     assert.ok(upstream.request?.messages.at(-1)?.content.includes("untrusted reference excerpt"));
@@ -323,13 +322,9 @@ try {
     assert.match(JSON.stringify(memory.at(-1)), /yeterli boş bellek/);
     assert.equal((await collect(await ask("tekrar", "one"))).at(-1)?.type, "done");
     assert.equal((await ask("limit", "one")).status, 429);
-    qwenInstalled = false;
-    const unloadCount = unloads.length;
-    const missingQwen = await ask("Qwen not installed", "screenshot", { model: qwen });
-    assert.equal(missingQwen.status, 503);
-    assert.match(await missingQwen.text(), /Qwen3 0.6B modeli sunucuda kurulu değil/);
-    assert.equal(unloads.length, unloadCount);
-    qwenInstalled = true;
+    for (const obsolete of ["llama3.2", "qwen3:0.6b"]) {
+      assert.equal((await ask("obsolete-model-fixture", "screenshot", { model: obsolete as KapsAiModel })).status, 400);
+    }
     const longReply = await collect(await ask("long-reply-fixture", "en"));
     assert.equal(longReply.at(-1)?.type, "done");
     assert.equal(longReply.reduce((length, event) => length + (event.type === "delta" ? event.text.length : 0), 0), 24_000);
@@ -520,7 +515,7 @@ try {
       console.log(JSON.stringify({ model, case: prompt === percentagePrompt ? "percentage" : "long-math",
         correct96: /(?:^|[^0-9])96(?:[.,]00)?\s*\$?\s*(?:TL|Turkish lira)\b/i.test(result.answer), answer: result.answer }));
     }
-    await Promise.all([savedMath("llama3.2", "model-check", percentagePrompt), savedMath(qwen, "model-other", percentagePrompt)]);
+    await Promise.all([savedMath(qwen, "model-check", percentagePrompt), savedMath(qwen, "model-other", percentagePrompt)]);
     const longMath = percentagePrompt + " Separately, calculate the two intermediate prices for products initially costing 250 TL and 375 TL. Explain why the two percentages act on different bases, give exact multipliers, and write the final price for each product in a table.";
     await savedMath(qwen, "model-other", longMath);
     const runners = await fetch("http://127.0.0.1:11434/api/ps").then(r => r.json());
@@ -548,16 +543,15 @@ try {
     await mobilePage.getByRole("button", { name: "Mesajı gönder" }).tap();
     await mobilePage.getByText("İlk parça.", { exact: true }).waitFor();
     assert.equal(droppedAcknowledgement, true);
-    const picker = mobilePage.getByRole("combobox", { name: "KapsAI modeli" });
-    await picker.selectOption(qwen);
-    await mobilePage.waitForFunction(() => document.querySelector<HTMLSelectElement>('[aria-label="KapsAI modeli"]')?.value === "qwen3:0.6b");
+    assert.equal(await mobilePage.getByRole("combobox", { name: "KapsAI modeli" }).count(), 0);
+    assert.equal(await mobilePage.getByLabel("KapsAI modeli").textContent(), "Qwen3.5 2B");
     assert.equal(upstream.request?.model, KAPSAPP_AI_MODEL);
-    assert.equal(upstream.request?.think, undefined);
+    assert.equal(upstream.request?.think, false);
     const list = await fetch(savedChats, { headers: auth("history") }).then(r => r.json());
     const { id, conversationId } = list.active;
     assert.equal(list.model, qwen);
     const otherPreference = await fetch(savedChats, { headers: auth("two") }).then(r => r.json());
-    assert.equal(otherPreference.model, "llama3.2");
+    assert.equal(otherPreference.model, qwen);
     const queuedId = randomUUID();
     const queued = await fetch(`${savedChats}/${randomUUID()}/turns`, {
       method: "POST", headers: { ...auth("model-other"), "Content-Type": "application/json" },
@@ -584,17 +578,18 @@ try {
     completeSaved();
     await waitFor(async () => (await fetch(`${savedTurns}/${id}`, { headers: auth("history") }).then(r => r.json())).state === "done");
     await waitFor(async () => (await fetch(`${savedTurns}/${queuedId}`, { headers: auth("model-other") }).then(r => r.json())).state === "done");
-    assert.ok(unloads.includes(KAPSAPP_AI_MODEL));
     assert.equal(upstream.request?.model, qwen);
     assert.equal(upstream.request?.think, false);
     assert.equal(upstream.request?.options.num_predict, 2048);
-    assert.equal(upstream.request?.options.num_ctx, 4096);
+    assert.equal(upstream.request?.options.num_ctx, 2048);
+    assert.equal(upstream.request?.options.num_thread, 3);
+    assert.equal(upstream.request?.keep_alive, "10m");
     assert.equal(savedAborted, false);
     await historyContext.setOffline(false);
     mobilePage = await historyContext.newPage();
     await mobilePage.goto(base + "/kapsapp-ai");
     await mobilePage.getByText(/Ekran kapalıyken tamamlandı/).waitFor();
-    assert.equal(await mobilePage.getByRole("combobox", { name: "KapsAI modeli" }).inputValue(), qwen);
+    assert.equal(await mobilePage.getByLabel("KapsAI modeli").textContent(), "Qwen3.5 2B");
     await mobilePage.getByRole("button", { name: "Yeni sohbet", exact: true }).tap();
     await mobilePage.getByRole("button", { name: "Geçmiş", exact: true }).tap();
     await mobilePage.getByRole("button", { name: "screen-lock-fixture", exact: true }).tap();
@@ -605,9 +600,8 @@ try {
     assert.ok(upstream.request?.messages.some(message => message.content.includes("Ekran kapalıyken tamamlandı")));
     const saved = await fetch(`${savedChats}/${conversationId}`, { headers: auth("history") }).then(r => r.json());
     assert.equal(saved.turns.filter((turn: SavedChatTurn) => turn.id === id).length, 1);
-    assert.deepEqual(saved.turns.map((turn: SavedChatTurn) => turn.model), ["llama3.2", qwen]);
-    assert.equal(await mobilePage.getByRole("article", { name: "KapsAI yanıtı" }).getByText("Llama 3.2", { exact: true }).count(), 1);
-    assert.equal(await mobilePage.getByRole("article", { name: "KapsAI yanıtı" }).getByText("Qwen3 0.6B", { exact: true }).count(), 1);
+    assert.deepEqual(saved.turns.map((turn: SavedChatTurn) => turn.model), [qwen, qwen]);
+    assert.equal(await mobilePage.getByRole("article", { name: "KapsAI yanıtı" }).getByText("Qwen3.5 2B", { exact: true }).count(), 2);
 
     const restartId = randomUUID();
     const restart = await fetch(`${savedChats}/${conversationId}/turns`, {
@@ -658,7 +652,7 @@ try {
     await waitFor(async () => (await savedQwen()).state === "done");
     assert.equal((await savedQwen()).model, qwen);
     assert.equal(upstream.request?.model, qwen);
-    console.log("PASS model allowlist, migration, model switching, private preference and Qwen outage recovery");
+    console.log("PASS single-model allowlist, legacy migration, private preference and Qwen outage recovery");
   }
   if (live) {
     const metrics = [...logs.matchAll(/\[KapsAI\] \{[^}]+\}/g)].map(item => item[0]);
