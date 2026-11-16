@@ -18,7 +18,7 @@ type Job = {
   resolve?: (result: AiCheckerResult) => void;
   reject?: (error: AiCheckerError) => void;
 };
-const RESULT_TTL_MS = 10 * 60 * 1000;
+const RESULT_TTL_MS = 24 * 60 * 60 * 1000;
 const TASK_TIMEOUT_MS = 60 * 1000;
 const MAX_QUEUE = 6;
 
