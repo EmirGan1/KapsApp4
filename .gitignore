@@ -9,3 +9,5 @@ coverage/
 
 /subject-resources-data/
 
+# ONNX weights and tokenizer are provisioned on the server, never committed.
+/models/ai-detector/
