@@ -11,7 +11,8 @@ type JobResponse =
   | { status: 'done'; result: Result }
   | { status: 'error'; error?: string };
 
-const STORAGE_PREFIX = 'kapsapp.ai-checker.v1.';
+const STORAGE_PREFIX = 'kapsapp.ai-checker.v2.';
+const LEGACY_PREFIX = 'kapsapp.ai-checker.v1.';
 const JOB_PREFIX = 'kapsapp.ai-checker.job.v1.';
 const MAX_LENGTH = 20_000;
 
@@ -41,6 +42,11 @@ function readJob(key: string): string | null {
 export function clearLegacyAiCheckerData() {
   try {
     for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(LEGACY_PREFIX)) {
+        // Old model scores may have a different label order; never relabel them.
+        localStorage.removeItem(key);
+        continue;
+      }
       if (!key.startsWith(STORAGE_PREFIX)) continue;
       const result = readResult(key);
       if (result) localStorage.setItem(key, JSON.stringify(result));
