@@ -140,7 +140,8 @@ export default function AiChecker({ account, active }: { account: string; active
       }
       try { localStorage.setItem(jobKey, data.id); } catch {}
       setJobId(data.id);
-      setText(''); // submitted text is not kept or stored in the browser after acceptance
+      // Keep the draft only in this tab's memory so a failed request can be retried.
+      // It is never written to localStorage, sessionStorage, a URL, or the server database.
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Bağlantı kurulamadı. Tekrar dene.');
     } finally {
