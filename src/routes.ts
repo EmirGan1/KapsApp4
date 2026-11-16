@@ -4,7 +4,7 @@ export { safeDecodeURI };
 
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
-export type AppTab = "ib-m27" | "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ai-checker" | "ayvalik-cas" | "settings";
+export type AppTab = "ib-m27" | "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ai-checker" | "kapsapp-ai" | "ayvalik-cas" | "settings";
 
 export interface RouteMeta {
   path: string;
@@ -110,6 +110,15 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     title: "KapsCulator - IB Diploma ve Puan Hesaplayıcı | KapsApp",
     description: "KapsApp KapsCulator - IB Diploma puan hesaplama aracı. Turkish A, English B, TITC, Math AA, Physics ve Digital Society sınav, IA ve diploma simülatörü.",
     canonical: "https://kapsapp.online/ib-hesaplayici",
+  },
+  kapsAppAi: {
+    path: "/kapsapp-ai",
+    tab: "kapsapp-ai",
+    title: "KapsApp AI | KapsApp",
+    description: "KapsApp sunucusunda çalışan Llama 3.2 ile yapay zeka sohbeti.",
+    canonical: "https://kapsapp.online/kapsapp-ai",
+    requiresAuth: true,
+    noindex: true,
   },
   aiChecker: {
     path: "/ai-checker",
@@ -268,6 +277,7 @@ export function getPathFromTab(
     case "agenda": return "/ajanda";
     case "announcements": return "/duyurular";
     case "ib-calculator": return "/ib-hesaplayici";
+    case "kapsapp-ai": return APP_ROUTES.kapsAppAi.path;
     case "ai-checker": return "/ai-checker";
     case "feed": return "/akis";
     case "map": return "/harita";
