@@ -239,7 +239,7 @@ export default function AiChecker({ account, active }: { account: string; active
             {isTurkish && <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">Bu model İngilizce için eğitildi. Türkçe metinlerde sonuçlar daha az güvenilir olabilir.</p>}
           </div>
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 p-4 sm:p-6">
-            <button type="button" onClick={reset} disabled={submitting}
+            <button type="button" onClick={reset} disabled={busy}
               className="inline-flex justify-center items-center gap-2 min-h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
               <RotateCcw size={16}/> Temizle
             </button>
