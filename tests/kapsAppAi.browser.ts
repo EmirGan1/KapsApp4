@@ -14,6 +14,7 @@ import { KAPSAPP_AI_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, 
 import type { ChatEvent, ChatMessage, ChatSource, KapsAiModel, SavedChatTurn } from "../src/shared/kapsAppAi";
 
 const live = process.env.KAPSAPP_AI_LIVE_TEST === "1";
+const continuousTest = process.env.KAPSAPP_AI_CONTINUOUS_TEST === "1";
 const engine = process.env.KAPSAPP_AI_BROWSER === "webkit" ? webkit : chromium;
 const answerFixture = "**Örnek yanıt** ve $x^2$.\n\n```js\nconsole.log('test');\n```\n\n<img src=https://example.com/private> ![görsel](https://example.com/private)";
 const mathAnswerFixture = "İntegral ve limit çözümü:\n\\[ \\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} \\]\nve türev: \\( \\frac{d}{dx}\\sin(x) = \\cos(x) \\) ayrıca $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$";
@@ -114,6 +115,11 @@ const mock = live ? undefined : createServer(async (req, res) => {
     res.end(JSON.stringify({ done: true, eval_count: 4800 }) + "\n");
     return;
   }
+  if (prompt === "token-limit-fixture") {
+    res.write(JSON.stringify({ message: { content: "Yanıtın mevcut kısmı." } }) + "\n");
+    res.end(JSON.stringify({ done: true, done_reason: "length" }) + "\n");
+    return;
+  }
   if (prompt === "continuous-fixture") {
     const send = () => res.write(JSON.stringify({ message: { content: "Parça " } }) + "\n");
     send();
@@ -121,7 +127,7 @@ const mock = live ? undefined : createServer(async (req, res) => {
     const timer = setInterval(() => {
       send();
       if (++emitted === 7) res.end(JSON.stringify({ done: true }) + "\n");
-    }, 23_000);
+    }, 750);
     res.on("close", () => clearInterval(timer));
     return;
   }
@@ -164,6 +170,7 @@ const env = {
   KAPSAPP_AI_METRICS: "1",
   KAPSAPP_AI_MAX_QUEUE: "1",
   ...(!live ? { KAPSAPP_AI_CONNECT_TIMEOUT_MS: "500" } : {}),
+  ...(!live && continuousTest ? { KAPSAPP_AI_TOTAL_TIMEOUT_MS: "3000" } : {}),
 };
 let logs = "";
 function startApp() {
@@ -326,6 +333,9 @@ try {
     const longReply = await collect(await ask("long-reply-fixture", "en"));
     assert.equal(longReply.at(-1)?.type, "done");
     assert.equal(longReply.reduce((length, event) => length + (event.type === "delta" ? event.text.length : 0), 0), 24_000);
+    const limited = await collect(await ask("token-limit-fixture", "model-check", { model: qwen }));
+    assert.deepEqual(limited.at(-1), { type: "done", truncated: true });
+    assert.ok(limited.some(frame => frame.type === "delta" && frame.text === "Yanıtın mevcut kısmı."));
   } else {
     const expression = String.raw`$$X = \frac{3^2 + 4 \times (5 - 2)}{2^3 - 1} + \sqrt{144}$$`;
     const screenshot = await collect(await ask(expression + "\n\nsolve this", "screenshot"));
@@ -474,18 +484,18 @@ try {
   )));
   assert.ok(!logs.includes("hold-fixture") && !logs.includes("Private excerpt") && !logs.includes("Tarayıcı test mesajı"));
   assert.equal((await fetch(base + "/api/health")).status, 200);
-  if (!live && process.env.KAPSAPP_AI_CONTINUOUS_TEST === "1") {
+  if (!live && continuousTest) {
     await input.fill("continuous-fixture");
     await input.press("Enter");
-    await page.getByRole("button", { name: "Yanıtı kopyala" }).waitFor({ timeout: 150_000 });
+    await page.getByRole("button", { name: "Yanıtı kopyala" }).waitFor({ timeout: 15_000 });
     assert.equal(await page.getByRole("alert").count(), 0);
     assert.equal((await page.getByRole("article", { name: "KapsAI yanıtı" }).last().textContent())?.match(/Parça/g)?.length, 7);
-    console.log("PASS browser keeps receiving tokens beyond the previous server and browser deadlines");
+    console.log("PASS a saved reply keeps streaming beyond the time-to-first-token deadline");
   }
   if (!live && process.env.KAPSAPP_AI_TIMEOUT_TEST === "1") {
     upstream.cancelled = false;
     const events = await collect(await ask("hold-fixture", "source"));
-    assert.match(JSON.stringify(events.at(-1)), /yanıt üretmeyi durdurdu/);
+    assert.match(JSON.stringify(events.at(-1)), /bir süredir yeni metin göndermedi/);
     await waitFor(() => upstream.cancelled);
     assert.equal((await collect(await ask("timeout recovery", "source"))).at(-1)?.type, "done");
     console.log("PASS upstream timeout, cancellation and generation slot recovery");
@@ -577,7 +587,8 @@ try {
     assert.ok(unloads.includes(KAPSAPP_AI_MODEL));
     assert.equal(upstream.request?.model, qwen);
     assert.equal(upstream.request?.think, false);
-    assert.equal(upstream.request?.options.num_predict, 1024);
+    assert.equal(upstream.request?.options.num_predict, 2048);
+    assert.equal(upstream.request?.options.num_ctx, 4096);
     assert.equal(savedAborted, false);
     await historyContext.setOffline(false);
     mobilePage = await historyContext.newPage();

@@ -46,7 +46,9 @@ const DEFAULT_QUEUE_TIMEOUT_MS = 90_000;
 const DEFAULT_MODEL_LOAD_TIMEOUT_MS = 120_000;
 const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 180_000;
 const DEFAULT_TOKEN_IDLE_TIMEOUT_MS = 60_000;
-const DEFAULT_TOTAL_TIMEOUT_MS = 420_000;
+const DEFAULT_STARTUP_TIMEOUT_MS = 420_000;
+const DEFAULT_GENERATION_TIMEOUT_MS = 900_000;
+const QWEN_OUTPUT_TOKENS = 2048;
 const HEARTBEAT_INTERVAL_MS = 8_000;
 const STATUS_TTL_MS = 2 * 60_000;
 const MIB = 1024 * 1024;
@@ -113,7 +115,7 @@ function parseChat(body: unknown): { messages: ChatMessage[]; source?: ChatSourc
 
 function modelMessages({ messages, source }: NonNullable<ReturnType<typeof parseChat>>) {
   const system = KAPSAPP_AI_SYSTEM_PROMPT
-    + "\n\nYou have no live web access. Cite [1] only if the reference attached to the latest user message supports the claim. Never invent a source. Use Markdown and LaTeX with $…$ or $$…$$ when useful. For multi-step mathematics, state the formula and compute step-by-step concisely without repeating steps.";
+    + "\n\nYou have no live web access. Cite [1] only if the reference attached to the latest user message supports the claim. Never invent a source. Use Markdown and LaTeX with $…$ or $$…$$ when useful. For multi-step mathematics, look for a standard identity or shortcut first. Evaluate each term concisely and verify the final result.";
   const question = messages.at(-1)!;
   const current = source ? {
     role: question.role,
@@ -348,7 +350,8 @@ export function registerKapsAppAi(
   const modelLoadTimeoutMs = Number(process.env.KAPSAPP_AI_MODEL_LOAD_TIMEOUT_MS) || DEFAULT_MODEL_LOAD_TIMEOUT_MS;
   const baseFirstTokenTimeoutMs = Number(process.env.KAPSAPP_AI_FIRST_TOKEN_TIMEOUT_MS) || DEFAULT_FIRST_TOKEN_TIMEOUT_MS;
   const tokenIdleTimeoutMs = Number(process.env.KAPSAPP_AI_TOKEN_IDLE_TIMEOUT_MS) || DEFAULT_TOKEN_IDLE_TIMEOUT_MS;
-  const totalTimeoutMs = Number(process.env.KAPSAPP_AI_TOTAL_TIMEOUT_MS) || DEFAULT_TOTAL_TIMEOUT_MS;
+  const startupTimeoutMs = Number(process.env.KAPSAPP_AI_TOTAL_TIMEOUT_MS) || DEFAULT_STARTUP_TIMEOUT_MS;
+  const generationTimeoutMs = Number(process.env.KAPSAPP_AI_GENERATION_TIMEOUT_MS) || DEFAULT_GENERATION_TIMEOUT_MS;
 
   function pruneState(now = Date.now()) {
     for (const [id, record] of recent) {
@@ -470,20 +473,21 @@ export function registerKapsAppAi(
     const onClose = () => controller.abort();
     res?.on("close", onClose);
 
-    let timeoutReason: "queue" | "first_token" | "idle" | "total" | undefined;
+    let timeoutReason: "queue" | "first_token" | "idle" | "generation" | undefined;
     let stageTimer: ReturnType<typeof setTimeout> | undefined;
     let phaseTimer: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let generationTimer: ReturnType<typeof setTimeout> | undefined;
+    let holdsActiveSlot = !mustQueue;
 
-    const totalTimer = setTimeout(() => {
-      timeoutReason = "total";
+    const startupTimer = setTimeout(() => {
+      timeoutReason = holdsActiveSlot ? "first_token" : "queue";
       controller.abort();
-    }, totalTimeoutMs);
-    totalTimer.unref?.();
+    }, startupTimeoutMs);
+    startupTimer.unref?.();
 
     const startedAt = Date.now();
     let firstTokenMs: number | undefined;
-    let holdsActiveSlot = !mustQueue;
 
     const jobStatus: RecentJobStatus = {
       requestId,
@@ -604,15 +608,13 @@ export function registerKapsAppAi(
 
       const preparedMessages = modelMessages(chat);
       const promptBytes = preparedMessages.reduce((sum, m) => sum + Buffer.byteLength(m.content, "utf8"), 0);
-      // Scale context window to 4096 only for very large multi-part math prompts (> 4000 bytes).
-      const numCtx = promptBytes > 4000 ? 4096 : 2048;
+      const isQwen = model === "qwen3:0.6b";
+      const numCtx = isQwen || promptBytes > 4000 ? 4096 : 2048;
 
       // Stage timeout for (optional cold model load + CPU prompt evaluation + first token).
       const promptExtraMs = Math.min(60_000, Math.round(promptBytes * 12));
-      const firstTokenBudgetMs = Math.min(
-        totalTimeoutMs - 5_000,
-        baseFirstTokenTimeoutMs + promptExtraMs + (isModelWarm ? 0 : Math.min(60_000, modelLoadTimeoutMs / 2)),
-      );
+      const firstTokenBudgetMs = baseFirstTokenTimeoutMs + promptExtraMs
+        + (isModelWarm ? 0 : Math.min(60_000, modelLoadTimeoutMs / 2));
 
       stageTimer = setTimeout(() => {
         timeoutReason = "first_token";
@@ -644,10 +646,10 @@ export function registerKapsAppAi(
       const payload = JSON.stringify({
         model: modelTag,
         messages: preparedMessages,
-        ...(model === "qwen3:0.6b" ? { think: false } : {}),
+        ...(isQwen ? { think: false } : {}),
         stream: true,
         keep_alive: keepAlive,
-        options: { num_ctx: numCtx, num_predict: model === "qwen3:0.6b" ? 1024 : -1, num_thread: threads, num_gpu: 0, temperature: 0.2 },
+        options: { num_ctx: numCtx, num_predict: isQwen ? QWEN_OUTPUT_TOKENS : -1, num_thread: threads, num_gpu: 0, temperature: 0.2 },
       });
 
       const upstream = await openOllamaChatStream(payload, signal, connectTimeoutMs);
@@ -661,9 +663,15 @@ export function registerKapsAppAi(
         if (text) {
           if (firstTokenMs === undefined) {
             firstTokenMs = Date.now() - startedAt;
+            clearTimeout(startupTimer);
             clearTimeout(phaseTimer);
             clearTimeout(stageTimer);
             updateJobPhase("streaming");
+            generationTimer = setTimeout(() => {
+              timeoutReason = "generation";
+              controller.abort();
+            }, generationTimeoutMs);
+            generationTimer.unref?.();
             stageTimer = setTimeout(() => {
               timeoutReason = "idle";
               controller.abort();
@@ -686,7 +694,8 @@ export function registerKapsAppAi(
         }
         if (frame.done) {
           if (!hasOutput) throw new ModelFailure("Model boş bir yanıt döndürdü. Tekrar dene.");
-          const truncated = frame.done_reason === "length";
+          const truncated = frame.done_reason === "length"
+            || (isQwen && (frame.eval_count ?? 0) >= QWEN_OUTPUT_TOKENS);
           updateJobPhase("done", { truncated });
           write({ type: "done", truncated });
           if (process.env.KAPSAPP_AI_METRICS === "1") {
@@ -718,9 +727,11 @@ export function registerKapsAppAi(
         ? new ModelFailure(
             timeoutReason === "queue"
               ? BUSY
-              : firstTokenMs === undefined
+              : timeoutReason === "first_token"
                 ? "Model ilk yanıtı zamanında başlatamadı. Tekrar dene."
-                : "Model yanıt üretmeyi durdurdu. Tekrar dene.",
+                : timeoutReason === "idle"
+                  ? "Model bir süredir yeni metin göndermedi. Yanıtın gelen kısmı korundu."
+                  : "Yanıt üretim süresi sınırına ulaştı. Yanıtın gelen kısmı korundu.",
             timeoutReason === "queue" ? 503 : 504,
           )
         : error instanceof ModelFailure
@@ -736,7 +747,8 @@ export function registerKapsAppAi(
       if (res?.headersSent) write({ type: "error", error: failure.message });
       else res?.status(failure.status).json({ error: failure.message });
     } finally {
-      clearTimeout(totalTimer);
+      clearTimeout(startupTimer);
+      clearTimeout(generationTimer);
       clearTimeout(stageTimer);
       clearTimeout(phaseTimer);
       clearInterval(heartbeat);
@@ -788,7 +800,7 @@ export function registerKapsAppAi(
       const result = await runChat({ messages, source: item.source }, item.owner, item.id, controller, item.model);
       if (result?.phase === "done" || result?.phase === "error") {
         await persistResult(item.owner, item.id, result.phase, result.answer,
-          result.error ?? (result.truncated ? "Model burada durdu. Devam etmesini isteyebilirsin." : null));
+          result.error ?? (result.truncated ? "Yanıt token sınırına ulaştı. Modelden kaldığı yerden devam etmesini isteyebilirsin." : null));
       }
     } catch {
       console.warn("[KapsAI] Kayıtlı sohbet sırası okunamadı, yeniden deneniyor");
