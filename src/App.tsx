@@ -981,9 +981,9 @@ export default function App() {
         }
       };
 
-      // Periodic heartbeat every 30s to keep socket alive and active
+      // Periodic heartbeat every 30s to keep socket alive and active while visible
       const heartbeatInterval = setInterval(() => {
-        if (newSocket.connected) {
+        if (newSocket.connected && document.visibilityState === "visible") {
           newSocket.emit("heartbeat");
         }
       }, 30000);

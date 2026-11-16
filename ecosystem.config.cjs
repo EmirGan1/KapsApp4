@@ -3,11 +3,11 @@ module.exports = {
     {
       name: "kapsapp-production",
       script: "./dist/server.cjs",
-      instances: 1, // Single instance for WebSocket state consistency & memory efficiency (1.5GB total VDS allocation)
+      instances: 1, // Single instance for WebSocket state consistency
       exec_mode: "fork",
       watch: false,
-      max_memory_restart: "1500M", // PM2 auto-restart threshold for 1.5GB RAM environment
-      node_args: "--max-old-space-size=1536", // 1.5 GB (1536MB) V8 Heap ceiling
+      max_memory_restart: "900M",
+      node_args: "--max-old-space-size=896",
       env: {
         NODE_ENV: "production",
         PORT: 5000

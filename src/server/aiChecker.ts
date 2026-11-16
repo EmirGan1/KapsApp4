@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { request as httpRequest } from 'node:http';
+import { Agent as HttpAgent, request as httpRequest } from 'node:http';
 import {
   AI_RESULT_TTL_MS, AI_TEXT_LIMIT, DESKLIB_MODEL, DESKLIB_REVISION, parseDetectorResult, type DetectorResult,
 } from '../utils/aiDetectorAssessment';
@@ -37,9 +37,11 @@ export class AiCheckerError extends Error {
 type LocalRequest = (port: number, path: string, signal: AbortSignal, body?: string) =>
   Promise<{ status: number; data?: unknown }>;
 
+const loopbackAgent = new HttpAgent({ keepAlive: true, maxSockets: 4, maxFreeSockets: 2, keepAliveMsecs: 10_000 });
+
 const requestLocal: LocalRequest = (port, path, signal, body) => new Promise((resolve, reject) => {
   const req = httpRequest({
-    host: '127.0.0.1', port, path, signal, agent: false,
+    host: '127.0.0.1', port, path, signal, agent: loopbackAgent,
     method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? undefined : {
       'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),

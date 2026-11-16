@@ -40,6 +40,8 @@ type OllamaFrame = {
   done_reason?: string;
   error?: string;
   load_duration?: number;
+  prompt_eval_count?: number;
+  prompt_eval_duration?: number;
   eval_count?: number;
   eval_duration?: number;
 };
@@ -123,7 +125,12 @@ export function registerKapsAppAi(
   // PM2 runs one KapsApp process. Ollama's own parallel setting also covers other local clients.
   const recent = new Map<string, { expires: number; count: number }>();
   let activeOwner: string | undefined;
-  const threads = Math.max(1, Math.min(4, os.availableParallelism() - 1));
+  const envThreads = Number(process.env.KAPSAPP_AI_THREADS);
+  const threads = Number.isInteger(envThreads) && envThreads >= 1 && envThreads <= 8
+    ? envThreads
+    : Math.max(1, Math.min(4, os.availableParallelism() - 1));
+  const keepAlive = process.env.KAPSAPP_AI_KEEP_ALIVE?.trim() || "45s";
+  const coldMemMib = Number(process.env.KAPSAPP_AI_COLD_MEM_MIB) || 2560;
 
   app.post(KAPSAPP_AI_PATH,
     checkDevice,
@@ -194,7 +201,7 @@ export function registerKapsAppAi(
 
       try {
         const available = await availableMemory();
-        if (available < 3072 * MIB) {
+        if (available < coldMemMib * MIB) {
           if (available < 1024 * MIB) throw new ModelFailure(LOW_MEMORY);
           const loaded = await fetch(OLLAMA + "/api/ps", {
             signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]), redirect: "error",
@@ -230,7 +237,7 @@ export function registerKapsAppAi(
             model: KAPSAPP_AI_MODEL,
             messages: modelMessages(chat),
             stream: true,
-            keep_alive: "45s",
+            keep_alive: keepAlive,
             options: { num_ctx: 2048, num_predict: -1, num_thread: threads, num_gpu: 0, temperature: 0.2 },
           }),
         });
@@ -256,9 +263,13 @@ export function registerKapsAppAi(
             if (!hasOutput) throw new ModelFailure("Model boş bir yanıt döndürdü. Tekrar dene.");
             write({ type: "done", truncated: frame.done_reason === "length" });
             if (process.env.KAPSAPP_AI_METRICS === "1") {
+              const evalSec = (frame.eval_duration ?? 0) / 1e9;
+              const tokensPerSec = evalSec > 0 ? Math.round(((frame.eval_count ?? 0) / evalSec) * 100) / 100 : 0;
               console.info("[KapsAI]", {
-                firstTokenMs, totalMs: Date.now() - startedAt, loadMs: (frame.load_duration ?? 0) / 1e6,
-                outputTokens: frame.eval_count, generationMs: (frame.eval_duration ?? 0) / 1e6,
+                firstTokenMs, totalMs: Date.now() - startedAt, loadMs: Math.round((frame.load_duration ?? 0) / 1e6),
+                promptTokens: frame.prompt_eval_count ?? 0, promptEvalMs: Math.round((frame.prompt_eval_duration ?? 0) / 1e6),
+                outputTokens: frame.eval_count ?? 0, generationMs: Math.round((frame.eval_duration ?? 0) / 1e6),
+                tokensPerSec, threads,
               });
             }
             return;

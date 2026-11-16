@@ -33,12 +33,14 @@ export class DungeonManager {
   rooms = new Map<string, Room>();
   membership = new Map<number, string>();
   joinAttempts = new Map<number, { at: number; count: number }>();
-  timer: ReturnType<typeof setInterval>;
+  timer: ReturnType<typeof setInterval> | null = null;
   dbReady = false;
   constructor(
     private io: Server,
     private db: DB | null,
-  ) {
+  ) {}
+  private wake() {
+    if (this.timer) return;
     this.timer = setInterval(() => this.tick(), 100);
     this.timer.unref?.();
   }
@@ -50,7 +52,10 @@ export class DungeonManager {
     this.dbReady = true;
   }
   destroy() {
-    clearInterval(this.timer);
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
     this.rooms.clear();
     this.membership.clear();
     this.joinAttempts.clear();
@@ -274,6 +279,7 @@ export class DungeonManager {
       };
       this.rooms.set(code, r);
       this.membership.set(user.id, code);
+      this.wake();
       socket.join("dungeon:" + code);
       this.sync(socket, r);
       return { code };
@@ -313,6 +319,7 @@ export class DungeonManager {
             ? attempts
             : { at: Date.now(), count: 0 };
         this.joinAttempts.set(user.id, budget);
+        this.wake();
         this.assert(
           ++budget.count <= 10,
           "Çok fazla katılım denemesi. Bir dakika bekleyin.",
@@ -494,6 +501,10 @@ export class DungeonManager {
           if (this.membership.get(p.id) === r.code)
             this.membership.delete(p.id);
       }
+    }
+    if (!this.rooms.size && !this.joinAttempts.size && this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
     }
   }
 }

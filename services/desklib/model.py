@@ -6,6 +6,7 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+import gc
 import math
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -174,4 +175,7 @@ class Detector:
         segments = [scores[window] for window in windows]
         ai = sum(score * (end - start) for score, (start, end) in zip(segments, ranges)) / len(ids)
         result.update(tokens=len(ids), scores=[1 - ai, ai], segmentAi=segments)
+        del encoded, offsets, windows, unique, inputs, scores
+        if count >= 4:
+            gc.collect()
         return result
