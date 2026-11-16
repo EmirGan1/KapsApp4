@@ -121,7 +121,7 @@ export default function CommandPalette({
       {
         id: "nav-kapsapp-ai",
         category: "Sayfalar & Modüller",
-        title: "KapsApp AI",
+        title: "KapsAI",
         subtitle: "Yerel yapay zeka sohbeti",
         keywords: "kapsapp ai yapay zeka llama ollama sohbet",
         icon: <Sparkles size={16} className="text-indigo-500" />,

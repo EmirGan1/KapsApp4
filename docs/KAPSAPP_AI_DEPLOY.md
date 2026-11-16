@@ -1,11 +1,11 @@
-# KapsApp AI
+# KapsAI
 
-KapsApp AI opens at `/kapsapp-ai` from the desktop sidebar or the mobile **Menü**. The browser authenticates with the existing KapsApp session and streams through `POST /api/kapsapp-ai/chat`. Node forwards the validated chat to Ollama 0.40.16 at `127.0.0.1:11434` using `llama3.2:3b-instruct-q5_K_M`.
+KapsAI opens at `/kapsapp-ai` from the desktop sidebar or the mobile **Menü**. The browser authenticates with the existing KapsApp session and streams through `POST /api/kapsapp-ai/chat`. Node forwards the validated chat to Ollama 0.40.16 at `127.0.0.1:11434` using `llama3.2:3b-instruct-q5_K_M`.
 
 ## Limits and data handling
 
 - PM2 runs one Node worker. It accepts a single active generation across accounts and up to four generation attempts per account per minute. A busy request gets a retry response. Stopping a reply or leaving the page closes the Ollama request.
-- CPU threads are capped at four. The request uses a 2,048-token context, a 384-token output limit and a 45-second keep-alive. It includes at most three recent exchanges within the input byte budget. The model has 120 seconds to produce its first token and up to 60 seconds between later tokens. The browser also checks for a silent connection. Heartbeats do not extend the model deadline.
+- CPU threads are capped at four. The request uses a 2,048-token context and a 45-second keep-alive. The app leaves the output length to Ollama and the model. It includes at most three recent exchanges within the input byte budget. The model has 120 seconds to produce its first token and up to 60 seconds between later tokens. The browser also checks for a silent connection. Heartbeats do not extend the model deadline.
 - On Linux, the endpoint checks `MemAvailable` on admission. A cold start requires at least 3 GiB available. A loaded Llama can accept a request with at least 1 GiB available. These are admission thresholds for the VDS. Systemd applies the Ollama service limit during generation.
 - The active chat is held in React memory. Navigation away, reload or **Yeni sohbet** clears the view. The endpoint reads existing authentication records. It does not store messages or sources in SQLite, browser storage or application logs. Optional `KAPSAPP_AI_METRICS=1` logs only timing and token counts.
 - **Kaynak ekle** attaches a title and excerpt to the current request. The backend supplies it as untrusted evidence and streams a separate source label with the response. An additional provider can feed validated excerpts into this boundary. It should return bounded text and stable attribution and must not hand retrieved instructions or tools to the model. The current provider is manual text input. The model has no web search, file or command access. Turkish and English reach the model directly.
@@ -57,7 +57,7 @@ The Ollama listener should be `127.0.0.1:11434`. Keep the public proxy directed 
    cd /var/www/KapsApp && npm install --include=dev && npm run build && pm2 restart kapsapp-production
    ```
 
-3. Check the main app and Desklib. Open KapsApp AI with a signed-in account and verify first text appears before the answer is complete. Stop a long reply and send a new one. Try requests from two accounts during a generation. On a phone, verify the composer stays above the keyboard.
+3. Check the main app and Desklib. Open KapsAI with a signed-in account and verify first text appears before the answer is complete. Stop a long reply and send a new one. Try requests from two accounts during a generation. On a phone, verify the composer stays above the keyboard.
 4. Watch `vmstat 1`, `pm2 monit`, `systemd-cgtop`, `ollama ps` and the Ollama service memory during the first cold request, a warm follow-up and a simultaneous Desklib analysis. Record available RAM, swap activity, CPU, disk space and first-token time. A VDS under memory pressure may return the low-memory message while KapsApp stays available.
 5. To pause chat admission without restoring the app bundle, set `KAPSAPP_AI_ENABLED=0` in the app's `.env` and restart the existing PM2 process. The previous verified build can be restored through the app's release workflow while keeping the database and uploads in place.
 

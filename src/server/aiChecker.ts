@@ -67,7 +67,10 @@ const requestLocal: LocalRequest = (port, path, signal, body) => new Promise((re
   req.end(body);
 });
 
-export function createAiChecker({ request = requestLocal } = {}) {
+export function createAiChecker({ request = requestLocal, onResult }: {
+  request?: LocalRequest;
+  onResult?: (owner: string, expiresAt: number) => Promise<void>;
+} = {}) {
   const port = Number(process.env.DESKLIB_PORT || 8765);
   const jobs = new Map<string, Job>();
   const queue: Job[] = [];
@@ -100,6 +103,11 @@ export function createAiChecker({ request = requestLocal } = {}) {
     job.deadline.unref();
     job.settle?.(outcome);
     job.settle = undefined;
+    if (!(outcome instanceof AiCheckerError) && outcome.scores && onResult) {
+      void Promise.resolve().then(() => onResult(job.owner, expiresAt)).catch(() => {
+        console.warn('Desklib completion notification failed');
+      });
+    }
     prune();
   }
 

@@ -25,7 +25,7 @@ import { setupChatSocketHandlers } from "./src/server/socket";
 import { initPasswordResetDb, registerPasswordResetRoutes } from "./src/server/passwordResetController";
 import { registerKapsAppAi } from "./src/server/kapsAppAi";
 import { AI_CHECKER_PATH, AI_CHECKER_JOBS_PATH, AiCheckerError, createAiChecker } from "./src/server/aiChecker";
-import { AI_TEXT_LIMIT, assessAiDetectorResult } from "./src/utils/aiDetectorAssessment";
+import { AI_CHECKER_RESULT_NOTIFICATION, AI_TEXT_LIMIT, assessAiDetectorResult } from "./src/utils/aiDetectorAssessment";
 
 import { 
   generateDeck, 
@@ -1092,7 +1092,23 @@ async function startServer() {
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Hardware-Fingerprint", "X-Device-Id"]
   }));
 
-  const aiChecker = createAiChecker();
+  const aiChecker = createAiChecker({
+    onResult: async (owner, expiresAt) => {
+      const userId = Number(owner);
+      const title = "AI Dedektörü";
+      const content = "Metin analizin hazır.";
+      const { rows: [notification] } = await client.execute({
+        sql: "INSERT INTO notifications (user_id, type, content, read, created_at) VALUES (?, ?, ?, 0, ?) RETURNING id, user_id, type, content, read, created_at",
+        args: [userId, AI_CHECKER_RESULT_NOTIFICATION, content, new Date().toISOString()],
+      });
+      if (!notification) return;
+      const socketId = onlineUsers.get(userId);
+      if (socketId) io.to(socketId).emit("new_notification", notification);
+      await devicePush.deliver(userId, {
+        title, body: content, url: "/ai-checker", tag: `ai-checker-${notification.id}`, expiresAt,
+      });
+    },
+  });
   app.use("/api/ai-checker", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     next();

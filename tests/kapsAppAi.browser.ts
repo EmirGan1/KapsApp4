@@ -38,6 +38,11 @@ const mock = live ? undefined : createServer(async (req, res) => {
     return;
   }
   res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+  if (prompt === "long-reply-fixture") {
+    for (let i = 0; i < 6; i++) res.write(JSON.stringify({ message: { content: "word ".repeat(800) } }) + "\n");
+    res.end(JSON.stringify({ done: true, eval_count: 4800 }) + "\n");
+    return;
+  }
   if (prompt === "continuous-fixture") {
     const send = () => res.write(JSON.stringify({ message: { content: "Parça " } }) + "\n");
     send();
@@ -166,6 +171,7 @@ try {
     assert.equal(upstream.request?.keep_alive, "45s");
     assert.equal(upstream.request?.options.num_gpu, 0);
     assert.equal(upstream.request?.options.num_ctx, 2048);
+    assert.equal(upstream.request?.options.num_predict, -1);
     assert.equal(upstream.request?.tools, undefined);
     assert.ok(upstream.request?.messages[0].content.startsWith(KAPSAPP_AI_SYSTEM_PROMPT));
     assert.ok(upstream.request?.messages.at(-1)?.content.includes("untrusted reference excerpt"));
@@ -178,6 +184,9 @@ try {
     assert.match(JSON.stringify(memory.at(-1)), /yeterli boş bellek/);
     assert.equal((await collect(await ask("tekrar", "one"))).at(-1)?.type, "done");
     assert.equal((await ask("limit", "one")).status, 429);
+    const longReply = await collect(await ask("long-reply-fixture", "en"));
+    assert.equal(longReply.at(-1)?.type, "done");
+    assert.equal(longReply.reduce((length, event) => length + (event.type === "delta" ? event.text.length : 0), 0), 24_000);
   } else {
     const scenarios: { name: string; prompt: string; expected: RegExp; format?: RegExp; account: "tr" | "en" }[] = [
       { name: "TR matematik", prompt: "18 × 7 − 25 kaç eder? Sadece sayıyı yaz.", expected: /(?:^|=\s*)\$?101(?:\$|\.)*$/, format: /^101[.]?$/, account: "tr" },
@@ -228,7 +237,7 @@ try {
   await page.route("**/*", route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   await page.goto(base + "/");
   await page.getByRole("button", { name: /Menü/ }).last().tap();
-  await page.getByRole("button", { name: "KapsApp AI", exact: true }).tap();
+  await page.getByRole("button", { name: "KapsAI", exact: true }).tap();
   await page.waitForURL("**/kapsapp-ai");
   const input = page.getByRole("textbox", { name: "Mesaj yaz" });
   await input.waitFor();
@@ -255,7 +264,7 @@ try {
   const stop = page.getByRole("button", { name: "Yanıtı durdur" });
   await stop.waitFor();
   await page.waitForFunction(() => {
-    const article = document.querySelector('[aria-label="KapsApp AI yanıtı"]');
+    const article = document.querySelector('[aria-label="KapsAI yanıtı"]');
     return article && !article.textContent?.includes("Yanıt hazırlanıyor");
   });
   await stop.tap();
@@ -269,7 +278,7 @@ try {
     await page.getByRole("button", { name: "Mesajı gönder" }).tap();
     await page.getByText("[1] Tarayıcı kaynağı", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Yanıtı kopyala" }).last().waitFor();
-    const reply = page.getByRole("article", { name: "KapsApp AI yanıtı" }).last();
+    const reply = page.getByRole("article", { name: "KapsAI yanıtı" }).last();
     assert.equal(await reply.locator("strong").textContent(), "Örnek yanıt");
     assert.equal(await reply.locator("pre code").count(), 1);
     await reply.locator(".katex").waitFor();
@@ -301,7 +310,7 @@ try {
     await input.press("Enter");
     await page.getByRole("button", { name: "Yanıtı kopyala" }).waitFor({ timeout: 150_000 });
     assert.equal(await page.getByRole("alert").count(), 0);
-    assert.equal((await page.getByRole("article", { name: "KapsApp AI yanıtı" }).last().textContent())?.match(/Parça/g)?.length, 7);
+    assert.equal((await page.getByRole("article", { name: "KapsAI yanıtı" }).last().textContent())?.match(/Parça/g)?.length, 7);
     console.log("PASS browser keeps receiving tokens beyond the previous server and browser deadlines");
   }
   if (!live && process.env.KAPSAPP_AI_TIMEOUT_TEST === "1") {
@@ -313,7 +322,7 @@ try {
     console.log("PASS upstream timeout, cancellation and generation slot recovery");
   }
   if (live) {
-    const metrics = [...logs.matchAll(/\[KapsApp AI\] \{[^}]+\}/g)].map(item => item[0]);
+    const metrics = [...logs.matchAll(/\[KapsAI\] \{[^}]+\}/g)].map(item => item[0]);
     for (const entry of metrics) console.log(entry);
   }
   console.log(`PASS ${engine.name()}: authenticated API and private mobile chat, streaming, cancellation and reset (${live ? "Ollama" : "test stream"})`);

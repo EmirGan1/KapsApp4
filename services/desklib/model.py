@@ -8,6 +8,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import torch
@@ -57,7 +58,8 @@ class PositionCachedLinear(nn.Module):
 class Detector:
     def __init__(self):
         threads = int(os.environ.get("DESKLIB_THREADS", "2"))
-        torch.set_num_threads(max(1, min(threads, os.cpu_count() or 1)))
+        self.threads = max(1, min(threads, os.cpu_count() or 1))
+        torch.set_num_threads(self.threads)
         torch.set_num_interop_threads(1)
         self.device = torch.device(os.environ.get("DESKLIB_DEVICE", "cpu"))
         path = Path(os.environ["DESKLIB_MODEL_DIR"]).resolve(strict=True)
@@ -120,6 +122,25 @@ class Detector:
             raise RuntimeError("Invalid Desklib output")
         return torch.sigmoid(logits).item()
 
+    def score_windows(self, inputs):
+        if len(inputs) < 2 or self.device.type != "cpu" or self.threads != 2:
+            return [self.score(ids) for ids in inputs]
+        try:
+            memory = re.search(r"^MemAvailable:\s+(\d+)", Path("/proc/meminfo").read_text(), re.MULTILINE)
+        except OSError:
+            memory = None
+        if not memory or int(memory[1]) < 1024 * 1024:
+            return [self.score(ids) for ids in inputs]
+
+        # The service holds one analysis lock. Split its two CPU threads across
+        # independent windows only when the host can absorb the extra workspace.
+        torch.set_num_threads(1)
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                return list(executor.map(self.score, inputs))
+        finally:
+            torch.set_num_threads(self.threads)
+
     def analyze(self, text):
         words = len(re.findall(r"\S+", text))
         language = self.language(text)
@@ -145,7 +166,12 @@ class Detector:
             result["language"] = "unsupported"
             return result
 
-        segments = [self.score(self.tokenizer.build_inputs_with_special_tokens(ids[start:end])) for start, end in ranges]
+        # Exact duplicate token windows share their deterministic score within this request.
+        windows = [tuple(ids[start:end]) for start, end in ranges]
+        unique = list(dict.fromkeys(windows))
+        inputs = [self.tokenizer.build_inputs_with_special_tokens(list(window)) for window in unique]
+        scores = dict(zip(unique, self.score_windows(inputs)))
+        segments = [scores[window] for window in windows]
         ai = sum(score * (end - start) for score, (start, end) in zip(segments, ranges)) / len(ids)
         result.update(tokens=len(ids), scores=[1 - ai, ai], segmentAi=segments)
         return result

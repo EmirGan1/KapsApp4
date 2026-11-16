@@ -185,7 +185,7 @@ export default function KapsAppAi() {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.message || data.error || "KapsApp AI şu anda kullanılamıyor. Tekrar dene.");
+        throw new Error(data.message || data.error || "KapsAI şu anda kullanılamıyor. Tekrar dene.");
       }
       if (!response.body || !response.headers.get("Content-Type")?.includes("application/x-ndjson")) {
         throw new Error("Sohbet bağlantısı başlatılamadı. Tekrar dene.");
@@ -207,7 +207,7 @@ export default function KapsAppAi() {
         if (event.type === "done") {
           updateTurn(id, {
             answer, state: "done",
-            notice: event.truncated ? "Yanıt uzunluk sınırına ulaştı." : undefined,
+            notice: event.truncated ? "Model burada durdu. Devam etmesini isteyebilirsin." : undefined,
           });
           return;
         }
@@ -235,13 +235,13 @@ export default function KapsAppAi() {
   }
 
   return (
-    <section aria-label="KapsApp AI" className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-slate-950">
+    <section aria-label="KapsAI" className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-slate-950">
       <header className="shrink-0 border-b border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-2 px-3 py-2 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"><Sparkles size={18} /></span>
             <div className="min-w-0">
-              <h2 className="sr-only truncate text-sm font-bold text-slate-900 lg:not-sr-only dark:text-white">KapsApp AI</h2>
+              <h2 className="sr-only truncate text-sm font-bold text-slate-900 lg:not-sr-only dark:text-white">KapsAI</h2>
               <p className="truncate text-xs font-semibold text-slate-600 lg:font-normal dark:text-slate-400">Llama 3.2 · Yerel model</p>
             </div>
           </div>
@@ -271,7 +271,7 @@ export default function KapsAppAi() {
                   <p className="whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-indigo-50 px-4 py-3 text-[15px] leading-relaxed text-slate-900 dark:bg-indigo-950/70 dark:text-white">{turn.question}</p>
                   <div className="flex justify-end"><CopyMessage content={turn.question} label="Mesajı kopyala" /></div>
                 </article>
-                <article aria-label="KapsApp AI yanıtı" className="flex min-w-0 items-start gap-2 sm:gap-3">
+                <article aria-label="KapsAI yanıtı" className="flex min-w-0 items-start gap-2 sm:gap-3">
                   <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-xl border border-indigo-100 text-indigo-700 dark:border-indigo-900 dark:text-indigo-300"><Sparkles size={16} /></span>
                   <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
                     {turn.state === "waiting" && <div role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><LoaderCircle size={16} className="animate-spin" /> Yanıt hazırlanıyor…</div>}

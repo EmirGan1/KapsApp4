@@ -1,4 +1,5 @@
 import { dismissDeviceNotification, hasDevicePush, NotificationPermissionPrompt, removeDevicePush, showDeviceNotification, syncDevicePush } from "./components/DeviceNotifications";
+import { AI_CHECKER_RESULT_NOTIFICATION } from "./utils/aiDetectorAssessment";
 import { useChatViewport } from "./utils/chatViewport";
 import { IncomingActivityInvites } from "./components/ActivityInvites";
 import { lazy, Suspense, useState, useEffect, useRef } from "react";
@@ -640,6 +641,8 @@ export default function App() {
       } else if (location.pathname !== "/sohbetler") {
         navigate("/sohbetler");
       }
+    } else if (notif.type === AI_CHECKER_RESULT_NOTIFICATION) {
+      handleTabChange("ai-checker");
     } else if (notif.type === "like" || notif.type === "comment") {
       handleTabChange("notifications");
     }
@@ -756,8 +759,10 @@ export default function App() {
           else if (notif.type === "follow") title = "Yeni Takipçi";
           else if (notif.type === "friend_request") title = "Arkadaşlık İsteği";
           else if (notif.type === "friend_accept") title = "İstek Kabul Edildi";
+          else if (notif.type === AI_CHECKER_RESULT_NOTIFICATION) title = "AI Dedektörü";
 
           if (!isDemoSession && notif.type !== "new_message" && notif.type !== "dm" &&
+              notif.type !== AI_CHECKER_RESULT_NOTIFICATION &&
               !(notif.type === "new_group_message" && hasDevicePush())) {
             void showDeviceNotification(title, notif.content, notif.id);
           }
@@ -1612,7 +1617,7 @@ export default function App() {
               to={APP_ROUTES.kapsAppAi.path}
               collapsed={preferences.sidebarCollapsed}
               icon={<Sparkles size={18} className="text-indigo-500" />}
-              label="KapsApp AI"
+              label="KapsAI"
               active={activeTab === 'kapsapp-ai'}
               onClick={() => handleTabChange('kapsapp-ai')}
             />

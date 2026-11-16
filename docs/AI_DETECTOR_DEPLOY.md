@@ -100,7 +100,16 @@ scores. Inputs can contain up to 50,000 characters. Up to 32 contiguous windows 
 at most 512 tokens including special tokens cover the text. The text token budget
 is 16,320. An input exceeding this budget receives no partial score. CPU inference
 reuses the fixed relative-position projections of the loaded checkpoint across
-windows. User text and its projections are excluded from this cache.
+windows. User text and its projections are excluded from that cache. An analysis
+also reuses the score of an identical token window within its own request. The
+request-local lookup is released when that analysis finishes. With the default
+two CPU threads and at least 1 GiB of available host memory, the worker may
+score two distinct windows at once. It keeps a single analysis slot for users
+and runs the windows sequentially when memory is low.
+
+When a scored analysis finishes, KapsApp adds a generic notification for its
+owner and sends Web Push to registered devices. Opening the notification leads
+to the detector. The notification includes neither the input nor its score.
 The model card's 0.5 cutoff describes signal direction. Window disagreement results
 in an inconclusive assessment. Neither the cutoff nor the minimum length is a
 locally validated accuracy threshold.
