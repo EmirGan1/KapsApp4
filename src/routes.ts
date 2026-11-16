@@ -115,7 +115,7 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
     path: "/ai-checker",
     tab: "ai-checker",
     title: "AI Metin Dedektörü | KapsApp",
-    description: "Sunucu belleğinde çalışan yerel ONNX modeliyle İngilizce metin analizi. Metinler kalıcı olarak kaydedilmez.",
+    description: "Sunucu belleğinde çalışan yerel Desklib modeliyle İngilizce metin analizi. Metinler kalıcı olarak kaydedilmez.",
     canonical: "https://kapsapp.online/ai-checker",
     noindex: true,
   },

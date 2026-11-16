@@ -1,171 +1,211 @@
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
-import { Worker } from 'node:worker_threads';
+import { request as httpRequest } from 'node:http';
+import {
+  AI_RESULT_TTL_MS, AI_TEXT_LIMIT, DESKLIB_MODEL, DESKLIB_REVISION, parseDetectorResult, type DetectorResult,
+} from '../utils/aiDetectorAssessment';
 
 export const AI_CHECKER_PATH = '/api/ai-checker/analyze';
 export const AI_CHECKER_JOBS_PATH = '/api/ai-checker/jobs';
-export type AiCheckerResult = { scores: number[]; tokens: number; truncated: boolean; words?: number; segmentAi?: number[]; language?: 'likely_turkish' | 'not_identified' };
-type JobState = 'queued' | 'processing' | 'done' | 'error';
+export type AiCheckerResult = DetectorResult;
+
+type JobStatus =
+  | { status: 'queued' | 'processing' }
+  | { status: 'done'; result: DetectorResult; expiresAt: number }
+  | { status: 'error'; error: string; expiresAt: number };
 type Job = {
   id: string;
   owner: string;
-  state: JobState;
-  text?: string; // RAM only; removed as soon as the worker receives it
-  result?: AiCheckerResult;
-  error?: string;
-  updatedAt: number;
-  timeout?: ReturnType<typeof setTimeout>;
-  resolve?: (result: AiCheckerResult) => void;
-  reject?: (error: AiCheckerError) => void;
+  state: JobStatus;
+  text?: string;
+  queuedUntil: number;
+  deadline: ReturnType<typeof setTimeout>;
+  settle?: (value: DetectorResult | AiCheckerError) => void;
 };
-const RESULT_TTL_MS = 24 * 60 * 60 * 1000;
-const TASK_TIMEOUT_MS = 60 * 1000;
+
+const INFERENCE_MS = 75_000;
+const QUEUE_MS = 120_000;
 const MAX_QUEUE = 6;
+const MAX_RESULTS = 80;
+const RATE_WINDOW_MS = 60_000;
+const RATE_LIMIT = 4;
 
 export class AiCheckerError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
-export function createAiChecker() {
-  let worker: Worker | undefined;
+type LocalRequest = (port: number, path: string, signal: AbortSignal, body?: string) =>
+  Promise<{ status: number; data?: unknown }>;
+
+const requestLocal: LocalRequest = (port, path, signal, body) => new Promise((resolve, reject) => {
+  const req = httpRequest({
+    host: '127.0.0.1', port, path, signal, agent: false,
+    method: body === undefined ? 'GET' : 'POST',
+    headers: body === undefined ? undefined : {
+      'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+    },
+  }, response => {
+    const status = response.statusCode ?? 503;
+    if (status !== 200) {
+      response.destroy();
+      resolve({ status });
+      return;
+    }
+    response.setEncoding('utf8');
+    let data = '';
+    response.on('error', reject);
+    response.on('data', (chunk: string) => {
+      data += chunk;
+      if (data.length > 4096) req.destroy(new Error('Invalid Desklib response'));
+    });
+    response.on('end', () => {
+      try { resolve({ status, data: JSON.parse(data) }); }
+      catch { reject(new Error('Invalid Desklib response')); }
+    });
+  });
+  req.on('error', reject);
+  req.end(body);
+});
+
+export function createAiChecker({ request = requestLocal } = {}) {
+  const port = Number(process.env.DESKLIB_PORT || 8765);
   const jobs = new Map<string, Job>();
   const queue: Job[] = [];
-  let active: Job | undefined;
+  const rates = new Map<string, { count: number; expiresAt: number }>();
+  let active: { job: Job; controller: AbortController } | undefined;
 
-  function prune() {
-    const now = Date.now();
-    for (const [id, job] of jobs) {
-      if ((job.state === 'done' || job.state === 'error') && now - job.updatedAt > RESULT_TTL_MS) jobs.delete(id);
-    }
-    // Bound memory even during sustained traffic. Only completed jobs are evicted.
-    if (jobs.size > 80) {
-      for (const [id, job] of jobs) {
-        if (jobs.size <= 60) break;
-        if (job.state === 'done' || job.state === 'error') jobs.delete(id);
+  function unavailable() {
+    return new AiCheckerError(503, 'Desklib şu anda kullanılamıyor. Birazdan yeniden dene.');
+  }
+
+  function prune(now = Date.now()) {
+    const terminal = [...jobs.values()].filter(job => 'expiresAt' in job.state);
+    for (const [index, job] of terminal.entries()) {
+      if ('expiresAt' in job.state && (job.state.expiresAt <= now || index < terminal.length - MAX_RESULTS)) {
+        clearTimeout(job.deadline);
+        jobs.delete(job.id);
       }
     }
+    for (const [owner, limit] of rates) if (limit.expiresAt <= now) rates.delete(owner);
   }
 
-  function fail(job: Job, error: AiCheckerError) {
-    if (job.timeout) clearTimeout(job.timeout);
-    job.timeout = undefined;
+  function finish(job: Job, outcome: DetectorResult | AiCheckerError) {
+    clearTimeout(job.deadline);
     job.text = undefined;
-    job.state = 'error';
-    job.error = error.message;
-    job.updatedAt = Date.now();
-    job.reject?.(error);
-    job.resolve = undefined;
-    job.reject = undefined;
-  }
-
-  function stop() {
-    const previous = worker;
-    worker = undefined;
-    if (previous) void previous.terminate().catch(() => {});
-    const error = new AiCheckerError(503, 'Analiz servisi şu anda kullanılamıyor. Yeniden deneyin.');
-    if (active) fail(active, error);
-    active = undefined;
-    for (const job of queue.splice(0)) fail(job, error);
-  }
-
-  function complete(id: string, result?: AiCheckerResult) {
-    if (!active || active.id !== id) return;
-    const job = active;
-    active = undefined;
-    if (job.timeout) clearTimeout(job.timeout);
-    job.timeout = undefined;
-    job.text = undefined;
-    job.updatedAt = Date.now();
-    if (result && Array.isArray(result.scores) && result.scores.length === 2
-      && result.scores.every(v => Number.isFinite(v) && v >= 0 && v <= 1)
-      && Number.isInteger(result.tokens) && result.tokens > 0 && typeof result.truncated === 'boolean'
-      && (result.words === undefined || (Number.isInteger(result.words) && result.words >= 0))
-      && (result.segmentAi === undefined || (Array.isArray(result.segmentAi) && result.segmentAi.length >= 1
-        && result.segmentAi.length <= 3 && result.segmentAi.every(x => Number.isFinite(x) && x >= 0 && x <= 1)))) {
-      job.state = 'done';
-      job.result = result;
-      job.resolve?.(result);
-    } else {
-      fail(job, new AiCheckerError(503, 'Metin analiz edilemedi. Yeniden deneyin.'));
-    }
-    job.resolve = undefined;
-    job.reject = undefined;
-    pump();
-  }
-
-  function warm() {
-    if (worker) return worker;
-    const current = new Worker(resolve('src/server/aiCheckerInference.mjs'), {
-      workerData: { modelRoot: resolve(process.env.AI_DETECTOR_MODEL_DIR || 'models/ai-detector') },
-    });
-    worker = current;
-    current.on('message', ({ type, id, result }: { type: string; id?: string; result?: AiCheckerResult }) => {
-      if (worker !== current) return;
-      if (type === 'unavailable') { stop(); return; }
-      if (type === 'result') complete(id || '', result);
-      if (type === 'error') complete(id || '');
-    });
-    const onExit = () => { if (worker === current) stop(); };
-    current.on('error', onExit);
-    current.on('exit', onExit);
-    current.unref();
-    return current;
-  }
-
-  function pump() {
-    if (active || !queue.length) return;
-    let current: Worker;
-    try { current = warm(); }
-    catch { stop(); return; }
-    const job = queue.shift()!;
-    active = job;
-    job.state = 'processing';
-    job.updatedAt = Date.now();
-    job.timeout = setTimeout(() => {
-      if (active === job) stop();
-    }, TASK_TIMEOUT_MS);
-    try {
-      current.postMessage({ id: job.id, text: job.text });
-      job.text = undefined; // no raw text is held in the job registry during inference
-    } catch {
-      stop();
-    }
-  }
-
-  function start(owner: string, text: string) {
+    const expiresAt = Date.now() + AI_RESULT_TTL_MS;
+    job.state = outcome instanceof AiCheckerError
+      ? { status: 'error', error: outcome.message, expiresAt }
+      : { status: 'done', result: outcome, expiresAt };
+    job.deadline = setTimeout(() => jobs.delete(job.id), AI_RESULT_TTL_MS);
+    job.deadline.unref();
+    job.settle?.(outcome);
+    job.settle = undefined;
     prune();
-    if (queue.length >= MAX_QUEUE) throw new AiCheckerError(429, 'Analiz sırası dolu. Birazdan yeniden deneyin.');
-    if ([...jobs.values()].some(job => job.owner === owner && (job.state === 'queued' || job.state === 'processing'))) {
+  }
+
+  async function pump() {
+    if (active || !queue.length) return;
+    const job = queue.shift()!;
+    clearTimeout(job.deadline);
+    if (job.queuedUntil <= Date.now()) {
+      finish(job, new AiCheckerError(504, 'Analiz sırasının süresi doldu. Yeniden dene.'));
+      void pump();
+      return;
+    }
+    const controller = new AbortController();
+    active = { job, controller };
+    job.state = { status: 'processing' };
+    job.deadline = setTimeout(() => controller.abort(), INFERENCE_MS);
+    try {
+      const body = JSON.stringify({ text: job.text });
+      job.text = undefined;
+      const response = await request(port, '/infer', controller.signal, body);
+      if (response.status !== 200) {
+        throw response.status === 429
+          ? new AiCheckerError(503, 'Model önceki analizi bitiriyor. Birazdan yeniden dene.')
+          : unavailable();
+      }
+      const result = parseDetectorResult(response.data);
+      if (!result) throw unavailable();
+      if (active?.job === job) finish(job, result);
+    } catch (error) {
+      if (active?.job === job) finish(job, controller.signal.aborted
+        ? new AiCheckerError(504, 'Analiz zaman aşımına uğradı. Daha kısa bir metinle yeniden dene.')
+        : error instanceof AiCheckerError ? error : unavailable());
+    } finally {
+      if (active?.job === job) active = undefined;
+      void pump();
+    }
+  }
+
+  function start(owner: string, text: string, settle?: Job['settle']) {
+    const now = Date.now();
+    prune(now);
+    if (!text.trim() || text.length > AI_TEXT_LIMIT) throw new AiCheckerError(400, 'Geçersiz metin uzunluğu.');
+    if ([...jobs.values()].some(job => job.owner === owner && !('expiresAt' in job.state))) {
       throw new AiCheckerError(409, 'Bu hesap için zaten devam eden bir analiz var.');
     }
-    const job: Job = { id: randomUUID(), owner, state: 'queued', text, updatedAt: Date.now() };
-    jobs.set(job.id, job);
+    const rate = rates.get(owner);
+    if (rate && rate.count >= RATE_LIMIT) throw new AiCheckerError(429, 'Analiz sınırına ulaştın. Bir dakika sonra yeniden dene.');
+    if (queue.length >= MAX_QUEUE || (!rate && rates.size >= 1024)) {
+      throw new AiCheckerError(429, 'Analiz sırası dolu. Birazdan yeniden dene.');
+    }
+    rates.set(owner, { count: (rate?.count ?? 0) + 1, expiresAt: rate?.expiresAt ?? now + RATE_WINDOW_MS });
+    const id = randomUUID();
+    const deadline = setTimeout(() => {
+      const index = queue.findIndex(job => job.id === id);
+      if (index < 0) return;
+      const [job] = queue.splice(index, 1);
+      finish(job, new AiCheckerError(504, 'Analiz sırasının süresi doldu. Yeniden dene.'));
+    }, QUEUE_MS);
+    const job: Job = { id, owner, state: { status: 'queued' }, text, queuedUntil: now + QUEUE_MS, deadline, settle };
+    jobs.set(id, job);
     queue.push(job);
-    pump();
-    return job.id;
+    void pump();
+    return id;
   }
 
   function status(owner: string, id: string) {
     prune();
     const job = jobs.get(id);
-    if (!job || job.owner !== owner) return null;
-    if (job.state === 'done') return { status: 'done' as const, result: job.result };
-    if (job.state === 'error') return { status: 'error' as const, error: job.error };
-    return { status: job.state };
+    return job?.owner === owner ? job.state : null;
   }
 
-  // Retained for previously cached clients and existing tests. New clients use jobs.
-  function analyze(text: string): Promise<AiCheckerResult> {
-    const owner = 'legacy:' + randomUUID();
-    const id = start(owner, text);
-    const job = jobs.get(id)!;
-    return new Promise<AiCheckerResult>((resolve, reject) => {
-      if (job.state === 'done' && job.result) return resolve(job.result);
-      if (job.state === 'error') return reject(new AiCheckerError(503, job.error || 'Analiz başarısız.'));
-      job.resolve = resolve;
-      job.reject = reject;
+  function latest(owner: string) {
+    prune();
+    const own = [...jobs.values()].filter(job => job.owner === owner);
+    const last = own.at(-1);
+    const completed = own.reverse().find(job => job.state.status === 'done');
+    return {
+      current: last && last !== completed ? { id: last.id, ...last.state } : null,
+      lastResult: completed?.state.status === 'done' ? completed.state : null,
+    };
+  }
+
+  function analyze(owner: string, text: string): Promise<DetectorResult> {
+    return new Promise((resolve, reject) => {
+      start(owner, text, outcome => outcome instanceof AiCheckerError ? reject(outcome) : resolve(outcome));
     });
   }
 
-  return { warm, start, status, analyze, stop };
+  async function health() {
+    try {
+      const response = await request(port, '/healthz', AbortSignal.timeout(1500));
+      const data = response.data as { ready?: boolean; model?: string; revision?: string } | undefined;
+      return response.status === 200 && data?.ready === true
+        && data.model === DESKLIB_MODEL && data.revision === DESKLIB_REVISION;
+    } catch { return false; }
+  }
+
+  function stop() {
+    const previous = active;
+    active = undefined;
+    previous?.controller.abort();
+    for (const job of queue.splice(0)) finish(job, unavailable());
+    if (previous) finish(previous.job, unavailable());
+    for (const job of jobs.values()) clearTimeout(job.deadline);
+    jobs.clear();
+    rates.clear();
+  }
+
+  return { start, status, latest, analyze, health, stop };
 }

@@ -9,5 +9,8 @@ coverage/
 
 /subject-resources-data/
 
-# ONNX weights and tokenizer are provisioned on the server, never committed.
+# Detector weights, tokenizer, and Python environment stay outside the repository.
 /models/ai-detector/
+/models/desklib/
+/services/desklib/.venv/
+/services/desklib/__pycache__/

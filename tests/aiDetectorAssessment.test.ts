@@ -1,37 +1,44 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assessAiDetectorResult, type DetectorResult } from '../src/utils/aiDetectorAssessment';
+import { assessAiDetectorResult, DESKLIB_MODEL, DESKLIB_REVISION, parseDetectorResult, type DetectorResult } from '../src/utils/aiDetectorAssessment';
 
-const sample = (words: number, ai: number, segmentAi: number[], language: DetectorResult['language'] = 'not_identified', truncated = false): DetectorResult => ({
-  words, scores: [1 - ai, ai], tokens: words * 2, segmentAi, language, truncated,
+const sample: DetectorResult = {
+  model: DESKLIB_MODEL, revision: DESKLIB_REVISION, words: 260, tokens: 340, truncated: false,
+  scores: [0.05, 0.95], segmentAi: [0.94, 0.96], language: 'english',
+};
+
+test('short English, Turkish and unidentified text do not receive model scores', () => {
+  const blank = { ...sample, scores: null, segmentAi: [], tokens: 0 };
+  for (const [input, kind] of [
+    [{ ...blank, words: 16 }, 'insufficient'],
+    [{ ...blank, language: 'turkish' }, 'unsupported'],
+    [{ ...blank, language: 'unsupported' }, 'unsupported'],
+    [{ ...blank, truncated: true }, 'partial'],
+  ] as const) {
+    const result = parseDetectorResult(input);
+    assert.ok(result);
+    assert.equal(assessAiDetectorResult(result).kind, kind);
+  }
+  assert.equal(parseDetectorResult({ ...sample, language: 'turkish' }), null);
 });
 
-test('a short human-written sentence with a near-100% AI raw score is NOT declared AI', () => {
-  const result = assessAiDetectorResult(sample(16, 0.999, [0.999]));
-  assert.equal(result.kind, 'insufficient');
-  assert.doesNotMatch(result.title, /AI benzeri/);
+test('disagreeing windows are inconclusive even when the aggregate is high', () => {
+  assert.equal(assessAiDetectorResult({ ...sample, segmentAi: [0.99, 0.21] }).kind, 'inconclusive');
 });
 
-test('likely Turkish text has no AI verdict even with very high raw score', () => {
-  const result = assessAiDetectorResult(sample(420, 0.999, [0.999, 0.998], 'likely_turkish'));
-  assert.equal(result.kind, 'unsupported');
+test('model polarity and exact threshold describe signals without asserting authorship', () => {
+  assert.equal(assessAiDetectorResult(sample).kind, 'ai_signal');
+  assert.equal(assessAiDetectorResult({ ...sample, segmentAi: [0.49] }).kind, 'human_signal');
+  assert.equal(assessAiDetectorResult({ ...sample, segmentAi: [0.5] }).kind, 'ai_signal');
+  assert.match(assessAiDetectorResult(sample).detail, /kanıtlamaz/);
 });
 
-test('long text evaluated from samples is not treated as a verdict about the entire essay', () => {
-  assert.equal(assessAiDetectorResult(sample(900, 0.999, [0.999, 0.999, 0.999], 'not_identified', true)).kind, 'partial');
-});
-
-test('disagreeing windows and non-extreme scores remain inconclusive', () => {
-  assert.equal(assessAiDetectorResult(sample(300, 0.6, [0.99, 0.21])).kind, 'inconclusive');
-});
-
-test('even consistent very high AI scores are reported only as an unverified signal', () => {
-  const assessment = assessAiDetectorResult(sample(300, 0.99, [0.99, 0.99]));
-  assert.equal(assessment.kind, 'ai_signal');
-  assert.match(assessment.detail, /kanıtlamaz/);
-});
-
-test('older results without independent windows are not relabeled', () => {
-  const assessment = assessAiDetectorResult({ scores: [0.01, 0.99], tokens: 12, truncated: false });
-  assert.equal(assessment.kind, 'legacy');
+test('results from the old detector, wrong revisions and invalid scores are rejected', () => {
+  for (const input of [
+    { scores: [0.01, 0.99], tokens: 12, truncated: false },
+    { ...sample, revision: 'wrong' },
+    { ...sample, scores: [NaN, 0.95] },
+    { ...sample, scores: [0.15, 0.95] },
+    { ...sample, segmentAi: [] },
+  ]) assert.equal(parseDetectorResult(input), null);
 });
