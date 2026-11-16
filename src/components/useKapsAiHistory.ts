@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiUrl, getAuthHeaders } from "../utils/api";
-import { KAPSAPP_AI_CONVERSATIONS_PATH as conversationsPath, KAPSAPP_AI_TURNS_PATH as turnsPath } from "../shared/kapsAppAi";
-import type { ChatSource, SavedChatSummary, SavedChatTurn } from "../shared/kapsAppAi";
+import { KAPSAPP_AI_CONVERSATIONS_PATH as conversationsPath, KAPSAPP_AI_TURNS_PATH as turnsPath, KAPSAPP_AI_PREFERENCE_PATH, KAPSAPP_AI_DEFAULT_MODEL } from "../shared/kapsAppAi";
+import type { ChatSource, KapsAiModel, SavedChatSummary, SavedChatTurn } from "../shared/kapsAppAi";
 
 type ActiveTurn = { id: string; conversationId: string };
-type ConversationList = { conversations: SavedChatSummary[]; next: number | null; active: ActiveTurn | null };
+type ConversationList = { model: KapsAiModel; conversations: SavedChatSummary[]; next: number | null; active: ActiveTurn | null };
 type ConversationPage = { title: string; turns: SavedChatTurn[]; next: number | null };
-type Submission = { id: string; conversationId: string; question: string; source?: ChatSource };
+type Submission = { id: string; conversationId: string; question: string; source?: ChatSource; model: KapsAiModel };
 
 class ChatHttpError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -30,6 +30,9 @@ function isPending(turn: SavedChatTurn) {
 }
 
 export function useKapsAiHistory(active: boolean) {
+  const [model, setModel] = useState<KapsAiModel>(KAPSAPP_AI_DEFAULT_MODEL);
+  const [modelPending, setModelPending] = useState(false);
+  const choosingModel = useRef(false);
   const [conversations, setConversations] = useState<SavedChatSummary[]>([]);
   const [listNext, setListNext] = useState<number | null>(null);
   const [turnNext, setTurnNext] = useState<number | null>(null);
@@ -104,6 +107,7 @@ export function useKapsAiHistory(active: boolean) {
     if (list.active) setActiveTurn(previous => previous ?? list.active);
     if (!initializedRef.current && version === viewVersion.current) {
       initializedRef.current = true;
+      setModel(list.model ?? KAPSAPP_AI_DEFAULT_MODEL);
       setInitialized(true);
       await open(list.active?.conversationId ?? list.conversations[0]?.id ?? null);
     }
@@ -176,7 +180,7 @@ export function useKapsAiHistory(active: boolean) {
     try {
       const turn = await chatRequest<SavedChatTurn>(`${conversationsPath}/${item.conversationId}/turns`, {
         method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, question: item.question, source: item.source }),
+        body: JSON.stringify({ id: item.id, question: item.question, source: item.source, model: item.model }),
       });
       if (outbox.current !== item) return;
       outbox.current = null;
@@ -217,13 +221,32 @@ export function useKapsAiHistory(active: boolean) {
   }, [pendingSubmission, submit]);
 
   async function send(question: string, source?: ChatSource) {
-    if (!initialized || loading || activeTurn || outbox.current || operation.current) return;
+    if (!initialized || loading || activeTurn || outbox.current || operation.current || choosingModel.current) return;
     setError("");
-    const item = { id: crypto.randomUUID(), conversationId: selected.current ?? crypto.randomUUID(), question, source };
+    const item = { id: crypto.randomUUID(), conversationId: selected.current ?? crypto.randomUUID(), question, source, model };
     focusConversation(item.conversationId);
     outbox.current = item;
     setPendingSubmission(item);
     return submit(item);
+  }
+
+  async function chooseModel(next: KapsAiModel) {
+    if (!initialized || choosingModel.current || next === model) return;
+    choosingModel.current = true;
+    setModelPending(true);
+    setError("");
+    try {
+      const saved = await chatRequest<{ model: KapsAiModel }>(KAPSAPP_AI_PREFERENCE_PATH, {
+        method: "PUT", signal: AbortSignal.timeout(10_000), headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: next }),
+      });
+      setModel(saved.model);
+    } catch (cause) {
+      setError(cause instanceof ChatHttpError ? cause.message : "Model tercihi kaydedilemedi. Tekrar dene.");
+    } finally {
+      choosingModel.current = false;
+      setModelPending(false);
+    }
   }
 
   async function action(work: () => Promise<void>) {
@@ -288,6 +311,6 @@ export function useKapsAiHistory(active: boolean) {
     });
   }
 
-  return { conversations, listNext, turnNext, turns, conversationId, activeTurn, loading, initialized, error, connectionNotice,
+  return { model, modelPending, chooseModel, conversations, listNext, turnNext, turns, conversationId, activeTurn, loading, initialized, error, connectionNotice,
     pendingSubmission, acceptedSubmission, actionPending, open, refresh, send, stop, retry, remove, moreChats, moreTurns };
 }

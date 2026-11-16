@@ -1,13 +1,13 @@
 # KapsAI
 
-KapsAI opens at `/kapsapp-ai` from the desktop sidebar or the mobile **Menü**. The browser authenticates with the existing KapsApp session, submits prompts through the conversations API and polls the active turn for output. Node forwards the validated chat to Ollama 0.40.16 at `127.0.0.1:11434` using `llama3.2:3b-instruct-q5_K_M`.
+KapsAI opens at `/kapsapp-ai` from the desktop sidebar or the mobile **Menü**. The browser authenticates with the existing KapsApp session, submits prompts through the conversations API and polls the active turn for output. Node forwards the validated chat to Ollama 0.40.16 at `127.0.0.1:11434` using the registered Llama 3.2 (`llama3.2:3b-instruct-q5_K_M`) or Qwen3 0.6B (`qwen3:0.6b`) tag.
 
 ## Limits and data handling
 
 - PM2 runs one Node worker. It accepts a single active generation across accounts and up to two queued requests by default, with up to four requests per account per minute. Only the explicit stop action cancels a saved job. Older clients can still use the streaming endpoint.
-- CPU threads are capped at four. The request uses a 2,048-token context, expanded to 4,096 tokens for large prompts, and a default 45-second keep-alive. The app leaves the output length to Ollama and the model. It includes at most three recent exchanges within the input byte budget. The TCP connection deadline defaults to 10 seconds and ends when the socket connects. Ollama can send HTTP headers after loading its model, so the separate first-token budget covers that wait. This budget starts at 180 seconds and allows extra time for cold models and large prompts. Token inactivity defaults to 60 seconds and the overall request limit to 420 seconds. The legacy streaming endpoint sends heartbeats. The saved-chat client uses independent HTTP status checks.
-- On Linux, the endpoint checks `MemAvailable` on admission. A cold start requires at least 2,560 MiB available by default. A loaded Llama can accept a request with at least 1 GiB available. These are admission thresholds for the VDS. Systemd applies the Ollama service limit during generation.
-- The app commits the prompt to the configured libSQL database before acknowledging it. It stores the prompt, attached reference and result under the authenticated account. Only that account can list, open, continue or delete the chat. An interrupted server process picks up unfinished work using the saved prompt, restarting generation from the beginning. Closing the screen or navigating away only pauses polling. Completed chats remain until deleted. Previous browser-only conversations are not recoverable after their session ends. Prompt text is not written to browser storage or app logs. Optional `KAPSAPP_AI_METRICS=1` logs timing and token counts.
+- CPU threads are capped at four. The request uses a 2,048-token context, expanded to 4,096 tokens for large prompts, and a default 45-second keep-alive. Llama retains its existing generation settings. Qwen uses `think: false` and a 1,024-token output limit. Both stream from Ollama. A change to the picker takes effect on the next message, and each saved turn keeps its original model for retry and restart recovery. It includes at most three recent exchanges within the input byte budget. The TCP connection deadline defaults to 10 seconds and ends when the socket connects. Ollama can send HTTP headers after loading its model, so the separate first-token budget covers that wait. This budget starts at 180 seconds and allows extra time for cold models and large prompts. Token inactivity defaults to 60 seconds and the overall request limit to 420 seconds. The legacy streaming endpoint sends heartbeats. The saved-chat client uses independent HTTP status checks.
+- On Linux, the endpoint checks `MemAvailable` on admission. A cold start requires at least 2,560 MiB for Llama by default or 1,280 MiB for Qwen. A warm model can accept a request with at least 1 GiB available. When switching between the two registered models, the app verifies the new tag is installed, unloads the other tag and checks memory before generation. The Ollama service should keep `OLLAMA_MAX_LOADED_MODELS=1` and `OLLAMA_NUM_PARALLEL=1`. These are admission thresholds for the VDS. Systemd applies the Ollama service limit during generation.
+- The app commits the prompt to the configured libSQL database before acknowledging it. It stores the prompt, attached reference and result under the authenticated account. Only that account can list, open, continue or delete the chat. An interrupted server process picks up unfinished work using the saved prompt, restarting generation from the beginning. Closing the screen or navigating away only pauses polling. Completed chats remain until deleted. Each stored answer shows its generating model. Old turns are attributed to Llama 3.2, and the model preference is stored per account. Previous browser-only conversations are not recoverable after their session ends. Prompt text is not written to browser storage or app logs. Optional `KAPSAPP_AI_METRICS=1` logs the model ID, first-token and loading times, prompt and output token counts, and generated tokens per second.
 - **Kaynak ekle** attaches a title and excerpt to the current request. The backend supplies it as untrusted evidence and streams a separate source label with the response. An additional provider can feed validated excerpts into this boundary. It should return bounded text and stable attribution and must not hand retrieved instructions or tools to the model. The current provider is manual text input. The model has no web search, file or command access. Turkish and English reach the model directly.
 
 ## Prepare Ollama on the VDS
@@ -32,7 +32,7 @@ Nice=10
 LimitCORE=0
 ```
 
-These are initial systemd limits for the CPU-only 5.7 GB host. Confirm the effective settings and headroom under normal KapsApp and Desklib load. If the model is missing, use `ollama pull llama3.2:3b-instruct-q5_K_M` on the VDS. Leave existing model files in place.
+These are initial systemd limits for the CPU-only 5.7 GB host. Confirm the effective settings and headroom under normal KapsApp and Desklib load. Run `ollama list` on the VDS before deployment and check the two exact tags above. If Qwen is missing, run `ollama pull qwen3:0.6b` and verify it with `ollama list`. If the existing Llama tag is missing, check the current service configuration before changing it. Web requests never download a model.
 
 ```bash
 sudo systemctl daemon-reload
@@ -48,6 +48,36 @@ df -h /var/www/KapsApp
 
 The Ollama listener should be `127.0.0.1:11434`. Keep the public proxy directed at Node. The repository's Nginx examples already disable response buffering for `/api/`. Confirm buffering is disabled on the active site, including for `/api/kapsapp-ai/chat`, and that proxies honor `X-Accel-Buffering: no` and `Cache-Control: no-store, no-transform`. Exclude the chat route from proxy, CDN and APM body capture.
 
+## Back up the database before the model migration
+
+For the default local database, use SQLite's online backup API from the VDS.
+For a deployment using `TURSO_DATABASE_URL` or `LIBSQL_URL`, back up and check the
+database that the PM2 instance actually uses. Keep the existing connection
+configuration in either case.
+
+```bash
+cd /var/www/KapsApp
+sudo python3 - "$PWD/local.db" <<'PY'
+import sqlite3
+import sys
+import tempfile
+from pathlib import Path
+
+source = Path(sys.argv[1]).resolve(strict=True)
+backup_dir = Path(tempfile.mkdtemp(prefix="kapsapp-db-", dir="/var/backups"))
+backup = backup_dir / "local.db"
+with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True) as src, sqlite3.connect(backup) as dst:
+    src.backup(dst)
+    if dst.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+        raise SystemExit("Backup integrity check failed. Stop before deploying.")
+print(f"Verified SQLite backup: {backup}")
+PY
+```
+
+The migration adds a model column with a Llama default to existing turns and
+creates the model preferences table. It runs at application startup. If the
+backup or integrity check fails, resolve that before restarting into this code.
+
 ## Verify and deploy
 
 1. Build the candidate in a separate checkout. Use `npm ci --include=dev`, `npm run lint` and `npm run build`. On an isolated testing host, install the Playwright Chromium browser and run `npm run test:kapsapp-ai` with port 11434 free for the test server. With Ollama running, use `KAPSAPP_AI_LIVE_TEST=1 npm run test:kapsapp-ai` for the real model and bilingual checks. Desklib's tests and deployed model are covered in [AI_DETECTOR_DEPLOY.md](./AI_DETECTOR_DEPLOY.md).
@@ -57,7 +87,7 @@ The Ollama listener should be `127.0.0.1:11434`. Keep the public proxy directed 
    cd /var/www/KapsApp && npm install --include=dev && npm run build && pm2 restart kapsapp-production
    ```
 
-3. Check the main app and Desklib. Open KapsAI with a signed-in account and verify first text appears before the answer is complete. Stop a long reply and send a new one. Try requests from two accounts during a generation. On a phone, lock the screen after the prompt was accepted, then open KapsAI again and check the answer. Open an older conversation and try a follow-up. Verify the composer stays above the keyboard.
+3. Check the main app and Desklib. Open KapsAI with a signed-in account and verify first text appears before the answer is complete. Stop a long reply and send a new one. Try requests from two accounts during a generation. Switch models while a reply is active and verify only the next prompt uses the new selection. On a phone, lock the screen after the prompt was accepted, then open KapsAI again and check the answer. Open an older conversation and try a follow-up. Verify the composer stays above the keyboard.
 4. Watch `vmstat 1`, `pm2 monit`, `systemd-cgtop`, `ollama ps` and the Ollama service memory during the first cold request, a warm follow-up and a simultaneous Desklib analysis. Record available RAM, swap activity, CPU, disk space and first-token time. A VDS under memory pressure may return the low-memory message while KapsApp stays available.
 5. To pause chat admission without restoring the app bundle, set `KAPSAPP_AI_ENABLED=0` in the app's `.env` and restart the existing PM2 process. The previous verified build can be restored through the app's release workflow while keeping the database and uploads in place.
 

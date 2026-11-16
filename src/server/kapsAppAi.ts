@@ -11,11 +11,17 @@ import express from "express";
 import type { ErrorRequestHandler, Express, NextFunction, Request, RequestHandler, Response } from "express";
 import {
   AI_HISTORY_LIMIT, AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT,
-  KAPSAPP_AI_PATH, KAPSAPP_AI_STATUS_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, readJsonLines,
+  KAPSAPP_AI_PATH, KAPSAPP_AI_STATUS_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH,
+  KAPSAPP_AI_DEFAULT_MODEL, KAPSAPP_AI_MODELS, KAPSAPP_AI_PREFERENCE_PATH, isKapsAiModel, readJsonLines,
 } from "../shared/kapsAppAi";
-import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase, SavedChatTurn } from "../shared/kapsAppAi";
+import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase, KapsAiModel, SavedChatTurn } from "../shared/kapsAppAi";
 
 export const KAPSAPP_AI_MODEL = "llama3.2:3b-instruct-q5_K_M";
+const OLLAMA_MODEL_TAGS: Record<KapsAiModel, string> = {
+  "llama3.2": KAPSAPP_AI_MODEL,
+  "qwen3:0.6b": "qwen3:0.6b",
+};
+
 export const KAPSAPP_AI_SYSTEM_PROMPT = `You are KapsAI, a helpful, accurate and concise assistant.
 
 Answer in the user’s language unless they request otherwise.
@@ -145,26 +151,26 @@ class ModelFailure extends Error {
   }
 }
 
-function modelFailure(detail: string, status?: number) {
+function modelFailure(detail: string, status: number | undefined, model: KapsAiModel) {
   if (/memory|allocat|\boom\b/i.test(detail)) return new ModelFailure(LOW_MEMORY, 503, "memory");
   if (status === 429 || status === 503 && /queue|busy|overload/i.test(detail)) return new ModelFailure(BUSY);
-  if (status === 404) return new ModelFailure("KapsAI modeli sunucuda kurulu değil.", 503, "model_missing");
+  if (status === 404) return new ModelFailure(`${KAPSAPP_AI_MODELS[model].label} modeli sunucuda kurulu değil.`, 503, "model_missing");
   return new ModelFailure(UNAVAILABLE, 503, "upstream");
 }
 
-function checkModelLoaded(signal: AbortSignal, connectTimeoutMs: number): Promise<{ ok: boolean; loaded: boolean }> {
+function ollamaModels(path: "/api/ps" | "/api/tags", signal: AbortSignal, timeoutMs: number): Promise<string[] | null> {
   return new Promise(resolve => {
     const req = httpRequest({
       host: OLLAMA_HOST,
       port: OLLAMA_PORT,
-      path: "/api/ps",
+      path,
       method: "GET",
       agent: ollamaAgent,
       signal,
     }, res => {
       if ((res.statusCode ?? 503) !== 200) {
         res.resume();
-        resolve({ ok: false, loaded: false });
+        resolve(null);
         return;
       }
       let body = "";
@@ -175,19 +181,21 @@ function checkModelLoaded(signal: AbortSignal, connectTimeoutMs: number): Promis
       });
       res.on("end", () => {
         try {
-          const parsed = JSON.parse(body) as { models?: { name?: string }[] };
-          const loaded = Array.isArray(parsed.models) && parsed.models.some(m => m.name === KAPSAPP_AI_MODEL);
-          resolve({ ok: true, loaded });
+          const parsed = JSON.parse(body) as { models?: { name?: string; model?: string }[] };
+          resolve(Array.isArray(parsed.models) ? parsed.models.flatMap(entry => {
+            const name = entry?.name ?? entry?.model;
+            return typeof name === "string" ? [name] : [];
+          }) : null);
         } catch {
-          resolve({ ok: false, loaded: false });
+          resolve(null);
         }
       });
-      res.on("error", () => resolve({ ok: false, loaded: false }));
+      res.on("error", () => resolve(null));
     });
-    const timer = setTimeout(() => req.destroy(new Error("connect_timeout")), connectTimeoutMs);
+    const timer = setTimeout(() => req.destroy(new Error("connect_timeout")), timeoutMs);
     timer.unref?.();
     req.on("close", () => clearTimeout(timer));
-    req.on("error", () => resolve({ ok: false, loaded: false }));
+    req.on("error", () => resolve(null));
     req.end();
   });
 }
@@ -196,13 +204,14 @@ function openOllamaChatStream(
   payload: string,
   signal: AbortSignal,
   connectTimeoutMs: number,
+  path: "/api/chat" | "/api/generate" = "/api/chat",
 ): Promise<{ status: number; stream?: ReadableStream<Uint8Array>; errorText?: string }> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const req = httpRequest({
       host: OLLAMA_HOST,
       port: OLLAMA_PORT,
-      path: "/api/chat",
+      path,
       method: "POST",
       agent: ollamaAgent,
       signal,
@@ -266,6 +275,36 @@ function openOllamaChatStream(
     });
     req.end(payload);
   });
+}
+
+async function releaseOtherModel(model: KapsAiModel, loaded: string[], signal: AbortSignal, timeoutMs: number) {
+  const tag = OLLAMA_MODEL_TAGS[model];
+  const otherTags = Object.values(OLLAMA_MODEL_TAGS).filter(name => name !== tag && loaded.includes(name));
+  if (!otherTags.length) return loaded;
+  const switchSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+  const installed = await ollamaModels("/api/tags", switchSignal, timeoutMs);
+  if (!installed) throw new ModelFailure("Ollama model listesi doğrulanamadı. Tekrar dene.", 503, "upstream");
+  if (!installed.includes(tag)) throw modelFailure("", 404, model);
+
+  for (const other of otherTags) {
+    const response = await openOllamaChatStream(
+      JSON.stringify({ model: other, keep_alive: 0, stream: false }), switchSignal, timeoutMs, "/api/generate",
+    );
+    if (response.status !== 200 || !response.stream) throw new ModelFailure(BUSY);
+    for await (const frame of readJsonLines<OllamaFrame>(response.stream)) {
+      if (frame.error) throw modelFailure(frame.error, undefined, model);
+    }
+  }
+
+  // The unload request can return before Ollama has finished releasing RAM.
+  while (!switchSignal.aborted) {
+    const current = await ollamaModels("/api/ps", switchSignal, timeoutMs);
+    if (current && !otherTags.some(name => current.includes(name))) return current;
+    if (!current) break;
+    await delay(200, undefined, { signal: switchSignal }).catch(() => {});
+  }
+  signal.throwIfAborted();
+  throw new ModelFailure("Önceki modelin belleği boşaltılıyor. Biraz sonra tekrar dene.");
 }
 
 const parseError: ErrorRequestHandler = (error, _req, res, _next) => {
@@ -378,8 +417,9 @@ export function registerKapsAppAi(
     parseError,
     async (req: Request, res: Response) => {
       const chat = parseChat(req.body);
+      const model = req.body?.model === undefined ? KAPSAPP_AI_DEFAULT_MODEL : req.body.model;
       req.body = undefined;
-      if (!chat) return res.status(400).json({ error: "Mesajı veya kaynak metnini kontrol et." });
+      if (!chat || !isKapsAiModel(model)) return res.status(400).json({ error: "Mesajı veya kaynak metnini kontrol et." });
       if (res.destroyed) return;
 
       if (process.env.KAPSAPP_AI_ENABLED === "0") {
@@ -414,7 +454,7 @@ export function registerKapsAppAi(
         activeOwner = owner;
       }
 
-      await runChat(chat, owner, randomUUID(), new AbortController(), res, mustQueue);
+      await runChat(chat, owner, randomUUID(), new AbortController(), model, res, mustQueue);
     });
 
   async function runChat(
@@ -422,6 +462,7 @@ export function registerKapsAppAi(
     owner: string,
     requestId: string,
     controller: AbortController,
+    model: KapsAiModel,
     res?: Response,
     mustQueue = false,
   ) {
@@ -525,18 +566,18 @@ export function registerKapsAppAi(
 
       signal.throwIfAborted();
 
-      // Check memory and whether the model is already warm in Ollama RAM.
+      const modelTag = OLLAMA_MODEL_TAGS[model];
+      const probeBudget = Math.min(2500, connectTimeoutMs);
+      let loaded = await ollamaModels("/api/ps", signal, probeBudget);
+      if (loaded) loaded = await releaseOtherModel(model, loaded, signal, probeBudget);
       const available = await availableMemory();
-      let isModelWarm = false;
-      if (available < coldMemMib * MIB) {
-        if (available < 1024 * MIB) throw new ModelFailure(LOW_MEMORY);
-        const ps = await checkModelLoaded(signal, connectTimeoutMs);
-        if (!ps.ok) throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
-        if (!ps.loaded) throw new ModelFailure(LOW_MEMORY);
-        isModelWarm = true;
-      } else {
-        const ps = await checkModelLoaded(signal, Math.min(2500, connectTimeoutMs)).catch(() => ({ ok: true, loaded: false }));
-        isModelWarm = ps.loaded;
+      const isModelWarm = loaded?.includes(modelTag) ?? false;
+      const coldLimit = model === "llama3.2" ? coldMemMib : 1280;
+      if (available < 1024 * MIB || (!isModelWarm && available < coldLimit * MIB)) {
+        if (!loaded && available >= 1024 * MIB) {
+          throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
+        }
+        throw new ModelFailure(LOW_MEMORY);
       }
       signal.throwIfAborted();
 
@@ -601,20 +642,21 @@ export function registerKapsAppAi(
       phaseTimer.unref?.();
 
       const payload = JSON.stringify({
-        model: KAPSAPP_AI_MODEL,
+        model: modelTag,
         messages: preparedMessages,
+        ...(model === "qwen3:0.6b" ? { think: false } : {}),
         stream: true,
         keep_alive: keepAlive,
-        options: { num_ctx: numCtx, num_predict: -1, num_thread: threads, num_gpu: 0, temperature: 0.2 },
+        options: { num_ctx: numCtx, num_predict: model === "qwen3:0.6b" ? 1024 : -1, num_thread: threads, num_gpu: 0, temperature: 0.2 },
       });
 
       const upstream = await openOllamaChatStream(payload, signal, connectTimeoutMs);
-      if (upstream.status !== 200) throw modelFailure(upstream.errorText ?? "", upstream.status);
+      if (upstream.status !== 200) throw modelFailure(upstream.errorText ?? "", upstream.status, model);
       if (!upstream.stream) throw new ModelFailure(UNAVAILABLE);
 
       let hasOutput = false;
       for await (const frame of readJsonLines<OllamaFrame>(upstream.stream)) {
-        if (frame.error) throw modelFailure(frame.error);
+        if (frame.error) throw modelFailure(frame.error, undefined, model);
         const text = frame.message?.content;
         if (text) {
           if (firstTokenMs === undefined) {
@@ -651,6 +693,7 @@ export function registerKapsAppAi(
             const evalSec = (frame.eval_duration ?? 0) / 1e9;
             const tokensPerSec = evalSec > 0 ? Math.round(((frame.eval_count ?? 0) / evalSec) * 100) / 100 : 0;
             console.info("[KapsAI]", {
+              model,
               firstTokenMs,
               totalMs: Date.now() - startedAt,
               loadMs: Math.round((frame.load_duration ?? 0) / 1e6),
@@ -685,7 +728,7 @@ export function registerKapsAppAi(
           : new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport");
       if (failure.diagnostic || (timeoutReason && timeoutReason !== "queue")) {
         console.warn("[KapsAI] Ollama request failed", {
-          requestId, reason: failure.diagnostic ?? timeoutReason,
+          requestId, model, reason: failure.diagnostic ?? timeoutReason,
           elapsedMs: Date.now() - startedAt,
         });
       }
@@ -742,7 +785,7 @@ export function registerKapsAppAi(
       if (!await history.start(item.owner, item.id)) return;
       const messages = await history.context(item.owner, item.conversationId, item.seq);
       messages.push({ role: "user", content: item.question });
-      const result = await runChat({ messages, source: item.source }, item.owner, item.id, controller);
+      const result = await runChat({ messages, source: item.source }, item.owner, item.id, controller, item.model);
       if (result?.phase === "done" || result?.phase === "error") {
         await persistResult(item.owner, item.id, result.phase, result.answer,
           result.error ?? (result.truncated ? "Model burada durdu. Devam etmesini isteyebilirsin." : null));
@@ -816,6 +859,12 @@ export function registerKapsAppAi(
     return turn;
   }
 
+  app.put(KAPSAPP_AI_PREFERENCE_PATH, ...guard, json, parseError, saved(async (req, res, owner) => {
+    const model = req.body?.model;
+    if (!isKapsAiModel(model)) return res.status(400).json({ error: "Geçersiz KapsAI modeli." });
+    await history.setModel(owner, model);
+    res.json({ model });
+  }));
   app.get(KAPSAPP_AI_CONVERSATIONS_PATH, ...guard, saved(async (req, res, owner) => {
     res.json(await history.list(owner, beforeCursor(req.query.before)));
   }));
@@ -826,22 +875,22 @@ export function registerKapsAppAi(
   }));
   app.post(`${KAPSAPP_AI_CONVERSATIONS_PATH}/:id/turns`, ...guard, json, parseError, saved(async (req, res, owner) => {
     const conversationId = req.params.id;
-    const { id, question, source } = req.body ?? {};
+    const { id, question, source, model = KAPSAPP_AI_DEFAULT_MODEL } = req.body ?? {};
     const chat = parseChat({ messages: [{ role: "user", content: question }], source });
-    if (!isId(conversationId) || !isId(id) || !chat) return res.status(400).json({ error: "Geçersiz sohbet isteği." });
+    if (!isId(conversationId) || !isId(id) || !chat || !isKapsAiModel(model)) return res.status(400).json({ error: "Geçersiz sohbet isteği." });
     const prompt = chat.messages[0].content;
     const existing = await history.get(owner, id);
     if (existing) {
-      if (existing.conversationId !== conversationId || existing.question !== prompt) return res.sendStatus(409);
+      if (existing.conversationId !== conversationId || existing.question !== prompt || existing.model !== model) return res.sendStatus(409);
       return res.json(withProgress(owner, existing));
     }
     const rate = admit(res, owner);
     if (!rate) return;
-    const turn = await history.append(owner, conversationId, id, prompt, chat.source, capacity()).finally(() => {
+    const turn = await history.append(owner, conversationId, id, prompt, chat.source, model, capacity()).finally(() => {
       void dispatchSaved();
     });
     if (!turn) return res.status(429).json({ error: "Bir yanıt bekleniyor veya sıra dolu. Biraz sonra tekrar dene." });
-    if (turn.conversationId !== conversationId || turn.question !== prompt) return res.sendStatus(409);
+    if (turn.conversationId !== conversationId || turn.question !== prompt || turn.model !== model) return res.sendStatus(409);
     recent.set(owner, { ...rate, count: rate.count + 1 });
     res.status(202).json(turn);
   }));

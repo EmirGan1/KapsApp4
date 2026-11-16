@@ -1,16 +1,17 @@
 import type { Client, Row } from "@libsql/client";
-import type { ChatMessage, ChatSource, SavedChatTurn } from "../shared/kapsAppAi";
-import { AI_HISTORY_LIMIT } from "../shared/kapsAppAi";
+import type { ChatMessage, ChatSource, KapsAiModel, SavedChatTurn } from "../shared/kapsAppAi";
+import { AI_HISTORY_LIMIT, KAPSAPP_AI_DEFAULT_MODEL, isKapsAiModel } from "../shared/kapsAppAi";
 
 const PAGE_SIZE = 30;
 const PENDING = "state IN ('queued', 'running')";
-const columns = "seq, id, conversation_id, question, source_title, state, answer, notice";
+const columns = "seq, id, conversation_id, question, source_title, state, answer, notice, model";
 
 function savedTurn(row: Row): SavedChatTurn {
   const state = String(row.state);
   return {
     id: String(row.id),
     conversationId: String(row.conversation_id),
+    model: storedModel(row.model),
     question: String(row.question),
     answer: String(row.answer),
     sources: row.source_title ? [{ id: "1", title: String(row.source_title) }] : [],
@@ -20,10 +21,14 @@ function savedTurn(row: Row): SavedChatTurn {
   };
 }
 
+function storedModel(value: unknown): KapsAiModel {
+  return isKapsAiModel(value) ? value : KAPSAPP_AI_DEFAULT_MODEL;
+}
+
 export function createKapsAiHistory(db: Client) {
   let schema: Promise<unknown> | undefined;
-  function ready() {
-    return schema ??= db.batch([
+  async function migrate() {
+    await db.batch([
       `CREATE TABLE IF NOT EXISTS kapsai_conversations (
         id TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL, last_activity INTEGER NOT NULL
       )`,
@@ -31,13 +36,27 @@ export function createKapsAiHistory(db: Client) {
         seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, owner TEXT NOT NULL, conversation_id TEXT NOT NULL,
         question TEXT NOT NULL, source_title TEXT, source_text TEXT, answer TEXT NOT NULL DEFAULT '',
         state TEXT NOT NULL CHECK(state IN ('queued','running','done','stopped','error')), notice TEXT,
+        model TEXT NOT NULL DEFAULT 'llama3.2',
         UNIQUE(owner, id)
       )`,
+      "CREATE TABLE IF NOT EXISTS kapsai_model_preferences (owner TEXT PRIMARY KEY, model TEXT NOT NULL)",
       `CREATE UNIQUE INDEX IF NOT EXISTS kapsai_one_pending_owner ON kapsai_turns(owner) WHERE ${PENDING}`,
       "CREATE INDEX IF NOT EXISTS kapsai_turn_history ON kapsai_turns(owner, conversation_id, seq)",
       "CREATE INDEX IF NOT EXISTS kapsai_conversation_history ON kapsai_conversations(owner, last_activity)",
       `CREATE INDEX IF NOT EXISTS kapsai_pending_queue ON kapsai_turns(seq) WHERE ${PENDING}`,
-    ], "write").catch(error => { schema = undefined; throw error; });
+    ], "write");
+    const hasModel = async () => (await db.execute("PRAGMA table_info(kapsai_turns)")).rows.some(row => row.name === "model");
+    if (!await hasModel()) {
+      try {
+        await db.execute("ALTER TABLE kapsai_turns ADD COLUMN model TEXT NOT NULL DEFAULT 'llama3.2'");
+      } catch (error) {
+        if (!await hasModel()) throw error;
+      }
+    }
+  }
+
+  function ready() {
+    return schema ??= migrate().catch(error => { schema = undefined; throw error; });
   }
 
   async function get(owner: string, id: string) {
@@ -48,12 +67,20 @@ export function createKapsAiHistory(db: Client) {
   return {
     ready,
     get,
+    async setModel(owner: string, model: KapsAiModel) {
+      await db.execute({
+        sql: "INSERT INTO kapsai_model_preferences(owner, model) VALUES (?, ?) ON CONFLICT(owner) DO UPDATE SET model = excluded.model",
+        args: [owner, model],
+      });
+    },
     async list(owner: string, before: number) {
-      const [page, active] = await db.batch([
+      const [page, active, preference] = await db.batch([
         { sql: "SELECT last_activity, id, title FROM kapsai_conversations WHERE owner = ? AND last_activity < ? ORDER BY last_activity DESC LIMIT ?", args: [owner, before, PAGE_SIZE + 1] },
         { sql: `SELECT id, conversation_id FROM kapsai_turns WHERE owner = ? AND ${PENDING}`, args: [owner] },
+        { sql: "SELECT model FROM kapsai_model_preferences WHERE owner = ?", args: [owner] },
       ], "read");
       return {
+        model: storedModel(preference.rows[0]?.model),
         conversations: page.rows.slice(0, PAGE_SIZE).map(row => ({ id: String(row.id), title: String(row.title) })),
         next: page.rows.length > PAGE_SIZE ? Number(page.rows[PAGE_SIZE - 1].last_activity) : null,
         active: active.rows[0] ? { id: String(active.rows[0].id), conversationId: String(active.rows[0].conversation_id) } : null,
@@ -71,15 +98,15 @@ export function createKapsAiHistory(db: Client) {
         next: page.rows.length > PAGE_SIZE ? Number(page.rows[PAGE_SIZE - 1].seq) : null,
       };
     },
-    async append(owner: string, conversationId: string, id: string, question: string, source: ChatSource | undefined, capacity: number) {
+    async append(owner: string, conversationId: string, id: string, question: string, source: ChatSource | undefined, model: KapsAiModel, capacity: number) {
       const title = Array.from(question.replace(/\s+/g, " ")).slice(0, 65).join("");
       // Insert the conversation only for an accepted turn, in the same transaction.
       await db.batch([
         {
-          sql: `INSERT OR IGNORE INTO kapsai_turns(id, owner, conversation_id, question, source_title, source_text, state)
-            SELECT ?, ?, ?, ?, ?, ?, 'queued' WHERE (SELECT count(*) FROM kapsai_turns WHERE ${PENDING}) < ?
+          sql: `INSERT OR IGNORE INTO kapsai_turns(id, owner, conversation_id, question, source_title, source_text, state, model)
+            SELECT ?, ?, ?, ?, ?, ?, 'queued', ? WHERE (SELECT count(*) FROM kapsai_turns WHERE ${PENDING}) < ?
             AND NOT EXISTS(SELECT 1 FROM kapsai_conversations WHERE id = ? AND owner <> ?)`,
-          args: [id, owner, conversationId, question, source?.title ?? null, source?.text ?? null, capacity, conversationId, owner],
+          args: [id, owner, conversationId, question, source?.title ?? null, source?.text ?? null, model, capacity, conversationId, owner],
         },
         {
           sql: `INSERT INTO kapsai_conversations(id, owner, title, last_activity)
@@ -92,12 +119,13 @@ export function createKapsAiHistory(db: Client) {
       return get(owner, id);
     },
     async next() {
-      const { rows } = await db.execute(`SELECT seq, id, owner, conversation_id, question, source_title, source_text
+      const { rows } = await db.execute(`SELECT seq, id, owner, conversation_id, question, source_title, source_text, model
         FROM kapsai_turns WHERE ${PENDING} ORDER BY seq LIMIT 1`);
       const row = rows[0];
       return row ? {
         seq: Number(row.seq), id: String(row.id), owner: String(row.owner), conversationId: String(row.conversation_id),
         question: String(row.question),
+        model: storedModel(row.model),
         source: row.source_title ? { title: String(row.source_title), text: String(row.source_text) } : undefined,
       } : null;
     },
