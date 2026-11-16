@@ -20,7 +20,9 @@ export type DetectorAssessment = {
 };
 
 export function assessAiDetectorResult(result: DetectorResult): DetectorAssessment {
-  const segmentAi = result.segmentAi || [];
+  const segmentAi = Array.isArray(result.segmentAi)
+    ? result.segmentAi.filter(score => typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 1)
+    : [];
   if (!Number.isInteger(result.words) || !segmentAi.length) {
     return { kind: 'legacy', title: 'Önceki sonuç doğrulanamadı',
       detail: 'Yeni güvenlik kontrolleri için metnini yeniden analiz et.' };
