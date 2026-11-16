@@ -213,7 +213,7 @@ export default function AiChecker({ account, active }: { account: string; active
             <div className="min-w-0">
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">AI Metin Dedektörü</h1>
               <p className="mt-1 text-sm sm:text-base text-slate-500 dark:text-slate-400 leading-relaxed">
-                Metnin AI üretimi veya insan yazımı özelliklerini incele.
+                Modelin sınırlı dil sinyallerini incele; kesin yazarlık hükmü değil.
               </p>
             </div>
           </div>
