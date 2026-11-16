@@ -4,13 +4,16 @@ import { readFile } from "node:fs/promises";
 import { Agent as HttpAgent, request as httpRequest } from "node:http";
 import os from "node:os";
 import { Readable } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
+import type { Client } from "@libsql/client";
+import { createKapsAiHistory } from "./kapsAiHistory";
 import express from "express";
 import type { ErrorRequestHandler, Express, NextFunction, Request, RequestHandler, Response } from "express";
 import {
   AI_HISTORY_LIMIT, AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT,
-  KAPSAPP_AI_PATH, KAPSAPP_AI_STATUS_PATH, readJsonLines,
+  KAPSAPP_AI_PATH, KAPSAPP_AI_STATUS_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, readJsonLines,
 } from "../shared/kapsAppAi";
-import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase } from "../shared/kapsAppAi";
+import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase, SavedChatTurn } from "../shared/kapsAppAi";
 
 export const KAPSAPP_AI_MODEL = "llama3.2:3b-instruct-q5_K_M";
 export const KAPSAPP_AI_SYSTEM_PROMPT = `You are KapsAI, a helpful, accurate and concise assistant.
@@ -274,7 +277,13 @@ export function registerKapsAppAi(
   app: Express,
   authenticate: (req: Request) => Promise<string | null>,
   checkDevice: RequestHandler,
+  db: Client,
 ) {
+  const history = createKapsAiHistory(db);
+  let dispatching = false;
+  let dispatchRequested = false;
+  let retryDispatch: ReturnType<typeof setTimeout> | undefined;
+  let durableJob: { owner: string; id: string; controller: AbortController } | undefined;
   const recent = new Map<string, { expires: number; count: number }>();
   const jobStatuses = new Map<string, RecentJobStatus>();
   let activeOwner: string | undefined;
@@ -319,6 +328,7 @@ export function registerKapsAppAi(
       next.wake();
       return;
     }
+    void dispatchSaved();
   }
 
   const requireAuth: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
@@ -404,285 +414,470 @@ export function registerKapsAppAi(
         activeOwner = owner;
       }
 
-      const requestId = randomUUID();
-      const controller = new AbortController();
-      const { signal } = controller;
-      const onClose = () => controller.abort();
-      res.on("close", onClose);
+      await runChat(chat, owner, randomUUID(), new AbortController(), res, mustQueue);
+    });
 
-      let timeoutReason: "queue" | "first_token" | "idle" | "total" | undefined;
-      let stageTimer: ReturnType<typeof setTimeout> | undefined;
-      let phaseTimer: ReturnType<typeof setTimeout> | undefined;
-      let heartbeat: ReturnType<typeof setInterval> | undefined;
+  async function runChat(
+    chat: NonNullable<ReturnType<typeof parseChat>>,
+    owner: string,
+    requestId: string,
+    controller: AbortController,
+    res?: Response,
+    mustQueue = false,
+  ) {
+    const { signal } = controller;
+    const onClose = () => controller.abort();
+    res?.on("close", onClose);
 
-      const totalTimer = setTimeout(() => {
-        timeoutReason = "total";
-        controller.abort();
-      }, totalTimeoutMs);
-      totalTimer.unref?.();
+    let timeoutReason: "queue" | "first_token" | "idle" | "total" | undefined;
+    let stageTimer: ReturnType<typeof setTimeout> | undefined;
+    let phaseTimer: ReturnType<typeof setTimeout> | undefined;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
 
-      const startedAt = Date.now();
-      let firstTokenMs: number | undefined;
-      let holdsActiveSlot = !mustQueue;
+    const totalTimer = setTimeout(() => {
+      timeoutReason = "total";
+      controller.abort();
+    }, totalTimeoutMs);
+    totalTimer.unref?.();
 
-      const jobStatus: RecentJobStatus = {
-        requestId,
-        owner,
-        phase: mustQueue ? "queued" : "accepted",
-        answer: "",
-        updatedAt: startedAt,
-        expiresAt: startedAt + STATUS_TTL_MS,
-      };
-      jobStatuses.set(owner, jobStatus);
+    const startedAt = Date.now();
+    let firstTokenMs: number | undefined;
+    let holdsActiveSlot = !mustQueue;
 
-      function updateJobPhase(phase: RecentJobStatus["phase"], extra?: Partial<RecentJobStatus>) {
-        jobStatus.phase = phase;
-        jobStatus.updatedAt = Date.now();
-        jobStatus.expiresAt = jobStatus.updatedAt + STATUS_TTL_MS;
-        if (extra) Object.assign(jobStatus, extra);
-      }
+    const jobStatus: RecentJobStatus = {
+      requestId,
+      owner,
+      phase: mustQueue ? "queued" : "accepted",
+      answer: "",
+      updatedAt: startedAt,
+      expiresAt: startedAt + STATUS_TTL_MS,
+    };
+    jobStatuses.set(owner, jobStatus);
 
-      function write(event: ChatEvent) {
-        if (res.destroyed || res.writableEnded) return false;
-        return res.write(JSON.stringify(event) + "\n");
-      }
+    function updateJobPhase(phase: RecentJobStatus["phase"], extra?: Partial<RecentJobStatus>) {
+      jobStatus.phase = phase;
+      jobStatus.updatedAt = Date.now();
+      jobStatus.expiresAt = jobStatus.updatedAt + STATUS_TTL_MS;
+      if (extra) Object.assign(jobStatus, extra);
+    }
 
-      try {
-        // Wait in controlled FIFO queue if another user's generation is currently active.
-        if (mustQueue) {
-          res.set({
-            "Content-Type": "application/x-ndjson; charset=utf-8",
-            "Cache-Control": "no-store, no-transform",
-            "X-Accel-Buffering": "no",
-            "X-Content-Type-Options": "nosniff",
-            "X-KapsAI-Request-Id": requestId,
-          });
-          res.flushHeaders();
-          write({ type: "status", phase: "accepted", requestId });
-          if (chat.source) write({ type: "sources", sources: [{ id: "1", title: chat.source.title }] });
-          write({ type: "status", phase: "queued", requestId, queuePosition: waitingQueue.length + 1 });
+    function write(event: ChatEvent) {
+      if (!res) return true;
+      if (res.destroyed || res.writableEnded) return false;
+      return res.write(JSON.stringify(event) + "\n");
+    }
 
-          heartbeat = setInterval(() => {
-            if (!res.destroyed && !res.writableNeedDrain) {
-              write({ type: "status", phase: "heartbeat", requestId });
-            }
-          }, HEARTBEAT_INTERVAL_MS);
-
-          await new Promise<void>((resolve, reject) => {
-            const qTimer = setTimeout(() => {
-              const idx = waitingQueue.indexOf(entry);
-              if (idx >= 0) waitingQueue.splice(idx, 1);
-              timeoutReason = "queue";
-              reject(new ModelFailure(BUSY, 503));
-            }, queueTimeoutMs);
-            qTimer.unref?.();
-
-            const onAbort = () => {
-              clearTimeout(qTimer);
-              const idx = waitingQueue.indexOf(entry);
-              if (idx >= 0) waitingQueue.splice(idx, 1);
-              reject(new Error("aborted"));
-            };
-            signal.addEventListener("abort", onAbort, { once: true });
-
-            const entry = {
-              owner,
-              wake: () => {
-                clearTimeout(qTimer);
-                signal.removeEventListener("abort", onAbort);
-                holdsActiveSlot = true;
-                resolve();
-              },
-              cancel: () => {
-                clearTimeout(qTimer);
-                signal.removeEventListener("abort", onAbort);
-                reject(new ModelFailure(UNAVAILABLE, 503));
-              },
-            };
-            waitingQueue.push(entry);
-          });
-        }
-
-        signal.throwIfAborted();
-
-        // Check memory and whether the model is already warm in Ollama RAM.
-        const available = await availableMemory();
-        let isModelWarm = false;
-        if (available < coldMemMib * MIB) {
-          if (available < 1024 * MIB) throw new ModelFailure(LOW_MEMORY);
-          const ps = await checkModelLoaded(signal, connectTimeoutMs);
-          if (!ps.ok) throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
-          if (!ps.loaded) throw new ModelFailure(LOW_MEMORY);
-          isModelWarm = true;
-        } else {
-          const ps = await checkModelLoaded(signal, Math.min(2500, connectTimeoutMs)).catch(() => ({ ok: true, loaded: false }));
-          isModelWarm = ps.loaded;
-        }
-        signal.throwIfAborted();
-
-        if (!res.headersSent) {
-          res.set({
-            "Content-Type": "application/x-ndjson; charset=utf-8",
-            "Cache-Control": "no-store, no-transform",
-            "X-Accel-Buffering": "no",
-            "X-Content-Type-Options": "nosniff",
-            "X-KapsAI-Request-Id": requestId,
-          });
-          res.flushHeaders();
-          write({ type: "status", phase: "accepted", requestId });
-          if (chat.source) write({ type: "sources", sources: [{ id: "1", title: chat.source.title }] });
-        }
-
-        if (!heartbeat) {
-          heartbeat = setInterval(() => {
-            if (!res.destroyed && !res.writableNeedDrain) {
-              write({ type: "status", phase: "heartbeat", requestId });
-            }
-          }, HEARTBEAT_INTERVAL_MS);
-        }
-
-        const preparedMessages = modelMessages(chat);
-        const promptBytes = preparedMessages.reduce((sum, m) => sum + Buffer.byteLength(m.content, "utf8"), 0);
-        // Scale context window to 4096 only for very large multi-part math prompts (> 4000 bytes).
-        const numCtx = promptBytes > 4000 ? 4096 : 2048;
-
-        // Stage timeout for (optional cold model load + CPU prompt evaluation + first token).
-        const promptExtraMs = Math.min(60_000, Math.round(promptBytes * 12));
-        const firstTokenBudgetMs = Math.min(
-          totalTimeoutMs - 5_000,
-          baseFirstTokenTimeoutMs + promptExtraMs + (isModelWarm ? 0 : Math.min(60_000, modelLoadTimeoutMs / 2)),
-        );
-
-        stageTimer = setTimeout(() => {
-          timeoutReason = "first_token";
-          controller.abort();
-        }, firstTokenBudgetMs);
-        stageTimer.unref?.();
-
-        // Emit distinct "loading_model" and "processing_prompt" status phases when inference takes > 80ms
-        // so fast unit fixtures (< 10ms) receive [status(accepted), delta] while real CPU runs show live stages.
-        phaseTimer = setTimeout(() => {
-          if (firstTokenMs !== undefined || res.destroyed || signal.aborted) return;
-          if (!isModelWarm) {
-            updateJobPhase("loading_model");
-            write({ type: "status", phase: "loading_model", requestId });
-            phaseTimer = setTimeout(() => {
-              if (firstTokenMs === undefined && !res.destroyed && !signal.aborted) {
-                updateJobPhase("processing_prompt");
-                write({ type: "status", phase: "processing_prompt", requestId });
-              }
-            }, 2200);
-            phaseTimer.unref?.();
-          } else {
-            updateJobPhase("processing_prompt");
-            write({ type: "status", phase: "processing_prompt", requestId });
-          }
-        }, 80);
-        phaseTimer.unref?.();
-
-        const payload = JSON.stringify({
-          model: KAPSAPP_AI_MODEL,
-          messages: preparedMessages,
-          stream: true,
-          keep_alive: keepAlive,
-          options: { num_ctx: numCtx, num_predict: -1, num_thread: threads, num_gpu: 0, temperature: 0.2 },
+    try {
+      // Wait in controlled FIFO queue if another user's generation is currently active.
+      if (mustQueue && res) {
+        res.set({
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-store, no-transform",
+          "X-Accel-Buffering": "no",
+          "X-Content-Type-Options": "nosniff",
+          "X-KapsAI-Request-Id": requestId,
         });
+        res.flushHeaders();
+        write({ type: "status", phase: "accepted", requestId });
+        if (chat.source) write({ type: "sources", sources: [{ id: "1", title: chat.source.title }] });
+        write({ type: "status", phase: "queued", requestId, queuePosition: waitingQueue.length + 1 });
 
-        const upstream = await openOllamaChatStream(payload, signal, connectTimeoutMs);
-        if (upstream.status !== 200) throw modelFailure(upstream.errorText ?? "", upstream.status);
-        if (!upstream.stream) throw new ModelFailure(UNAVAILABLE);
+        heartbeat = setInterval(() => {
+          if (!res.destroyed && !res.writableNeedDrain) {
+            write({ type: "status", phase: "heartbeat", requestId });
+          }
+        }, HEARTBEAT_INTERVAL_MS);
 
-        let hasOutput = false;
-        for await (const frame of readJsonLines<OllamaFrame>(upstream.stream)) {
-          if (frame.error) throw modelFailure(frame.error);
-          const text = frame.message?.content;
-          if (text) {
-            if (firstTokenMs === undefined) {
-              firstTokenMs = Date.now() - startedAt;
-              clearTimeout(phaseTimer);
-              clearTimeout(stageTimer);
-              updateJobPhase("streaming");
-              stageTimer = setTimeout(() => {
-                timeoutReason = "idle";
-                controller.abort();
-              }, tokenIdleTimeoutMs);
-              stageTimer.unref?.();
-            } else {
-              stageTimer?.refresh();
-            }
-            hasOutput = true;
-            jobStatus.answer += text;
-            jobStatus.updatedAt = Date.now();
-            if (!write({ type: "delta", text })) await once(res, "drain", { signal });
-          } else if (!frame.done && firstTokenMs === undefined) {
-            // Ollama emits an empty progress frame after loading model weights before prompt evaluation completes.
-            if (jobStatus.phase === "loading_model") {
-              clearTimeout(phaseTimer);
+        await new Promise<void>((resolve, reject) => {
+          const qTimer = setTimeout(() => {
+            const idx = waitingQueue.indexOf(entry);
+            if (idx >= 0) waitingQueue.splice(idx, 1);
+            timeoutReason = "queue";
+            reject(new ModelFailure(BUSY, 503));
+          }, queueTimeoutMs);
+          qTimer.unref?.();
+
+          const onAbort = () => {
+            clearTimeout(qTimer);
+            const idx = waitingQueue.indexOf(entry);
+            if (idx >= 0) waitingQueue.splice(idx, 1);
+            reject(new Error("aborted"));
+          };
+          signal.addEventListener("abort", onAbort, { once: true });
+
+          const entry = {
+            owner,
+            wake: () => {
+              clearTimeout(qTimer);
+              signal.removeEventListener("abort", onAbort);
+              holdsActiveSlot = true;
+              resolve();
+            },
+            cancel: () => {
+              clearTimeout(qTimer);
+              signal.removeEventListener("abort", onAbort);
+              reject(new ModelFailure(UNAVAILABLE, 503));
+            },
+          };
+          waitingQueue.push(entry);
+        });
+      }
+
+      signal.throwIfAborted();
+
+      // Check memory and whether the model is already warm in Ollama RAM.
+      const available = await availableMemory();
+      let isModelWarm = false;
+      if (available < coldMemMib * MIB) {
+        if (available < 1024 * MIB) throw new ModelFailure(LOW_MEMORY);
+        const ps = await checkModelLoaded(signal, connectTimeoutMs);
+        if (!ps.ok) throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
+        if (!ps.loaded) throw new ModelFailure(LOW_MEMORY);
+        isModelWarm = true;
+      } else {
+        const ps = await checkModelLoaded(signal, Math.min(2500, connectTimeoutMs)).catch(() => ({ ok: true, loaded: false }));
+        isModelWarm = ps.loaded;
+      }
+      signal.throwIfAborted();
+
+      if (res && !res.headersSent) {
+        res.set({
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-store, no-transform",
+          "X-Accel-Buffering": "no",
+          "X-Content-Type-Options": "nosniff",
+          "X-KapsAI-Request-Id": requestId,
+        });
+        res.flushHeaders();
+        write({ type: "status", phase: "accepted", requestId });
+        if (chat.source) write({ type: "sources", sources: [{ id: "1", title: chat.source.title }] });
+      }
+
+      if (res && !heartbeat) {
+        heartbeat = setInterval(() => {
+          if (!res.destroyed && !res.writableNeedDrain) {
+            write({ type: "status", phase: "heartbeat", requestId });
+          }
+        }, HEARTBEAT_INTERVAL_MS);
+      }
+
+      const preparedMessages = modelMessages(chat);
+      const promptBytes = preparedMessages.reduce((sum, m) => sum + Buffer.byteLength(m.content, "utf8"), 0);
+      // Scale context window to 4096 only for very large multi-part math prompts (> 4000 bytes).
+      const numCtx = promptBytes > 4000 ? 4096 : 2048;
+
+      // Stage timeout for (optional cold model load + CPU prompt evaluation + first token).
+      const promptExtraMs = Math.min(60_000, Math.round(promptBytes * 12));
+      const firstTokenBudgetMs = Math.min(
+        totalTimeoutMs - 5_000,
+        baseFirstTokenTimeoutMs + promptExtraMs + (isModelWarm ? 0 : Math.min(60_000, modelLoadTimeoutMs / 2)),
+      );
+
+      stageTimer = setTimeout(() => {
+        timeoutReason = "first_token";
+        controller.abort();
+      }, firstTokenBudgetMs);
+      stageTimer.unref?.();
+
+      // Emit distinct "loading_model" and "processing_prompt" status phases when inference takes > 80ms
+      // so fast unit fixtures (< 10ms) receive [status(accepted), delta] while real CPU runs show live stages.
+      phaseTimer = setTimeout(() => {
+        if (firstTokenMs !== undefined || res?.destroyed || signal.aborted) return;
+        if (!isModelWarm) {
+          updateJobPhase("loading_model");
+          write({ type: "status", phase: "loading_model", requestId });
+          phaseTimer = setTimeout(() => {
+            if (firstTokenMs === undefined && !res?.destroyed && !signal.aborted) {
               updateJobPhase("processing_prompt");
               write({ type: "status", phase: "processing_prompt", requestId });
             }
+          }, 2200);
+          phaseTimer.unref?.();
+        } else {
+          updateJobPhase("processing_prompt");
+          write({ type: "status", phase: "processing_prompt", requestId });
+        }
+      }, 80);
+      phaseTimer.unref?.();
+
+      const payload = JSON.stringify({
+        model: KAPSAPP_AI_MODEL,
+        messages: preparedMessages,
+        stream: true,
+        keep_alive: keepAlive,
+        options: { num_ctx: numCtx, num_predict: -1, num_thread: threads, num_gpu: 0, temperature: 0.2 },
+      });
+
+      const upstream = await openOllamaChatStream(payload, signal, connectTimeoutMs);
+      if (upstream.status !== 200) throw modelFailure(upstream.errorText ?? "", upstream.status);
+      if (!upstream.stream) throw new ModelFailure(UNAVAILABLE);
+
+      let hasOutput = false;
+      for await (const frame of readJsonLines<OllamaFrame>(upstream.stream)) {
+        if (frame.error) throw modelFailure(frame.error);
+        const text = frame.message?.content;
+        if (text) {
+          if (firstTokenMs === undefined) {
+            firstTokenMs = Date.now() - startedAt;
+            clearTimeout(phaseTimer);
+            clearTimeout(stageTimer);
+            updateJobPhase("streaming");
+            stageTimer = setTimeout(() => {
+              timeoutReason = "idle";
+              controller.abort();
+            }, tokenIdleTimeoutMs);
+            stageTimer.unref?.();
+          } else {
+            stageTimer?.refresh();
           }
-          if (frame.done) {
-            if (!hasOutput) throw new ModelFailure("Model boş bir yanıt döndürdü. Tekrar dene.");
-            const truncated = frame.done_reason === "length";
-            updateJobPhase("done", { truncated });
-            write({ type: "done", truncated });
-            if (process.env.KAPSAPP_AI_METRICS === "1") {
-              const evalSec = (frame.eval_duration ?? 0) / 1e9;
-              const tokensPerSec = evalSec > 0 ? Math.round(((frame.eval_count ?? 0) / evalSec) * 100) / 100 : 0;
-              console.info("[KapsAI]", {
-                firstTokenMs,
-                totalMs: Date.now() - startedAt,
-                loadMs: Math.round((frame.load_duration ?? 0) / 1e6),
-                promptTokens: frame.prompt_eval_count ?? 0,
-                promptEvalMs: Math.round((frame.prompt_eval_duration ?? 0) / 1e6),
-                outputTokens: frame.eval_count ?? 0,
-                generationMs: Math.round((frame.eval_duration ?? 0) / 1e6),
-                tokensPerSec,
-                threads,
-              });
-            }
-            return;
+          hasOutput = true;
+          jobStatus.answer += text;
+          jobStatus.updatedAt = Date.now();
+          if (!write({ type: "delta", text }) && res) await once(res, "drain", { signal });
+        } else if (!frame.done && firstTokenMs === undefined) {
+          // Ollama emits an empty progress frame after loading model weights before prompt evaluation completes.
+          if (jobStatus.phase === "loading_model") {
+            clearTimeout(phaseTimer);
+            updateJobPhase("processing_prompt");
+            write({ type: "status", phase: "processing_prompt", requestId });
           }
         }
-        throw new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport");
-      } catch (error) {
-        if (res.destroyed || (signal.aborted && !timeoutReason)) {
-          if (jobStatuses.get(owner) === jobStatus) jobStatuses.delete(owner);
-          return;
+        if (frame.done) {
+          if (!hasOutput) throw new ModelFailure("Model boş bir yanıt döndürdü. Tekrar dene.");
+          const truncated = frame.done_reason === "length";
+          updateJobPhase("done", { truncated });
+          write({ type: "done", truncated });
+          if (process.env.KAPSAPP_AI_METRICS === "1") {
+            const evalSec = (frame.eval_duration ?? 0) / 1e9;
+            const tokensPerSec = evalSec > 0 ? Math.round(((frame.eval_count ?? 0) / evalSec) * 100) / 100 : 0;
+            console.info("[KapsAI]", {
+              firstTokenMs,
+              totalMs: Date.now() - startedAt,
+              loadMs: Math.round((frame.load_duration ?? 0) / 1e6),
+              promptTokens: frame.prompt_eval_count ?? 0,
+              promptEvalMs: Math.round((frame.prompt_eval_duration ?? 0) / 1e6),
+              outputTokens: frame.eval_count ?? 0,
+              generationMs: Math.round((frame.eval_duration ?? 0) / 1e6),
+              tokensPerSec,
+              threads,
+            });
+          }
+          return jobStatus;
         }
-        const failure = timeoutReason
-          ? new ModelFailure(
-              timeoutReason === "queue"
-                ? BUSY
-                : firstTokenMs === undefined
-                  ? "Model ilk yanıtı zamanında başlatamadı. Tekrar dene."
-                  : "Model yanıt üretmeyi durdurdu. Tekrar dene.",
-              timeoutReason === "queue" ? 503 : 504,
-            )
-          : error instanceof ModelFailure
-            ? error
-            : new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport");
-        if (failure.diagnostic || (timeoutReason && timeoutReason !== "queue")) {
-          console.warn("[KapsAI] Ollama request failed", {
-            requestId, reason: failure.diagnostic ?? timeoutReason,
-            elapsedMs: Date.now() - startedAt,
-          });
-        }
-        updateJobPhase("error", { error: failure.message });
-        if (res.headersSent) write({ type: "error", error: failure.message });
-        else res.status(failure.status).json({ error: failure.message });
-      } finally {
-        clearTimeout(totalTimer);
-        clearTimeout(stageTimer);
-        clearTimeout(phaseTimer);
-        clearInterval(heartbeat);
-        res.off("close", onClose);
-        controller.abort();
-        if (holdsActiveSlot) {
-          releaseSlot();
-        }
-        if (!res.destroyed && !res.writableEnded) res.end();
       }
+      throw new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport");
+    } catch (error) {
+      if (res?.destroyed || (signal.aborted && !timeoutReason)) {
+        if (jobStatuses.get(owner) === jobStatus) jobStatuses.delete(owner);
+        return;
+      }
+      const failure = timeoutReason
+        ? new ModelFailure(
+            timeoutReason === "queue"
+              ? BUSY
+              : firstTokenMs === undefined
+                ? "Model ilk yanıtı zamanında başlatamadı. Tekrar dene."
+                : "Model yanıt üretmeyi durdurdu. Tekrar dene.",
+            timeoutReason === "queue" ? 503 : 504,
+          )
+        : error instanceof ModelFailure
+          ? error
+          : new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport");
+      if (failure.diagnostic || (timeoutReason && timeoutReason !== "queue")) {
+        console.warn("[KapsAI] Ollama request failed", {
+          requestId, reason: failure.diagnostic ?? timeoutReason,
+          elapsedMs: Date.now() - startedAt,
+        });
+      }
+      updateJobPhase("error", { error: failure.message });
+      if (res?.headersSent) write({ type: "error", error: failure.message });
+      else res?.status(failure.status).json({ error: failure.message });
+    } finally {
+      clearTimeout(totalTimer);
+      clearTimeout(stageTimer);
+      clearTimeout(phaseTimer);
+      clearInterval(heartbeat);
+      res?.off("close", onClose);
+      controller.abort();
+      // A saved job holds the slot until the dispatcher commits its result.
+      if (holdsActiveSlot && res) releaseSlot();
+      if (res && !res.destroyed && !res.writableEnded) res.end();
+    }
+    return jobStatus;
+  }
+
+  async function persistResult(owner: string, id: string, state: "done" | "error", answer: string, notice: string | null) {
+    for (;;) {
+      try {
+        await history.finish(owner, id, state, answer, notice);
+        return;
+      } catch {
+        console.warn("[KapsAI] Sohbet sonucu kaydedilemedi, yeniden deneniyor", { requestId: id });
+        await delay(3000, undefined, { ref: false });
+      }
+    }
+  }
+
+  async function dispatchSaved() {
+    if (process.env.KAPSAPP_AI_ENABLED === "0") return;
+    if (dispatching) {
+      dispatchRequested = true;
+      return;
+    }
+    if (activeOwner !== undefined) return;
+    dispatching = true;
+    dispatchRequested = false;
+    clearTimeout(retryDispatch);
+    let ownsSlot = false;
+    let scheduleRetry = false;
+    try {
+      await history.ready();
+      const item = await history.next();
+      // A legacy HTTP request may have claimed the slot while SQL was running.
+      if (!item || activeOwner !== undefined) return;
+      activeOwner = item.owner;
+      ownsSlot = true;
+      const controller = new AbortController();
+      durableJob = { owner: item.owner, id: item.id, controller };
+      if (!await history.start(item.owner, item.id)) return;
+      const messages = await history.context(item.owner, item.conversationId, item.seq);
+      messages.push({ role: "user", content: item.question });
+      const result = await runChat({ messages, source: item.source }, item.owner, item.id, controller);
+      if (result?.phase === "done" || result?.phase === "error") {
+        await persistResult(item.owner, item.id, result.phase, result.answer,
+          result.error ?? (result.truncated ? "Model burada durdu. Devam etmesini isteyebilirsin." : null));
+      }
+    } catch {
+      console.warn("[KapsAI] Kayıtlı sohbet sırası okunamadı, yeniden deneniyor");
+      scheduleRetry = true;
+    } finally {
+      if (ownsSlot) {
+        const completed = durableJob;
+        if (completed && jobStatuses.get(completed.owner)?.requestId === completed.id) jobStatuses.delete(completed.owner);
+        durableJob = undefined;
+        // releaseSlot can start a legacy request synchronously.
+        releaseSlot();
+      }
+      dispatching = false;
+      if (scheduleRetry) retryDispatch = setTimeout(() => void dispatchSaved(), 5000).unref();
+      else if (ownsSlot || dispatchRequested) void dispatchSaved();
+    }
+  }
+
+  // On startup, a saved job left by an interrupted process can be picked up again.
+  void dispatchSaved();
+
+  const isId = (value: unknown): value is string => typeof value === "string" &&
+    /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
+  const beforeCursor = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) > 0
+    ? Number(value) : Number.MAX_SAFE_INTEGER;
+  const capacity = () => 1 + maxQueue - (activeOwner !== undefined && !durableJob ? 1 : 0) - waitingQueue.length;
+  const guard = [checkDevice, requireAuth] as const;
+  const json = express.json({ limit: "56kb", inflate: false });
+
+  function saved(handler: (req: Request, res: Response, owner: string) => Promise<unknown>): RequestHandler {
+    return async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      try {
+        await history.ready();
+        await handler(req, res, res.locals.kapsAiOwner);
+      } catch {
+        console.warn("[KapsAI] Sohbet geçmişi işlemi başarısız");
+        if (!res.headersSent) res.status(503).json({ error: "Sohbet geçmişine şu anda erişilemiyor. Tekrar dene." });
+      }
+    };
+  }
+
+  function admit(res: Response, owner: string) {
+    if (process.env.KAPSAPP_AI_ENABLED === "0") {
+      res.status(503).json({ error: "KapsAI geçici olarak duraklatıldı." });
+      return null;
+    }
+    const now = Date.now();
+    pruneState(now);
+    const record = recent.get(owner) ?? { count: 0, expires: now + REQUEST_WINDOW_MS };
+    if (record.count < requestLimit && capacity() > 0 &&
+        !(activeOwner === owner && !durableJob) && !waitingQueue.some(entry => entry.owner === owner)) return record;
+    res.status(429).json({ error: "Bir yanıt bekleniyor veya istek sınırına ulaşıldı. Biraz sonra tekrar dene." });
+    return null;
+  }
+
+  function withProgress(owner: string, turn: SavedChatTurn) {
+    const progress = jobStatuses.get(owner);
+    if (turn.state === "waiting" && progress?.requestId === turn.id && durableJob?.id === turn.id && durableJob.owner === owner) {
+      return {
+        ...turn,
+        answer: progress.answer,
+        phase: progress.phase === "queued" || progress.phase === "loading_model" || progress.phase === "processing_prompt"
+          ? progress.phase : undefined,
+        state: progress.answer ? "streaming" : "waiting",
+      };
+    }
+    return turn;
+  }
+
+  app.get(KAPSAPP_AI_CONVERSATIONS_PATH, ...guard, saved(async (req, res, owner) => {
+    res.json(await history.list(owner, beforeCursor(req.query.before)));
+  }));
+  app.get(`${KAPSAPP_AI_CONVERSATIONS_PATH}/:id`, ...guard, saved(async (req, res, owner) => {
+    const result = isId(req.params.id) ? await history.conversation(owner, req.params.id, beforeCursor(req.query.before)) : null;
+    if (!result) return res.sendStatus(404);
+    res.json({ ...result, turns: result.turns.map(turn => withProgress(owner, turn)) });
+  }));
+  app.post(`${KAPSAPP_AI_CONVERSATIONS_PATH}/:id/turns`, ...guard, json, parseError, saved(async (req, res, owner) => {
+    const conversationId = req.params.id;
+    const { id, question, source } = req.body ?? {};
+    const chat = parseChat({ messages: [{ role: "user", content: question }], source });
+    if (!isId(conversationId) || !isId(id) || !chat) return res.status(400).json({ error: "Geçersiz sohbet isteği." });
+    const prompt = chat.messages[0].content;
+    const existing = await history.get(owner, id);
+    if (existing) {
+      if (existing.conversationId !== conversationId || existing.question !== prompt) return res.sendStatus(409);
+      return res.json(withProgress(owner, existing));
+    }
+    const rate = admit(res, owner);
+    if (!rate) return;
+    const turn = await history.append(owner, conversationId, id, prompt, chat.source, capacity()).finally(() => {
+      void dispatchSaved();
     });
+    if (!turn) return res.status(429).json({ error: "Bir yanıt bekleniyor veya sıra dolu. Biraz sonra tekrar dene." });
+    if (turn.conversationId !== conversationId || turn.question !== prompt) return res.sendStatus(409);
+    recent.set(owner, { ...rate, count: rate.count + 1 });
+    res.status(202).json(turn);
+  }));
+  app.get(`${KAPSAPP_AI_TURNS_PATH}/:id`, ...guard, saved(async (req, res, owner) => {
+    const turn = isId(req.params.id) ? await history.get(owner, req.params.id) : null;
+    if (!turn) return res.sendStatus(404);
+    res.json(withProgress(owner, turn));
+  }));
+  app.post(`${KAPSAPP_AI_TURNS_PATH}/:id/stop`, ...guard, saved(async (req, res, owner) => {
+    const id = req.params.id;
+    if (!isId(id)) return res.sendStatus(404);
+    const job = durableJob?.owner === owner && durableJob.id === id ? durableJob : undefined;
+    const partial = job && jobStatuses.get(owner)?.requestId === id ? jobStatuses.get(owner)?.answer ?? "" : "";
+    const turn = await history.stop(owner, id, partial);
+    if (!turn) return res.sendStatus(404);
+    if (turn.state === "stopped") job?.controller.abort();
+    res.json(turn);
+  }));
+  app.post(`${KAPSAPP_AI_TURNS_PATH}/:id/retry`, ...guard, saved(async (req, res, owner) => {
+    const id = req.params.id;
+    if (!isId(id)) return res.sendStatus(404);
+    const turn = await history.get(owner, id);
+    if (!turn) return res.sendStatus(404);
+    if (turn.state !== "stopped" && turn.state !== "error") return res.json(withProgress(owner, turn));
+    const rate = admit(res, owner);
+    if (!rate) return;
+    if (!await history.retry(owner, id, capacity())) return res.status(409).json({ error: "Bu yanıt şu anda yeniden başlatılamıyor." });
+    recent.set(owner, { ...rate, count: rate.count + 1 });
+    void dispatchSaved();
+    res.status(202).json({ ...turn, state: "waiting", phase: "queued", answer: "", notice: undefined });
+  }));
+  app.delete(`${KAPSAPP_AI_CONVERSATIONS_PATH}/:id`, ...guard, saved(async (req, res, owner) => {
+    const id = req.params.id;
+    if (!isId(id) || !await history.remove(owner, id)) {
+      return res.status(409).json({ error: "Sohbet silinemedi. Devam eden bir yanıt varsa önce durdur." });
+    }
+    res.sendStatus(204);
+  }));
 }

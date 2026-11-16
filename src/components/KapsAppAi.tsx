@@ -1,28 +1,14 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowUp, Check, ChevronDown, Copy, FileText, LoaderCircle, Plus, RotateCcw, Sparkles, Square } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Copy, FileText, History, LoaderCircle, Plus, RotateCcw, Sparkles, Square, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkMath from "remark-math";
-import { getApiUrl, getAuthHeaders } from "../utils/api";
 import {
-  AI_HISTORY_LIMIT, AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT,
-  KAPSAPP_AI_PATH, KAPSAPP_AI_STATUS_PATH, normalizeMathMarkdown, readJsonLines,
+  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT, normalizeMathMarkdown,
 } from "../shared/kapsAppAi";
-import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase, SourceLabel } from "../shared/kapsAppAi";
+import type { ChatSource, ChatStatusPhase } from "../shared/kapsAppAi";
 import KapsAppAiEquation from "./KapsAppAiEquation";
-
-type Turn = {
-  id: number;
-  question: string;
-  attachedSource?: ChatSource;
-  answer: string;
-  sources: SourceLabel[];
-  state: "waiting" | "streaming" | "done" | "stopped" | "error";
-  phase?: ChatStatusPhase;
-  requestId?: string;
-  queuePosition?: number;
-  notice?: string;
-};
+import { useKapsAiHistory } from "./useKapsAiHistory";
 
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold outline-offset-2 transition-colors";
 const secondary = `${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800`;
@@ -185,24 +171,20 @@ function CopyMessage({ content, label }: { content: string; label: string }) {
 }
 
 export default function KapsAppAi({ active = true }: { active?: boolean } = {}) {
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const history = useKapsAiHistory(active);
+  const { turns, conversationId, activeTurn, pendingSubmission, acceptedSubmission, actionPending } = history;
   const [draft, setDraft] = useState("");
   const [sourceOpen, setSourceOpen] = useState(false);
   const [source, setSource] = useState<ChatSource>({ title: "", text: "" });
   const [jumpVisible, setJumpVisible] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-  const activeRequest = useRef<{ controller: AbortController; id: number } | null>(null);
-  const lastId = useRef(0);
-  const current = turns.at(-1);
-  const running = current?.state === "waiting" || current?.state === "streaming";
+  const running = activeTurn?.conversationId === conversationId ? activeTurn : null;
   const hasSource = Boolean(source.title.trim() || source.text.trim());
   const sourceValid = !hasSource || Boolean(source.title.trim() && source.text.trim());
-
-  useEffect(() => () => {
-    activeRequest.current?.controller.abort();
-    activeRequest.current = null;
-  }, []);
+  const sendingBlocked = !history.initialized || history.loading || Boolean(activeTurn || pendingSubmission || actionPending);
 
   function scrollToBottom() {
     if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
@@ -221,195 +203,37 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
     return () => observer.disconnect();
   }, []);
 
-  function updateTurn(id: number, update: Partial<Turn>) {
-    setTurns(previous => previous.map(turn => (turn.id === id ? { ...turn, ...update } : turn)));
-  }
+  useEffect(() => {
+    if (!acceptedSubmission) return;
+    setDraft(previous => previous.trim() === acceptedSubmission.question ? "" : previous);
+    if (acceptedSubmission.source) {
+      const sent = acceptedSubmission.source;
+      setSource(previous => previous.title.trim() === sent.title && previous.text.trim() === sent.text
+        ? { title: "", text: "" } : previous);
+      setSourceOpen(false);
+    }
+  }, [acceptedSubmission]);
 
-  function stop() {
-    const request = activeRequest.current;
-    if (!request) return;
-    activeRequest.current = null;
-    request.controller.abort();
-    updateTurn(request.id, { state: "stopped", notice: "Yanıt durduruldu." });
-  }
-
-  function reset() {
-    stop();
+  function select(id: string | null) {
+    if (pendingSubmission || actionPending) return;
     stickToBottom.current = true;
-    setTurns([]);
+    setJumpVisible(false);
+    setHistoryOpen(false);
+    setDeleting(null);
     setDraft("");
     setSource({ title: "", text: "" });
     setSourceOpen(false);
-    setJumpVisible(false);
+    void history.open(id);
   }
 
-  async function tryRecoverStatus(requestId: string | undefined): Promise<{ answer?: string; done?: boolean; truncated?: boolean; error?: string } | null> {
-    if (!requestId) return null;
-    try {
-      const res = await fetch(getApiUrl(`${KAPSAPP_AI_STATUS_PATH}?requestId=${encodeURIComponent(requestId)}`), {
-        headers: getAuthHeaders(),
-        cache: "no-store",
-        signal: AbortSignal.timeout(4000),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!data?.status) return null;
-      return {
-        answer: typeof data.status.answer === "string" ? data.status.answer : undefined,
-        done: data.status.phase === "done",
-        truncated: Boolean(data.status.truncated),
-        error: typeof data.status.error === "string" ? data.status.error : undefined,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  async function executePrompt(question: string, attached: ChatSource | undefined, retryTurnId?: number) {
-    if (!question || activeRequest.current) return;
-
-    const id = retryTurnId ?? ++lastId.current;
-    const controller = new AbortController();
-    activeRequest.current = { id, controller };
-
-    const priorTurns = retryTurnId
-      ? turns.slice(0, turns.findIndex(t => t.id === retryTurnId))
-      : turns;
-    const history = priorTurns.filter(turn => turn.state === "done").slice(-AI_HISTORY_LIMIT / 2);
-    const messages: ChatMessage[] = history.flatMap(turn => [
-      { role: "user", content: turn.question },
-      { role: "assistant", content: turn.answer.slice(0, 6000) },
-    ]);
-    messages.push({ role: "user", content: question });
-
-    stickToBottom.current = true;
-    setJumpVisible(false);
-    if (retryTurnId) {
-      updateTurn(id, {
-        answer: "",
-        sources: [],
-        state: "waiting",
-        phase: "accepted",
-        notice: undefined,
-      });
-    } else {
-      setTurns(previous => [
-        ...previous,
-        { id, question, attachedSource: attached, answer: "", sources: [], state: "waiting", phase: "accepted" },
-      ]);
-    }
-
-    let answer = "";
-    let trackedRequestId: string | undefined;
-    let frame = 0;
-    let timedOut = false;
-    const onTimeout = () => {
-      timedOut = true;
-      controller.abort();
-    };
-    // Initial connection + first frame timeout; refreshed by heartbeats and token deltas.
-    let timeout = setTimeout(onTimeout, 240_000);
-    try {
-      const response = await fetch(getApiUrl(KAPSAPP_AI_PATH), {
-        method: "POST",
-        headers: getAuthHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ messages, source: attached }),
-        signal: controller.signal,
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.message || data.error || "KapsAI şu anda kullanılamıyor. Tekrar dene.");
-      }
-      const headerRequestId = response.headers.get("X-KapsAI-Request-Id") ?? undefined;
-      if (headerRequestId) trackedRequestId = headerRequestId;
-      if (!response.body || !response.headers.get("Content-Type")?.includes("application/x-ndjson")) {
-        throw new Error("Sohbet bağlantısı başlatılamadı. Tekrar dene.");
-      }
-      for await (const event of readJsonLines<ChatEvent>(response.body)) {
-        if (controller.signal.aborted) break;
-        // Heartbeats keep the transport alive. The server separately watches model stages and tokens.
-        clearTimeout(timeout);
-        timeout = setTimeout(onTimeout, 45_000);
-
-        if (event.type === "status") {
-          if (event.requestId) trackedRequestId = event.requestId;
-          // Heartbeat keeps transport alive without overriding the current model stage or faking token output.
-          if (event.phase && event.phase !== "heartbeat") {
-            updateTurn(id, {
-              phase: event.phase,
-              requestId: trackedRequestId,
-              queuePosition: event.queuePosition,
-            });
-          }
-        }
-        if (event.type === "sources") updateTurn(id, { sources: event.sources });
-        if (event.type === "error") throw new Error(event.error);
-        if (event.type === "delta") {
-          answer += event.text;
-          if (!frame) {
-            frame = requestAnimationFrame(() => {
-              frame = 0;
-              if (!controller.signal.aborted) updateTurn(id, { answer, state: "streaming" });
-            });
-          }
-        }
-        if (event.type === "done") {
-          updateTurn(id, {
-            answer,
-            state: "done",
-            notice: event.truncated ? "Model burada durdu. Devam etmesini isteyebilirsin." : undefined,
-          });
-          return;
-        }
-      }
-      throw new Error("Bağlantı yanıt tamamlanmadan kesildi. Tekrar dene.");
-    } catch (error) {
-      if (timedOut || !controller.signal.aborted) {
-        // Attempt status recovery if the stream dropped mid-flight after server accepted the request.
-        if (!timedOut && trackedRequestId) {
-          const recovered = await tryRecoverStatus(trackedRequestId);
-          if (recovered?.answer && recovered.answer.length > answer.length) {
-            answer = recovered.answer;
-          }
-          if (recovered?.done && answer) {
-            updateTurn(id, {
-              answer,
-              state: "done",
-              notice: recovered.truncated ? "Model burada durdu. Devam etmesini isteyebilirsin." : undefined,
-            });
-            return;
-          }
-        }
-
-        let notice = "Sohbet bağlantısı kesildi. Tekrar dene.";
-        if (error instanceof Error && !(error instanceof TypeError || error instanceof SyntaxError)) notice = error.message;
-        if (timedOut) notice = "Sohbet bağlantısı zaman aşımına uğradı. Tekrar dene.";
-        updateTurn(id, { answer, state: "error", notice });
-        if (!answer && !retryTurnId) {
-          setDraft(previous => previous || question);
-          if (attached) {
-            setSource(previous => (previous.title || previous.text ? previous : attached));
-            setSourceOpen(true);
-          }
-        }
-      }
-    } finally {
-      clearTimeout(timeout);
-      cancelAnimationFrame(frame);
-      if (activeRequest.current?.id === id) activeRequest.current = null;
-    }
-  }
-
-  async function send(event?: FormEvent) {
+  function send(event?: FormEvent) {
     event?.preventDefault();
     const question = draft.trim();
-    if (!question || !sourceValid || activeRequest.current) return;
+    if (!question || !sourceValid || sendingBlocked) return;
     const attached = hasSource ? { title: source.title.trim(), text: source.text.trim() } : undefined;
-    setDraft("");
-    setSource({ title: "", text: "" });
-    setSourceOpen(false);
-    await executePrompt(question, attached);
+    stickToBottom.current = true;
+    setJumpVisible(false);
+    void history.send(question, attached);
   }
 
   return (
@@ -423,11 +247,45 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
               <p className="truncate text-xs font-semibold text-slate-600 lg:font-normal dark:text-slate-400">Llama 3.2 · Yerel model</p>
             </div>
           </div>
-          <button type="button" className={`${secondary} shrink-0`} onClick={reset}>
-            <Plus size={16} /> Yeni sohbet
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" className={secondary} aria-expanded={historyOpen} aria-controls="kaps-ai-history"
+              disabled={Boolean(pendingSubmission)} onClick={() => setHistoryOpen(open => !open)}>
+              <History size={16} /> Geçmiş
+            </button>
+            <button type="button" className={secondary} disabled={Boolean(pendingSubmission || actionPending)} onClick={() => select(null)}>
+              <Plus size={16} /> Yeni sohbet
+            </button>
+          </div>
         </div>
       </header>
+
+      {historyOpen && <section id="kaps-ai-history" aria-label="Sohbet geçmişi" className="max-h-[42dvh] shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+        <div className="mx-auto w-full max-w-4xl space-y-1 px-3 py-2 sm:px-6">
+          {history.conversations.length === 0 && <p className="py-2 text-sm text-slate-500">Kayıtlı sohbet yok.</p>}
+          {history.conversations.map(chat => (
+            <div key={chat.id} className="flex min-w-0 flex-wrap items-center gap-2">
+              <button type="button" aria-current={chat.id === conversationId ? "true" : undefined}
+                className={`${secondary} min-w-0 flex-1 justify-start`} onClick={() => select(chat.id)}>
+                <span className="truncate">{chat.title}</span>
+                {activeTurn?.conversationId === chat.id && <LoaderCircle className="shrink-0 animate-spin" size={15} />}
+              </button>
+              <button type="button" className={secondary} aria-label={`Sohbeti sil: ${chat.title}`}
+                disabled={actionPending || activeTurn?.conversationId === chat.id} onClick={() => setDeleting(chat.id)}>
+                <Trash2 size={16} />
+              </button>
+              {deleting === chat.id && <div className="flex w-full flex-wrap items-center gap-2 p-2 text-sm">
+                <span>Bu sohbeti silmek istiyor musun?</span>
+                <button type="button" className={secondary} disabled={actionPending} onClick={() => {
+                  setDeleting(null);
+                  void history.remove(chat.id);
+                }}>Sil</button>
+                <button type="button" className={secondary} onClick={() => setDeleting(null)}>Vazgeç</button>
+              </div>}
+            </div>
+          ))}
+          {history.listNext && <button type="button" className={secondary} disabled={actionPending} onClick={() => void history.moreChats()}>Daha eski sohbetler</button>}
+        </div>
+      </section>}
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div ref={scroller} aria-label="Sohbet mesajları" tabIndex={0} className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain outline-offset-[-2px] [overflow-anchor:none]" onScroll={event => {
@@ -436,7 +294,12 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
           setJumpVisible(!stickToBottom.current);
         }}>
           <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-3 py-5 sm:px-6 sm:py-8">
-            {!turns.length && (
+            {history.turnNext && <button type="button" className={`${secondary} mb-4 self-center`} disabled={actionPending} onClick={() => {
+              stickToBottom.current = false;
+              void history.moreTurns();
+            }}>Daha eski mesajlar</button>}
+            {history.loading && <p role="status" className="m-auto text-sm text-slate-500">Sohbet yükleniyor…</p>}
+            {!history.loading && turns.length === 0 && (
               <div className="m-auto max-w-sm text-center">
                 <span className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"><Sparkles size={28} /></span>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white">Bugün ne konuşalım?</h3>
@@ -453,7 +316,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
                   <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-xl border border-indigo-100 text-indigo-700 dark:border-indigo-900 dark:text-indigo-300"><Sparkles size={16} /></span>
                   <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
                     {turn.state === "waiting" && (
-                      <WaitingStatus phase={turn.phase} queuePosition={turn.queuePosition} />
+                      <WaitingStatus phase={turn.phase} />
                     )}
                     {turn.answer && <Answer content={turn.answer} streaming={turn.state === "streaming"} />}
                     {turn.notice && <p role={turn.state === "error" ? "alert" : "status"} className={`text-sm ${turn.answer ? "mt-2" : ""} ${turn.state === "error" ? "text-rose-700 dark:text-rose-300" : "text-slate-500 dark:text-slate-400"}`}>{turn.notice}</p>}
@@ -465,12 +328,13 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
                     )}
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       {turn.answer && turn.state !== "streaming" && <CopyMessage content={turn.answer} label="Yanıtı kopyala" />}
-                      {(turn.state === "error" || turn.state === "stopped") && !running && (
+                      {(turn.state === "error" || turn.state === "stopped") && !activeTurn && turn.id === turns.at(-1)?.id && (
                         <button
                           type="button"
                           aria-label="Yanıtı yeniden dene"
                           className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                          onClick={() => void executePrompt(turn.question, turn.attachedSource, turn.id)}
+                          disabled={actionPending}
+                          onClick={() => void history.retry(turn.id)}
                         >
                           <RotateCcw size={13} /> Yeniden dene
                         </button>
@@ -491,6 +355,12 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
 
       <form onSubmit={send} className="kaps-chat-composer shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto w-full max-w-4xl px-3 pb-2 pt-2 sm:px-6 sm:py-3">
+          {(history.error || history.connectionNotice) && <div className="mb-2 space-y-1 text-sm">
+            {history.error && <p role="alert" className="text-rose-700 dark:text-rose-300">{history.error}</p>}
+            {history.connectionNotice && <p role="status" className="text-slate-600 dark:text-slate-300">{history.connectionNotice}</p>}
+            {!history.initialized && history.error && <button type="button" className={secondary} onClick={() => void history.refresh().catch(() => {})}>Tekrar yükle</button>}
+          </div>}
+          {activeTurn && !running && <button type="button" className={`${secondary} mb-2`} onClick={() => select(activeTurn.conversationId)}>Devam eden yanıta git</button>}
           {sourceOpen && (
             <div id="kaps-ai-source" className="mb-2 max-h-[28dvh] space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-950">
               <input className={field} data-chat-composer aria-label="Kaynak başlığı" placeholder="Kaynak başlığı" maxLength={AI_SOURCE_TITLE_LIMIT} value={source.title} onChange={event => setSource({ ...source, title: event.target.value })} />
@@ -515,13 +385,13 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
               }}
             />
             {running ? (
-              <button type="button" className={`${secondary} size-11 shrink-0 !px-0`} onClick={stop} aria-label="Yanıtı durdur" title="Yanıtı durdur"><Square size={17} fill="currentColor" /></button>
+              <button type="button" className={`${secondary} size-11 shrink-0 !px-0`} disabled={actionPending} onClick={() => void history.stop(running.id)} aria-label="Yanıtı durdur" title="Yanıtı durdur"><Square size={17} fill="currentColor" /></button>
             ) : (
-              <button type="submit" className={`${button} size-11 shrink-0 !px-0 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-45`} disabled={!draft.trim() || !sourceValid} aria-label="Mesajı gönder" title="Mesajı gönder"><ArrowUp size={21} /></button>
+              <button type="submit" className={`${button} size-11 shrink-0 !px-0 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-45`} disabled={sendingBlocked || !draft.trim() || !sourceValid} aria-label="Mesajı gönder" title="Mesajı gönder"><ArrowUp size={21} /></button>
             )}
           </div>
           <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-            {sourceValid ? "Sohbet bu oturumda geçicidir; LaTeX ($...$, $$...$$, \\(...\\), \\[...\\]) desteklenir." : "Kaynak için hem başlık hem metin gir."}
+            {sourceValid ? "Sohbetler hesabına kaydedilir. Ekranı kapatsan da başlayan yanıt sunucuda devam eder." : "Kaynak için hem başlık hem metin gir."}
           </p>
         </div>
       </form>
