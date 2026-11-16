@@ -23,7 +23,10 @@ function isResult(value: unknown): value is Result {
   return !!r && Array.isArray(r.scores) && r.scores.length === 2
     && r.scores.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1)
     && typeof r.tokens === 'number' && Number.isFinite(r.tokens)
-    && typeof r.truncated === 'boolean';
+    && typeof r.truncated === 'boolean'
+    && (r.words === undefined || (Number.isInteger(r.words) && r.words >= 0))
+    && (r.segmentAi === undefined || (Array.isArray(r.segmentAi) && r.segmentAi.length > 0
+      && r.segmentAi.length <= 3 && r.segmentAi.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1)));
 }
 function percent(n: number) { return (n * 100).toLocaleString('tr-TR', { maximumFractionDigits: 1 }); }
 function readResult(key: string): Result | null {
