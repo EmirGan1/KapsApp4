@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from model import MAX_CHARS, MODEL_ID, REVISION, Detector
 
-MAX_BODY = 128 * 1024
+MAX_BODY = 320 * 1024
 logger = logging.getLogger("uvicorn.error")
 
 

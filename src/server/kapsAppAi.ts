@@ -27,7 +27,8 @@ Be clear, respectful and practical.`;
 const OLLAMA = "http://127.0.0.1:11434";
 const REQUEST_WINDOW_MS = 60_000;
 const REQUEST_LIMIT = 4;
-const TIMEOUT_MS = 120_000;
+const FIRST_TOKEN_TIMEOUT_MS = 120_000;
+const TOKEN_IDLE_TIMEOUT_MS = 60_000;
 const MIB = 1024 * 1024;
 const BUSY = "KapsApp AI şu anda başka bir yanıt hazırlıyor. Biraz sonra tekrar dene.";
 const LOW_MEMORY = "Sunucuda model için yeterli boş bellek bulunmuyor. Biraz sonra tekrar dene.";
@@ -178,10 +179,11 @@ export function registerKapsAppAi(
       const onClose = () => controller.abort();
       res.on("close", onClose);
       let timedOut = false;
-      const timeout = setTimeout(() => {
+      const onTimeout = () => {
         timedOut = true;
         controller.abort();
-      }, TIMEOUT_MS);
+      };
+      let timeout = setTimeout(onTimeout, FIRST_TOKEN_TIMEOUT_MS);
       const startedAt = Date.now();
       let firstTokenMs: number | undefined;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -240,7 +242,13 @@ export function registerKapsAppAi(
           if (frame.error) throw modelFailure(frame.error);
           const text = frame.message?.content;
           if (text) {
-            firstTokenMs ??= Date.now() - startedAt;
+            if (firstTokenMs === undefined) {
+              firstTokenMs = Date.now() - startedAt;
+              clearTimeout(timeout);
+              timeout = setTimeout(onTimeout, TOKEN_IDLE_TIMEOUT_MS);
+            } else {
+              timeout.refresh();
+            }
             outputLength += text.length;
             if (outputLength > 16_000) throw new ModelFailure("Yanıt boyut sınırına ulaştı.");
             if (!write({ type: "delta", text })) await once(res, "drain", { signal });
@@ -260,8 +268,9 @@ export function registerKapsAppAi(
         throw new ModelFailure("Model bağlantısı yanıt tamamlanmadan kesildi.");
       } catch (error) {
         if (res.destroyed || (signal.aborted && !timedOut)) return;
-        const failure = timedOut ? new ModelFailure("Model zamanında yanıt veremedi. Tekrar dene.", 504)
-          : error instanceof ModelFailure ? error : new ModelFailure(UNAVAILABLE);
+        const failure = timedOut ? new ModelFailure(firstTokenMs === undefined
+          ? "Model ilk yanıtı zamanında başlatamadı. Tekrar dene."
+          : "Model yanıt üretmeyi durdurdu. Tekrar dene.", 504) : error instanceof ModelFailure ? error : new ModelFailure(UNAVAILABLE);
         if (res.headersSent) write({ type: "error", error: failure.message });
         else res.status(failure.status).json({ error: failure.message });
       } finally {

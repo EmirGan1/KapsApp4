@@ -170,10 +170,11 @@ export default function KapsAppAi() {
     let answer = "";
     let frame = 0;
     let timedOut = false;
-    const timeout = setTimeout(() => {
+    const onTimeout = () => {
       timedOut = true;
       controller.abort();
-    }, 130_000);
+    };
+    let timeout = setTimeout(onTimeout, 130_000);
     try {
       const response = await fetch(getApiUrl(KAPSAPP_AI_PATH), {
         method: "POST",
@@ -190,7 +191,10 @@ export default function KapsAppAi() {
         throw new Error("Sohbet bağlantısı başlatılamadı. Tekrar dene.");
       }
       for await (const event of readJsonLines<ChatEvent>(response.body)) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) break;
+        // Heartbeats keep the transport alive. The server separately watches real model tokens.
+        clearTimeout(timeout);
+        timeout = setTimeout(onTimeout, 45_000);
         if (event.type === "sources") updateTurn(id, { sources: event.sources });
         if (event.type === "error") throw new Error(event.error);
         if (event.type === "delta") {

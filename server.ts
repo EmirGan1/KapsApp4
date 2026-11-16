@@ -1099,7 +1099,7 @@ async function startServer() {
   });
   app.post([AI_CHECKER_PATH, AI_CHECKER_JOBS_PATH],
     (req: express.Request, res: express.Response, next: express.NextFunction) => req.is("application/json") ? next() : res.sendStatus(415),
-    express.json({ limit: "128kb", inflate: false }),
+    express.json({ limit: "320kb", inflate: false }),
     ((error, _req, res, _next) => {
       res.status(error.status === 413 ? 413 : 400).json({ error: "Geçersiz analiz isteği." });
     }) as express.ErrorRequestHandler,
@@ -1109,7 +1109,7 @@ async function startServer() {
       req.body = undefined;
       if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
       if (typeof input !== "string" || input.length > AI_TEXT_LIMIT || !input.trim()) {
-        return res.status(400).json({ error: "1 ile 20.000 karakter arasında metin gir." });
+        return res.status(400).json({ error: `1 ile ${AI_TEXT_LIMIT.toLocaleString("tr-TR")} karakter arasında metin gir.` });
       }
       try {
         const owner = String(user.id);

@@ -38,6 +38,17 @@ const mock = live ? undefined : createServer(async (req, res) => {
     return;
   }
   res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+  if (prompt === "continuous-fixture") {
+    const send = () => res.write(JSON.stringify({ message: { content: "Parça " } }) + "\n");
+    send();
+    let emitted = 1;
+    const timer = setInterval(() => {
+      send();
+      if (++emitted === 7) res.end(JSON.stringify({ done: true }) + "\n");
+    }, 23_000);
+    res.on("close", () => clearInterval(timer));
+    return;
+  }
   res.write(JSON.stringify({ message: { content: prompt === "hold-fixture" ? "Parça" : answerFixture } }) + "\n");
   if (prompt === "close-fixture") {
     res.end();
@@ -285,10 +296,18 @@ try {
   )));
   assert.ok(!logs.includes("hold-fixture") && !logs.includes("Private excerpt") && !logs.includes("Tarayıcı test mesajı"));
   assert.equal((await fetch(base + "/api/health")).status, 200);
+  if (!live && process.env.KAPSAPP_AI_CONTINUOUS_TEST === "1") {
+    await input.fill("continuous-fixture");
+    await input.press("Enter");
+    await page.getByRole("button", { name: "Yanıtı kopyala" }).waitFor({ timeout: 150_000 });
+    assert.equal(await page.getByRole("alert").count(), 0);
+    assert.equal((await page.getByRole("article", { name: "KapsApp AI yanıtı" }).last().textContent())?.match(/Parça/g)?.length, 7);
+    console.log("PASS browser keeps receiving tokens beyond the previous server and browser deadlines");
+  }
   if (!live && process.env.KAPSAPP_AI_TIMEOUT_TEST === "1") {
     upstream.cancelled = false;
     const events = await collect(await ask("hold-fixture", "source"));
-    assert.match(JSON.stringify(events.at(-1)), /zamanında yanıt veremedi/);
+    assert.match(JSON.stringify(events.at(-1)), /yanıt üretmeyi durdurdu/);
     await waitFor(() => upstream.cancelled);
     assert.equal((await collect(await ask("timeout recovery", "source"))).at(-1)?.type, "done");
     console.log("PASS upstream timeout, cancellation and generation slot recovery");

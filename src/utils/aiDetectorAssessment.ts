@@ -1,6 +1,7 @@
 export const DESKLIB_MODEL = 'desklib/ai-text-detector-v1.01';
 export const DESKLIB_REVISION = '5fdea974cd4287c61674951ec78803aa274e2fb7';
-export const AI_TEXT_LIMIT = 20_000;
+export const AI_TEXT_LIMIT = 50_000;
+export const AI_SEGMENT_LIMIT = 32;
 export const AI_MIN_WORDS = 120;
 export const AI_RESULT_TTL_MS = 30 * 60 * 1000;
 
@@ -20,10 +21,10 @@ export function parseDetectorResult(value: unknown): DetectorResult | null {
   const { model, revision, scores, tokens, truncated, words, segmentAi, language } = value as DetectorResult;
   const isScore = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1;
   if (model !== DESKLIB_MODEL || revision !== DESKLIB_REVISION
-    || !Number.isInteger(tokens) || tokens < 0 || tokens > 16 * 510
+    || !Number.isInteger(tokens) || tokens < 0 || tokens > AI_SEGMENT_LIMIT * 510
     || !Number.isInteger(words) || words < 1 || words > AI_TEXT_LIMIT
     || typeof truncated !== 'boolean' || !['english', 'turkish', 'unsupported'].includes(language)
-    || !Array.isArray(segmentAi) || segmentAi.length > 16 || !segmentAi.every(isScore)) return null;
+    || !Array.isArray(segmentAi) || segmentAi.length > AI_SEGMENT_LIMIT || !segmentAi.every(isScore)) return null;
 
   const scored = language === 'english' && words >= AI_MIN_WORDS && !truncated;
   if (scored) {
@@ -46,7 +47,7 @@ export function assessAiDetectorResult(result: DetectorResult) {
   }
   if (result.truncated) {
     return { kind: 'partial', title: 'Metin analiz sınırını aşıyor',
-      detail: 'Daha kısa bir metinle yeniden dene.' };
+      detail: 'Bu metin modelin 16.320 tokenlık analiz sınırını aşıyor. Metni daha küçük bölümlere ayır.' };
   }
   // The 0.5 split comes from the model card. These are model signals, without local calibration.
   if (result.segmentAi.every(score => score >= 0.5)) {

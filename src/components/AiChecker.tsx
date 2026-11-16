@@ -78,7 +78,7 @@ export default function AiChecker({ active }: { active: boolean }) {
           setPhase(state.status);
           setError('');
           if (!jobId) setJobId(state.id);
-          else timer = setTimeout(poll, 1000);
+          else timer = setTimeout(poll, 750);
           return;
         }
         if (state?.status === 'error') setError(state.error || 'Analiz tamamlanamadı. Yeniden dene.');
@@ -228,7 +228,7 @@ export default function AiChecker({ active }: { active: boolean }) {
           <div className="min-w-0 space-y-1">
             <h2 className="font-semibold text-sm">{submitting || phase === 'queued' ? 'Analiz sıraya alınıyor' : 'Metnin inceleniyor'}</h2>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-              {submitting ? 'Metin sunucuya iletiliyor.' : 'Sayfadan ayrılsan da analiz devam eder. Döndüğünde durumu burada görebilirsin.'}
+              {submitting ? 'Metin sunucuya iletiliyor.' : 'Uzun metinler birkaç dakika sürebilir. Sayfadan ayrılsan da analiz devam eder.'}
             </p>
           </div>
         </section>}

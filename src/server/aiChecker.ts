@@ -22,8 +22,9 @@ type Job = {
   settle?: (value: DetectorResult | AiCheckerError) => void;
 };
 
-const INFERENCE_MS = 75_000;
-const QUEUE_MS = 120_000;
+const BASE_INFERENCE_MS = 90_000;
+const MAX_INFERENCE_MS = 480_000;
+const QUEUE_MS = 10 * 60_000;
 const MAX_QUEUE = 6;
 const MAX_RESULTS = 80;
 const RATE_WINDOW_MS = 60_000;
@@ -114,15 +115,21 @@ export function createAiChecker({ request = requestLocal } = {}) {
     const controller = new AbortController();
     active = { job, controller };
     job.state = { status: 'processing' };
-    job.deadline = setTimeout(() => controller.abort(), INFERENCE_MS);
+    // Budget for slower VDS CPUs and denser inputs without changing the single-worker limit.
+    const textLength = job.text!.length;
+    const inferenceMs = Math.min(MAX_INFERENCE_MS, BASE_INFERENCE_MS + textLength * 8);
+    job.deadline = setTimeout(() => controller.abort(), inferenceMs);
     try {
       const body = JSON.stringify({ text: job.text });
       job.text = undefined;
       const response = await request(port, '/infer', controller.signal, body);
       if (response.status !== 200) {
-        throw response.status === 429
-          ? new AiCheckerError(503, 'Model önceki analizi bitiriyor. Birazdan yeniden dene.')
-          : unavailable();
+        if (response.status === 429) throw new AiCheckerError(503, 'Model önceki analizi bitiriyor. Birazdan yeniden dene.');
+        if (response.status === 413) throw new AiCheckerError(413, 'Metin analiz servisinin istek sınırını aşıyor.');
+        if (response.status === 400 && textLength > 20_000) {
+          throw new AiCheckerError(503, 'Desklib bu uzunluktaki metni kabul etmedi. Desklib servisinin güncel olduğunu kontrol et.');
+        }
+        throw unavailable();
       }
       const result = parseDetectorResult(response.data);
       if (!result) throw unavailable();
