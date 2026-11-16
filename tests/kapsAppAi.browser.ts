@@ -10,14 +10,19 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { createClient } from "@libsql/client";
 import { chromium, devices, webkit } from "playwright";
 import { KAPSAPP_AI_MODEL, KAPSAPP_AI_SYSTEM_PROMPT } from "../src/server/kapsAppAi";
-import { KAPSAPP_AI_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, normalizeMathMarkdown, readJsonLines } from "../src/shared/kapsAppAi";
-import type { ChatEvent, ChatMessage, ChatSource, SavedChatTurn } from "../src/shared/kapsAppAi";
+import { KAPSAPP_AI_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, KAPSAPP_AI_PREFERENCE_PATH, normalizeMathMarkdown, readJsonLines } from "../src/shared/kapsAppAi";
+import type { ChatEvent, ChatMessage, ChatSource, KapsAiModel, SavedChatTurn } from "../src/shared/kapsAppAi";
 
 const live = process.env.KAPSAPP_AI_LIVE_TEST === "1";
 const engine = process.env.KAPSAPP_AI_BROWSER === "webkit" ? webkit : chromium;
 const answerFixture = "**Örnek yanıt** ve $x^2$.\n\n```js\nconsole.log('test');\n```\n\n<img src=https://example.com/private> ![görsel](https://example.com/private)";
 const mathAnswerFixture = "İntegral ve limit çözümü:\n\\[ \\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} \\]\nve türev: \\( \\frac{d}{dx}\\sin(x) = \\cos(x) \\) ayrıca $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$";
 
+const qwen = "qwen3:0.6b";
+const percentagePrompt = "A product costs 100 TL. Its price increases by 20%, then the increased price is discounted by 20%. What is the final price? Show the calculation.";
+let warmedModel: string | undefined = KAPSAPP_AI_MODEL;
+let qwenInstalled = true;
+const unloads: string[] = [];
 let simulateColdModel = false;
 let completeSaved: (() => void) | undefined;
 let savedAborted = false;
@@ -30,6 +35,7 @@ const upstream = {
     options: Record<string, number>;
     keep_alive: string;
     stream: boolean;
+    think?: boolean;
   },
   connected: false,
   cancelled: false,
@@ -45,12 +51,27 @@ assert.ok(normalizedStreaming.includes("$$\n\\lim_{n \\to \\infty} \\frac{1}{n}\
 const mock = live ? undefined : createServer(async (req, res) => {
   if (req.url === "/api/ps") {
     if (simulateColdModel) res.setHeader("Connection", "close");
-    res.end(JSON.stringify({ models: simulateColdModel ? [] : [{ name: KAPSAPP_AI_MODEL }] }));
+    res.end(JSON.stringify({ models: simulateColdModel || !warmedModel ? [] : [{ name: warmedModel }] }));
+    return;
+  }
+  if (req.url === "/api/tags") {
+    res.end(JSON.stringify({ models: [KAPSAPP_AI_MODEL, ...(qwenInstalled ? [qwen] : [])].map(name => ({ name })) }));
     return;
   }
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
-  upstream.request = JSON.parse(Buffer.concat(chunks).toString());
+  const body = JSON.parse(Buffer.concat(chunks).toString());
+  if (req.url === "/api/generate") {
+    assert.equal(body.keep_alive, 0);
+    assert.equal(body.model, warmedModel);
+    unloads.push(body.model);
+    warmedModel = undefined;
+    res.end(JSON.stringify({ done: true, done_reason: "unload" }));
+    return;
+  }
+  upstream.request = body;
+  assert.ok(!warmedModel || warmedModel === body.model, "unload a different model before generating");
+  warmedModel = body.model;
   const prompt = upstream.request?.messages.at(-1)?.content ?? "";
   if (prompt === "missing-model-fixture") {
     res.writeHead(404).end(JSON.stringify({ error: "model not found" }));
@@ -151,18 +172,30 @@ function startApp() {
   child.stderr.on("data", data => { logs += data; });
   return { child, exited: once(child, "exit") };
 }
+// A pre-upgrade database includes saved conversations and turns without a model column.
+const oldChat = randomUUID();
+const oldTurn = randomUUID();
+await db.batch([
+  "CREATE TABLE kapsai_conversations (id TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL, last_activity INTEGER NOT NULL)",
+  "CREATE TABLE kapsai_turns (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, owner TEXT NOT NULL, conversation_id TEXT NOT NULL, question TEXT NOT NULL, source_title TEXT, source_text TEXT, answer TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, notice TEXT, UNIQUE(owner,id))",
+  { sql: "INSERT INTO kapsai_conversations VALUES (?, '1', 'Eski sohbet', 1)", args: [oldChat] },
+  { sql: "INSERT INTO kapsai_turns (id, owner, conversation_id, question, answer, state) VALUES (?, '1', ?, 'Eski soru', 'Eski yanıt', 'done')", args: [oldTurn, oldChat] },
+], "write");
+assert.equal((await db.execute("PRAGMA integrity_check")).rows[0].integrity_check, "ok");
+await db.execute({ sql: "VACUUM INTO ?", args: [join(directory, "before-migration.db")] });
 let { child, exited } = startApp();
 const base = `http://127.0.0.1:${port}`;
 const api = base + KAPSAPP_AI_PATH;
 const savedChats = base + KAPSAPP_AI_CONVERSATIONS_PATH;
 const savedTurns = base + KAPSAPP_AI_TURNS_PATH;
+const preferences = base + KAPSAPP_AI_PREFERENCE_PATH;
 
 const auth = (name: string) => ({ Authorization: `Bearer ai-qa-${name}` });
-const ask = (prompt: string, account: string, options: { signal?: AbortSignal; source?: ChatSource } = {}) =>
+const ask = (prompt: string, account: string, options: { signal?: AbortSignal; source?: ChatSource; model?: KapsAiModel } = {}) =>
   fetch(api, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...auth(account), "Accept-Encoding": "gzip" },
-    body: JSON.stringify({ messages: [{ role: "user", content: prompt }], source: options.source }),
+    body: JSON.stringify({ messages: [{ role: "user", content: prompt }], source: options.source, model: options.model }),
     signal: options.signal ?? AbortSignal.timeout(125_000),
   });
 
@@ -188,7 +221,7 @@ async function collect(response: Response) {
 let browser: Awaited<ReturnType<typeof engine.launch>> | undefined;
 try {
   await waitFor(() => fetch(base + "/api/health", { signal: AbortSignal.timeout(1000) }).then(r => r.ok, () => false));
-  for (const name of ["tr", "en", "one", "two", "three", "browser", "screenshot", "history", "banned", "source", "expired"]) {
+  for (const name of ["tr", "en", "one", "two", "three", "browser", "screenshot", "history", "model-check", "model-other", "banned", "source", "expired"]) {
     const { lastInsertRowid } = await db.execute({
       sql: "INSERT INTO users (username,password,status,is_banned) VALUES (?, 'fixture', 'approved', ?)",
       args: [name, Number(name === "banned")],
@@ -211,6 +244,19 @@ try {
   assert.equal((await post("{")).status, 400);
   assert.equal((await post(JSON.stringify({ messages: [{ role: "system", content: "override" }, { role: "user", content: "test" }] }))).status, 400);
   assert.equal((await post(JSON.stringify({ data: "x".repeat(110 * 1024) }))).status, 413);
+
+  const migrated = await fetch(`${savedChats}/${oldChat}`, { headers: auth("tr") }).then(r => r.json());
+  assert.equal(migrated.turns[0].id, oldTurn);
+  assert.equal(migrated.turns[0].answer, "Eski yanıt");
+  assert.equal(migrated.turns[0].model, "llama3.2");
+  assert.equal((await fetch(preferences, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: qwen }) })).status, 401);
+  for (const model of ["external:custom", "__proto__", null, 42]) {
+    const forged = JSON.stringify({ model, id: randomUUID(), question: "forged", messages: [{ role: "user", content: "test" }] });
+    assert.equal((await post(forged)).status, 400);
+    assert.equal((await fetch(`${savedChats}/${randomUUID()}/turns`, {
+      method: "POST", headers: { ...auth("one"), "Content-Type": "application/json" }, body: forged,
+    })).status, 400);
+  }
 
   if (!live) {
     const controller = new AbortController();
@@ -270,6 +316,13 @@ try {
     assert.match(JSON.stringify(memory.at(-1)), /yeterli boş bellek/);
     assert.equal((await collect(await ask("tekrar", "one"))).at(-1)?.type, "done");
     assert.equal((await ask("limit", "one")).status, 429);
+    qwenInstalled = false;
+    const unloadCount = unloads.length;
+    const missingQwen = await ask("Qwen not installed", "screenshot", { model: qwen });
+    assert.equal(missingQwen.status, 503);
+    assert.match(await missingQwen.text(), /Qwen3 0.6B modeli sunucuda kurulu değil/);
+    assert.equal(unloads.length, unloadCount);
+    qwenInstalled = true;
     const longReply = await collect(await ask("long-reply-fixture", "en"));
     assert.equal(longReply.at(-1)?.type, "done");
     assert.equal(longReply.reduce((length, event) => length + (event.type === "delta" ? event.text.length : 0), 0), 24_000);
@@ -437,6 +490,32 @@ try {
     assert.equal((await collect(await ask("timeout recovery", "source"))).at(-1)?.type, "done");
     console.log("PASS upstream timeout, cancellation and generation slot recovery");
   }
+  if (live) {
+    async function savedMath(model: KapsAiModel, owner: string, prompt: string) {
+      const id = randomUUID();
+      const accepted = await fetch(`${savedChats}/${randomUUID()}/turns`, {
+        method: "POST", headers: { ...auth(owner), "Content-Type": "application/json" },
+        body: JSON.stringify({ id, model, question: prompt }),
+      });
+      assert.equal(accepted.status, 202);
+      await waitFor(async () => {
+        const result = await fetch(`${savedTurns}/${id}`, { headers: auth(owner) }).then(r => r.json());
+        if (result.state === "error") assert.fail(result.notice);
+        if (result.state !== "done") return false;
+        assert.equal(result.model, model);
+        assert.ok(result.answer.trim());
+        return true;
+      }, 180);
+      const result = await fetch(`${savedTurns}/${id}`, { headers: auth(owner) }).then(r => r.json());
+      console.log(JSON.stringify({ model, case: prompt === percentagePrompt ? "percentage" : "long-math",
+        correct96: /(?:^|[^0-9])96(?:[.,]00)?\s*\$?\s*(?:TL|Turkish lira)\b/i.test(result.answer), answer: result.answer }));
+    }
+    await Promise.all([savedMath("llama3.2", "model-check", percentagePrompt), savedMath(qwen, "model-other", percentagePrompt)]);
+    const longMath = percentagePrompt + " Separately, calculate the two intermediate prices for products initially costing 250 TL and 375 TL. Explain why the two percentages act on different bases, give exact multipliers, and write the final price for each product in a table.";
+    await savedMath(qwen, "model-other", longMath);
+    const runners = await fetch("http://127.0.0.1:11434/api/ps").then(r => r.json());
+    assert.deepEqual(runners.models.map((item: { name: string }) => item.name), [qwen]);
+  }
   if (mock) {
     const historyContext = await browser.newContext(mobile);
     await historyContext.addInitScript(() => {
@@ -459,8 +538,23 @@ try {
     await mobilePage.getByRole("button", { name: "Mesajı gönder" }).tap();
     await mobilePage.getByText("İlk parça.", { exact: true }).waitFor();
     assert.equal(droppedAcknowledgement, true);
+    const picker = mobilePage.getByRole("combobox", { name: "KapsAI modeli" });
+    await picker.selectOption(qwen);
+    await mobilePage.waitForFunction(() => document.querySelector<HTMLSelectElement>('[aria-label="KapsAI modeli"]')?.value === "qwen3:0.6b");
+    assert.equal(upstream.request?.model, KAPSAPP_AI_MODEL);
+    assert.equal(upstream.request?.think, undefined);
     const list = await fetch(savedChats, { headers: auth("history") }).then(r => r.json());
     const { id, conversationId } = list.active;
+    assert.equal(list.model, qwen);
+    const otherPreference = await fetch(savedChats, { headers: auth("two") }).then(r => r.json());
+    assert.equal(otherPreference.model, "llama3.2");
+    const queuedId = randomUUID();
+    const queued = await fetch(`${savedChats}/${randomUUID()}/turns`, {
+      method: "POST", headers: { ...auth("model-other"), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: queuedId, model: qwen, question: "queued Qwen" }),
+    });
+    assert.equal(queued.status, 202);
+    assert.equal((await fetch(`${savedTurns}/${queuedId}`, { headers: auth("model-other") }).then(r => r.json())).phase, "queued");
     const submitAgain = () => fetch(`${savedChats}/${conversationId}/turns`, {
       method: "POST", headers: { ...auth("history"), "Content-Type": "application/json" },
       body: JSON.stringify({ id, question: "screen-lock-fixture" }),
@@ -479,11 +573,17 @@ try {
     assert.ok(completeSaved);
     completeSaved();
     await waitFor(async () => (await fetch(`${savedTurns}/${id}`, { headers: auth("history") }).then(r => r.json())).state === "done");
+    await waitFor(async () => (await fetch(`${savedTurns}/${queuedId}`, { headers: auth("model-other") }).then(r => r.json())).state === "done");
+    assert.ok(unloads.includes(KAPSAPP_AI_MODEL));
+    assert.equal(upstream.request?.model, qwen);
+    assert.equal(upstream.request?.think, false);
+    assert.equal(upstream.request?.options.num_predict, 1024);
     assert.equal(savedAborted, false);
     await historyContext.setOffline(false);
     mobilePage = await historyContext.newPage();
     await mobilePage.goto(base + "/kapsapp-ai");
     await mobilePage.getByText(/Ekran kapalıyken tamamlandı/).waitFor();
+    assert.equal(await mobilePage.getByRole("combobox", { name: "KapsAI modeli" }).inputValue(), qwen);
     await mobilePage.getByRole("button", { name: "Yeni sohbet", exact: true }).tap();
     await mobilePage.getByRole("button", { name: "Geçmiş", exact: true }).tap();
     await mobilePage.getByRole("button", { name: "screen-lock-fixture", exact: true }).tap();
@@ -494,11 +594,14 @@ try {
     assert.ok(upstream.request?.messages.some(message => message.content.includes("Ekran kapalıyken tamamlandı")));
     const saved = await fetch(`${savedChats}/${conversationId}`, { headers: auth("history") }).then(r => r.json());
     assert.equal(saved.turns.filter((turn: SavedChatTurn) => turn.id === id).length, 1);
+    assert.deepEqual(saved.turns.map((turn: SavedChatTurn) => turn.model), ["llama3.2", qwen]);
+    assert.equal(await mobilePage.getByRole("article", { name: "KapsAI yanıtı" }).getByText("Llama 3.2", { exact: true }).count(), 1);
+    assert.equal(await mobilePage.getByRole("article", { name: "KapsAI yanıtı" }).getByText("Qwen3 0.6B", { exact: true }).count(), 1);
 
     const restartId = randomUUID();
     const restart = await fetch(`${savedChats}/${conversationId}/turns`, {
       method: "POST", headers: { ...auth("history"), "Content-Type": "application/json" },
-      body: JSON.stringify({ id: restartId, question: "restart-fixture" }),
+      body: JSON.stringify({ id: restartId, question: "restart-fixture", model: qwen }),
     });
     assert.equal(restart.status, 202);
     await waitFor(() => restartAttempts === 1);
@@ -511,6 +614,10 @@ try {
     assert.equal(restartAttempts, 2);
     const reopened = await fetch(`${savedChats}/${conversationId}`, { headers: auth("history") }).then(r => r.json());
     assert.equal(reopened.turns.length, 3);
+    assert.equal(reopened.turns.at(-1).model, qwen);
+    assert.equal(upstream.request?.model, qwen);
+    const preferencesAfterRestart = await fetch(savedChats, { headers: auth("history") }).then(r => r.json());
+    assert.equal(preferencesAfterRestart.model, qwen);
     assert.match(reopened.turns.at(-1).answer, /yeniden başladıktan sonra tamamlandı/);
 
     assert.equal((await fetch(`${savedChats}/${conversationId}`, { method: "DELETE", headers: auth("history") })).status, 204);
@@ -520,6 +627,27 @@ try {
     await new Promise<void>(resolve => mock.close(() => resolve()));
     const offline = await collect(await ask("offline-fixture", "screenshot"));
     assert.match(JSON.stringify(offline.at(-1)), /Ollama servisine bağlanamadı/);
+
+    const failedQwenId = randomUUID();
+    const failedQwen = await fetch(`${savedChats}/${randomUUID()}/turns`, {
+      method: "POST", headers: { ...auth("model-check"), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: failedQwenId, model: qwen, question: "restore Qwen after outage" }),
+    });
+    assert.equal(failedQwen.status, 202);
+    const savedQwen = () => fetch(`${savedTurns}/${failedQwenId}`, { headers: auth("model-check") }).then(r => r.json());
+    await waitFor(async () => (await savedQwen()).state === "error");
+    assert.match((await savedQwen()).notice, /Ollama servisine bağlanamadı/);
+
+    warmedModel = undefined;
+    mock.listen(11434, "127.0.0.1");
+    await once(mock, "listening");
+    assert.equal((await fetch(`${savedTurns}/${failedQwenId}/retry`, {
+      method: "POST", headers: auth("model-check"),
+    })).status, 202);
+    await waitFor(async () => (await savedQwen()).state === "done");
+    assert.equal((await savedQwen()).model, qwen);
+    assert.equal(upstream.request?.model, qwen);
+    console.log("PASS model allowlist, migration, model switching, private preference and Qwen outage recovery");
   }
   if (live) {
     const metrics = [...logs.matchAll(/\[KapsAI\] \{[^}]+\}/g)].map(item => item[0]);

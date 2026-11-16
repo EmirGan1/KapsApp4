@@ -138,6 +138,18 @@ export async function* readJsonLines<T>(body: ReadableStream<Uint8Array>): Async
 }
 
 export const KAPSAPP_AI_CONVERSATIONS_PATH = "/api/kapsapp-ai/conversations";
+export const KAPSAPP_AI_PREFERENCE_PATH = "/api/kapsapp-ai/model-preference";
+
+export const KAPSAPP_AI_MODELS = {
+  "llama3.2": { label: "Llama 3.2", description: "Genel amaçlı · Mevcut KapsAI modeli" },
+  "qwen3:0.6b": { label: "Qwen3 0.6B", description: "Hafif model · Düşük kaynak tüketimi" },
+} as const;
+export type KapsAiModel = keyof typeof KAPSAPP_AI_MODELS;
+export const KAPSAPP_AI_DEFAULT_MODEL: KapsAiModel = "llama3.2";
+export function isKapsAiModel(value: unknown): value is KapsAiModel {
+  return typeof value === "string" && Object.hasOwn(KAPSAPP_AI_MODELS, value);
+}
+
 export const KAPSAPP_AI_TURNS_PATH = "/api/kapsapp-ai/turns";
 
 export type SavedChatState = "waiting" | "streaming" | "done" | "stopped" | "error";
@@ -145,6 +157,7 @@ export type SavedChatState = "waiting" | "streaming" | "done" | "stopped" | "err
 export type SavedChatTurn = {
   id: string;
   conversationId: string;
+  model: KapsAiModel;
   question: string;
   answer: string;
   sources: SourceLabel[];
