@@ -52,7 +52,8 @@ export function createKapsAiHistory(db: Client) {
     const hasModel = async () => (await db.execute("PRAGMA table_info(kapsai_turns)")).rows.some(row => row.name === "model");
     if (!await hasModel()) {
       try {
-        await db.execute("ALTER TABLE kapsai_turns ADD COLUMN model TEXT NOT NULL DEFAULT 'qwen3.5:2b-q4_K_M'");
+        // Rows predating model selection were originally generated with Llama 3.2.
+        await db.execute("ALTER TABLE kapsai_turns ADD COLUMN model TEXT NOT NULL DEFAULT 'llama3.2'");
       } catch (error) {
         if (!await hasModel()) throw error;
       }
