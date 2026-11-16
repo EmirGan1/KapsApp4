@@ -49,7 +49,8 @@
     "test:ayvalik:companion": "node --import tsx tests/ayvalik.companion.browser.ts",
     "test:ayvalik:weather": "node --import tsx tests/ayvalik.weather.browser.ts",
     "test:strike:audio": "node --import tsx tests/kapsstrike.audio.browser.ts",
-    "test:strike:presence": "node --import tsx tests/kapsstrike.presence.browser.ts"
+    "test:strike:presence": "node --import tsx tests/kapsstrike.presence.browser.ts",
+    "test:kapsapp-ai": "node --import tsx tests/kapsAppAi.browser.ts"
   },
   "dependencies": {
     "web-push": "^3.6.7",
@@ -83,7 +84,9 @@
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.4",
+    "remark-math": "^6.0.0",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "sql.js": "^1.14.2",

@@ -28,6 +28,7 @@ import {
   X,
   BookOpen,
   Sliders,
+  Sparkles,
 } from "lucide-react";
 import { AppTab } from "../routes";
 import { THEME_OPTIONS, ThemeId } from "../utils/theme";
@@ -114,6 +115,18 @@ export default function CommandPalette({
         icon: <MessageSquare size={16} className="text-indigo-500" />,
         action: () => {
           onNavigateTab("chats");
+          onClose();
+        },
+      },
+      {
+        id: "nav-kapsapp-ai",
+        category: "Sayfalar & Modüller",
+        title: "KapsApp AI",
+        subtitle: "Yerel yapay zeka sohbeti",
+        keywords: "kapsapp ai yapay zeka llama ollama sohbet",
+        icon: <Sparkles size={16} className="text-indigo-500" />,
+        action: () => {
+          onNavigateTab("kapsapp-ai");
           onClose();
         },
       },

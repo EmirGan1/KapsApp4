@@ -1,7 +1,7 @@
 import { dismissDeviceNotification, hasDevicePush, NotificationPermissionPrompt, removeDevicePush, showDeviceNotification, syncDevicePush } from "./components/DeviceNotifications";
 import { useChatViewport } from "./utils/chatViewport";
 import { IncomingActivityInvites } from "./components/ActivityInvites";
-import { useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import { App as CapApp } from "@capacitor/app";
@@ -41,7 +41,8 @@ import {
   BellOff,
   ChevronLeft,
   Smartphone,
-  BrainCircuit
+  BrainCircuit,
+  Sparkles
 } from "lucide-react";
 import { APP_ROUTES, getTabFromPathname, getPathFromTab, AppTab } from "./routes";
 import { useSEO } from "./components/SEO";
@@ -98,6 +99,8 @@ import {
 import { SUBJECTS } from "./utils/subjectResources";
 import SubjectResources from "./components/SubjectResources";
 import AiChecker, { clearLegacyAiCheckerData } from "./components/AiChecker";
+
+const KapsAppAi = lazy(() => import("./components/KapsAppAi"));
 
 export default function App() {
   useChatViewport();
@@ -1606,6 +1609,14 @@ export default function App() {
               onClick={() => handleTabChange('ib-calculator')} 
             />
             <NavItem
+              to={APP_ROUTES.kapsAppAi.path}
+              collapsed={preferences.sidebarCollapsed}
+              icon={<Sparkles size={18} className="text-indigo-500" />}
+              label="KapsApp AI"
+              active={activeTab === 'kapsapp-ai'}
+              onClick={() => handleTabChange('kapsapp-ai')}
+            />
+            <NavItem
               to="/ai-checker"
               collapsed={preferences.sidebarCollapsed}
               icon={<BrainCircuit size={18} className="text-indigo-500" />}
@@ -1837,6 +1848,11 @@ export default function App() {
         )}
         {activeTab === 'ib-calculator' && (
           <KapsculatorHub currentUserRoles={currentUserRoles} />
+        )}
+        {activeTab === 'kapsapp-ai' && (
+          <Suspense fallback={<p role="status" className="m-auto text-sm text-slate-500">Sohbet açılıyor…</p>}>
+            <KapsAppAi key={token} />
+          </Suspense>
         )}
         {(activeTab === 'ai-checker' || hasOpenedAiChecker) && (
           <AiChecker key={username.toLowerCase()} active={activeTab === 'ai-checker'} />

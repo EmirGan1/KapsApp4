@@ -78,6 +78,7 @@ export default function BottomNav({
     'announcements', 
     'ayvalik-cas',
     'ib-calculator',
+    'kapsapp-ai',
     'ai-checker',
     'agenda', 
     'global', 
@@ -277,6 +278,12 @@ export default function BottomNav({
                   label="KapsCulator" 
                   active={activeTab === 'ib-calculator'} 
                   onClick={() => { handleTabChange('ib-calculator'); setIsMobileMoreOpen(false); }} 
+                />
+                <DrawerGridItem
+                  icon={<Sparkles size={21} className="text-indigo-500" />}
+                  label="KapsApp AI"
+                  active={activeTab === 'kapsapp-ai'}
+                  onClick={() => { handleTabChange('kapsapp-ai'); setIsMobileMoreOpen(false); }}
                 />
                 <DrawerGridItem
                   icon={<Sparkles size={21} className="text-indigo-500" />}

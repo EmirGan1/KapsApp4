@@ -23,6 +23,7 @@ import { registerActivityGames } from "./src/server/activityGames";
 import { initAyvalikCasTables, registerAyvalikCasRoutes } from "./src/server/ayvalikController";
 import { setupChatSocketHandlers } from "./src/server/socket";
 import { initPasswordResetDb, registerPasswordResetRoutes } from "./src/server/passwordResetController";
+import { registerKapsAppAi } from "./src/server/kapsAppAi";
 import { AI_CHECKER_PATH, AI_CHECKER_JOBS_PATH, AiCheckerError, createAiChecker } from "./src/server/aiChecker";
 import { AI_TEXT_LIMIT, assessAiDetectorResult } from "./src/utils/aiDetectorAssessment";
 
@@ -1155,6 +1156,10 @@ async function startServer() {
     const ready = await aiChecker.health();
     res.status(ready ? 200 : 503).json({ ready });
   });
+  registerKapsAppAi(app, async req => {
+    const user = await authenticateToken(req);
+    return user?.id == null ? null : String(user.id);
+  }, checkDeviceBan);
   app.use(express.json({ limit: "300mb" }));
   app.use(express.urlencoded({ extended: true, limit: "300mb" }));
 
@@ -1300,7 +1305,8 @@ async function startServer() {
   app.get(["/uploads/:filename", "/api/media/:filename", "/api/video/:filename"], handleMediaStream);
 
   // Global Gateway Ban Interceptor (Physical Hardware / Fingerprint Ban ONLY - NEVER CHECKS IP)
-  app.use((req, res, next) => {
+  app.use(checkDeviceBan);
+  function checkDeviceBan(req: express.Request, res: express.Response, next: express.NextFunction) {
     // Whitelist static uploads and non-API paths
     if (req.path.startsWith("/uploads/") || req.path === "/favicon.ico" || req.path === "/api/health") {
       return next();
@@ -1328,7 +1334,7 @@ async function startServer() {
       }
     }
     next();
-  });
+  }
 
   // High-performance User Cache with TTL to reduce database round-trips
   const userCache = new Map<number, { data: any; expiresAt: number }>();
