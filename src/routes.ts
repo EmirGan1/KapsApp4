@@ -114,7 +114,7 @@ export const APP_ROUTES: Record<string, RouteMeta> = {
   kapsAppAi: {
     path: "/kapsapp-ai",
     tab: "kapsapp-ai",
-    title: "KapsApp AI | KapsApp",
+    title: "KapsAI | KapsApp",
     description: "KapsApp sunucusunda çalışan Llama 3.2 ile yapay zeka sohbeti.",
     canonical: "https://kapsapp.online/kapsapp-ai",
     requiresAuth: true,

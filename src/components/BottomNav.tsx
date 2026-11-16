@@ -281,7 +281,7 @@ export default function BottomNav({
                 />
                 <DrawerGridItem
                   icon={<Sparkles size={21} className="text-indigo-500" />}
-                  label="KapsApp AI"
+                  label="KapsAI"
                   active={activeTab === 'kapsapp-ai'}
                   onClick={() => { handleTabChange('kapsapp-ai'); setIsMobileMoreOpen(false); }}
                 />

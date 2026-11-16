@@ -2,6 +2,7 @@ export const DESKLIB_MODEL = 'desklib/ai-text-detector-v1.01';
 export const DESKLIB_REVISION = '5fdea974cd4287c61674951ec78803aa274e2fb7';
 export const AI_TEXT_LIMIT = 50_000;
 export const AI_SEGMENT_LIMIT = 32;
+export const AI_CHECKER_RESULT_NOTIFICATION = 'ai_checker_result';
 export const AI_MIN_WORDS = 120;
 export const AI_RESULT_TTL_MS = 30 * 60 * 1000;
 
