@@ -15,6 +15,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:security": "node --import tsx --test tests/passwordReset.test.ts",
+    "test:ai": "node --import tsx --test tests/aiDetectorAssessment.test.ts tests/aiChecker.model.test.ts",
     "test:battle": "node --import tsx --test tests/battleRoyale.test.ts",
     "test:kapstorial": "node --import tsx --test tests/kapstorial.test.ts",
     "test:kapstorial:browser": "node --import tsx tests/kapstorial.browser.ts",

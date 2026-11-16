@@ -29,7 +29,8 @@ try {
   if (!values.every(Number.isFinite)) throw new Error('Geçersiz skorlar.');
   const e = values.map(x => Math.exp(x - Math.max(...values)));
   const total = e[0] + e[1];
-  console.log('AI DETECTOR SMOKE TEST: OK');
+  console.log('AI DETECTOR SMOKE TEST: OK (runtime only)');
+  console.log('WARNING: This smoke test does not validate detection accuracy or false-positive rates.');
   console.log('Tokens:', ids.length);
   console.log('İnsan (sınıf 0):', (100 * e[0] / total).toFixed(2) + '%');
   console.log('AI (sınıf 1):', (100 * e[1] / total).toFixed(2) + '%');

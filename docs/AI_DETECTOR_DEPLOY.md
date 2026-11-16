@@ -42,7 +42,10 @@ Legacy `POST /api/ai-checker/analyze` remains for previously cached clients.
 
 ## Operational limits
 
-- Input: up to 20,000 characters. Model reads at most 512 tokens.
+- Input: up to 20,000 characters. The worker samples one to three independent text windows (each at most 402 tokens) instead of automatically ignoring everything after the first 512 tokens.
+- Samples under 120 words, likely Turkish samples, and partially sampled long texts do not receive a categorical AI authorship verdict.
+- Two or more consistent high raw scores are displayed as **unverified AI-like signals**, never definitive AI authorship. The 98% display rule is deliberately conservative but **not statistically calibrated**.
+- Determining a trustworthy decision threshold requires a separate labeled set of genuine human and AI texts; check the human false-positive rate before further classification claims.
 - English-only trained classifier; warn about unreliable interpretations for other languages.
 - No file uploaded or model downloaded by the browser.
 - Worker handles one request at a time with a bounded queue; first warmup or server load may add delay.

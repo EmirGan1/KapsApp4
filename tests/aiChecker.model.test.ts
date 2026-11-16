@@ -34,12 +34,16 @@ test('local ONNX model accepts short and truncated inputs and keeps scores-only 
       assert.ok(queued.tokens > 0);
 
       const start = performance.now();
-      const long = await checker.analyze('This is a sample sentence. '.repeat(160));
+      const long = await checker.analyze('This is a sample sentence. '.repeat(240));
       console.log(`Warm 512-token request: ${Math.round(performance.now() - start)} ms`);
-      assert.equal(long.tokens, 512);
+      assert.ok(long.tokens > 512);
+      assert.ok(long.tokens <= 1056);
       assert.equal(long.truncated, true);
       for (const result of [short, queued, long]) {
-        assert.deepEqual(Object.keys(result).sort(), ['scores', 'tokens', 'truncated']);
+        assert.deepEqual(Object.keys(result).sort(), ['language', 'scores', 'segmentAi', 'tokens', 'truncated', 'words']);
+        assert.ok(result.segmentAi && result.segmentAi.length >= 1);
+        assert.ok(result.segmentAi?.every(value => Number.isFinite(value)));
+        assert.ok(Number.isInteger(result.words));
         assert.equal(result.scores.length, 2);
         assert.ok(result.scores.every(Number.isFinite));
         assert.ok(Math.abs(result.scores[0] + result.scores[1] - 1) < 1e-9);

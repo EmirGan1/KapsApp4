@@ -4,7 +4,7 @@ import { Worker } from 'node:worker_threads';
 
 export const AI_CHECKER_PATH = '/api/ai-checker/analyze';
 export const AI_CHECKER_JOBS_PATH = '/api/ai-checker/jobs';
-export type AiCheckerResult = { scores: number[]; tokens: number; truncated: boolean };
+export type AiCheckerResult = { scores: number[]; tokens: number; truncated: boolean; words?: number; segmentAi?: number[]; language?: 'likely_turkish' | 'not_identified' };
 type JobState = 'queued' | 'processing' | 'done' | 'error';
 type Job = {
   id: string;
@@ -78,7 +78,10 @@ export function createAiChecker() {
     job.updatedAt = Date.now();
     if (result && Array.isArray(result.scores) && result.scores.length === 2
       && result.scores.every(v => Number.isFinite(v) && v >= 0 && v <= 1)
-      && Number.isInteger(result.tokens) && result.tokens > 0 && typeof result.truncated === 'boolean') {
+      && Number.isInteger(result.tokens) && result.tokens > 0 && typeof result.truncated === 'boolean'
+      && (result.words === undefined || (Number.isInteger(result.words) && result.words >= 0))
+      && (result.segmentAi === undefined || (Array.isArray(result.segmentAi) && result.segmentAi.length >= 1
+        && result.segmentAi.length <= 3 && result.segmentAi.every(x => Number.isFinite(x) && x >= 0 && x <= 1)))) {
       job.state = 'done';
       job.result = result;
       job.resolve?.(result);
