@@ -23,7 +23,7 @@ import { registerActivityGames } from "./src/server/activityGames";
 import { initAyvalikCasTables, registerAyvalikCasRoutes } from "./src/server/ayvalikController";
 import { setupChatSocketHandlers } from "./src/server/socket";
 import { initPasswordResetDb, registerPasswordResetRoutes } from "./src/server/passwordResetController";
-import { AI_CHECKER_PATH, AiCheckerError, createAiChecker } from "./src/server/aiChecker";
+import { AI_CHECKER_PATH, AI_CHECKER_JOBS_PATH, AiCheckerError, createAiChecker } from "./src/server/aiChecker";
 
 import { 
   generateDeck, 
@@ -1091,6 +1091,14 @@ async function startServer() {
   }));
 
   app.post(AI_CHECKER_PATH,
+    (req: express.Request, res: express.Response, next: express.NextFunction) =>
+      req.is("application/json") ? next() : res.sendStatus(415),
+    express.json({ limit: "128kb", inflate: false }),
+    (error: { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(error.status === 413 ? 413 : 400).json({ error: "Geçersiz analiz isteği." });
+    },
+  );
+  app.post(AI_CHECKER_JOBS_PATH,
     (req: express.Request, res: express.Response, next: express.NextFunction) =>
       req.is("application/json") ? next() : res.sendStatus(415),
     express.json({ limit: "128kb", inflate: false }),
@@ -2516,6 +2524,37 @@ async function startServer() {
         res.status(failure.status).json({ error: failure.message });
       }
     }
+  });
+
+
+  // New nonblocking AI Checker flow: only opaque job IDs and scores survive navigation.
+  // Raw input is never inserted into the database, request logs or a persistent cache.
+  app.post(AI_CHECKER_JOBS_PATH, async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const user = await authenticateToken(req);
+    if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
+    const input = req.body?.text;
+    req.body = undefined;
+    if (typeof input !== "string" || !input.trim() || input.length > 20000) {
+      return res.status(400).json({ error: "1 ile 20.000 karakter arasında metin gir." });
+    }
+    try {
+      const id = aiChecker.start(String(user.id), input.trim());
+      res.status(202).json({ id, status: "queued" });
+    } catch (error) {
+      const failure = error instanceof AiCheckerError ? error : new AiCheckerError(503, "Analiz servisi kullanılamıyor.");
+      res.status(failure.status).json({ error: failure.message });
+    }
+  });
+
+  app.get(`${AI_CHECKER_JOBS_PATH}/:id`, async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const user = await authenticateToken(req);
+    if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
+    if (!/^[a-f0-9-]{36}$/i.test(req.params.id)) return res.sendStatus(404);
+    const state = aiChecker.status(String(user.id), req.params.id);
+    if (!state) return res.status(404).json({ error: "Analiz oturumu sona erdi. Yeniden analiz et." });
+    res.json(state);
   });
 
   // Free Virtual Chip Refill (500 Chips when broke)
