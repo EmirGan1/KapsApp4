@@ -136,3 +136,21 @@ export async function* readJsonLines<T>(body: ReadableStream<Uint8Array>): Async
     reader.releaseLock();
   }
 }
+
+export const KAPSAPP_AI_CONVERSATIONS_PATH = "/api/kapsapp-ai/conversations";
+export const KAPSAPP_AI_TURNS_PATH = "/api/kapsapp-ai/turns";
+
+export type SavedChatState = "waiting" | "streaming" | "done" | "stopped" | "error";
+
+export type SavedChatTurn = {
+  id: string;
+  conversationId: string;
+  question: string;
+  answer: string;
+  sources: SourceLabel[];
+  state: SavedChatState;
+  phase?: ChatStatusPhase;
+  notice?: string;
+};
+
+export type SavedChatSummary = { id: string; title: string };

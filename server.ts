@@ -1175,7 +1175,7 @@ async function startServer() {
   registerKapsAppAi(app, async req => {
     const user = await authenticateToken(req);
     return user?.id == null ? null : String(user.id);
-  }, checkDeviceBan);
+  }, checkDeviceBan, client);
   app.use(express.json({ limit: "300mb" }));
   app.use(express.urlencoded({ extended: true, limit: "300mb" }));
 

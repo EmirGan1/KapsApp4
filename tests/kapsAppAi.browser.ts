@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, rm, symlink } from "node:fs/promises";
@@ -9,8 +10,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { createClient } from "@libsql/client";
 import { chromium, devices, webkit } from "playwright";
 import { KAPSAPP_AI_MODEL, KAPSAPP_AI_SYSTEM_PROMPT } from "../src/server/kapsAppAi";
-import { KAPSAPP_AI_PATH, normalizeMathMarkdown, readJsonLines } from "../src/shared/kapsAppAi";
-import type { ChatEvent, ChatMessage, ChatSource } from "../src/shared/kapsAppAi";
+import { KAPSAPP_AI_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, normalizeMathMarkdown, readJsonLines } from "../src/shared/kapsAppAi";
+import type { ChatEvent, ChatMessage, ChatSource, SavedChatTurn } from "../src/shared/kapsAppAi";
 
 const live = process.env.KAPSAPP_AI_LIVE_TEST === "1";
 const engine = process.env.KAPSAPP_AI_BROWSER === "webkit" ? webkit : chromium;
@@ -18,6 +19,9 @@ const answerFixture = "**Örnek yanıt** ve $x^2$.\n\n```js\nconsole.log('test')
 const mathAnswerFixture = "İntegral ve limit çözümü:\n\\[ \\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} \\]\nve türev: \\( \\frac{d}{dx}\\sin(x) = \\cos(x) \\) ayrıca $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$";
 
 let simulateColdModel = false;
+let completeSaved: (() => void) | undefined;
+let savedAborted = false;
+let restartAttempts = 0;
 const upstream = {
   request: undefined as undefined | {
     model: string;
@@ -67,6 +71,21 @@ const mock = live ? undefined : createServer(async (req, res) => {
     await sleep(220);
     res.write(JSON.stringify({ message: { content: mathAnswerFixture } }) + "\n");
     res.end(JSON.stringify({ done: true, load_duration: 180_000_000, prompt_eval_count: 120, prompt_eval_duration: 40_000_000, eval_count: 42, eval_duration: 90_000_000 }) + "\n");
+    return;
+  }
+  if (prompt === "screen-lock-fixture") {
+    res.on("close", () => { if (!res.writableEnded) savedAborted = true; });
+    res.write(JSON.stringify({ message: { content: "İlk parça. " } }) + "\n");
+    completeSaved = () => {
+      res.write(JSON.stringify({ message: { content: "Ekran kapalıyken tamamlandı." } }) + "\n");
+      res.end(JSON.stringify({ done: true }) + "\n");
+    };
+    return;
+  }
+  if (prompt === "restart-fixture") {
+    restartAttempts++;
+    res.write(JSON.stringify({ message: { content: "Sunucu yeniden başladıktan sonra tamamlandı." } }) + "\n");
+    if (restartAttempts > 1) res.end(JSON.stringify({ done: true }) + "\n");
     return;
   }
   if (prompt === "long-reply-fixture") {
@@ -125,13 +144,18 @@ const env = {
   KAPSAPP_AI_MAX_QUEUE: "1",
   ...(!live ? { KAPSAPP_AI_CONNECT_TIMEOUT_MS: "500" } : {}),
 };
-const child = spawn(process.execPath, [join(root, "dist/server.cjs")], { cwd: directory, env });
-const exited = once(child, "exit");
 let logs = "";
-child.stdout.on("data", data => { logs += data; });
-child.stderr.on("data", data => { logs += data; });
+function startApp() {
+  const child = spawn(process.execPath, [join(root, "dist/server.cjs")], { cwd: directory, env });
+  child.stdout.on("data", data => { logs += data; });
+  child.stderr.on("data", data => { logs += data; });
+  return { child, exited: once(child, "exit") };
+}
+let { child, exited } = startApp();
 const base = `http://127.0.0.1:${port}`;
 const api = base + KAPSAPP_AI_PATH;
+const savedChats = base + KAPSAPP_AI_CONVERSATIONS_PATH;
+const savedTurns = base + KAPSAPP_AI_TURNS_PATH;
 
 const auth = (name: string) => ({ Authorization: `Bearer ai-qa-${name}` });
 const ask = (prompt: string, account: string, options: { signal?: AbortSignal; source?: ChatSource } = {}) =>
@@ -164,7 +188,7 @@ async function collect(response: Response) {
 let browser: Awaited<ReturnType<typeof engine.launch>> | undefined;
 try {
   await waitFor(() => fetch(base + "/api/health", { signal: AbortSignal.timeout(1000) }).then(r => r.ok, () => false));
-  for (const name of ["tr", "en", "one", "two", "three", "browser", "screenshot", "banned", "source", "expired"]) {
+  for (const name of ["tr", "en", "one", "two", "three", "browser", "screenshot", "history", "banned", "source", "expired"]) {
     const { lastInsertRowid } = await db.execute({
       sql: "INSERT INTO users (username,password,status,is_banned) VALUES (?, 'fixture', 'approved', ?)",
       args: [name, Number(name === "banned")],
@@ -329,6 +353,7 @@ try {
     ? "Reply with a long numbered list of two hundred different animals so I can test response cancellation."
     : "hold-fixture";
   await input.fill(prompt);
+  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('[aria-label="Mesajı gönder"]')?.disabled);
   await input.press("Enter");
   const stop = page.getByRole("button", { name: "Yanıtı durdur" });
   await stop.waitFor();
@@ -413,6 +438,85 @@ try {
     console.log("PASS upstream timeout, cancellation and generation slot recovery");
   }
   if (mock) {
+    const historyContext = await browser.newContext(mobile);
+    await historyContext.addInitScript(() => {
+      localStorage.setItem("lan_token", "ai-qa-history");
+      localStorage.setItem("lan_username", "history");
+      sessionStorage.setItem("kapsapp-notification-dismissed", "1");
+    });
+    await historyContext.route("**/*", route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+    let mobilePage = await historyContext.newPage();
+    let droppedAcknowledgement = false;
+    await mobilePage.route("**/conversations/*/turns", async route => {
+      if (droppedAcknowledgement) return route.continue();
+      const accepted = await route.fetch();
+      assert.equal(accepted.status(), 202);
+      droppedAcknowledgement = true;
+      await route.abort("failed");
+    });
+    await mobilePage.goto(base + "/kapsapp-ai");
+    await mobilePage.getByRole("textbox", { name: "Mesaj yaz" }).fill("screen-lock-fixture");
+    await mobilePage.getByRole("button", { name: "Mesajı gönder" }).tap();
+    await mobilePage.getByText("İlk parça.", { exact: true }).waitFor();
+    assert.equal(droppedAcknowledgement, true);
+    const list = await fetch(savedChats, { headers: auth("history") }).then(r => r.json());
+    const { id, conversationId } = list.active;
+    const submitAgain = () => fetch(`${savedChats}/${conversationId}/turns`, {
+      method: "POST", headers: { ...auth("history"), "Content-Type": "application/json" },
+      body: JSON.stringify({ id, question: "screen-lock-fixture" }),
+    });
+    assert.equal((await submitAgain()).status, 200, "a lost acknowledgement can be retried idempotently");
+    assert.equal((await fetch(`${savedChats}/${conversationId}`, { headers: auth("two") })).status, 404);
+    assert.equal((await fetch(`${savedTurns}/${id}`, { headers: auth("two") })).status, 404);
+    assert.equal((await fetch(`${savedTurns}/${id}/stop`, { method: "POST", headers: auth("two") })).status, 404);
+    const otherList = await fetch(savedChats, { headers: auth("two") }).then(r => r.json());
+    assert.ok(!otherList.conversations.some((chat: { id: string }) => chat.id === conversationId));
+
+    // Screen suspension and closing the page interrupt observation, not inference.
+    await historyContext.setOffline(true);
+    await mobilePage.getByText(/Bağlantı yenileniyor/).waitFor();
+    await mobilePage.close();
+    assert.ok(completeSaved);
+    completeSaved();
+    await waitFor(async () => (await fetch(`${savedTurns}/${id}`, { headers: auth("history") }).then(r => r.json())).state === "done");
+    assert.equal(savedAborted, false);
+    await historyContext.setOffline(false);
+    mobilePage = await historyContext.newPage();
+    await mobilePage.goto(base + "/kapsapp-ai");
+    await mobilePage.getByText(/Ekran kapalıyken tamamlandı/).waitFor();
+    await mobilePage.getByRole("button", { name: "Yeni sohbet", exact: true }).tap();
+    await mobilePage.getByRole("button", { name: "Geçmiş", exact: true }).tap();
+    await mobilePage.getByRole("button", { name: "screen-lock-fixture", exact: true }).tap();
+    await mobilePage.getByText(/Ekran kapalıyken tamamlandı/).waitFor();
+    await mobilePage.getByRole("textbox", { name: "Mesaj yaz" }).fill("Eski sohbete devam");
+    await mobilePage.getByRole("button", { name: "Mesajı gönder" }).tap();
+    await mobilePage.getByText("Örnek yanıt", { exact: true }).waitFor();
+    assert.ok(upstream.request?.messages.some(message => message.content.includes("Ekran kapalıyken tamamlandı")));
+    const saved = await fetch(`${savedChats}/${conversationId}`, { headers: auth("history") }).then(r => r.json());
+    assert.equal(saved.turns.filter((turn: SavedChatTurn) => turn.id === id).length, 1);
+
+    const restartId = randomUUID();
+    const restart = await fetch(`${savedChats}/${conversationId}/turns`, {
+      method: "POST", headers: { ...auth("history"), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: restartId, question: "restart-fixture" }),
+    });
+    assert.equal(restart.status, 202);
+    await waitFor(() => restartAttempts === 1);
+    await mobilePage.close();
+    child.kill("SIGTERM");
+    await exited;
+    ({ child, exited } = startApp());
+    await waitFor(() => fetch(base + "/api/health", { signal: AbortSignal.timeout(1000) }).then(r => r.ok, () => false));
+    await waitFor(async () => (await fetch(`${savedTurns}/${restartId}`, { headers: auth("history") }).then(r => r.json())).state === "done");
+    assert.equal(restartAttempts, 2);
+    const reopened = await fetch(`${savedChats}/${conversationId}`, { headers: auth("history") }).then(r => r.json());
+    assert.equal(reopened.turns.length, 3);
+    assert.match(reopened.turns.at(-1).answer, /yeniden başladıktan sonra tamamlandı/);
+
+    assert.equal((await fetch(`${savedChats}/${conversationId}`, { method: "DELETE", headers: auth("history") })).status, 204);
+    assert.equal((await fetch(`${savedTurns}/${id}`, { headers: auth("history") })).status, 404);
+    await historyContext.close();
+    console.log("PASS private mobile history, offline and closed page completion, replay, continuation, process restart and deletion");
     await new Promise<void>(resolve => mock.close(() => resolve()));
     const offline = await collect(await ask("offline-fixture", "screenshot"));
     assert.match(JSON.stringify(offline.at(-1)), /Ollama servisine bağlanamadı/);
