@@ -1609,7 +1609,7 @@ export default function App() {
               to="/ai-checker"
               collapsed={preferences.sidebarCollapsed}
               icon={<BrainCircuit size={18} className="text-indigo-500" />}
-              label="AI Checker"
+              label="AI Dedektör"
               active={activeTab === 'ai-checker'}
               onClick={() => handleTabChange('ai-checker')}
             />
