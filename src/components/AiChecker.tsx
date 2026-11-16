@@ -4,14 +4,16 @@ import {
   FileText, LoaderCircle, LockKeyhole, RotateCcw, ShieldCheck,
 } from 'lucide-react';
 import { getApiUrl, getAuthHeaders } from '../utils/api';
+import { assessAiDetectorResult, type DetectorResult } from '../utils/aiDetectorAssessment';
 
-type Result = { scores: number[]; tokens: number; truncated: boolean };
+type Result = DetectorResult;
 type JobResponse =
   | { status: 'queued' | 'processing' }
   | { status: 'done'; result: Result }
   | { status: 'error'; error?: string };
 
-const STORAGE_PREFIX = 'kapsapp.ai-checker.v2.';
+const STORAGE_PREFIX = 'kapsapp.ai-checker.v3.';
+const PREVIOUS_PREFIX = 'kapsapp.ai-checker.v2.';
 const LEGACY_PREFIX = 'kapsapp.ai-checker.v1.';
 const JOB_PREFIX = 'kapsapp.ai-checker.job.v1.';
 const MAX_LENGTH = 20_000;
@@ -42,7 +44,7 @@ function readJob(key: string): string | null {
 export function clearLegacyAiCheckerData() {
   try {
     for (const key of Object.keys(localStorage)) {
-      if (key.startsWith(LEGACY_PREFIX)) {
+      if (key.startsWith(LEGACY_PREFIX) || key.startsWith(PREVIOUS_PREFIX)) {
         // Old model scores may have a different label order; never relabel them.
         localStorage.removeItem(key);
         continue;
@@ -97,7 +99,14 @@ export default function AiChecker({ account, active }: { account: string; active
           return;
         }
         if (data.status === 'done' && isResult(data.result)) {
-          const summary = { scores: data.result.scores, tokens: data.result.tokens, truncated: data.result.truncated };
+          const summary: Result = {
+            scores: data.result.scores,
+            tokens: data.result.tokens,
+            truncated: data.result.truncated,
+            words: data.result.words,
+            segmentAi: data.result.segmentAi,
+            language: data.result.language,
+          };
           setResult(summary);
           try { localStorage.setItem(resultKey, JSON.stringify(summary)); } catch {}
           setError('');
@@ -173,8 +182,8 @@ export default function AiChecker({ account, active }: { account: string; active
 
   const copy = async () => {
     if (!result) return;
-    const label = result.scores[1] > result.scores[0] ? 'AI' : 'İnsan';
-    const summary = `KapsApp AI Metin Dedektörü\nBaskın sonuç: ${label}\nİnsan: %${percent(result.scores[0])}\nAI: %${percent(result.scores[1])}\n${result.tokens} token işlendi. Sonuç kesin kanıt değildir.`;
+    const assessment = assessAiDetectorResult(result);
+    const summary = `KapsApp AI Metin Dedektörü\nDeğerlendirme: ${assessment.title}\n${assessment.detail}\nHam İnsan modeli skoru: %${percent(result.scores[0])}\nHam AI modeli skoru: %${percent(result.scores[1])}\nSkorlar doğruluk oranı veya yazarlık kanıtı değildir.`;
     try {
       await navigator.clipboard.writeText(summary);
       setCopied(true);
@@ -184,8 +193,7 @@ export default function AiChecker({ account, active }: { account: string; active
 
   const human = result?.scores[0] || 0;
   const ai = result?.scores[1] || 0;
-  const uncertain = !!result && Math.abs(human - ai) < 0.1;
-  const dominant = ai > human ? 'AI' : 'İnsan';
+  const assessment = result ? assessAiDetectorResult(result) : null;
   const isTurkish = /[çğıöşüÇĞİÖŞÜ]/.test(text);
 
   return (
@@ -267,18 +275,20 @@ export default function AiChecker({ account, active }: { account: string; active
               <div>
                 <p className="text-xs uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">{busy ? 'Önceki analiz' : 'Son analiz sonucu'}</p>
                 <h2 className="text-xl sm:text-2xl font-bold mt-1">
-                  {uncertain ? 'Sonuç belirsiz' : dominant === 'AI' ? 'AI özellikleri daha baskın' : 'İnsan yazımı özellikleri daha baskın'}
+                  {assessment?.title}
                 </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Modelin değerlendirmesi · Kesin kanıt değildir</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{assessment?.detail}</p>
               </div>
               <button type="button" onClick={() => void copy()} className="inline-flex items-center gap-2 min-h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
                 {copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Kopyalandı' : 'Sonucu kopyala'}
               </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <details className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+              <summary className="cursor-pointer select-none text-sm font-semibold text-slate-700 dark:text-slate-200">Teknik model skorlarını göster (doğruluk yüzdesi değil)</summary>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
               {[
-                { name: 'İnsan', value: human, bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
-                { name: 'AI', value: ai, bar: 'bg-indigo-500', dot: 'bg-indigo-500' },
+                { name: 'İnsan skoru', value: human, bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
+                { name: 'AI skoru', value: ai, bar: 'bg-indigo-500', dot: 'bg-indigo-500' },
               ].map(item => <div key={item.name} className="rounded-2xl border border-slate-200 dark:border-slate-700 p-4 sm:p-5 bg-slate-50/60 dark:bg-slate-950/40">
                 <div className="flex justify-between items-center gap-2">
                   <span className="inline-flex items-center gap-2 text-sm font-semibold"><span className={`w-2.5 h-2.5 rounded-full ${item.dot}`}/>{item.name}</span>
@@ -289,9 +299,10 @@ export default function AiChecker({ account, active }: { account: string; active
                 </div>
               </div>)}
             </div>
+            </details>
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed space-y-2">
-              <p>{result.tokens} token analiz edildi.{result.truncated ? ' Metnin yalnızca ilk 512 tokenı incelendi.' : ''} Skorlar kalibre edilmiş doğruluk oranı değildir.</p>
-              <p>Bu araç İngilizce için eğitilmiş deneysel bir modeldir. Özellikle kısa, düzenlenmiş veya Türkçe metinlerde yanlış sınıflandırma yapabilir.</p>
+              <p>{result.words?.toLocaleString('tr-TR') || '—'} kelime · {result.tokens} token · {result.segmentAi?.length || 1} ayrı metin bölümü değerlendirildi.{result.truncated ? ' Uzun metnin bir kısmı örneklendi.' : ''}</p>
+              <p>Model İngilizce için eğitilmiştir. Kısa, düzenlenmiş ve İngilizce dışındaki metinlerde yanlış pozitifler görülebilir. Ayrı bölümlerde aynı skorun çıkması da yazarlığı kanıtlamaz.</p>
             </div>
           </div>
         </section>}
