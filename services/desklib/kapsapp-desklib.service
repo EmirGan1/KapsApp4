@@ -1,0 +1,38 @@
+[Unit]
+Description=KapsApp Desklib text detector
+After=network.target
+StartLimitIntervalSec=180
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=kapsapp-desklib
+Group=kapsapp-desklib
+WorkingDirectory=/opt/kapsapp-desklib/app
+Environment=DESKLIB_MODEL_DIR=/opt/kapsapp-desklib/model
+Environment=DESKLIB_THREADS=2
+Environment=RAYON_NUM_THREADS=2
+Environment=OMP_NUM_THREADS=2
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/kapsapp-desklib/venv/bin/python -m uvicorn service:app --host 127.0.0.1 --port 8765 --workers 1 --no-access-log --limit-concurrency 16
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+MemoryAccounting=yes
+MemoryHigh=2600M
+MemoryMax=3G
+MemorySwapMax=0
+CPUQuota=200%
+Nice=5
+LimitCORE=0
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_INET AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

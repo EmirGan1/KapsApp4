@@ -1,0 +1,6 @@
+# Install the CPU PyTorch wheel separately. See docs/AI_DETECTOR_DEPLOY.md.
+transformers==4.51.3
+sentencepiece==0.2.0
+lingua-language-detector==2.1.1
+fastapi==0.115.12
+uvicorn==0.34.2

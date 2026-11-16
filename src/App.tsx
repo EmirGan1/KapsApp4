@@ -1839,7 +1839,7 @@ export default function App() {
           <KapsculatorHub currentUserRoles={currentUserRoles} />
         )}
         {(activeTab === 'ai-checker' || hasOpenedAiChecker) && (
-          <AiChecker key={username.toLowerCase()} account={username.toLowerCase()} active={activeTab === 'ai-checker'} />
+          <AiChecker key={username.toLowerCase()} active={activeTab === 'ai-checker'} />
         )}
         {activeTab === 'agenda' && (
           <Agenda 

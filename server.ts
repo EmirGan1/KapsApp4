@@ -24,6 +24,7 @@ import { initAyvalikCasTables, registerAyvalikCasRoutes } from "./src/server/ayv
 import { setupChatSocketHandlers } from "./src/server/socket";
 import { initPasswordResetDb, registerPasswordResetRoutes } from "./src/server/passwordResetController";
 import { AI_CHECKER_PATH, AI_CHECKER_JOBS_PATH, AiCheckerError, createAiChecker } from "./src/server/aiChecker";
+import { AI_TEXT_LIMIT, assessAiDetectorResult } from "./src/utils/aiDetectorAssessment";
 
 import { 
   generateDeck, 
@@ -1090,22 +1091,70 @@ async function startServer() {
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Hardware-Fingerprint", "X-Device-Id"]
   }));
 
-  app.post(AI_CHECKER_PATH,
-    (req: express.Request, res: express.Response, next: express.NextFunction) =>
-      req.is("application/json") ? next() : res.sendStatus(415),
+  const aiChecker = createAiChecker();
+  app.use("/api/ai-checker", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
+  app.post([AI_CHECKER_PATH, AI_CHECKER_JOBS_PATH],
+    (req: express.Request, res: express.Response, next: express.NextFunction) => req.is("application/json") ? next() : res.sendStatus(415),
     express.json({ limit: "128kb", inflate: false }),
-    (error: { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    ((error, _req, res, _next) => {
       res.status(error.status === 413 ? 413 : 400).json({ error: "Geçersiz analiz isteği." });
+    }) as express.ErrorRequestHandler,
+    async (req: express.Request, res: express.Response) => {
+      const user = await authenticateToken(req);
+      let input = req.body?.text;
+      req.body = undefined;
+      if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
+      if (typeof input !== "string" || input.length > AI_TEXT_LIMIT || !input.trim()) {
+        return res.status(400).json({ error: "1 ile 20.000 karakter arasında metin gir." });
+      }
+      try {
+        const owner = String(user.id);
+        if (req.path.toLowerCase().replace(/\/$/, "") === AI_CHECKER_JOBS_PATH) {
+          const id = aiChecker.start(owner, input.trim());
+          if (!res.destroyed) res.status(202).json({ id, status: "queued" });
+          return;
+        }
+        const pending = aiChecker.analyze(owner, input.trim());
+        input = undefined;
+        const result = await pending;
+        if (res.destroyed) return;
+        if (!result.scores) return res.status(422).json({ error: assessAiDetectorResult(result).title });
+        res.json(result);
+      } catch (error) {
+        if (res.destroyed) return;
+        const failure = error instanceof AiCheckerError
+          ? error : new AiCheckerError(503, "Analiz servisi kullanılamıyor.");
+        res.status(failure.status).json({ error: failure.message });
+      }
     },
   );
-  app.post(AI_CHECKER_JOBS_PATH,
-    (req: express.Request, res: express.Response, next: express.NextFunction) =>
-      req.is("application/json") ? next() : res.sendStatus(415),
-    express.json({ limit: "128kb", inflate: false }),
-    (error: { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      res.status(error.status === 413 ? 413 : 400).json({ error: "Geçersiz analiz isteği." });
-    },
-  );
+  app.get(AI_CHECKER_JOBS_PATH, async (req, res) => {
+    const user = await authenticateToken(req);
+    if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
+    res.json(aiChecker.latest(String(user.id)));
+  });
+  app.get(`${AI_CHECKER_JOBS_PATH}/:id`, async (req, res) => {
+    const user = await authenticateToken(req);
+    if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
+    if (!/^[a-f0-9-]{36}$/i.test(req.params.id)) return res.sendStatus(404);
+    const state = aiChecker.status(String(user.id), req.params.id);
+    if (!state) return res.status(404).json({ error: "Analiz oturumu sona erdi. Yeniden analiz et." });
+    if (state.status === "done" && req.query.model !== "desklib") {
+      // Cached clients used the old score interpretation and have no state for skipped inference.
+      const { scores, tokens, truncated } = state.result;
+      return res.json(scores ? { status: "done", result: { scores, tokens, truncated } }
+        : { status: "error", error: assessAiDetectorResult(state.result).title });
+    }
+    res.json(state);
+  });
+  app.get("/api/ai-checker/health", async (req, res) => {
+    if (!await authenticateToken(req)) return res.sendStatus(401);
+    const ready = await aiChecker.health();
+    res.status(ready ? 200 : 503).json({ ready });
+  });
   app.use(express.json({ limit: "300mb" }));
   app.use(express.urlencoded({ extended: true, limit: "300mb" }));
 
@@ -2506,56 +2555,6 @@ async function startServer() {
       return null;
     }
   }
-
-  const aiChecker = createAiChecker();
-  app.post(AI_CHECKER_PATH, async (req, res) => {
-    if (!await authenticateToken(req)) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
-    const input = req.body?.text;
-    req.body = undefined;
-    if (typeof input !== "string" || input.length > 20000 || !input.trim()) {
-      return res.status(400).json({ error: "1 ile 20.000 karakter arasında metin gir." });
-    }
-    try {
-      const result = await aiChecker.analyze(input.trim());
-      if (!res.destroyed) res.json(result);
-    } catch (error) {
-      if (!res.destroyed) {
-        const failure = error instanceof AiCheckerError ? error : new AiCheckerError(503, "Model şu anda kullanılamıyor.");
-        res.status(failure.status).json({ error: failure.message });
-      }
-    }
-  });
-
-
-  // New nonblocking AI Checker flow: only opaque job IDs and scores survive navigation.
-  // Raw input is never inserted into the database, request logs or a persistent cache.
-  app.post(AI_CHECKER_JOBS_PATH, async (req, res) => {
-    res.setHeader("Cache-Control", "no-store");
-    const user = await authenticateToken(req);
-    if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
-    const input = req.body?.text;
-    req.body = undefined;
-    if (typeof input !== "string" || !input.trim() || input.length > 20000) {
-      return res.status(400).json({ error: "1 ile 20.000 karakter arasında metin gir." });
-    }
-    try {
-      const id = aiChecker.start(String(user.id), input.trim());
-      res.status(202).json({ id, status: "queued" });
-    } catch (error) {
-      const failure = error instanceof AiCheckerError ? error : new AiCheckerError(503, "Analiz servisi kullanılamıyor.");
-      res.status(failure.status).json({ error: failure.message });
-    }
-  });
-
-  app.get(`${AI_CHECKER_JOBS_PATH}/:id`, async (req, res) => {
-    res.setHeader("Cache-Control", "no-store");
-    const user = await authenticateToken(req);
-    if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor." });
-    if (!/^[a-f0-9-]{36}$/i.test(req.params.id)) return res.sendStatus(404);
-    const state = aiChecker.status(String(user.id), req.params.id);
-    if (!state) return res.status(404).json({ error: "Analiz oturumu sona erdi. Yeniden analiz et." });
-    res.json(state);
-  });
 
   // Free Virtual Chip Refill (500 Chips when broke)
   app.post("/api/chips/refill", async (req, res) => {
@@ -12836,7 +12835,6 @@ async function startServer() {
   };
 
   httpServer.listen(PORT, "0.0.0.0", () => {
-    try { aiChecker.warm(); } catch { console.warn("AI Checker worker could not start."); }
     console.log(`\n=====================================`);
     console.log(`✅ Server running on LAN`);
     console.log(`➡️  Connect via: http://${getLocalIP()}:${PORT}`);
