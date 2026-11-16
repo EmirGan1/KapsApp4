@@ -44,7 +44,9 @@ const MIB = 1024 * 1024;
 
 const BUSY = "KapsAI şu anda başka bir yanıt hazırlıyor. Biraz sonra tekrar dene.";
 const LOW_MEMORY = "Sunucuda model için yeterli boş bellek bulunmuyor. Biraz sonra tekrar dene.";
-const UNAVAILABLE = "Yerel model şu anda kullanılamıyor. Biraz sonra tekrar dene.";
+const UNAVAILABLE = "Ollama modeli başlatamadı veya yanıt akışında hata oluştu. Biraz sonra tekrar dene.";
+const OLLAMA_OFFLINE = "KapsAI, Ollama servisine bağlanamadı. Biraz sonra tekrar dene.";
+const RESPONSE_INTERRUPTED = "Ollama bağlantısı yanıt tamamlanmadan kesildi. Tekrar dene.";
 
 const ollamaAgent = new HttpAgent({
   keepAlive: true,
@@ -131,16 +133,20 @@ async function availableMemory() {
 }
 
 class ModelFailure extends Error {
-  constructor(message: string, readonly status = 503) {
+  constructor(
+    message: string,
+    readonly status = 503,
+    readonly diagnostic?: "connect_timeout" | "offline" | "transport" | "memory" | "model_missing" | "upstream",
+  ) {
     super(message);
   }
 }
 
 function modelFailure(detail: string, status?: number) {
-  if (/memory|allocat|\boom\b/i.test(detail)) return new ModelFailure(LOW_MEMORY);
+  if (/memory|allocat|\boom\b/i.test(detail)) return new ModelFailure(LOW_MEMORY, 503, "memory");
   if (status === 429 || status === 503 && /queue|busy|overload/i.test(detail)) return new ModelFailure(BUSY);
-  if (status === 404) return new ModelFailure("KapsAI modeli sunucuda kurulu değil.");
-  return new ModelFailure(UNAVAILABLE);
+  if (status === 404) return new ModelFailure("KapsAI modeli sunucuda kurulu değil.", 503, "model_missing");
+  return new ModelFailure(UNAVAILABLE, 503, "upstream");
 }
 
 function checkModelLoaded(signal: AbortSignal, connectTimeoutMs: number): Promise<{ ok: boolean; loaded: boolean }> {
@@ -208,7 +214,7 @@ function openOllamaChatStream(
         let errBody = "";
         res.setEncoding("utf8");
         res.on("data", chunk => {
-          if (errBody.length < 2048) errBody += chunk;
+          errBody += chunk.slice(0, 2048 - errBody.length);
         });
         res.on("end", () => {
           if (!settled) {
@@ -216,10 +222,10 @@ function openOllamaChatStream(
             resolve({ status, errorText: errBody.slice(0, 2048) });
           }
         });
-        res.on("error", err => {
+        res.on("error", () => {
           if (!settled) {
             settled = true;
-            reject(err);
+            reject(new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport"));
           }
         });
         return;
@@ -235,16 +241,24 @@ function openOllamaChatStream(
       if (!settled) {
         settled = true;
         req.destroy();
-        reject(new ModelFailure(UNAVAILABLE, 503));
+        reject(new ModelFailure(OLLAMA_OFFLINE, 503, "connect_timeout"));
       }
     }, connectTimeoutMs);
     connectTimer.unref?.();
 
-    req.on("error", err => {
-      clearTimeout(connectTimer);
+    req.once("socket", socket => {
+      // Ollama can delay HTTP headers until the model is loaded. The first-token
+      // budget covers this wait, including when the agent gives us a reused socket.
+      if (socket.connecting) socket.once("connect", () => clearTimeout(connectTimer));
+      else clearTimeout(connectTimer);
+    });
+    req.once("close", () => clearTimeout(connectTimer));
+    req.on("error", (error: NodeJS.ErrnoException) => {
       if (!settled) {
         settled = true;
-        reject(err);
+        reject(error.code === "ECONNREFUSED"
+          ? new ModelFailure(OLLAMA_OFFLINE, 503, "offline")
+          : new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport"));
       }
     });
     req.end(payload);
@@ -293,7 +307,7 @@ export function registerKapsAppAi(
       if (record.expires <= now) recent.delete(id);
     }
     for (const [key, st] of jobStatuses) {
-      if (st.expiresAt <= now) jobStatuses.delete(key);
+      if ((st.phase === "done" || st.phase === "error") && st.expiresAt <= now) jobStatuses.delete(key);
     }
   }
 
@@ -497,7 +511,7 @@ export function registerKapsAppAi(
         if (available < coldMemMib * MIB) {
           if (available < 1024 * MIB) throw new ModelFailure(LOW_MEMORY);
           const ps = await checkModelLoaded(signal, connectTimeoutMs);
-          if (!ps.ok) throw new ModelFailure(UNAVAILABLE);
+          if (!ps.ok) throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
           if (!ps.loaded) throw new ModelFailure(LOW_MEMORY);
           isModelWarm = true;
         } else {
@@ -631,9 +645,12 @@ export function registerKapsAppAi(
             return;
           }
         }
-        throw new ModelFailure("Model bağlantısı yanıt tamamlanmadan kesildi.");
+        throw new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport");
       } catch (error) {
-        if (res.destroyed || (signal.aborted && !timeoutReason)) return;
+        if (res.destroyed || (signal.aborted && !timeoutReason)) {
+          if (jobStatuses.get(owner) === jobStatus) jobStatuses.delete(owner);
+          return;
+        }
         const failure = timeoutReason
           ? new ModelFailure(
               timeoutReason === "queue"
@@ -645,7 +662,13 @@ export function registerKapsAppAi(
             )
           : error instanceof ModelFailure
             ? error
-            : new ModelFailure(UNAVAILABLE);
+            : new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport");
+        if (failure.diagnostic || (timeoutReason && timeoutReason !== "queue")) {
+          console.warn("[KapsAI] Ollama request failed", {
+            requestId, reason: failure.diagnostic ?? timeoutReason,
+            elapsedMs: Date.now() - startedAt,
+          });
+        }
         updateJobPhase("error", { error: failure.message });
         if (res.headersSent) write({ type: "error", error: failure.message });
         else res.status(failure.status).json({ error: failure.message });
