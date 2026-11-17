@@ -141,12 +141,14 @@ export const KAPSAPP_AI_CONVERSATIONS_PATH = "/api/kapsapp-ai/conversations";
 export const KAPSAPP_AI_PREFERENCE_PATH = "/api/kapsapp-ai/model-preference";
 
 export const KAPSAPP_AI_MODELS = {
+  "granite4.1:3b-q4_K_M": { label: "Granite 4.1 3B", description: "Daha detaylı yanıt · Daha uzun sürebilir" },
+  "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": { label: "LFM 1.2B", description: "Daha hızlı cevap · İngilizce kısa sohbet için" },
   "qwen3.5:2b-q4_K_M": { label: "Qwen3.5 2B", description: "Yerel model · 3 CPU thread · 2048 bağlam" },
 } as const;
 export type KapsAiModel = keyof typeof KAPSAPP_AI_MODELS;
 export type LegacyKapsAiModel = "llama3.2" | "qwen3:0.6b";
 export type StoredKapsAiModel = KapsAiModel | LegacyKapsAiModel;
-export const KAPSAPP_AI_DEFAULT_MODEL: KapsAiModel = "qwen3.5:2b-q4_K_M";
+export const KAPSAPP_AI_DEFAULT_MODEL: KapsAiModel = "granite4.1:3b-q4_K_M";
 export function isKapsAiModel(value: unknown): value is KapsAiModel {
   return typeof value === "string" && Object.hasOwn(KAPSAPP_AI_MODELS, value);
 }

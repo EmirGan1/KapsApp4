@@ -134,10 +134,10 @@ export function createKapsAiHistory(db: Client) {
         source: row.source_title ? { title: String(row.source_title), text: String(row.source_text) } : undefined,
       } : null;
     },
-    async start(owner: string, id: string) {
+    async start(owner: string, id: string, model: KapsAiModel) {
       return (await db.execute({
         sql: `UPDATE kapsai_turns SET state = 'running', model = ? WHERE owner = ? AND id = ? AND ${PENDING}`,
-        args: [KAPSAPP_AI_DEFAULT_MODEL, owner, id],
+        args: [model, owner, id],
       })).rowsAffected === 1;
     },
     async context(owner: string, conversationId: string, before: number) {
@@ -163,14 +163,14 @@ export function createKapsAiHistory(db: Client) {
       });
       return get(owner, id);
     },
-    async retry(owner: string, id: string, capacity: number) {
+    async retry(owner: string, id: string, capacity: number, model: KapsAiModel) {
       const result = await db.execute({
         sql: `UPDATE OR IGNORE kapsai_turns SET state = 'queued', answer = '', notice = NULL, model = ?
           WHERE owner = ? AND id = ? AND state IN ('error', 'stopped')
           AND NOT EXISTS (SELECT 1 FROM kapsai_turns AS newer WHERE newer.owner = kapsai_turns.owner
             AND newer.conversation_id = kapsai_turns.conversation_id AND newer.seq > kapsai_turns.seq)
           AND (SELECT count(*) FROM kapsai_turns WHERE ${PENDING}) < ?`,
-        args: [KAPSAPP_AI_DEFAULT_MODEL, owner, id, capacity],
+        args: [model, owner, id, capacity],
       });
       return result.rowsAffected === 1;
     },

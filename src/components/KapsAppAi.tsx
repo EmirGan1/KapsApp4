@@ -4,7 +4,7 @@ import { ArrowUp, Check, ChevronDown, Copy, FileText, History, LoaderCircle, Plu
 import Markdown from "react-markdown";
 import remarkMath from "remark-math";
 import {
-  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT, KAPSAPP_AI_DEFAULT_MODEL, KAPSAPP_AI_MODELS, kapsAiModelLabel, normalizeMathMarkdown,
+  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT, isKapsAiModel, KAPSAPP_AI_MODELS, kapsAiModelLabel, normalizeMathMarkdown,
 } from "../shared/kapsAppAi";
 import type { ChatSource, ChatStatusPhase } from "../shared/kapsAppAi";
 import KapsAppAiEquation from "./KapsAppAiEquation";
@@ -245,11 +245,19 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">KapsAI</h2>
           </div>
           <div className="col-span-2 row-start-2 flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
-            <span aria-label="KapsAI modeli" className={`${secondary} cursor-default`}>
-              {KAPSAPP_AI_MODELS[KAPSAPP_AI_DEFAULT_MODEL].label}
-            </span>
-            <p className="text-xs text-slate-600 dark:text-slate-400">
-              {KAPSAPP_AI_MODELS[KAPSAPP_AI_DEFAULT_MODEL].description}
+            <select aria-label="KapsAI modeli" aria-describedby="kaps-ai-model-description"
+              className={`${secondary} max-w-full disabled:opacity-50`} value={history.model}
+              disabled={!history.initialized || history.modelPending || Boolean(pendingSubmission)}
+              onChange={event => {
+                const next = event.currentTarget.value;
+                if (isKapsAiModel(next)) void history.chooseModel(next);
+              }}>
+              {Object.entries(KAPSAPP_AI_MODELS).map(([id, info]) => (
+                <option key={id} value={id}>{info.label}</option>
+              ))}
+            </select>
+            <p id="kaps-ai-model-description" className="text-xs text-slate-600 dark:text-slate-400">
+              {KAPSAPP_AI_MODELS[history.model].description}
             </p>
           </div>
           <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-2">
