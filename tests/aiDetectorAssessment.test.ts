@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assessAiDetectorResult, DESKLIB_MODEL, DESKLIB_REVISION, parseDetectorResult, type DetectorResult } from '../src/utils/aiDetectorAssessment';
+import { assessAiDetectorResult, DESKLIB_MODEL, DESKLIB_REVISION, TURKISH_MODEL, TURKISH_REVISION, parseDetectorResult, type DetectorResult } from '../src/utils/aiDetectorAssessment';
 
 const sample: DetectorResult = {
   model: DESKLIB_MODEL, revision: DESKLIB_REVISION, words: 260, tokens: 340, truncated: false,
@@ -41,4 +41,22 @@ test('results from the old detector, wrong revisions and invalid scores are reje
     { ...sample, scores: [0.15, 0.95] },
     { ...sample, segmentAi: [] },
   ]) assert.equal(parseDetectorResult(input), null);
+});
+
+
+test('Turkish routing validates model identity, length and conservative decision boundaries', () => {
+  const tr: DetectorResult = { ...sample, model: TURKISH_MODEL, revision: TURKISH_REVISION, language: 'turkish', words: 100 };
+  assert.ok(parseDetectorResult(tr));
+  assert.equal(assessAiDetectorResult(tr).kind, 'inconclusive');
+  assert.equal(assessAiDetectorResult({ ...tr, segmentAi: [0.951, 0.99] }).kind, 'ai_signal');
+  assert.equal(assessAiDetectorResult({ ...tr, segmentAi: [0.47, 0.479] }).kind, 'human_signal');
+  for (const score of [0.48, 0.95]) {
+    assert.equal(assessAiDetectorResult({ ...tr, segmentAi: [score] }).kind, 'inconclusive');
+  }
+  assert.equal(parseDetectorResult({ ...tr, language: 'english' }), null);
+  assert.equal(parseDetectorResult({ ...tr, revision: DESKLIB_REVISION }), null);
+  const short = { ...tr, words: 59, tokens: 0, scores: null, segmentAi: [] };
+  assert.ok(parseDetectorResult(short));
+  assert.equal(assessAiDetectorResult(short).kind, 'insufficient');
+  assert.equal(parseDetectorResult({ ...tr, words: 59 }), null);
 });

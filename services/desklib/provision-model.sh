@@ -5,8 +5,16 @@ target=${1:?Usage: provision-model.sh /absolute/path/to/model}
 [[ "$target" = /* ]] || { echo 'Use an absolute model path.' >&2; exit 1; }
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 manifest="$script_dir/checkpoint.sha256"
+model=desklib/ai-text-detector-v1.01
+if [[ "${2:-english}" == turkish ]]; then
+  manifest="$script_dir/turkish-checkpoint.sha256"
+  model=ertoluk/ai-metin-dedektor
+fi
 revision=5fdea974cd4287c61674951ec78803aa274e2fb7
-base="https://huggingface.co/desklib/ai-text-detector-v1.01/resolve/$revision"
+if [[ "${2:-english}" == turkish ]]; then
+  revision=2df7f6df282445a42353bb87fb512c4cb7c06fb5
+fi
+base="https://huggingface.co/$model/resolve/$revision"
 if [[ -d "$target" ]]; then
   (cd -- "$target" && sha256sum -c "$manifest")
   exit

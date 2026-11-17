@@ -182,7 +182,7 @@ export default function AiChecker({ active }: { active: boolean }) {
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
             <span className="inline-flex items-center gap-1.5"><ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400"/> Metin kaydedilmez</span>
             <span className="inline-flex items-center gap-1.5"><LockKeyhole size={15}/> Sunucuda yerel model</span>
-            <span className="inline-flex items-center gap-1.5"><FileText size={15}/> İngilizce odaklı</span>
+            <span className="inline-flex items-center gap-1.5"><FileText size={15}/> Türkçe ve İngilizce</span>
           </div>
         </header>
 
@@ -190,7 +190,7 @@ export default function AiChecker({ active }: { active: boolean }) {
           <div className="px-4 pt-5 sm:px-6 sm:pt-6 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-semibold text-base">Metnini analiz et</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">İngilizce metin için en az 120 kelime kullan.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Türkçe için en az 60, İngilizce için en az 120 kelime kullan. Dil otomatik algılanır.</p>
             </div>
             <button type="button" onClick={paste} disabled={busy || pasting}
               className="inline-flex items-center gap-2 min-h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
@@ -203,7 +203,7 @@ export default function AiChecker({ active }: { active: boolean }) {
               onChange={event => setText(event.target.value)}
               onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); void analyze(); } }}
               rows={9} aria-describedby="ai-checker-count" spellCheck={false} autoComplete="off" autoCorrect="off"
-              placeholder="Analiz etmek istediğin İngilizce metni buraya yaz veya yapıştır…"
+              placeholder="Analiz etmek istediğin Türkçe veya İngilizce metni buraya yaz veya yapıştır…"
               className="block w-full min-h-52 sm:min-h-64 resize-none sm:resize-y rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-950/70 p-4 sm:p-5 text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-60"/>
             <div className="flex flex-wrap justify-between items-center gap-2 pt-3 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
               <span id="ai-checker-count">{wordCount.toLocaleString('tr-TR')} kelime · {text.length.toLocaleString('tr-TR')} / {MAX_LENGTH.toLocaleString('tr-TR')} karakter</span>
@@ -243,6 +243,7 @@ export default function AiChecker({ active }: { active: boolean }) {
                   {assessment?.title}
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{assessment?.detail}</p>
+                <p className="mt-2 text-xs text-slate-500">{result.model.startsWith('ertoluk/') ? 'Türkçe model · Deneysel · Yerel doğruluk ölçümü bekleniyor' : 'İngilizce model · Desklib'}</p>
               </div>
               <button type="button" onClick={() => void copy()} className="inline-flex items-center gap-2 min-h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
                 {copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Kopyalandı' : 'Sonucu kopyala'}

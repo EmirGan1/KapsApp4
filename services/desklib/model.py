@@ -15,10 +15,13 @@ from pathlib import Path
 import torch
 from lingua import Language, LanguageDetectorBuilder
 from torch import nn
-from transformers import AutoConfig, AutoModel, AutoTokenizer, PreTrainedModel
+from transformers import AutoConfig, AutoModel, AutoModelForSequenceClassification, AutoTokenizer, PreTrainedModel
 
 MODEL_ID = "desklib/ai-text-detector-v1.01"
 REVISION = "5fdea974cd4287c61674951ec78803aa274e2fb7"
+TURKISH_MODEL_ID = "ertoluk/ai-metin-dedektor"
+TURKISH_REVISION = "2df7f6df282445a42353bb87fb512c4cb7c06fb5"
+TURKISH_MIN_WORDS = 60
 MAX_CHARS = 50_000
 MAX_SEGMENTS = 32
 MIN_WORDS = 120
@@ -63,21 +66,9 @@ class Detector:
         torch.set_num_threads(self.threads)
         torch.set_num_interop_threads(1)
         self.device = torch.device(os.environ.get("DESKLIB_DEVICE", "cpu"))
-        path = Path(os.environ["DESKLIB_MODEL_DIR"]).resolve(strict=True)
-        config = AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
-        if config.architectures != ["DesklibAIDetectionModel"] or config.model_type != "deberta-v2":
-            raise RuntimeError("Unexpected Desklib architecture")
-        self.tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False, use_fast=True)
-        self.model, loading = DesklibAIDetectionModel.from_pretrained(
-            path, config=config, local_files_only=True, use_safetensors=True, output_loading_info=True
-        )
-        failures = ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")
-        if any(loading.get(key) for key in failures):
-            raise RuntimeError(f"Desklib checkpoint mismatch: {loading}")
-        self.model.to(self.device).eval()
-        if self.device.type == "cpu" and config.relative_attention and config.share_att_key:
-            self.cache_relative_projections()
-        self.segment_size = min(512, config.max_position_embeddings) - self.tokenizer.num_special_tokens_to_add()
+        self.loaded_language = None
+        self.model = None
+        self.load_model("english")
         self.languages = (
             LanguageDetectorBuilder.from_all_languages()
             .with_low_accuracy_mode()
@@ -88,6 +79,45 @@ class Detector:
         self.language("In the late afternoon the neighbors walked beside the river together.")
         self.language("Akşam üzeri mahalledeki komşular nehrin kenarında birlikte yürüdüler.")
         self.score(self.tokenizer.encode("The model is ready for local inference."))
+
+    def load_model(self, language):
+        if self.loaded_language == language:
+            return
+        directory = os.environ.get("TURKISH_DETECTOR_MODEL_DIR", "/opt/kapsapp-desklib/turkish-model") if language == "turkish" else os.environ["DESKLIB_MODEL_DIR"]
+        path = Path(directory).resolve(strict=True)
+        # The service lock serializes language switches. Keep just one set of weights.
+        self.loaded_language = None
+        self.model = None
+        gc.collect()
+        if language == "turkish":
+            config = AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
+            if config.model_type != "xlm-roberta" or config.num_labels != 2 or config.id2label != {0: "insan", 1: "AI"}:
+                raise RuntimeError("Unexpected Turkish detector architecture or label mapping")
+            self.tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False, use_fast=True)
+            self.model, loading = AutoModelForSequenceClassification.from_pretrained(
+                path, config=config, local_files_only=True, use_safetensors=True,
+                trust_remote_code=False, output_loading_info=True
+            )
+            if any(loading.get(key) for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")):
+                raise RuntimeError("Turkish checkpoint mismatch")
+            self.model.to(self.device).eval()
+        else:
+            config = AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
+            if config.architectures != ["DesklibAIDetectionModel"] or config.model_type != "deberta-v2":
+                raise RuntimeError("Unexpected Desklib architecture")
+            self.tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False, use_fast=True)
+            self.model, loading = DesklibAIDetectionModel.from_pretrained(
+                path, config=config, local_files_only=True, use_safetensors=True, output_loading_info=True
+            )
+            failures = ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")
+            if any(loading.get(key) for key in failures):
+                raise RuntimeError(f"Desklib checkpoint mismatch: {loading}")
+            self.model.to(self.device).eval()
+            if self.device.type == "cpu" and config.relative_attention and config.share_att_key:
+                self.cache_relative_projections()
+        maximum = 256 if language == "turkish" else min(512, config.max_position_embeddings)
+        self.segment_size = maximum - self.tokenizer.num_special_tokens_to_add()
+        self.loaded_language = language
 
     @torch.inference_mode()
     def cache_relative_projections(self):
@@ -118,6 +148,11 @@ class Detector:
         attention = torch.ones_like(inputs)
         if padding:
             attention[:, -padding:] = 0
+        if self.loaded_language == "turkish":
+            logits = self.model(input_ids=inputs, attention_mask=attention).logits
+            if logits.shape != (1, 2) or not torch.isfinite(logits).all():
+                raise RuntimeError("Invalid Turkish detector output")
+            return torch.softmax(logits, dim=-1)[0, 1].item()
         logits = self.model(inputs, attention)
         if logits.shape != (1, 1) or not math.isfinite(logits.item()):
             raise RuntimeError("Invalid Desklib output")
@@ -146,13 +181,16 @@ class Detector:
         words = len(re.findall(r"\S+", text))
         language = self.language(text)
         result = {
-            "model": MODEL_ID, "revision": REVISION, "words": words,
+            "model": TURKISH_MODEL_ID if language == "turkish" else MODEL_ID,
+            "revision": TURKISH_REVISION if language == "turkish" else REVISION, "words": words,
             "language": language, "tokens": 0, "truncated": False,
             "segmentAi": [], "scores": None,
         }
-        if language != "english" or words < MIN_WORDS:
+        minimum = TURKISH_MIN_WORDS if language == "turkish" else MIN_WORDS
+        if language == "unsupported" or words < minimum:
             return result
 
+        self.load_model(language)
         encoded = self.tokenizer(text, add_special_tokens=False, return_offsets_mapping=True, verbose=False)
         ids = encoded["input_ids"]
         offsets = encoded["offset_mapping"]
@@ -163,7 +201,7 @@ class Detector:
         # Evenly sized windows use every token and avoid undersized tails.
         size = math.ceil(len(ids) / count)
         ranges = [(start, min(start + size, len(ids))) for start in range(0, len(ids), size)]
-        if count > 1 and any(self.language(text[offsets[start][0]:offsets[end - 1][1]]) != "english" for start, end in ranges):
+        if count > 1 and any(self.language(text[offsets[start][0]:offsets[end - 1][1]]) != language for start, end in ranges):
             result["language"] = "unsupported"
             return result
 

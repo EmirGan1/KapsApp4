@@ -80,7 +80,7 @@ export function createAiChecker({ request = requestLocal, onResult }: {
   let active: { job: Job; controller: AbortController } | undefined;
 
   function unavailable() {
-    return new AiCheckerError(503, 'Desklib şu anda kullanılamıyor. Birazdan yeniden dene.');
+    return new AiCheckerError(503, 'Dedektör kullanılamıyor. Dil modelinin sunucuda kurulu olduğunu kontrol edip yeniden dene.');
   }
 
   function prune(now = Date.now()) {

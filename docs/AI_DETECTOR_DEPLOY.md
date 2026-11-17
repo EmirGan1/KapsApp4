@@ -161,3 +161,57 @@ median inference times of 6.16 â†’ 5.18 seconds for 4,493 characters and 15.17 â
 14.38 seconds for 12,494 characters. Both samples kept their original segment
 scores. A 49,996-character sample with 7,954 words completed in 54.5 seconds.
 The longer run peaked at 2,064 MiB RSS. Actual VDS latency depends on CPU load.
+
+
+## Turkish routing upgrade
+
+The service identifies English and Turkish locally. English uses the pinned Desklib
+checkpoint. Turkish uses Apache-2.0 licensed
+[ertoluk/ai-metin-dedektor](https://huggingface.co/ertoluk/ai-metin-dedektor/tree/2df7f6df282445a42353bb87fb512c4cb7c06fb5).
+The original float32 XLM-RoBERTa classifier uses class 1 for AI, 256-token inputs
+including special tokens, a 60-word minimum, and up to 32 windows.
+Every window must be above 0.950 to report an AI signal, or below 0.480 to report
+a human signal. Other scored cases are inconclusive. These are publisher thresholds,
+without KapsApp accuracy validation. The UI identifies Turkish results as experimental.
+Mixed-language windows return no score. Submitted text is not translated.
+
+Only one model is resident at once under the existing inference lock. Changing
+language unloads the previous model, so the first request after switching can be slower.
+The missing Turkish checkpoint causes a retryable error rather than English scoring.
+
+Run the following from the updated repository on the existing VDS. Download completes
+and SHA-256 checks pass before replacing the running service code.
+
+```bash
+cd /var/www/KapsApp &&
+bash services/desklib/provision-model.sh /opt/kapsapp-desklib/turkish-model turkish &&
+chgrp -R kapsapp-desklib /opt/kapsapp-desklib/turkish-model &&
+chmod 0750 /opt/kapsapp-desklib/turkish-model &&
+install -m 0644 services/desklib/{model.py,service.py,benchmark.py} /opt/kapsapp-desklib/app/ &&
+systemctl restart kapsapp-desklib &&
+curl --fail --silent --show-error http://127.0.0.1:8765/healthz
+```
+
+Build/restart the Node application using the existing deployment command as well.
+The new checkpoint needs about 1.13 GB of disk space, plus temporary download space.
+
+### Local accuracy evaluation
+
+Provide a UTF-8 JSONL file with one record per independently sourced text.
+Each record needs `id`, `source`, `label` (`human`, `ai`, or `edited`), and `text`.
+Use human-authored Turkish prose with verified provenance, and label AI texts with
+the generating model and prompt in `source`. Include multiple topics and lengths
+and outputs from Gemma, Granite, Qwen and LFM. Keep edited samples separately labeled.
+Use disjoint validation and final evaluation samples, grouped by original document
+and author, if tuning thresholds. The script does not tune thresholds automatically.
+
+```bash
+sudo -u kapsapp-desklib env DESKLIB_MODEL_DIR=/opt/kapsapp-desklib/model   /opt/kapsapp-desklib/venv/bin/python /opt/kapsapp-desklib/app/benchmark.py /absolute/path/to/verified-samples.jsonl
+```
+
+Results contain sample IDs, model scores and metrics, without raw text.
+Reports separate languages and show false positives among scored human samples,
+false negatives among scored AI samples, inconclusive counts and skipped samples.
+An empty group has no rate. Publisher metrics are not measurements of KapsApp.
+Hardware latency, peak memory and local classification accuracy still require
+execution on the VDS with the actual weights and verified samples.
