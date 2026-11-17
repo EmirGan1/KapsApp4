@@ -4,7 +4,7 @@ import { ArrowUp, Check, ChevronDown, Copy, FileText, History, LoaderCircle, Plu
 import Markdown from "react-markdown";
 import remarkMath from "remark-math";
 import {
-  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT, KAPSAPP_AI_MODELS, isKapsAiModel, normalizeMathMarkdown,
+  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT, KAPSAPP_AI_DEFAULT_MODEL, KAPSAPP_AI_MODELS, kapsAiModelLabel, normalizeMathMarkdown,
 } from "../shared/kapsAppAi";
 import type { ChatSource, ChatStatusPhase } from "../shared/kapsAppAi";
 import KapsAppAiEquation from "./KapsAppAiEquation";
@@ -245,18 +245,11 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">KapsAI</h2>
           </div>
           <div className="col-span-2 row-start-2 flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
-            <select aria-label="KapsAI modeli" aria-describedby="kaps-ai-model-description" value={history.model}
-              disabled={!history.initialized || history.modelPending}
-              className={`${secondary} min-w-0 max-w-full disabled:opacity-60`}
-              onChange={event => {
-                const model = event.currentTarget.value;
-                if (isKapsAiModel(model)) void history.chooseModel(model);
-              }}>
-              {Object.entries(KAPSAPP_AI_MODELS).map(([id, model]) => <option key={id} value={id}>{model.label}</option>)}
-            </select>
-            <p id="kaps-ai-model-description" className="text-xs text-slate-600 dark:text-slate-400">
-              {history.modelPending ? "Model tercihi kaydediliyor…" : activeTurn
-                ? "Model seçimi bir sonraki mesajda geçerli." : KAPSAPP_AI_MODELS[history.model].description}
+            <span aria-label="KapsAI modeli" className={`${secondary} cursor-default`}>
+              {KAPSAPP_AI_MODELS[KAPSAPP_AI_DEFAULT_MODEL].label}
+            </span>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              {KAPSAPP_AI_MODELS[KAPSAPP_AI_DEFAULT_MODEL].description}
             </p>
           </div>
           <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-2">
@@ -328,7 +321,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
                   <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-xl border border-indigo-100 text-indigo-700 dark:border-indigo-900 dark:text-indigo-300"><Sparkles size={16} /></span>
                   <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
                     <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-400">
-                      {KAPSAPP_AI_MODELS[turn.model ?? "llama3.2"].label}
+                      {kapsAiModelLabel(turn.model)}
                     </p>
                     {turn.state === "waiting" && (
                       <WaitingStatus phase={turn.phase} />

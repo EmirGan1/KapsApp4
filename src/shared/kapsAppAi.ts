@@ -141,13 +141,23 @@ export const KAPSAPP_AI_CONVERSATIONS_PATH = "/api/kapsapp-ai/conversations";
 export const KAPSAPP_AI_PREFERENCE_PATH = "/api/kapsapp-ai/model-preference";
 
 export const KAPSAPP_AI_MODELS = {
-  "llama3.2": { label: "Llama 3.2", description: "Genel amaçlı · Mevcut KapsAI modeli" },
-  "qwen3:0.6b": { label: "Qwen3 0.6B", description: "Hafif model · Düşük kaynak tüketimi" },
+  "qwen3.5:2b-q4_K_M": { label: "Qwen3.5 2B", description: "Yerel model · 3 CPU thread · 2048 bağlam" },
 } as const;
 export type KapsAiModel = keyof typeof KAPSAPP_AI_MODELS;
-export const KAPSAPP_AI_DEFAULT_MODEL: KapsAiModel = "llama3.2";
+export type LegacyKapsAiModel = "llama3.2" | "qwen3:0.6b";
+export type StoredKapsAiModel = KapsAiModel | LegacyKapsAiModel;
+export const KAPSAPP_AI_DEFAULT_MODEL: KapsAiModel = "qwen3.5:2b-q4_K_M";
 export function isKapsAiModel(value: unknown): value is KapsAiModel {
   return typeof value === "string" && Object.hasOwn(KAPSAPP_AI_MODELS, value);
+}
+export function isLegacyKapsAiModel(value: unknown): value is LegacyKapsAiModel {
+  return value === "llama3.2" || value === "qwen3:0.6b";
+}
+export function kapsAiModelLabel(model: unknown): string {
+  if (isKapsAiModel(model)) return KAPSAPP_AI_MODELS[model].label;
+  if (model === "llama3.2") return "Llama 3.2 (eski sohbet)";
+  if (model === "qwen3:0.6b") return "Qwen3 0.6B (eski sohbet)";
+  return "Bilinmeyen eski model";
 }
 
 export const KAPSAPP_AI_TURNS_PATH = "/api/kapsapp-ai/turns";
@@ -157,7 +167,7 @@ export type SavedChatState = "waiting" | "streaming" | "done" | "stopped" | "err
 export type SavedChatTurn = {
   id: string;
   conversationId: string;
-  model: KapsAiModel;
+  model: StoredKapsAiModel;
   question: string;
   answer: string;
   sources: SourceLabel[];

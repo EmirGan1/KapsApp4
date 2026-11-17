@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { Agent as HttpAgent, request as httpRequest } from "node:http";
-import os from "node:os";
 import { Readable } from "node:stream";
-import { setTimeout as delay } from "node:timers/promises";
 import type { Client } from "@libsql/client";
 import { createKapsAiHistory } from "./kapsAiHistory";
 import express from "express";
@@ -16,10 +14,9 @@ import {
 } from "../shared/kapsAppAi";
 import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase, KapsAiModel, SavedChatTurn } from "../shared/kapsAppAi";
 
-export const KAPSAPP_AI_MODEL = "llama3.2:3b-instruct-q5_K_M";
+export const KAPSAPP_AI_MODEL = "qwen3.5:2b-q4_K_M";
 const OLLAMA_MODEL_TAGS: Record<KapsAiModel, string> = {
-  "llama3.2": KAPSAPP_AI_MODEL,
-  "qwen3:0.6b": "qwen3:0.6b",
+  "qwen3.5:2b-q4_K_M": KAPSAPP_AI_MODEL,
 };
 
 export const KAPSAPP_AI_SYSTEM_PROMPT = `You are KapsAI, a helpful, accurate and concise assistant.
@@ -48,7 +45,7 @@ const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 180_000;
 const DEFAULT_TOKEN_IDLE_TIMEOUT_MS = 60_000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 420_000;
 const DEFAULT_GENERATION_TIMEOUT_MS = 900_000;
-const QWEN_OUTPUT_TOKENS = 2048;
+const DEFAULT_OUTPUT_TOKENS = 2048;
 const HEARTBEAT_INTERVAL_MS = 8_000;
 const STATUS_TTL_MS = 2 * 60_000;
 const MIB = 1024 * 1024;
@@ -279,36 +276,6 @@ function openOllamaChatStream(
   });
 }
 
-async function releaseOtherModel(model: KapsAiModel, loaded: string[], signal: AbortSignal, timeoutMs: number) {
-  const tag = OLLAMA_MODEL_TAGS[model];
-  const otherTags = Object.values(OLLAMA_MODEL_TAGS).filter(name => name !== tag && loaded.includes(name));
-  if (!otherTags.length) return loaded;
-  const switchSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
-  const installed = await ollamaModels("/api/tags", switchSignal, timeoutMs);
-  if (!installed) throw new ModelFailure("Ollama model listesi doğrulanamadı. Tekrar dene.", 503, "upstream");
-  if (!installed.includes(tag)) throw modelFailure("", 404, model);
-
-  for (const other of otherTags) {
-    const response = await openOllamaChatStream(
-      JSON.stringify({ model: other, keep_alive: 0, stream: false }), switchSignal, timeoutMs, "/api/generate",
-    );
-    if (response.status !== 200 || !response.stream) throw new ModelFailure(BUSY);
-    for await (const frame of readJsonLines<OllamaFrame>(response.stream)) {
-      if (frame.error) throw modelFailure(frame.error, undefined, model);
-    }
-  }
-
-  // The unload request can return before Ollama has finished releasing RAM.
-  while (!switchSignal.aborted) {
-    const current = await ollamaModels("/api/ps", switchSignal, timeoutMs);
-    if (current && !otherTags.some(name => current.includes(name))) return current;
-    if (!current) break;
-    await delay(200, undefined, { signal: switchSignal }).catch(() => {});
-  }
-  signal.throwIfAborted();
-  throw new ModelFailure("Önceki modelin belleği boşaltılıyor. Biraz sonra tekrar dene.");
-}
-
 const parseError: ErrorRequestHandler = (error, _req, res, _next) => {
   const status = error.status === 413 || error.status === 415 ? error.status : 400;
   res.status(status).json({ error: "Sohbet isteği geçersiz veya çok büyük." });
@@ -334,11 +301,9 @@ export function registerKapsAppAi(
     cancel: () => void;
   }[] = [];
 
-  const envThreads = Number(process.env.KAPSAPP_AI_THREADS);
-  const threads = Number.isInteger(envThreads) && envThreads >= 1 && envThreads <= 8
-    ? envThreads
-    : Math.max(1, Math.min(4, os.availableParallelism() - 1));
-  const keepAlive = process.env.KAPSAPP_AI_KEEP_ALIVE?.trim() || "45s";
+  // Benchmarked on the production 3-vCPU host: other thread counts were slower.
+  const threads = 3;
+  const keepAlive = "10m";
   const coldMemMib = Number(process.env.KAPSAPP_AI_COLD_MEM_MIB) || 2560;
   const requestLimit = Number(process.env.KAPSAPP_AI_RATE_LIMIT) || DEFAULT_REQUEST_LIMIT;
   const maxQueue = Number.isInteger(Number(process.env.KAPSAPP_AI_MAX_QUEUE))
@@ -573,10 +538,9 @@ export function registerKapsAppAi(
       const modelTag = OLLAMA_MODEL_TAGS[model];
       const probeBudget = Math.min(2500, connectTimeoutMs);
       let loaded = await ollamaModels("/api/ps", signal, probeBudget);
-      if (loaded) loaded = await releaseOtherModel(model, loaded, signal, probeBudget);
       const available = await availableMemory();
       const isModelWarm = loaded?.includes(modelTag) ?? false;
-      const coldLimit = model === "llama3.2" ? coldMemMib : 1280;
+      const coldLimit = coldMemMib;
       if (available < 1024 * MIB || (!isModelWarm && available < coldLimit * MIB)) {
         if (!loaded && available >= 1024 * MIB) {
           throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
@@ -608,8 +572,7 @@ export function registerKapsAppAi(
 
       const preparedMessages = modelMessages(chat);
       const promptBytes = preparedMessages.reduce((sum, m) => sum + Buffer.byteLength(m.content, "utf8"), 0);
-      const isQwen = model === "qwen3:0.6b";
-      const numCtx = isQwen || promptBytes > 4000 ? 4096 : 2048;
+      const numCtx = 2048;
 
       // Stage timeout for (optional cold model load + CPU prompt evaluation + first token).
       const promptExtraMs = Math.min(60_000, Math.round(promptBytes * 12));
@@ -646,10 +609,10 @@ export function registerKapsAppAi(
       const payload = JSON.stringify({
         model: modelTag,
         messages: preparedMessages,
-        ...(isQwen ? { think: false } : {}),
+        think: false,
         stream: true,
         keep_alive: keepAlive,
-        options: { num_ctx: numCtx, num_predict: isQwen ? QWEN_OUTPUT_TOKENS : -1, num_thread: threads, num_gpu: 0, temperature: 0.2 },
+        options: { num_ctx: numCtx, num_predict: DEFAULT_OUTPUT_TOKENS, num_thread: threads, num_gpu: 0, temperature: 0.2 },
       });
 
       const upstream = await openOllamaChatStream(payload, signal, connectTimeoutMs);
@@ -695,7 +658,7 @@ export function registerKapsAppAi(
         if (frame.done) {
           if (!hasOutput) throw new ModelFailure("Model boş bir yanıt döndürdü. Tekrar dene.");
           const truncated = frame.done_reason === "length"
-            || (isQwen && (frame.eval_count ?? 0) >= QWEN_OUTPUT_TOKENS);
+            || (frame.eval_count ?? 0) >= DEFAULT_OUTPUT_TOKENS;
           updateJobPhase("done", { truncated });
           write({ type: "done", truncated });
           if (process.env.KAPSAPP_AI_METRICS === "1") {
@@ -932,7 +895,7 @@ export function registerKapsAppAi(
     if (!await history.retry(owner, id, capacity())) return res.status(409).json({ error: "Bu yanıt şu anda yeniden başlatılamıyor." });
     recent.set(owner, { ...rate, count: rate.count + 1 });
     void dispatchSaved();
-    res.status(202).json({ ...turn, state: "waiting", phase: "queued", answer: "", notice: undefined });
+    res.status(202).json({ ...turn, model: KAPSAPP_AI_DEFAULT_MODEL, state: "waiting", phase: "queued", answer: "", notice: undefined });
   }));
   app.delete(`${KAPSAPP_AI_CONVERSATIONS_PATH}/:id`, ...guard, saved(async (req, res, owner) => {
     const id = req.params.id;

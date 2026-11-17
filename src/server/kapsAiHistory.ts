@@ -1,6 +1,6 @@
 import type { Client, Row } from "@libsql/client";
-import type { ChatMessage, ChatSource, KapsAiModel, SavedChatTurn } from "../shared/kapsAppAi";
-import { AI_HISTORY_LIMIT, KAPSAPP_AI_DEFAULT_MODEL, isKapsAiModel } from "../shared/kapsAppAi";
+import type { ChatMessage, ChatSource, KapsAiModel, SavedChatTurn, StoredKapsAiModel } from "../shared/kapsAppAi";
+import { AI_HISTORY_LIMIT, KAPSAPP_AI_DEFAULT_MODEL, isKapsAiModel, isLegacyKapsAiModel } from "../shared/kapsAppAi";
 
 const PAGE_SIZE = 30;
 const PENDING = "state IN ('queued', 'running')";
@@ -11,7 +11,7 @@ function savedTurn(row: Row): SavedChatTurn {
   return {
     id: String(row.id),
     conversationId: String(row.conversation_id),
-    model: storedModel(row.model),
+    model: storedTurnModel(row.model),
     question: String(row.question),
     answer: String(row.answer),
     sources: row.source_title ? [{ id: "1", title: String(row.source_title) }] : [],
@@ -25,6 +25,10 @@ function storedModel(value: unknown): KapsAiModel {
   return isKapsAiModel(value) ? value : KAPSAPP_AI_DEFAULT_MODEL;
 }
 
+function storedTurnModel(value: unknown): StoredKapsAiModel {
+  return isKapsAiModel(value) || isLegacyKapsAiModel(value) ? value : KAPSAPP_AI_DEFAULT_MODEL;
+}
+
 export function createKapsAiHistory(db: Client) {
   let schema: Promise<unknown> | undefined;
   async function migrate() {
@@ -36,7 +40,7 @@ export function createKapsAiHistory(db: Client) {
         seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, owner TEXT NOT NULL, conversation_id TEXT NOT NULL,
         question TEXT NOT NULL, source_title TEXT, source_text TEXT, answer TEXT NOT NULL DEFAULT '',
         state TEXT NOT NULL CHECK(state IN ('queued','running','done','stopped','error')), notice TEXT,
-        model TEXT NOT NULL DEFAULT 'llama3.2',
+        model TEXT NOT NULL DEFAULT 'qwen3.5:2b-q4_K_M',
         UNIQUE(owner, id)
       )`,
       "CREATE TABLE IF NOT EXISTS kapsai_model_preferences (owner TEXT PRIMARY KEY, model TEXT NOT NULL)",
@@ -48,6 +52,7 @@ export function createKapsAiHistory(db: Client) {
     const hasModel = async () => (await db.execute("PRAGMA table_info(kapsai_turns)")).rows.some(row => row.name === "model");
     if (!await hasModel()) {
       try {
+        // Rows predating model selection were originally generated with Llama 3.2.
         await db.execute("ALTER TABLE kapsai_turns ADD COLUMN model TEXT NOT NULL DEFAULT 'llama3.2'");
       } catch (error) {
         if (!await hasModel()) throw error;
@@ -131,7 +136,8 @@ export function createKapsAiHistory(db: Client) {
     },
     async start(owner: string, id: string) {
       return (await db.execute({
-        sql: `UPDATE kapsai_turns SET state = 'running' WHERE owner = ? AND id = ? AND ${PENDING}`, args: [owner, id],
+        sql: `UPDATE kapsai_turns SET state = 'running', model = ? WHERE owner = ? AND id = ? AND ${PENDING}`,
+        args: [KAPSAPP_AI_DEFAULT_MODEL, owner, id],
       })).rowsAffected === 1;
     },
     async context(owner: string, conversationId: string, before: number) {
@@ -159,12 +165,12 @@ export function createKapsAiHistory(db: Client) {
     },
     async retry(owner: string, id: string, capacity: number) {
       const result = await db.execute({
-        sql: `UPDATE OR IGNORE kapsai_turns SET state = 'queued', answer = '', notice = NULL
+        sql: `UPDATE OR IGNORE kapsai_turns SET state = 'queued', answer = '', notice = NULL, model = ?
           WHERE owner = ? AND id = ? AND state IN ('error', 'stopped')
           AND NOT EXISTS (SELECT 1 FROM kapsai_turns AS newer WHERE newer.owner = kapsai_turns.owner
             AND newer.conversation_id = kapsai_turns.conversation_id AND newer.seq > kapsai_turns.seq)
           AND (SELECT count(*) FROM kapsai_turns WHERE ${PENDING}) < ?`,
-        args: [owner, id, capacity],
+        args: [KAPSAPP_AI_DEFAULT_MODEL, owner, id, capacity],
       });
       return result.rowsAffected === 1;
     },
