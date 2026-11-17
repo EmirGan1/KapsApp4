@@ -4,7 +4,7 @@ import { AI_HISTORY_LIMIT, KAPSAPP_AI_DEFAULT_MODEL, isKapsAiModel, isLegacyKaps
 
 const PAGE_SIZE = 30;
 const PENDING = "state IN ('queued', 'running')";
-const columns = "seq, id, conversation_id, question, source_title, state, answer, notice, model";
+const columns = "seq, id, conversation_id, question, source_title, state, answer, notice, model, generation_ms";
 
 function savedTurn(row: Row): SavedChatTurn {
   const state = String(row.state);
@@ -18,6 +18,7 @@ function savedTurn(row: Row): SavedChatTurn {
     state: state === "queued" || state === "running" ? "waiting" : state as SavedChatTurn["state"],
     phase: state === "queued" ? "queued" : undefined,
     notice: row.notice ? String(row.notice) : undefined,
+    generationMs: row.generation_ms == null ? undefined : Number(row.generation_ms),
   };
 }
 
@@ -40,7 +41,7 @@ export function createKapsAiHistory(db: Client) {
         seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, owner TEXT NOT NULL, conversation_id TEXT NOT NULL,
         question TEXT NOT NULL, source_title TEXT, source_text TEXT, answer TEXT NOT NULL DEFAULT '',
         state TEXT NOT NULL CHECK(state IN ('queued','running','done','stopped','error')), notice TEXT,
-        model TEXT NOT NULL DEFAULT 'qwen3.5:2b-q4_K_M',
+        model TEXT NOT NULL DEFAULT 'qwen3.5:2b-q4_K_M', generation_ms INTEGER,
         UNIQUE(owner, id)
       )`,
       "CREATE TABLE IF NOT EXISTS kapsai_model_preferences (owner TEXT PRIMARY KEY, model TEXT NOT NULL)",
@@ -49,13 +50,21 @@ export function createKapsAiHistory(db: Client) {
       "CREATE INDEX IF NOT EXISTS kapsai_conversation_history ON kapsai_conversations(owner, last_activity)",
       `CREATE INDEX IF NOT EXISTS kapsai_pending_queue ON kapsai_turns(seq) WHERE ${PENDING}`,
     ], "write");
-    const hasModel = async () => (await db.execute("PRAGMA table_info(kapsai_turns)")).rows.some(row => row.name === "model");
-    if (!await hasModel()) {
+    const hasColumn = async (name: string) => {
+      const { rows } = await db.execute("PRAGMA table_info(kapsai_turns)");
+      return rows.some(row => row.name === name);
+    };
+    const additions = [
+      // Rows predating model selection were originally generated with Llama 3.2.
+      ["model", "TEXT NOT NULL DEFAULT 'llama3.2'"],
+      ["generation_ms", "INTEGER"],
+    ];
+    for (const [name, definition] of additions) {
+      if (await hasColumn(name)) continue;
       try {
-        // Rows predating model selection were originally generated with Llama 3.2.
-        await db.execute("ALTER TABLE kapsai_turns ADD COLUMN model TEXT NOT NULL DEFAULT 'llama3.2'");
+        await db.execute(`ALTER TABLE kapsai_turns ADD COLUMN ${name} ${definition}`);
       } catch (error) {
-        if (!await hasModel()) throw error;
+        if (!await hasColumn(name)) throw error;
       }
     }
   }
@@ -150,10 +159,10 @@ export function createKapsAiHistory(db: Client) {
         { role: "assistant", content: String(row.answer).slice(0, 6000) },
       ]);
     },
-    async finish(owner: string, id: string, state: "done" | "error", answer: string, notice: string | null) {
+    async finish(owner: string, id: string, state: "done" | "error", answer: string, notice: string | null, generationMs: number | null) {
       await db.execute({
-        sql: "UPDATE kapsai_turns SET state = ?, answer = ?, notice = ? WHERE owner = ? AND id = ? AND state = 'running'",
-        args: [state, answer, notice, owner, id],
+        sql: "UPDATE kapsai_turns SET state = ?, answer = ?, notice = ?, generation_ms = ? WHERE owner = ? AND id = ? AND state = 'running'",
+        args: [state, answer, notice, generationMs, owner, id],
       });
     },
     async stop(owner: string, id: string, answer: string) {
@@ -165,7 +174,7 @@ export function createKapsAiHistory(db: Client) {
     },
     async retry(owner: string, id: string, capacity: number, model: KapsAiModel) {
       const result = await db.execute({
-        sql: `UPDATE OR IGNORE kapsai_turns SET state = 'queued', answer = '', notice = NULL, model = ?
+        sql: `UPDATE OR IGNORE kapsai_turns SET state = 'queued', answer = '', notice = NULL, generation_ms = NULL, model = ?
           WHERE owner = ? AND id = ? AND state IN ('error', 'stopped')
           AND NOT EXISTS (SELECT 1 FROM kapsai_turns AS newer WHERE newer.owner = kapsai_turns.owner
             AND newer.conversation_id = kapsai_turns.conversation_id AND newer.seq > kapsai_turns.seq)

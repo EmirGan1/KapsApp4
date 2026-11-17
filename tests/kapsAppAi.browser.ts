@@ -20,6 +20,7 @@ const answerFixture = "**Örnek yanıt** ve $x^2$.\n\n```js\nconsole.log('test')
 const mathAnswerFixture = "İntegral ve limit çözümü:\n\\[ \\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} \\]\nve türev: \\( \\frac{d}{dx}\\sin(x) = \\cos(x) \\) ayrıca $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$";
 
 const granite: KapsAiModel = "granite4.1:3b-q4_K_M";
+const gemma: KapsAiModel = "gemma4:e2b-it-qat";
 const fast: KapsAiModel = "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m";
 const percentagePrompt = "A product costs 100 TL. Its price increases by 20%, then the increased price is discounted by 20%. What is the final price? Show the calculation.";
 let warmedModel: string | undefined = KAPSAPP_AI_MODEL;
@@ -254,6 +255,7 @@ try {
   assert.equal(migrated.turns[0].id, oldTurn);
   assert.equal(migrated.turns[0].answer, "Eski yanıt");
   assert.equal(migrated.turns[0].model, "llama3.2");
+  assert.equal(migrated.turns[0].generationMs, undefined);
   assert.equal((await fetch(preferences, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: granite }) })).status, 401);
   for (const model of ["external:custom", "__proto__", null, 42]) {
     const forged = JSON.stringify({ model, id: randomUUID(), question: "forged", messages: [{ role: "user", content: "test" }] });
@@ -332,6 +334,34 @@ try {
     const limited = await collect(await ask("token-limit-fixture", "model-check", { model: granite }));
     assert.deepEqual(limited.at(-1), { type: "done", truncated: true });
     assert.ok(limited.some(frame => frame.type === "delta" && frame.text === "Yanıtın mevcut kısmı."));
+
+    const conversationId = randomUUID();
+    for (const [question, complete] of [["Gemma latency test", true], ["token-limit-fixture", false]] as const) {
+      const id = randomUUID();
+      const headers = auth("model-other");
+      const response: Response = await fetch(`${savedChats}/${conversationId}/turns`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ id, model: gemma, question }),
+      });
+      assert.equal(response.status, 202);
+      const pending: SavedChatTurn = await response.json();
+      assert.equal(pending.generationMs, undefined);
+      await waitFor(async () => {
+        const turn: SavedChatTurn = await fetch(`${savedTurns}/${id}`, { headers }).then(r => r.json());
+        if (turn.state === "error") assert.fail(turn.notice ?? "Gemma request failed");
+        return turn.state === "done";
+      });
+      const reopened = await fetch(`${savedChats}/${conversationId}`, { headers }).then(r => r.json());
+      const turn: SavedChatTurn = reopened.turns.at(-1);
+      assert.equal(turn.model, gemma);
+      assert.equal(upstream.request?.model, gemma);
+      assert.equal(upstream.request?.options.num_thread, 3);
+      assert.equal(upstream.request?.options.num_ctx, 3072);
+      if (complete) assert.ok(Number.isInteger(turn.generationMs) && turn.generationMs! >= 0);
+      else assert.equal(turn.generationMs, undefined);
+    }
+    console.log("PASS Gemma request settings, saved durations and truncated responses");
   } else {
     const expression = String.raw`$$X = \frac{3^2 + 4 \times (5 - 2)}{2^3 - 1} + \sqrt{144}$$`;
     const screenshot = await collect(await ask(expression + "\n\nsolve this", "screenshot"));
@@ -590,6 +620,7 @@ try {
     mobilePage = await historyContext.newPage();
     await mobilePage.goto(base + "/kapsapp-ai");
     await mobilePage.getByText(/Ekran kapalıyken tamamlandı/).waitFor();
+    await mobilePage.getByText("Yanıt süresi", { exact: false }).waitFor();
     assert.equal(await mobilePage.getByLabel("KapsAI modeli").inputValue(), granite);
     await mobilePage.getByRole("button", { name: "Yeni sohbet", exact: true }).tap();
     await mobilePage.getByRole("button", { name: "Geçmiş", exact: true }).tap();

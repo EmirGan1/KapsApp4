@@ -17,10 +17,11 @@ import {
 import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase, KapsAiModel, SavedChatTurn } from "../shared/kapsAppAi";
 
 export const KAPSAPP_AI_MODEL = KAPSAPP_AI_DEFAULT_MODEL;
-const MODEL_THREADS: Record<KapsAiModel, number> = {
-  "granite4.1:3b-q4_K_M": 4,
-  "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": 3,
-  "qwen3.5:2b-q4_K_M": 3,
+const MODEL_OPTIONS: Record<KapsAiModel, { threads: number; context: number; coldMemoryMiB?: number }> = {
+  "granite4.1:3b-q4_K_M": { threads: 4, context: 3072 },
+  "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": { threads: 3, context: 2048 },
+  "qwen3.5:2b-q4_K_M": { threads: 3, context: 2048 },
+  "gemma4:e2b-it-qat": { threads: 3, context: 3072, coldMemoryMiB: 4608 },
 };
 
 export const KAPSAPP_AI_SYSTEM_PROMPT = `You are KapsAI, a helpful, accurate and concise assistant.
@@ -85,6 +86,7 @@ type RecentJobStatus = {
   phase: ChatStatusPhase | "streaming" | "done" | "error";
   answer: string;
   truncated?: boolean;
+  generationMs?: number;
   error?: string;
   updatedAt: number;
   expiresAt: number;
@@ -538,11 +540,11 @@ export function registerKapsAppAi(
       signal.throwIfAborted();
 
       const modelTag = model;
-      const threads = MODEL_THREADS[model];
+      const { threads, context, coldMemoryMiB } = MODEL_OPTIONS[model];
       const probeBudget = Math.min(2500, connectTimeoutMs);
       const loaded = await ollamaModels("/api/ps", signal, probeBudget);
       const loadedTags = new Set((loaded ?? []).map(tag => tag.toLowerCase()));
-      const otherModels = Object.keys(MODEL_THREADS).filter(
+      const otherModels = Object.keys(MODEL_OPTIONS).filter(
         tag => tag !== model && loadedTags.has(tag.toLowerCase()),
       );
       for (const other of otherModels) {
@@ -557,7 +559,7 @@ export function registerKapsAppAi(
       }
       const available = await availableMemory();
       const isModelWarm = loadedTags.has(modelTag.toLowerCase());
-      const coldLimit = coldMemMib;
+      const coldLimit = Math.max(coldMemMib, coldMemoryMiB ?? 0);
       if (available < 1024 * MIB || (!isModelWarm && available < coldLimit * MIB)) {
         if (!loaded && available >= 1024 * MIB) {
           throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
@@ -589,7 +591,6 @@ export function registerKapsAppAi(
 
       const preparedMessages = modelMessages(chat);
       const promptBytes = preparedMessages.reduce((sum, m) => sum + Buffer.byteLength(m.content, "utf8"), 0);
-      const numCtx = model === KAPSAPP_AI_DEFAULT_MODEL ? 3072 : 2048;
 
       // Stage timeout for (optional cold model load + CPU prompt evaluation + first token).
       const promptExtraMs = Math.min(60_000, Math.round(promptBytes * 12));
@@ -629,9 +630,10 @@ export function registerKapsAppAi(
         think: false,
         stream: true,
         keep_alive: keepAlive,
-        options: { num_ctx: numCtx, num_predict: DEFAULT_OUTPUT_TOKENS, num_thread: threads, num_gpu: 0, temperature: 0.2 },
+        options: { num_ctx: context, num_predict: DEFAULT_OUTPUT_TOKENS, num_thread: threads, num_gpu: 0, temperature: 0.2 },
       });
 
+      const generationStartedAt = performance.now();
       const upstream = await openOllamaChatStream(payload, signal, connectTimeoutMs);
       if (upstream.status !== 200) throw modelFailure(upstream.errorText ?? "", upstream.status, model);
       if (!upstream.stream) throw new ModelFailure(UNAVAILABLE);
@@ -676,7 +678,8 @@ export function registerKapsAppAi(
           if (!hasOutput) throw new ModelFailure("Model boş bir yanıt döndürdü. Tekrar dene.");
           const truncated = frame.done_reason === "length"
             || (frame.eval_count ?? 0) >= DEFAULT_OUTPUT_TOKENS;
-          updateJobPhase("done", { truncated });
+          const generationMs = truncated ? undefined : Math.round(performance.now() - generationStartedAt);
+          updateJobPhase("done", { truncated, generationMs });
           write({ type: "done", truncated });
           if (process.env.KAPSAPP_AI_METRICS === "1") {
             const evalSec = (frame.eval_duration ?? 0) / 1e9;
@@ -741,10 +744,10 @@ export function registerKapsAppAi(
     return jobStatus;
   }
 
-  async function persistResult(owner: string, id: string, state: "done" | "error", answer: string, notice: string | null) {
+  async function persistResult(owner: string, id: string, state: "done" | "error", answer: string, notice: string | null, generationMs: number | null) {
     for (;;) {
       try {
-        await history.finish(owner, id, state, answer, notice);
+        await history.finish(owner, id, state, answer, notice, generationMs);
         return;
       } catch {
         console.warn("[KapsAI] Sohbet sonucu kaydedilemedi, yeniden deneniyor", { requestId: id });
@@ -780,7 +783,8 @@ export function registerKapsAppAi(
       const result = await runChat({ messages, source: item.source }, item.owner, item.id, controller, item.model);
       if (result?.phase === "done" || result?.phase === "error") {
         await persistResult(item.owner, item.id, result.phase, result.answer,
-          result.error ?? (result.truncated ? "Yanıt token sınırına ulaştı. Modelden kaldığı yerden devam etmesini isteyebilirsin." : null));
+          result.error ?? (result.truncated ? "Yanıt token sınırına ulaştı. Modelden kaldığı yerden devam etmesini isteyebilirsin." : null),
+          result.generationMs ?? null);
       }
     } catch {
       console.warn("[KapsAI] Kayıtlı sohbet sırası okunamadı, yeniden deneniyor");

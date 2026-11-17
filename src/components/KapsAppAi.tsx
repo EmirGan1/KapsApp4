@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowUp, Check, ChevronDown, Copy, FileText, History, LoaderCircle, Plus, RotateCcw, Sparkles, Square, Trash2 } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Clock3, Copy, FileText, History, LoaderCircle, Plus, RotateCcw, Sparkles, Square, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkMath from "remark-math";
 import {
@@ -12,7 +12,8 @@ import { useKapsAiHistory } from "./useKapsAiHistory";
 
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold outline-offset-2 transition-colors";
 const secondary = `${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800`;
-const field = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
+const field = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
+const headerButton = "max-sm:gap-1 max-sm:px-2 max-sm:text-xs";
 const MATH_PLUGINS = [remarkMath];
 
 function extractText(children: unknown): string {
@@ -65,7 +66,7 @@ const MathMarkdown = memo(function MathMarkdown({
             return <pre>{children}</pre>;
           },
           img: ({ alt }) => (alt ? <span>{alt}</span> : null),
-          a: ({ children }) => <span className="text-indigo-700 dark:text-indigo-300">{children}</span>,
+          a: ({ children }) => <span className="text-violet-700 dark:text-violet-300">{children}</span>,
         }}
       >
         {normalized}
@@ -79,7 +80,7 @@ const Answer = memo(function Answer({ content, streaming = false }: { content: s
     <MathMarkdown
       content={content}
       streaming={streaming}
-      className="min-w-0 break-words text-[15px] leading-relaxed text-slate-800 dark:text-slate-100 [&_p+p]:mt-3 [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-lg [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ol]:my-2 [&_ol]:list-decimal [&_li]:ml-5 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-slate-950 [&_pre]:p-3 [&_pre]:text-sm [&_pre]:text-slate-100 [&_p>code]:rounded [&_p>code]:bg-slate-200/70 [&_p>code]:px-1 dark:[&_p>code]:bg-slate-700 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden [&_.katex-display]:py-1 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-indigo-400 [&_blockquote]:pl-3"
+      className="min-w-0 break-words text-[15px] leading-relaxed text-slate-800 dark:text-slate-100 [&_p+p]:mt-3 [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-lg [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ol]:my-2 [&_ol]:list-decimal [&_li]:ml-5 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-slate-950 [&_pre]:p-3 [&_pre]:text-sm [&_pre]:text-slate-100 [&_p>code]:rounded [&_p>code]:bg-slate-200/70 [&_p>code]:px-1 dark:[&_p>code]:bg-slate-700 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden [&_.katex-display]:py-1 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-violet-400 [&_blockquote]:pl-3"
     />
   );
 });
@@ -88,7 +89,7 @@ const UserQuestion = memo(function UserQuestion({ content }: { content: string }
   const hasMathOrMarkdown = /[$\\`*_#\[~]/.test(content);
   if (!hasMathOrMarkdown) {
     return (
-      <p className="whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-indigo-50 px-4 py-3 text-[15px] leading-relaxed text-slate-900 dark:bg-indigo-950/70 dark:text-white">
+      <p className="whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-violet-50 px-4 py-3 text-[15px] leading-relaxed text-slate-900 dark:bg-violet-950/70 dark:text-white">
         {content}
       </p>
     );
@@ -96,7 +97,7 @@ const UserQuestion = memo(function UserQuestion({ content }: { content: string }
   return (
     <MathMarkdown
       content={content}
-      className="min-w-0 break-words rounded-2xl rounded-tr-md bg-indigo-50 px-4 py-3 text-[15px] leading-relaxed text-slate-900 dark:bg-indigo-950/70 dark:text-white [&_p+p]:mt-2.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-slate-950 [&_pre]:p-2.5 [&_pre]:text-xs [&_pre]:text-slate-100 [&_.katex-display]:my-1.5 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
+      className="min-w-0 break-words rounded-2xl rounded-tr-md bg-violet-50 px-4 py-3 text-[15px] leading-relaxed text-slate-900 dark:bg-violet-950/70 dark:text-white [&_p+p]:mt-2.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-slate-950 [&_pre]:p-2.5 [&_pre]:text-xs [&_pre]:text-slate-100 [&_.katex-display]:my-1.5 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
     />
   );
 });
@@ -128,7 +129,7 @@ function WaitingStatus({ phase, queuePosition }: { phase?: ChatStatusPhase; queu
   return (
     <div role="status" aria-live="polite" className="flex flex-col gap-1.5 py-0.5 text-sm text-slate-600 dark:text-slate-300">
       <div className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-100">
-        <LoaderCircle size={16} className="shrink-0 animate-spin text-indigo-600 dark:text-indigo-400" />
+        <LoaderCircle size={16} className="shrink-0 animate-spin text-violet-600 dark:text-violet-400" />
         <span>{stageTitle}</span>
         {elapsedSec >= 3 && (
           <span className="text-xs font-normal tabular-nums text-slate-500 dark:text-slate-400">
@@ -167,6 +168,19 @@ function CopyMessage({ content, label }: { content: string; label: string }) {
         {state === "copied" ? "Kopyalandı" : state === "failed" ? "Kopyalanamadı" : ""}
       </span>
     </div>
+  );
+}
+
+function ResponseDuration({ milliseconds }: { milliseconds: number }) {
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const label = milliseconds < 1000 ? "1 sn'den az"
+    : minutes > 0 ? `${minutes} dk ${seconds % 60} sn` : `${seconds} sn`;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs tabular-nums text-slate-500 dark:text-slate-400">
+      <Clock3 size={14} aria-hidden="true" />
+      Yanıt süresi <time dateTime={`PT${milliseconds / 1000}S`}>{label}</time>
+    </span>
   );
 }
 
@@ -237,35 +251,41 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
   }
 
   return (
-    <section hidden={!active} aria-label="KapsAI" className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-slate-950">
-      <header className="shrink-0 border-b border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto grid w-full max-w-4xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 px-3 py-2 sm:flex sm:px-6">
+    <section hidden={!active} aria-label="KapsAI" className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col bg-slate-50 dark:bg-slate-950">
+      <header className="z-10 shrink-0 border-b border-violet-100/80 bg-white/95 dark:border-white/10 dark:bg-slate-950">
+        <div className="mx-auto grid w-full max-w-5xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-5 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"><Sparkles size={18} /></span>
-            <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">KapsAI</h2>
+            <span className="grid size-10 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br from-violet-500 to-indigo-800 text-white shadow-sm shadow-violet-800/25">
+              <Sparkles size={19} aria-hidden="true" />
+            </span>
+            <h2 className="truncate text-base font-bold tracking-tight text-slate-950 dark:text-white">KapsAI</h2>
           </div>
-          <div className="col-span-2 row-start-2 flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
-            <select aria-label="KapsAI modeli" aria-describedby="kaps-ai-model-description"
-              className={`${secondary} max-w-full disabled:opacity-50`} value={history.model}
-              disabled={!history.initialized || history.modelPending || Boolean(pendingSubmission)}
-              onChange={event => {
-                const next = event.currentTarget.value;
-                if (isKapsAiModel(next)) void history.chooseModel(next);
-              }}>
-              {Object.entries(KAPSAPP_AI_MODELS).map(([id, info]) => (
-                <option key={id} value={id}>{info.label}</option>
-              ))}
-            </select>
-            <p id="kaps-ai-model-description" className="text-xs text-slate-600 dark:text-slate-400">
-              {KAPSAPP_AI_MODELS[history.model].description}
+          <div className="col-span-2 row-start-2 flex min-w-0 items-center gap-2.5 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+            <div className="relative shrink-0">
+              <select aria-label="KapsAI modeli" aria-describedby="kaps-ai-model-description"
+                className="min-h-11 max-w-full appearance-none rounded-xl border border-violet-200 bg-violet-50 py-2 pl-3 pr-9 text-sm font-semibold text-violet-950 outline-offset-2 disabled:opacity-50 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-100"
+                value={history.model}
+                disabled={!history.initialized || history.modelPending || Boolean(pendingSubmission)}
+                onChange={event => {
+                  const next = event.currentTarget.value;
+                  if (isKapsAiModel(next)) void history.chooseModel(next);
+                }}>
+                {Object.entries(KAPSAPP_AI_MODELS).map(([id, info]) => (
+                  <option key={id} value={id} className="bg-white text-slate-900 dark:bg-slate-900 dark:text-white">{info.label}</option>
+                ))}
+              </select>
+              <ChevronDown size={15} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-violet-700 dark:text-violet-300" />
+            </div>
+            <p id="kaps-ai-model-description" title={KAPSAPP_AI_MODELS[history.model].description} className="text-xs leading-tight text-slate-600 dark:text-slate-400">
+              {KAPSAPP_AI_MODELS[history.model].profile}
             </p>
           </div>
-          <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-2">
-            <button type="button" className={secondary} aria-expanded={historyOpen} aria-controls="kaps-ai-history"
+          <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-1.5 sm:col-start-3 sm:gap-2">
+            <button type="button" className={`${secondary} ${headerButton}`} aria-expanded={historyOpen} aria-controls="kaps-ai-history"
               disabled={Boolean(pendingSubmission)} onClick={() => setHistoryOpen(open => !open)}>
               <History size={16} /> Geçmiş
             </button>
-            <button type="button" className={secondary} disabled={Boolean(pendingSubmission || actionPending)} onClick={() => select(null)}>
+            <button type="button" className={`${button} ${headerButton} bg-slate-950 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200`} disabled={Boolean(pendingSubmission || actionPending)} onClick={() => select(null)}>
               <Plus size={16} /> Yeni sohbet
             </button>
           </div>
@@ -313,10 +333,31 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             }}>Daha eski mesajlar</button>}
             {history.loading && <p role="status" className="m-auto text-sm text-slate-500">Sohbet yükleniyor…</p>}
             {!history.loading && turns.length === 0 && (
-              <div className="m-auto max-w-sm text-center">
-                <span className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"><Sparkles size={28} /></span>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Bugün ne konuşalım?</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">İnternet araması kapalı. Soruna ilgili bir kaynak metni veya LaTeX matematik ifadeleri ekleyebilirsin.</p>
+              <div className="mx-auto my-auto w-full max-w-2xl overflow-hidden rounded-3xl border border-violet-100 bg-[radial-gradient(ellipse_at_top,#ede9fe,transparent_65%),linear-gradient(#fff,#fff)] px-4 pb-5 pt-6 shadow-sm dark:border-violet-400/20 dark:bg-[radial-gradient(ellipse_at_top,#262046,transparent_65%),linear-gradient(#101323,#101323)] sm:px-8 sm:pb-8 sm:pt-9">
+                <div className="text-center">
+                  <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white text-violet-700 shadow-sm ring-1 ring-violet-100 dark:bg-violet-500/20 dark:text-violet-200 dark:ring-violet-400/25">
+                    <Sparkles size={23} aria-hidden="true" />
+                  </span>
+                  <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Bugün ne konuşalım?</h3>
+                </div>
+                <div role="group" aria-label="Bir model seç" className="mt-5 grid grid-cols-2 gap-2 sm:mt-7 sm:gap-3">
+                  {Object.entries(KAPSAPP_AI_MODELS).map(([id, info]) => {
+                    const selected = history.model === id;
+                    return (
+                      <button key={id} type="button" aria-pressed={selected}
+                        disabled={!history.initialized || history.modelPending || Boolean(pendingSubmission)}
+                        className={`relative min-w-0 rounded-xl border p-2.5 text-left outline-offset-2 transition-colors disabled:opacity-60 sm:p-3.5 ${selected
+                          ? "border-violet-500 bg-violet-50 dark:border-violet-400 dark:bg-violet-400/15"
+                          : "border-slate-200 bg-white/80 hover:border-violet-300 hover:bg-violet-50 dark:border-white/10 dark:bg-slate-950/60 dark:hover:bg-violet-400/10"}`}
+                        onClick={() => { if (!selected && isKapsAiModel(id)) void history.chooseModel(id); }}>
+                        <span className="block pr-4 text-[11px] font-semibold text-violet-700 dark:text-violet-300">{info.profile}</span>
+                        {selected && <Check size={15} aria-hidden="true" className="absolute right-2.5 top-2.5 text-violet-700 dark:text-violet-200 sm:right-3.5 sm:top-3.5" />}
+                        <span className="mt-0.5 block text-sm font-bold text-slate-950 dark:text-white">{info.label}</span>
+                        <span className="mt-1 block text-xs leading-snug text-slate-600 dark:text-slate-400">{info.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {turns.map(turn => (
@@ -326,9 +367,9 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
                   <div className="flex justify-end"><CopyMessage content={turn.question} label="Mesajı kopyala" /></div>
                 </article>
                 <article aria-label="KapsAI yanıtı" className="flex min-w-0 items-start gap-2 sm:gap-3">
-                  <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-xl border border-indigo-100 text-indigo-700 dark:border-indigo-900 dark:text-indigo-300"><Sparkles size={16} /></span>
-                  <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
-                    <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-400">
+                  <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-xl border border-violet-100 text-violet-700 dark:border-violet-900 dark:text-violet-300"><Sparkles size={16} /></span>
+                  <div className="min-w-0 flex-1 rounded-[22px] rounded-tl-md border border-slate-200/90 bg-white px-3 py-3 shadow-sm dark:border-white/10 dark:bg-slate-900 sm:px-5 sm:py-4">
+                    <p className="mb-2 text-xs font-bold text-slate-600 dark:text-slate-400">
                       {kapsAiModelLabel(turn.model)}
                     </p>
                     {turn.state === "waiting" && (
@@ -343,6 +384,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
                       </div>
                     )}
                     <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {turn.state === "done" && turn.generationMs !== undefined && <ResponseDuration milliseconds={turn.generationMs} />}
                       {turn.answer && turn.state !== "streaming" && <CopyMessage content={turn.answer} label="Yanıtı kopyala" />}
                       {(turn.state === "error" || turn.state === "stopped") && !activeTurn && turn.id === turns.at(-1)?.id && (
                         <button
@@ -369,7 +411,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
         }}><ChevronDown size={16} /> En alta git</button>}
       </div>
 
-      <form onSubmit={send} className="kaps-chat-composer shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <form onSubmit={send} className="kaps-chat-composer shrink-0 border-t border-slate-200/70 bg-white dark:border-white/10 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-4xl px-3 pb-2 pt-2 sm:px-6 sm:py-3">
           {(history.error || history.connectionNotice) && <div className="mb-2 space-y-1 text-sm">
             {history.error && <p role="alert" className="text-rose-700 dark:text-rose-300">{history.error}</p>}
@@ -383,11 +425,11 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
               <textarea className={`${field} block resize-none`} aria-label="Kaynak metni" placeholder="İlgili kaynak metnini yapıştır" rows={2} maxLength={AI_SOURCE_TEXT_LIMIT} value={source.text} onChange={event => setSource({ ...source, text: event.target.value })} />
             </div>
           )}
-          <div className="flex items-end gap-2">
-            <button type="button" aria-expanded={sourceOpen} aria-controls={sourceOpen ? "kaps-ai-source" : undefined} aria-label="Kaynak ekle" title="Kaynak ekle" className={`${secondary} size-11 shrink-0 !px-0 ${hasSource ? "border-indigo-500 text-indigo-700 dark:text-indigo-300" : ""}`} onClick={() => setSourceOpen(open => !open)}>
+          <div className="flex items-end gap-2 rounded-[20px] border border-slate-200 bg-slate-50 p-1.5 shadow-sm focus-within:border-violet-400 dark:border-white/10 dark:bg-slate-900">
+            <button type="button" aria-expanded={sourceOpen} aria-controls={sourceOpen ? "kaps-ai-source" : undefined} aria-label="Kaynak ekle" title="Kaynak ekle" className={`${secondary} size-11 shrink-0 !px-0 ${hasSource ? "border-violet-500 text-violet-700 dark:text-violet-300" : ""}`} onClick={() => setSourceOpen(open => !open)}>
               <FileText size={19} />
             </button>
-            <textarea data-chat-composer aria-label="Mesaj yaz" className={`${field} max-h-40 min-h-11 resize-none overflow-y-auto leading-6`}
+            <textarea data-chat-composer aria-label="Mesaj yaz" className="max-h-40 min-h-11 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2.5 text-base leading-6 text-slate-900 outline-none placeholder:text-slate-500 dark:text-white dark:placeholder:text-slate-400"
               rows={Math.min(5, Math.max(1, draft.split("\n").length))}
               maxLength={AI_MESSAGE_LIMIT}
               enterKeyHint="send"
@@ -403,7 +445,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             {running ? (
               <button type="button" className={`${secondary} size-11 shrink-0 !px-0`} disabled={actionPending} onClick={() => void history.stop(running.id)} aria-label="Yanıtı durdur" title="Yanıtı durdur"><Square size={17} fill="currentColor" /></button>
             ) : (
-              <button type="submit" className={`${button} size-11 shrink-0 !px-0 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-45`} disabled={sendingBlocked || !draft.trim() || !sourceValid} aria-label="Mesajı gönder" title="Mesajı gönder"><ArrowUp size={21} /></button>
+              <button type="submit" className={`${button} size-11 shrink-0 !px-0 bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-45`} disabled={sendingBlocked || !draft.trim() || !sourceValid} aria-label="Mesajı gönder" title="Mesajı gönder"><ArrowUp size={21} /></button>
             )}
           </div>
           <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
