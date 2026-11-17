@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { 
   Users, Laptop, Trash2, CheckCircle2, 
@@ -13,6 +13,7 @@ import { getApiUrl, getAuthHeaders } from "../utils/api";
 import { COURSE_ROLES, CourseRole, sortRolesByPosition } from "../types";
 import RoleBadges from "./RoleBadges";
 import PasswordResetRequests from "./PasswordResetRequests";
+import AdminPanelShell, { type AdminTab } from "./AdminPanelShell";
 import EditRolesModal from "./EditRolesModal";
 import CreateRoleModal from "./CreateRoleModal";
 
@@ -89,12 +90,16 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ socket, currentUsername, onUserClick, onPendingCountChange }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "scare" | "logs" | "activity" | "quote">("pending");
+  const [activeTab, setActiveTab] = useState<AdminTab>("home");
   const [loading, setLoading] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   
   // Data
   const [pendingUsers, setPendingUsers] = useState<PendingUserItem[]>([]);
+  const [registrationCount, setRegistrationCount] = useState<number | null>(null);
+  const [resetCount, setResetCount] = useState<number | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const pendingRequest = useRef(0);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [bannedHardware, setBannedHardware] = useState<BannedHardwareItem[]>([]);
@@ -185,15 +190,21 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
 
   // 1. Fetch Pending Users
   const fetchPendingUsers = useCallback(async () => {
+    const request = ++pendingRequest.current;
     try {
       const res = await fetch(getApiUrl("/api/emirgan/pending-users"), { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
+        if (request !== pendingRequest.current) return;
         const list = data.users || [];
         setPendingUsers(list);
+        setRegistrationCount(list.length);
         if (onPendingCountChange) onPendingCountChange(list.length);
+      } else if (request === pendingRequest.current) {
+        setRegistrationCount(null);
       }
     } catch (e) {
+      if (request === pendingRequest.current) setRegistrationCount(null);
       console.error("Error fetching pending users:", e);
     }
   }, [onPendingCountChange]);
@@ -642,14 +653,18 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
     fetchActiveTables();
     fetchRoles();
 
-    const interval = setInterval(() => {
+    const refreshVisible = () => {
       if (document.visibilityState === "visible") {
         fetchPendingUsers();
         fetchActiveTables();
       }
-    }, 30000);
-
-    return () => clearInterval(interval);
+    };
+    const interval = setInterval(refreshVisible, 30000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [fetchPendingUsers, fetchUsers, fetchOverview, fetchActiveTables, fetchRoles]);
 
   useEffect(() => {
@@ -687,9 +702,8 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
     socket.on("user:roles_updated", handleRolesUpdate);
     socket.on("roles:updated", fetchRoles);
     socket.on("active_tables_updated", handleActiveTablesUpdate);
-    socket.on("online_users", () => {
-      fetchUsers();
-    });
+    socket.on("online_users", fetchUsers);
+    socket.on("connect", handlePendingUpdate);
 
     socket.emit("get_active_tables", (tables: any[]) => {
       if (Array.isArray(tables)) setActiveTables(tables);
@@ -706,7 +720,8 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
       socket.off("user:roles_updated", handleRolesUpdate);
       socket.off("roles:updated", fetchRoles);
       socket.off("active_tables_updated", handleActiveTablesUpdate);
-      socket.off("online_users");
+      socket.off("online_users", fetchUsers);
+      socket.off("connect", handlePendingUpdate);
     };
   }, [socket, fetchPendingUsers, fetchUsers, fetchOverview, fetchActiveTables, fetchRoles]);
 
@@ -733,7 +748,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
   };
 
   // Tab change handler
-  const handleTabChange = (tab: "pending" | "users" | "roles" | "tables" | "hardware" | "broadcast" | "scare" | "logs" | "activity" | "quote") => {
+  const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
     if (tab === "pending") fetchPendingUsers();
     if (tab === "users" || tab === "scare") fetchUsers();
@@ -1023,229 +1038,36 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
         </div>
       )}
 
-      {/* Top Header */}
-      <div className="p-4 sm:p-5 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-slate-950 shadow-lg shadow-amber-500/20 font-black">
-            <Crown size={22} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-black tracking-tight text-white flex items-center gap-2">
-                👑 Emirgan Yönetim Paneli
-              </h1>
-              <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                ROOT YÖNETİCİ
-              </span>
-              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-black">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                <span>PANEL AKTİF</span>
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              Kayıt onayları, kullanıcı moderasyonu, çevrim içi durumu ve donanım güvenliği
-            </p>
-          </div>
+      <AdminPanelShell activeTab={activeTab} onSelect={handleTabChange} registrations={registrationCount}
+        resets={resetCount} refreshKey={refreshKey} onRefresh={() => {
+          fetchPendingUsers();
+          fetchUsers();
+          fetchOverview();
+          fetchActiveTables();
+          setRefreshKey(key => key + 1);
+        }}>
+        <div hidden={activeTab !== "resets"}>
+          <PasswordResetRequests socket={socket} onCountChange={setResetCount} refreshKey={refreshKey} />
         </div>
+        {activeTab === "scare" && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-[#121823] p-3">
+            <h2 className="mr-auto text-sm font-semibold">KAP Attack</h2>
+            {[{ event: "admin:trigger_kap_attack", label: "Başlat", notice: "KAP Attack başlatıldı." },
+              { event: "admin:stop_kap_attack", label: "Durdur", notice: "KAP Attack durduruldu." }].map(action => (
+              <button type="button" key={action.event}
+                className="min-h-11 rounded-lg border border-white/10 px-3 text-sm hover:bg-white/10"
+                onClick={() => {
+                  if (!socket?.connected) {
+                    showToast("Socket bağlantısı bulunamadı.", "error");
+                    return;
+                  }
+                  socket.emit(action.event);
+                  showToast(action.notice, "success");
+                }}>{action.label}</button>
+            ))}
+          </div>
+        )}
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* KAP ATTACK TRIGGER BUTTONS */}
-          <button
-            onClick={() => {
-              if (!socket) {
-                showToast("Socket bağlantısı bulunamadı!", "error");
-                return;
-              }
-              socket.emit("admin:trigger_kap_attack");
-              showToast("🚀 KAP ATTACK BAŞLATILDI! (Tüm ekranlar 5 saniye sallanacak)", "success");
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-orange-500 to-amber-500 hover:from-red-500 hover:via-orange-400 hover:to-amber-400 text-white text-xs font-black tracking-wide shadow-md shadow-red-500/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
-            title="Tüm kullanıcılara 5 saniyelik ekran sarsıntısı ve kap yağmuru gönderir"
-          >
-            <Flame size={14} className="text-yellow-200 animate-pulse" />
-            <span>🚀 KAP ATTACK BAŞLAT</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (!socket) {
-                showToast("Socket bağlantısı bulunamadı!", "error");
-                return;
-              }
-              socket.emit("admin:stop_kap_attack");
-              showToast("🛑 KAP ATTACK DURDURULDU!", "success");
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-red-950/70 text-red-400 hover:text-red-300 text-xs font-bold transition-all border border-red-900/40 hover:border-red-700 cursor-pointer"
-            title="KAP Attack efektini anında durdurur"
-          >
-            <span>🛑 KAP ATTACK DURDUR</span>
-          </button>
-
-          <button
-            onClick={() => {
-              fetchPendingUsers();
-              fetchUsers();
-              fetchOverview();
-              showToast("Veriler yenilendi.", "success");
-            }}
-            disabled={loading || actionLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-colors border border-slate-700 cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={loading || actionLoading ? "animate-spin" : ""} />
-            <span>Yenile</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="px-4 sm:px-6 pt-3 border-b border-slate-800 bg-slate-900/50 flex gap-2 overflow-x-auto shrink-0 scrollbar-none">
-        <button
-          onClick={() => handleTabChange("pending")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "pending"
-              ? "bg-slate-950 text-amber-400 border-amber-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <ShieldCheck size={16} />
-          <span>📋 Kayıt Onayları</span>
-          {pendingUsers.length > 0 && (
-            <span className="px-2 py-0.5 text-[11px] font-black rounded-full bg-amber-500 text-slate-950 animate-pulse">
-              {pendingUsers.length}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => handleTabChange("users")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "users"
-              ? "bg-slate-950 text-blue-400 border-blue-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Users size={16} />
-          <span>👥 Tüm Kullanıcılar ({users.length})</span>
-          {users.filter(u => u.isOnline).length > 0 && (
-            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              {users.filter(u => u.isOnline).length} Online
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => handleTabChange("roles")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "roles"
-              ? "bg-slate-950 text-indigo-400 border-indigo-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Award size={16} />
-          <span>🏷️ Rol Yönetimi & Hiyerarşi ({rolesList.length})</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange("tables")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "tables"
-              ? "bg-slate-950 text-emerald-400 border-emerald-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Gamepad2 size={16} />
-          <span>🎴 Aktif Masalar ({activeTables.length})</span>
-          {activeTables.length > 0 && (
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          )}
-        </button>
-
-        <button
-          onClick={() => handleTabChange("hardware")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "hardware"
-              ? "bg-slate-950 text-rose-400 border-rose-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Laptop size={16} />
-          <span>💻 Donanım Banları</span>
-          {bannedHardware.length > 0 && (
-            <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-rose-950 text-rose-300 border border-rose-800">
-              {bannedHardware.length}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => handleTabChange("broadcast")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "broadcast"
-              ? "bg-slate-950 text-amber-400 border-amber-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Megaphone size={16} />
-          <span>📢 Canlı Duyuru</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange("scare")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "scare"
-              ? "bg-slate-950 text-red-400 border-red-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Flame size={16} className="text-red-500 animate-pulse" />
-          <span>💀 Kapscare & Pop-up</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange("logs")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "logs"
-              ? "bg-slate-950 text-emerald-400 border-emerald-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Terminal size={16} />
-          <span>📊 Sistem Logları</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange("activity")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "activity"
-              ? "bg-slate-950 text-purple-400 border-purple-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Clock size={16} className="text-purple-400" />
-          <span>⏱️ Ekran Süresi</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange("quote")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-all border-b-2 cursor-pointer ${
-            activeTab === "quote"
-              ? "bg-slate-950 text-amber-400 border-amber-500 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/50"
-          }`}
-        >
-          <Sparkles size={16} className="text-amber-400" />
-          <span>✨ Günün Sözü</span>
-        </button>
-      </div>
-
-      {/* Main Tab Content */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 touch-pan-y overscroll-y-contain">
-        
-        {/* ========================================================= */}
-        {/* TAB 1: KAYIT ONAYLARI (PENDING USERS)                     */}
-        {/* ========================================================= */}
-        <PasswordResetRequests socket={socket} />
         {activeTab === "pending" && (
           <div className="space-y-4 max-w-5xl mx-auto">
             <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-2xl p-5 shadow-lg">
@@ -3049,7 +2871,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
             </div>
           </div>
         )}
-      </div>
+      </AdminPanelShell>
 
       {/* ========================================================= */}
       {/* MODALS SECTION                                            */}

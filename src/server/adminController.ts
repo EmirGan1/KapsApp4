@@ -1,10 +1,58 @@
+import { readFile, statfs } from "node:fs/promises";
+import { cpus, freemem, loadavg, platform, totalmem, uptime } from "node:os";
 import { Express, Request, Response } from "express";
 
 /**
  * Screen Time and Admin Dashboard Leaderboard Controller
  */
 
+function cpuSnapshot() {
+  return cpus().reduce((sample, { times }) => ({
+    idle: sample.idle + times.idle,
+    total: sample.total + times.user + times.nice + times.sys + times.idle + times.irq,
+  }), { idle: 0, total: 0 });
+}
+
 export function registerAdminController(app: Express, client: any, requireEmirganAdmin: any, io?: any) {
+  let lastCpu = cpuSnapshot();
+  let lastCpuAt = Date.now();
+  let cpuPercent: number | null = null;
+
+  app.get("/api/admin/server-metrics", requireEmirganAdmin, async (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    const now = Date.now();
+    if (now - lastCpuAt >= 1000) {
+      const next = cpuSnapshot();
+      const elapsed = next.total - lastCpu.total;
+      cpuPercent = elapsed > 0
+        ? Math.round(Math.max(0, Math.min(1, 1 - (next.idle - lastCpu.idle) / elapsed)) * 100)
+        : null;
+      lastCpu = next;
+      lastCpuAt = now;
+    }
+
+    const [memoryInfo, filesystem] = await Promise.all([
+      platform() === "linux" ? readFile("/proc/meminfo", "utf8").catch(() => "") : "",
+      statfs(process.cwd()).catch(() => null),
+    ]);
+    const total = totalmem();
+    const availableKib = memoryInfo.match(/^MemAvailable:\s+(\d+)/m)?.[1];
+    const available = availableKib ? Number(availableKib) * 1024 : freemem();
+    res.json({
+      sampledAt: new Date(now).toISOString(),
+      cpuPercent,
+      cores: cpus().length,
+      loadAverage: platform() === "win32" ? null : loadavg()[0],
+      memory: { used: Math.max(0, total - available), total },
+      disk: filesystem ? { used: (filesystem.blocks - filesystem.bfree) * filesystem.bsize,
+        available: filesystem.bavail * filesystem.bsize, total: filesystem.blocks * filesystem.bsize } : null,
+      uptimeSeconds: Math.floor(uptime()),
+      appUptimeSeconds: Math.floor(process.uptime()),
+      nodeVersion: process.version,
+    });
+  });
+
+
   
   // ==========================================
   // EMİRGAN YÖNETİMİ: GÜNÜN SÖZÜ (DAILY QUOTE)

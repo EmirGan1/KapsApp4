@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { safeFetchJson } from '../utils/api';
 
@@ -27,13 +27,28 @@ export function PasswordResetActions({ requestId, status = 'PENDING', onDone }: 
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
   </div>;
 }
-export default function PasswordResetRequests({ socket }: { socket: Socket | null }) {
+export default function PasswordResetRequests({ socket, onCountChange, refreshKey }: {
+  socket: Socket | null;
+  onCountChange?: (count: number | null) => void;
+  refreshKey?: number;
+}) {
   const [requests, setRequests] = useState<ResetRequest[]>([]);
   const [error, setError] = useState('');
+  const latestRequest = useRef(0);
   const fetchRequests = useCallback(async () => {
-    try { const data = await safeFetchJson('/api/admin/password-reset/requests'); setRequests(data.requests); setError(''); }
-    catch (err: any) { setError(err.message || 'Talepler yüklenemedi.'); }
-  }, []);
+    const request = ++latestRequest.current;
+    try {
+      const data = await safeFetchJson('/api/admin/password-reset/requests');
+      if (request !== latestRequest.current) return;
+      setRequests(data.requests);
+      onCountChange?.(data.requests.length);
+      setError('');
+    } catch (err: any) {
+      if (request !== latestRequest.current) return;
+      onCountChange?.(null);
+      setError(err.message || 'Talepler yüklenemedi.');
+    }
+  }, [onCountChange]);
   useEffect(() => {
     void fetchRequests();
     const timer = setInterval(() => {
@@ -41,9 +56,20 @@ export default function PasswordResetRequests({ socket }: { socket: Socket | nul
         void fetchRequests();
       }
     }, 60000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void fetchRequests();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     socket?.on('password_reset_updated', fetchRequests);
-    return () => { clearInterval(timer); socket?.off('password_reset_updated', fetchRequests); };
-  }, [socket, fetchRequests]);
+    socket?.on('connect', fetchRequests);
+    return () => {
+      latestRequest.current++;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      socket?.off('password_reset_updated', fetchRequests);
+      socket?.off('connect', fetchRequests);
+    };
+  }, [socket, fetchRequests, refreshKey]);
   return <section aria-label="Bekleyen Şifre Sıfırlama Talepleri" className="rounded-2xl p-4 sm:p-5 border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 space-y-3">
     <h2 className="font-bold text-base">🔑 Bekleyen Şifre Sıfırlama Talepleri ({requests.length})</h2>
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
