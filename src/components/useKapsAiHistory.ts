@@ -6,7 +6,7 @@ import type { ChatSource, KapsAiModel, SavedChatSummary, SavedChatTurn } from ".
 type ActiveTurn = { id: string; conversationId: string };
 type ConversationList = { model: KapsAiModel; conversations: SavedChatSummary[]; next: number | null; active: ActiveTurn | null };
 type ConversationPage = { title: string; turns: SavedChatTurn[]; next: number | null };
-type Submission = { id: string; conversationId: string; question: string; source?: ChatSource; model: KapsAiModel; image?: string };
+type Submission = { id: string; conversationId: string; question: string; source?: ChatSource; model: KapsAiModel; image?: string[] };
 
 class ChatHttpError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -221,7 +221,7 @@ export function useKapsAiHistory(active: boolean) {
     };
   }, [pendingSubmission, submit]);
 
-  async function send(question: string, source?: ChatSource, image?: string) {
+  async function send(question: string, source?: ChatSource, image?: string[]) {
     if (!initialized || loading || activeTurn || outbox.current || operation.current || choosingModel.current) return;
     setError("");
     const item = { id: crypto.randomUUID(), conversationId: selected.current ?? crypto.randomUUID(), question, source, image, model: image ? KAPSAPP_AI_VISION_MODEL : model };
