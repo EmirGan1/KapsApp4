@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiUrl, getAuthHeaders } from "../utils/api";
-import { KAPSAPP_AI_CONVERSATIONS_PATH as conversationsPath, KAPSAPP_AI_TURNS_PATH as turnsPath, KAPSAPP_AI_PREFERENCE_PATH, KAPSAPP_AI_DEFAULT_MODEL } from "../shared/kapsAppAi";
+import { KAPSAPP_AI_CONVERSATIONS_PATH as conversationsPath, KAPSAPP_AI_TURNS_PATH as turnsPath, KAPSAPP_AI_PREFERENCE_PATH, KAPSAPP_AI_DEFAULT_MODEL, KAPSAPP_AI_VISION_MODEL, KAPSAPP_AI_PHOTO_PATH } from "../shared/kapsAppAi";
 import type { ChatSource, KapsAiModel, SavedChatSummary, SavedChatTurn } from "../shared/kapsAppAi";
 
 type ActiveTurn = { id: string; conversationId: string };
 type ConversationList = { model: KapsAiModel; conversations: SavedChatSummary[]; next: number | null; active: ActiveTurn | null };
 type ConversationPage = { title: string; turns: SavedChatTurn[]; next: number | null };
-type Submission = { id: string; conversationId: string; question: string; source?: ChatSource; model: KapsAiModel };
+type Submission = { id: string; conversationId: string; question: string; source?: ChatSource; model: KapsAiModel; image?: string };
 
 class ChatHttpError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -178,9 +178,10 @@ export function useKapsAiHistory(active: boolean) {
     if (outbox.current !== item || sendAttempt.current) return;
     sendAttempt.current = true;
     try {
-      const turn = await chatRequest<SavedChatTurn>(`${conversationsPath}/${item.conversationId}/turns`, {
-        method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, question: item.question, source: item.source, model: item.model }),
+      const path = item.image ? `${KAPSAPP_AI_PHOTO_PATH}/${item.conversationId}` : `${conversationsPath}/${item.conversationId}/turns`;
+      const turn = await chatRequest<SavedChatTurn>(path, {
+        method: "POST", keepalive: !item.image, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id, question: item.question, source: item.source, model: item.model, image: item.image }),
       });
       if (outbox.current !== item) return;
       outbox.current = null;
@@ -220,10 +221,10 @@ export function useKapsAiHistory(active: boolean) {
     };
   }, [pendingSubmission, submit]);
 
-  async function send(question: string, source?: ChatSource) {
+  async function send(question: string, source?: ChatSource, image?: string) {
     if (!initialized || loading || activeTurn || outbox.current || operation.current || choosingModel.current) return;
     setError("");
-    const item = { id: crypto.randomUUID(), conversationId: selected.current ?? crypto.randomUUID(), question, source, model };
+    const item = { id: crypto.randomUUID(), conversationId: selected.current ?? crypto.randomUUID(), question, source, image, model: image ? KAPSAPP_AI_VISION_MODEL : model };
     focusConversation(item.conversationId);
     outbox.current = item;
     setPendingSubmission(item);

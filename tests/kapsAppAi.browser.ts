@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -10,7 +10,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { createClient } from "@libsql/client";
 import { chromium, devices, webkit } from "playwright";
 import { KAPSAPP_AI_MODEL, KAPSAPP_AI_SYSTEM_PROMPT } from "../src/server/kapsAppAi";
-import { KAPSAPP_AI_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, KAPSAPP_AI_PREFERENCE_PATH, normalizeMathMarkdown, readJsonLines } from "../src/shared/kapsAppAi";
+import { KAPSAPP_AI_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, KAPSAPP_AI_PREFERENCE_PATH, KAPSAPP_AI_PHOTO_PATH, KAPSAPP_AI_VISION_MODEL, normalizeMathMarkdown, readJsonLines } from "../src/shared/kapsAppAi";
 import type { ChatEvent, ChatMessage, ChatSource, KapsAiModel, SavedChatTurn } from "../src/shared/kapsAppAi";
 
 const live = process.env.KAPSAPP_AI_LIVE_TEST === "1";
@@ -227,7 +227,7 @@ async function collect(response: Response) {
 let browser: Awaited<ReturnType<typeof engine.launch>> | undefined;
 try {
   await waitFor(() => fetch(base + "/api/health", { signal: AbortSignal.timeout(1000) }).then(r => r.ok, () => false));
-  for (const name of ["tr", "en", "one", "two", "three", "browser", "screenshot", "history", "model-check", "model-other", "banned", "source", "expired"]) {
+  for (const name of ["tr", "en", "one", "two", "three", "browser", "screenshot", "history", "model-check", "model-other", "photo", "banned", "source", "expired"]) {
     const { lastInsertRowid } = await db.execute({
       sql: "INSERT INTO users (username,password,status,is_banned) VALUES (?, 'fixture', 'approved', ?)",
       args: [name, Number(name === "banned")],
@@ -362,6 +362,62 @@ try {
       else assert.equal(turn.generationMs, undefined);
     }
     console.log("PASS Gemma request settings, saved durations and truncated responses");
+
+    const photoBytes = await readFile(join(root, "tests/fixtures/kapsai-photo.jpg"));
+    const image = "data:image/jpeg;base64," + photoBytes.toString("base64");
+    const photoConversation = randomUUID();
+    const photoId = randomUUID();
+    const photoPath = base + KAPSAPP_AI_PHOTO_PATH + "/" + photoConversation;
+    const photoBody = { id: photoId, question: "Describe this photo", model: fast, image, source: { title: "Photo note", text: "Use the attached photo as the visual reference." } };
+    const photoHeaders = { ...auth("photo"), "Content-Type": "application/json" };
+    const submitPhoto = (body: object) => fetch(photoPath, { method: "POST", headers: photoHeaders, body: JSON.stringify(body) });
+    assert.equal((await fetch(photoPath, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(photoBody) })).status, 401);
+    assert.equal((await submitPhoto({ ...photoBody, image: "data:image/svg+xml;base64,PHN2Zz4=" })).status, 400);
+    const oversizedFrame = Buffer.from(photoBytes);
+    const frame = oversizedFrame.indexOf(Buffer.from([0xff, 0xc0]));
+    assert.ok(frame > 0);
+    oversizedFrame.writeUInt16BE(2000, frame + 7);
+    assert.equal((await submitPhoto({ ...photoBody, image: "data:image/jpeg;base64," + oversizedFrame.toString("base64") })).status, 400);
+    const uploaded = await submitPhoto(photoBody);
+    assert.equal(uploaded.status, 202);
+    const acceptedPhoto: SavedChatTurn = await uploaded.json();
+    assert.equal(acceptedPhoto.model, KAPSAPP_AI_VISION_MODEL);
+    assert.ok(acceptedPhoto.imageHash);
+    const readPhotoTurn = () => fetch(`${savedTurns}/${photoId}`, { headers: auth("photo") }).then(r => r.json());
+    await waitFor(async () => (await readPhotoTurn()).state === "done");
+    const sentPhoto = upstream.request?.messages.at(-1) as ChatMessage & { images?: string[] };
+    assert.deepEqual(sentPhoto.images, [photoBytes.toString("base64")]);
+    assert.equal(upstream.request?.model, KAPSAPP_AI_VISION_MODEL);
+    assert.equal((await submitPhoto(photoBody)).status, 200);
+    const changedImage = Buffer.from(photoBytes);
+    changedImage[14] ^= 1;
+    assert.equal((await submitPhoto({ ...photoBody, image: "data:image/jpeg;base64," + changedImage.toString("base64") })).status, 409);
+    const privateImagePath = `${savedTurns}/${photoId}/image`;
+    assert.equal((await fetch(privateImagePath)).status, 401);
+    assert.equal((await fetch(privateImagePath, { headers: auth("model-other") })).status, 404);
+    const photoResponse = await fetch(privateImagePath, { headers: auth("photo") });
+    assert.equal(photoResponse.status, 200);
+    assert.equal(photoResponse.headers.get("content-type"), "image/jpeg");
+    assert.match(photoResponse.headers.get("cache-control") ?? "", /no-store/);
+    assert.deepEqual(Buffer.from(await photoResponse.arrayBuffer()), photoBytes);
+    const reloadedPhoto = await fetch(`${savedChats}/${photoConversation}`, { headers: auth("photo") }).then(r => r.json());
+    assert.equal(reloadedPhoto.turns[0].imageHash, acceptedPhoto.imageHash);
+    assert.ok(!JSON.stringify(reloadedPhoto).includes(photoBytes.toString("base64")));
+
+    const followupId = randomUUID();
+    const followupBody = { id: followupId, question: "Explain the same photo again", model: fast };
+    const followupPath = `${savedChats}/${photoConversation}/turns`;
+    const followup = () => fetch(followupPath, { method: "POST", headers: photoHeaders, body: JSON.stringify(followupBody) });
+    assert.equal((await followup()).status, 202);
+    await waitFor(async () => (await fetch(`${savedTurns}/${followupId}`, { headers: auth("photo") }).then(r => r.json())).state === "done");
+    assert.equal(upstream.request?.model, KAPSAPP_AI_VISION_MODEL);
+    assert.ok(upstream.request?.messages.some(message => (message as ChatMessage & { images?: string[] }).images?.[0] === photoBytes.toString("base64")));
+    assert.equal((await followup()).status, 200);
+    const removedPhoto = await fetch(`${savedChats}/${photoConversation}`, { method: "DELETE", headers: auth("photo") });
+    assert.equal(removedPhoto.status, 204);
+    assert.equal((await fetch(privateImagePath, { headers: auth("photo") })).status, 404);
+    console.log("PASS photo validation, Gemma routing, private storage, replay, context and deletion");
+
   } else {
     const expression = String.raw`$$X = \frac{3^2 + 4 \times (5 - 2)}{2^3 - 1} + \sqrt{144}$$`;
     const screenshot = await collect(await ask(expression + "\n\nsolve this", "screenshot"));

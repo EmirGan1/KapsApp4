@@ -4,7 +4,7 @@ import { AI_HISTORY_LIMIT, KAPSAPP_AI_DEFAULT_MODEL, isKapsAiModel, isLegacyKaps
 
 const PAGE_SIZE = 30;
 const PENDING = "state IN ('queued', 'running')";
-const columns = "seq, id, conversation_id, question, source_title, state, answer, notice, model, generation_ms";
+const columns = "seq, id, conversation_id, question, source_title, state, answer, notice, model, generation_ms, image_hash, requested_model";
 
 function savedTurn(row: Row): SavedChatTurn {
   const state = String(row.state);
@@ -12,6 +12,7 @@ function savedTurn(row: Row): SavedChatTurn {
     id: String(row.id),
     conversationId: String(row.conversation_id),
     model: storedTurnModel(row.model),
+    requestedModel: storedTurnModel(row.requested_model ?? row.model),
     question: String(row.question),
     answer: String(row.answer),
     sources: row.source_title ? [{ id: "1", title: String(row.source_title) }] : [],
@@ -19,6 +20,7 @@ function savedTurn(row: Row): SavedChatTurn {
     phase: state === "queued" ? "queued" : undefined,
     notice: row.notice ? String(row.notice) : undefined,
     generationMs: row.generation_ms == null ? undefined : Number(row.generation_ms),
+    imageHash: row.image_hash ? String(row.image_hash) : undefined,
   };
 }
 
@@ -41,7 +43,7 @@ export function createKapsAiHistory(db: Client) {
         seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, owner TEXT NOT NULL, conversation_id TEXT NOT NULL,
         question TEXT NOT NULL, source_title TEXT, source_text TEXT, answer TEXT NOT NULL DEFAULT '',
         state TEXT NOT NULL CHECK(state IN ('queued','running','done','stopped','error')), notice TEXT,
-        model TEXT NOT NULL DEFAULT 'qwen3.5:2b-q4_K_M', generation_ms INTEGER,
+        model TEXT NOT NULL DEFAULT 'qwen3.5:2b-q4_K_M', generation_ms INTEGER, image_data TEXT, image_hash TEXT, requested_model TEXT,
         UNIQUE(owner, id)
       )`,
       "CREATE TABLE IF NOT EXISTS kapsai_model_preferences (owner TEXT PRIMARY KEY, model TEXT NOT NULL)",
@@ -58,6 +60,9 @@ export function createKapsAiHistory(db: Client) {
       // Rows predating model selection were originally generated with Llama 3.2.
       ["model", "TEXT NOT NULL DEFAULT 'llama3.2'"],
       ["generation_ms", "INTEGER"],
+      ["image_data", "TEXT"],
+      ["image_hash", "TEXT"],
+      ["requested_model", "TEXT"],
     ];
     for (const [name, definition] of additions) {
       if (await hasColumn(name)) continue;
@@ -81,6 +86,13 @@ export function createKapsAiHistory(db: Client) {
   return {
     ready,
     get,
+    async image(owner: string, id: string) {
+      const { rows } = await db.execute({
+        sql: "SELECT image_data FROM kapsai_turns WHERE owner = ? AND id = ?",
+        args: [owner, id],
+      });
+      return rows[0]?.image_data ? String(rows[0].image_data) : null;
+    },
     async setModel(owner: string, model: KapsAiModel) {
       await db.execute({
         sql: "INSERT INTO kapsai_model_preferences(owner, model) VALUES (?, ?) ON CONFLICT(owner) DO UPDATE SET model = excluded.model",
@@ -112,15 +124,15 @@ export function createKapsAiHistory(db: Client) {
         next: page.rows.length > PAGE_SIZE ? Number(page.rows[PAGE_SIZE - 1].seq) : null,
       };
     },
-    async append(owner: string, conversationId: string, id: string, question: string, source: ChatSource | undefined, model: KapsAiModel, capacity: number) {
+    async append(owner: string, conversationId: string, id: string, question: string, source: ChatSource | undefined, model: KapsAiModel, capacity: number, image?: { dataUrl: string; hash: string }) {
       const title = Array.from(question.replace(/\s+/g, " ")).slice(0, 65).join("");
       // Insert the conversation only for an accepted turn, in the same transaction.
       await db.batch([
         {
-          sql: `INSERT OR IGNORE INTO kapsai_turns(id, owner, conversation_id, question, source_title, source_text, state, model)
-            SELECT ?, ?, ?, ?, ?, ?, 'queued', ? WHERE (SELECT count(*) FROM kapsai_turns WHERE ${PENDING}) < ?
+          sql: `INSERT OR IGNORE INTO kapsai_turns(id, owner, conversation_id, question, source_title, source_text, state, model, image_data, image_hash, requested_model)
+            SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ? WHERE (SELECT count(*) FROM kapsai_turns WHERE ${PENDING}) < ?
             AND NOT EXISTS(SELECT 1 FROM kapsai_conversations WHERE id = ? AND owner <> ?)`,
-          args: [id, owner, conversationId, question, source?.title ?? null, source?.text ?? null, model, capacity, conversationId, owner],
+          args: [id, owner, conversationId, question, source?.title ?? null, source?.text ?? null, model, image?.dataUrl ?? null, image?.hash ?? null, model, capacity, conversationId, owner],
         },
         {
           sql: `INSERT INTO kapsai_conversations(id, owner, title, last_activity)
@@ -133,13 +145,14 @@ export function createKapsAiHistory(db: Client) {
       return get(owner, id);
     },
     async next() {
-      const { rows } = await db.execute(`SELECT seq, id, owner, conversation_id, question, source_title, source_text, model
+      const { rows } = await db.execute(`SELECT seq, id, owner, conversation_id, question, source_title, source_text, model, image_data
         FROM kapsai_turns WHERE ${PENDING} ORDER BY seq LIMIT 1`);
       const row = rows[0];
       return row ? {
         seq: Number(row.seq), id: String(row.id), owner: String(row.owner), conversationId: String(row.conversation_id),
         question: String(row.question),
         model: storedModel(row.model),
+        image: row.image_data ? String(row.image_data) : undefined,
         source: row.source_title ? { title: String(row.source_title), text: String(row.source_text) } : undefined,
       } : null;
     },
@@ -151,11 +164,11 @@ export function createKapsAiHistory(db: Client) {
     },
     async context(owner: string, conversationId: string, before: number) {
       const { rows } = await db.execute({
-        sql: "SELECT question, answer FROM kapsai_turns WHERE owner = ? AND conversation_id = ? AND seq < ? AND state = 'done' ORDER BY seq DESC LIMIT ?",
+        sql: "SELECT question, answer, image_data FROM kapsai_turns WHERE owner = ? AND conversation_id = ? AND seq < ? AND state = 'done' ORDER BY seq DESC LIMIT ?",
         args: [owner, conversationId, before, AI_HISTORY_LIMIT / 2],
       });
       return rows.reverse().flatMap((row): ChatMessage[] => [
-        { role: "user", content: String(row.question) },
+        { role: "user", content: String(row.question), image: row.image_data ? String(row.image_data) : undefined },
         { role: "assistant", content: String(row.answer).slice(0, 6000) },
       ]);
     },
@@ -174,12 +187,12 @@ export function createKapsAiHistory(db: Client) {
     },
     async retry(owner: string, id: string, capacity: number, model: KapsAiModel) {
       const result = await db.execute({
-        sql: `UPDATE OR IGNORE kapsai_turns SET state = 'queued', answer = '', notice = NULL, generation_ms = NULL, model = ?
+        sql: `UPDATE OR IGNORE kapsai_turns SET state = 'queued', answer = '', notice = NULL, generation_ms = NULL, model = ?, requested_model = ?
           WHERE owner = ? AND id = ? AND state IN ('error', 'stopped')
           AND NOT EXISTS (SELECT 1 FROM kapsai_turns AS newer WHERE newer.owner = kapsai_turns.owner
             AND newer.conversation_id = kapsai_turns.conversation_id AND newer.seq > kapsai_turns.seq)
           AND (SELECT count(*) FROM kapsai_turns WHERE ${PENDING}) < ?`,
-        args: [model, owner, id, capacity],
+        args: [model, model, owner, id, capacity],
       });
       return result.rowsAffected === 1;
     },

@@ -130,3 +130,51 @@ context limit, the English arithmetic answer was wrong. The English arithmetic a
 in the final run was numerically correct and exceeded the requested number-only format.
 The supplied-source test cited the fictional excerpt and ignored the instruction
 embedded in it. These checks used synthetic questions with automatic translation off.
+
+
+## Photo messages
+
+Photo messages use the existing `gemma4:e2b-it-qat` model with three CPU threads.
+The installed tag includes a vision projector. Verify `ollama show gemma4:e2b-it-qat`
+on the VDS. If absent, install with `ollama pull gemma4:e2b-it-qat` before testing.
+Local API tests use an Ollama mock. Real vision quality, cold-load memory and latency
+still need measurement on the VDS.
+
+The composer supports the device photo chooser and clipboard images. A browser-decodable
+photo of at most 20 MB and 40 megapixels is re-encoded as JPEG, stripping metadata,
+resized to at most 1536 pixels on the long edge and compressed to at most 750 KiB.
+One photo is allowed per turn. An image-only submission gets an explicit default
+question. The user sees a preview, a remove button and the Gemma routing notice.
+
+The submission endpoint is `POST /api/kapsai-photo-turns/:conversationId`, using
+the normal authenticated session and the same durable dispatcher, per-user queue,
+rate limits and request IDs as text chat. It accepts bounded JSON up to 1100 KiB.
+This route is under the existing generic `/api/` proxy block, so installations with
+the repository's 96 KiB `/api/kapsapp-ai/` limit need no Nginx change for photos.
+Keep all KapsAI photo request bodies excluded from proxy/APM body logging.
+Photo submissions use standard fetch without keepalive because browsers cap
+keepalive request bodies at approximately 64 KiB. Ambiguous acknowledgements are
+retried with the same request ID after reconnect.
+
+Server validation checks canonical base64, JPEG markers, payload length and frame
+dimensions before sending image bytes to Ollama. Ollama performs actual image
+decoding. The legacy streaming route remains size-limited to 96 KiB.
+The endpoint resolves any attached photo to Gemma automatically. Follow-up messages
+also use Gemma while a photo remains in the retained conversation context. Only
+the most recent retained photo is forwarded, keeping the visual workload bounded.
+Earlier image questions and model answers stay in the text context.
+
+Photos are stored alongside their turn in the account-scoped SQLite history as
+`image_data`, with `image_hash` for retries. The `requested_model` column preserves
+request identity when follow-up requests are automatically routed to Gemma.
+Migrations add nullable columns, retaining existing conversations.
+Normal history and polling responses contain only the image hash, excluding image
+bytes. `GET /api/kapsapp-ai/turns/:id/image` requires the owning account, returns
+JPEG with no-store and nosniff, and is fetched using authenticated headers.
+The UI creates a temporary object URL for display. Deleting a conversation removes
+its photo rows as well. Copies in existing database backups follow the operator's
+backup retention policy.
+
+Deploy using the usual repository install/build/PM2 restart procedure. This change
+does not require detector Python-service installation. After deployment, submit a
+photo, verify the answer's Gemma label, reopen the conversation and check a follow-up.

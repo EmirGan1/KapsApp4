@@ -4,8 +4,12 @@ export const AI_MESSAGE_LIMIT = 6000;
 export const AI_SOURCE_TITLE_LIMIT = 120;
 export const AI_SOURCE_TEXT_LIMIT = 2400;
 export const AI_HISTORY_LIMIT = 6;
+export const AI_IMAGE_BYTES = 750 * 1024;
+export const AI_IMAGE_EDGE = 1536;
+export const KAPSAPP_AI_VISION_MODEL = "gemma4:e2b-it-qat" as const;
+export const KAPSAPP_AI_PHOTO_PATH = "/api/kapsai-photo-turns";
 
-export type ChatMessage = { role: "user" | "assistant"; content: string };
+export type ChatMessage = { role: "user" | "assistant"; content: string; image?: string };
 export type ChatSource = { title: string; text: string };
 export type SourceLabel = { id: string; title: string };
 export type ChatStatusPhase =
@@ -142,7 +146,7 @@ export const KAPSAPP_AI_PREFERENCE_PATH = "/api/kapsapp-ai/model-preference";
 
 export const KAPSAPP_AI_MODELS = {
   "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": { label: "LFM 1.2B", profile: "Hızlı", description: "Kısa İngilizce sohbetler ve mesaj taslakları" },
-  "gemma4:e2b-it-qat": { label: "Gemma 4 E2B", profile: "Dengeli", description: "Genel sohbet ve adım adım çözümler" },
+  "gemma4:e2b-it-qat": { label: "Gemma 4 E2B", profile: "Dengeli", description: "Genel sohbet, fotoğraf ve adım adım çözümler" },
   "granite4.1:3b-q4_K_M": { label: "Granite 4.1 3B", profile: "Ayrıntılı", description: "Daha ayrıntılı yanıtlar, daha uzun sürebilir" },
   "qwen3.5:2b-q4_K_M": { label: "Qwen3.5 2B", profile: "Hafif", description: "Günlük sorular ve kısa açıklamalar" },
 } as const;
@@ -171,6 +175,7 @@ export type SavedChatTurn = {
   id: string;
   conversationId: string;
   model: StoredKapsAiModel;
+  requestedModel?: StoredKapsAiModel;
   question: string;
   answer: string;
   sources: SourceLabel[];
@@ -178,6 +183,7 @@ export type SavedChatTurn = {
   phase?: ChatStatusPhase;
   notice?: string;
   generationMs?: number;
+  imageHash?: string;
 };
 
 export type SavedChatSummary = { id: string; title: string };

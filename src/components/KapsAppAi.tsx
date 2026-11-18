@@ -1,12 +1,14 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowUp, Check, ChevronDown, Clock3, Copy, FileText, History, LoaderCircle, Plus, RotateCcw, Sparkles, Square, Trash2 } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Clock3, Copy, FileText, ImagePlus, X, History, LoaderCircle, Plus, RotateCcw, Sparkles, Square, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkMath from "remark-math";
 import {
-  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_SOURCE_TITLE_LIMIT, isKapsAiModel, KAPSAPP_AI_MODELS, kapsAiModelLabel, normalizeMathMarkdown,
+  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, KAPSAPP_AI_TURNS_PATH, AI_SOURCE_TITLE_LIMIT, isKapsAiModel, KAPSAPP_AI_MODELS, kapsAiModelLabel, normalizeMathMarkdown,
 } from "../shared/kapsAppAi";
 import type { ChatSource, ChatStatusPhase } from "../shared/kapsAppAi";
+import { getApiUrl, getAuthHeaders } from "../utils/api";
+import { prepareKapsAiPhoto } from "../utils/kapsAiPhoto";
 import KapsAppAiEquation from "./KapsAppAiEquation";
 import { useKapsAiHistory } from "./useKapsAiHistory";
 
@@ -171,6 +173,48 @@ function CopyMessage({ content, label }: { content: string; label: string }) {
   );
 }
 
+function SavedPhoto({ id, imageHash, active, onLoad }: { id: string; imageHash: string; active: boolean; onLoad: () => void }) {
+  const [url, setUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    let objectUrl = "";
+    let disposed = false;
+    setUrl("");
+    setFailed(false);
+    void (async () => {
+      try {
+        const response = await fetch(getApiUrl(`${KAPSAPP_AI_TURNS_PATH}/${id}/image`), {
+          headers: getAuthHeaders(), cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Photo unavailable");
+        const blob = await response.blob();
+        if (controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      } catch {
+        if (!disposed) setFailed(true);
+      } finally {
+        clearTimeout(timeout);
+      }
+    })();
+    return () => {
+      disposed = true;
+      controller.abort();
+      clearTimeout(timeout);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [id, imageHash, active, attempt]);
+  if (failed) return <button type="button" className={secondary} onClick={() => setAttempt(value => value + 1)}>Fotoğrafı tekrar yükle</button>;
+  if (!url) return <p className="p-3 text-xs text-slate-500" role="status">Fotoğraf yükleniyor…</p>;
+  return <a href={url} target="_blank" rel="noreferrer" aria-label="Fotoğrafı büyük aç" className="mb-2 block overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+    <img src={url} onLoad={onLoad} alt="Gönderdiğin fotoğraf" className="max-h-80 w-full object-contain" />
+  </a>;
+}
+
 function ResponseDuration({ milliseconds }: { milliseconds: number }) {
   const seconds = Math.floor(milliseconds / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -188,6 +232,11 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
   const history = useKapsAiHistory(active);
   const { turns, conversationId, activeTurn, pendingSubmission, acceptedSubmission, actionPending } = history;
   const [draft, setDraft] = useState("");
+  const [photo, setPhoto] = useState<string>();
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const photoInput = useRef<HTMLInputElement>(null);
+  const photoVersion = useRef(0);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [source, setSource] = useState<ChatSource>({ title: "", text: "" });
   const [jumpVisible, setJumpVisible] = useState(false);
@@ -199,6 +248,27 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
   const hasSource = Boolean(source.title.trim() || source.text.trim());
   const sourceValid = !hasSource || Boolean(source.title.trim() && source.text.trim());
   const sendingBlocked = !history.initialized || history.loading || history.modelPending || Boolean(activeTurn || pendingSubmission || actionPending);
+
+  function clearPhoto() {
+    photoVersion.current++;
+    setPhoto(undefined);
+    setPhotoBusy(false);
+    setPhotoError("");
+  }
+
+  async function attachPhoto(file: File) {
+    const version = ++photoVersion.current;
+    setPhotoBusy(true);
+    setPhotoError("");
+    try {
+      const prepared = await prepareKapsAiPhoto(file);
+      if (version === photoVersion.current) setPhoto(prepared);
+    } catch (error) {
+      if (version === photoVersion.current) setPhotoError(error instanceof Error ? error.message : "Fotoğraf hazırlanamadı.");
+    } finally {
+      if (version === photoVersion.current) setPhotoBusy(false);
+    }
+  }
 
   function scrollToBottom() {
     if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
@@ -219,6 +289,9 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
 
   useEffect(() => {
     if (!acceptedSubmission) return;
+    if (acceptedSubmission.image) {
+      setPhoto(previous => previous === acceptedSubmission.image ? undefined : previous);
+    }
     setDraft(previous => previous.trim() === acceptedSubmission.question ? "" : previous);
     if (acceptedSubmission.source) {
       const sent = acceptedSubmission.source;
@@ -235,6 +308,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
     setHistoryOpen(false);
     setDeleting(null);
     setDraft("");
+    clearPhoto();
     setSource({ title: "", text: "" });
     setSourceOpen(false);
     void history.open(id);
@@ -242,12 +316,12 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
 
   function send(event?: FormEvent) {
     event?.preventDefault();
-    const question = draft.trim();
-    if (!question || !sourceValid || sendingBlocked) return;
+    const question = draft.trim() || (photo ? "Bu fotoğrafı açıkla. Okuyamadığın yazıları belirt." : "");
+    if (!question || photoBusy || !sourceValid || sendingBlocked) return;
     const attached = hasSource ? { title: source.title.trim(), text: source.text.trim() } : undefined;
     stickToBottom.current = true;
     setJumpVisible(false);
-    void history.send(question, attached);
+    void history.send(question, attached, photo);
   }
 
   return (
@@ -363,6 +437,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             {turns.map(turn => (
               <div key={turn.id} className="mb-5 flex min-w-0 flex-col gap-2.5 sm:mb-7">
                 <article aria-label="Senin mesajın" className="min-w-0 max-w-[92%] self-end sm:max-w-[80%]">
+                  {turn.imageHash && <SavedPhoto id={turn.id} imageHash={turn.imageHash} active={active} onLoad={() => { if (stickToBottom.current) scrollToBottom(); }} />}
                   <UserQuestion content={turn.question} />
                   <div className="flex justify-end"><CopyMessage content={turn.question} label="Mesajı kopyala" /></div>
                 </article>
@@ -413,6 +488,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
 
       <form onSubmit={send} className="kaps-chat-composer shrink-0 border-t border-slate-200/70 bg-white dark:border-white/10 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-4xl px-3 pb-2 pt-2 sm:px-6 sm:py-3">
+          {photoError && <p role="alert" className="mb-2 text-sm text-rose-700 dark:text-rose-300">{photoError}</p>}
           {(history.error || history.connectionNotice) && <div className="mb-2 space-y-1 text-sm">
             {history.error && <p role="alert" className="text-rose-700 dark:text-rose-300">{history.error}</p>}
             {history.connectionNotice && <p role="status" className="text-slate-600 dark:text-slate-300">{history.connectionNotice}</p>}
@@ -425,7 +501,26 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
               <textarea className={`${field} block resize-none`} aria-label="Kaynak metni" placeholder="İlgili kaynak metnini yapıştır" rows={2} maxLength={AI_SOURCE_TEXT_LIMIT} value={source.text} onChange={event => setSource({ ...source, text: event.target.value })} />
             </div>
           )}
+          {photo && <div className="mb-2 flex items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-2 dark:border-violet-900 dark:bg-violet-950/30">
+            <img src={photo} alt="Fotoğraf önizlemesi" className="size-16 rounded-lg object-contain" />
+            <div className="min-w-0 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+              <p className="font-semibold">Gemma 4 ile görsel analiz</p>
+              <p>Fotoğraf sohbet geçmişine kaydedilir.</p>
+            </div>
+            <button type="button" aria-label="Fotoğrafı kaldır" className={secondary} disabled={Boolean(pendingSubmission)} onClick={clearPhoto}><X size={16} /></button>
+          </div>}
+          <input ref={photoInput} type="file" accept="image/*" aria-label="Fotoğraf dosyası" className="sr-only"
+            disabled={sendingBlocked || photoBusy} onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (file) void attachPhoto(file);
+            }} />
           <div className="flex items-end gap-2 rounded-[20px] border border-slate-200 bg-slate-50 p-1.5 shadow-sm focus-within:border-violet-400 dark:border-white/10 dark:bg-slate-900">
+            <button type="button" className={`${secondary} size-11 shrink-0 !px-0`}
+              aria-label="Fotoğraf ekle" title="Fotoğraf ekle" disabled={sendingBlocked || photoBusy}
+              onClick={() => photoInput.current?.click()}>
+              {photoBusy ? <LoaderCircle size={19} className="animate-spin" /> : <ImagePlus size={19} />}
+            </button>
             <button type="button" aria-expanded={sourceOpen} aria-controls={sourceOpen ? "kaps-ai-source" : undefined} aria-label="Kaynak ekle" title="Kaynak ekle" className={`${secondary} size-11 shrink-0 !px-0 ${hasSource ? "border-violet-500 text-violet-700 dark:text-violet-300" : ""}`} onClick={() => setSourceOpen(open => !open)}>
               <FileText size={19} />
             </button>
@@ -433,9 +528,17 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
               rows={Math.min(5, Math.max(1, draft.split("\n").length))}
               maxLength={AI_MESSAGE_LIMIT}
               enterKeyHint="send"
-              placeholder="Mesaj veya matematik sorusu yaz…"
+              placeholder={photo ? "Fotoğrafla ilgili sorunu yaz…" : "Mesaj veya matematik sorusu yaz…"}
               value={draft}
               onChange={event => setDraft(event.target.value)}
+              onPaste={event => {
+                if (sendingBlocked || photoBusy) return;
+                const file = Array.from(event.clipboardData.items).find(item => item.type.startsWith("image/"))?.getAsFile();
+                if (file) {
+                  event.preventDefault();
+                  void attachPhoto(file);
+                }
+              }}
               onKeyDown={event => {
                 if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
                 event.preventDefault();
@@ -445,7 +548,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             {running ? (
               <button type="button" className={`${secondary} size-11 shrink-0 !px-0`} disabled={actionPending} onClick={() => void history.stop(running.id)} aria-label="Yanıtı durdur" title="Yanıtı durdur"><Square size={17} fill="currentColor" /></button>
             ) : (
-              <button type="submit" className={`${button} size-11 shrink-0 !px-0 bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-45`} disabled={sendingBlocked || !draft.trim() || !sourceValid} aria-label="Mesajı gönder" title="Mesajı gönder"><ArrowUp size={21} /></button>
+              <button type="submit" className={`${button} size-11 shrink-0 !px-0 bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-45`} disabled={sendingBlocked || photoBusy || (!draft.trim() && !photo) || !sourceValid} aria-label="Mesajı gönder" title="Mesajı gönder"><ArrowUp size={21} /></button>
             )}
           </div>
           <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
