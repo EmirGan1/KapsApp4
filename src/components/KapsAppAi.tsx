@@ -540,23 +540,23 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
               <textarea className={`${field} block resize-none`} aria-label="Kaynak metni" placeholder="İlgili kaynak metnini yapıştır" rows={2} maxLength={AI_SOURCE_TEXT_LIMIT} value={source.text} onChange={event => setSource({ ...source, text: event.target.value })} />
             </div>
           )}
-          {photo && <div className="mb-2 flex items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-2 dark:border-violet-900 dark:bg-violet-950/30">
-            <img src={photo} alt="Fotoğraf önizlemesi" className="size-16 rounded-lg object-contain" />
-            <div className="min-w-0 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-              <p className="font-semibold">Gemma 4 ile görsel analiz</p>
-              <p>Fotoğraf sohbet geçmişine kaydedilir.</p>
-            </div>
-            <button type="button" aria-label="Fotoğrafı kaldır" className={secondary} disabled={Boolean(pendingSubmission)} onClick={clearPhoto}><X size={16} /></button>
+          {pdfNotice && <p role="status" className="mb-2 text-xs text-violet-700 dark:text-violet-300">{pdfNotice}</p>}
+          {photos.length > 0 && <div className="mb-2 rounded-2xl border border-violet-200 bg-violet-50 p-2 dark:border-violet-900 dark:bg-violet-950/30">
+            <p className="mb-2 text-xs font-semibold text-violet-800 dark:text-violet-200">{photos.length}/{AI_MAX_IMAGES} fotoğraf · Gemma 4 ile analiz · Görseller sohbet geçmişine kaydedilir</p>
+            <div className="flex flex-wrap gap-2">{photos.map((photo, index) => <div key={index} className="relative">
+              <img src={photo} alt={`Fotoğraf ${index + 1} önizlemesi`} className="size-20 rounded-lg object-cover" />
+              <button type="button" aria-label={`Fotoğraf ${index + 1} kaldır`} className="absolute right-0 top-0 rounded-full bg-slate-950/80 p-1 text-white" disabled={Boolean(pendingSubmission)} onClick={() => setPhotos(current => current.filter((_, i) => i !== index))}><X size={14}/></button>
+            </div>)}</div>
           </div>}
-          <input ref={photoInput} type="file" accept="image/*" aria-label="Fotoğraf dosyası" className="sr-only"
+          <input ref={photoInput} type="file" accept="image/*" multiple aria-label="Fotoğraf dosyaları" className="sr-only"
             disabled={sendingBlocked || photoBusy} onChange={event => {
-              const file = event.currentTarget.files?.[0];
+              const files = Array.from(event.currentTarget.files ?? []);
               event.currentTarget.value = "";
-              if (file) void attachPhoto(file);
+              if (files.length) void attachPhotos(files);
             }} />
           <div className="flex items-end gap-2 rounded-[20px] border border-slate-200 bg-slate-50 p-1.5 shadow-sm focus-within:border-violet-400 dark:border-white/10 dark:bg-slate-900">
             <button type="button" className={`${secondary} size-11 shrink-0 !px-0`}
-              aria-label="Fotoğraf ekle" title="Fotoğraf ekle" disabled={sendingBlocked || photoBusy}
+              aria-label="Fotoğraf ekle (çoklu seçim)" title="Fotoğraf ekle (çoklu seçim)" disabled={sendingBlocked || photoBusy}
               onClick={() => photoInput.current?.click()}>
               {photoBusy ? <LoaderCircle size={19} className="animate-spin" /> : <ImagePlus size={19} />}
             </button>
