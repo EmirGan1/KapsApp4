@@ -916,7 +916,7 @@ export function registerKapsAppAi(
     if (parsedImages.some(value => !value)) return res.status(400).json({ error: "Fotoğraflardan biri geçersiz. Yeniden seçip gönder." });
     const image = parsedImages.length ? {
       dataUrl: parsedImages.length === 1 ? parsedImages[0]!.dataUrl : JSON.stringify(parsedImages.map(item => item!.dataUrl)),
-      hash: parsedImages.length === 1 ? parsedImages[0]!.hash : createHash("sha256").update(parsedImages.map(item => item!.hash).join("|")).digest("hex"),
+      hash: parsedImages.length === 1 ? parsedImages[0]!.hash : createHash("sha256").update(parsedImages.map(item => item!.hash).join("|")).digest("hex") + ":" + parsedImages.length,
     } : undefined;
     if (!isKapsAiModel(selectedModel)) return res.status(400).json({ error: "Geçersiz KapsAI modeli." });
     const model = image ? KAPSAPP_AI_VISION_MODEL : selectedModel;
