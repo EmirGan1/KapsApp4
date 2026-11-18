@@ -554,6 +554,12 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
               event.currentTarget.value = "";
               if (files.length) void attachPhotos(files);
             }} />
+          <input ref={pdfInput} type="file" accept="application/pdf,.pdf" aria-label="PDF dosyası" className="sr-only"
+            disabled={sendingBlocked || pdfBusy} onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (file) void attachPdf(file);
+            }} />
           <div className="flex items-end gap-2 rounded-[20px] border border-slate-200 bg-slate-50 p-1.5 shadow-sm focus-within:border-violet-400 dark:border-white/10 dark:bg-slate-900">
             <button type="button" className={`${secondary} size-11 shrink-0 !px-0`}
               aria-label="Fotoğraf ekle (çoklu seçim)" title="Fotoğraf ekle (çoklu seçim)" disabled={sendingBlocked || photoBusy}
@@ -563,15 +569,18 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             <button type="button" aria-expanded={sourceOpen} aria-controls={sourceOpen ? "kaps-ai-source" : undefined} aria-label="Kaynak ekle" title="Kaynak ekle" className={`${secondary} size-11 shrink-0 !px-0 ${hasSource ? "border-violet-500 text-violet-700 dark:text-violet-300" : ""}`} onClick={() => setSourceOpen(open => !open)}>
               <FileText size={19} />
             </button>
+            <button type="button" className={`${secondary} size-11 shrink-0 !px-0`} aria-label="PDF yükle" title="PDF yükle" disabled={sendingBlocked || pdfBusy} onClick={() => pdfInput.current?.click()}>
+               {pdfBusy ? <LoaderCircle size={19} className="animate-spin" /> : <FileText size={19} />}
+             </button>
             <textarea data-chat-composer aria-label="Mesaj yaz" className="max-h-40 min-h-11 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2.5 text-base leading-6 text-slate-900 outline-none placeholder:text-slate-500 dark:text-white dark:placeholder:text-slate-400"
               rows={Math.min(5, Math.max(1, draft.split("\n").length))}
               maxLength={AI_MESSAGE_LIMIT}
               enterKeyHint="send"
-              placeholder={photo ? "Fotoğrafla ilgili sorunu yaz…" : "Mesaj veya matematik sorusu yaz…"}
+              placeholder={photos.length ? "Fotoğraflarla ilgili sorunu yaz…" : hasSource ? "PDF/kaynak hakkında sor…" : "Mesaj veya matematik sorusu yaz…"}
               value={draft}
               onChange={event => setDraft(event.target.value)}
               onPaste={event => {
-                if (sendingBlocked || photoBusy) return;
+                if (sendingBlocked || photoBusy || pdfBusy) return;
                 const file = Array.from(event.clipboardData.items).find(item => item.type.startsWith("image/"))?.getAsFile();
                 if (file) {
                   event.preventDefault();
@@ -587,11 +596,11 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             {running ? (
               <button type="button" className={`${secondary} size-11 shrink-0 !px-0`} disabled={actionPending} onClick={() => void history.stop(running.id)} aria-label="Yanıtı durdur" title="Yanıtı durdur"><Square size={17} fill="currentColor" /></button>
             ) : (
-              <button type="submit" className={`${button} size-11 shrink-0 !px-0 bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-45`} disabled={sendingBlocked || photoBusy || (!draft.trim() && !photo) || !sourceValid} aria-label="Mesajı gönder" title="Mesajı gönder"><ArrowUp size={21} /></button>
+              <button type="submit" className={`${button} size-11 shrink-0 !px-0 bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-45`} disabled={sendingBlocked || photoBusy || pdfBusy || (!draft.trim() && !photos.length && !hasSource) || !sourceValid} aria-label="Mesajı gönder" title="Mesajı gönder"><ArrowUp size={21} /></button>
             )}
           </div>
           <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-            {history.model === "groq:openai/gpt-oss-120b" && <span className="mb-1 block text-violet-700 dark:text-violet-300">Bulut modeli: Mesajların ve sohbet bağlamın Groq’a gönderilir. Ücretsiz kota geçerlidir. Fotoğraflar Gemma ile yerel işlenir.</span>}
+            {history.model === "groq:openai/gpt-oss-120b" && <span className="mb-1 block text-violet-700 dark:text-violet-300">Bulut modeli: Mesajların ve sohbet bağlamın Groq’a gönderilir. Ücretsiz kota geçerlidir. Fotoğraflar Gemma ile yerel işlenir. PDF metni seçilen modele aktarılır.</span>}
             {sourceValid ? "Sohbetler hesabına kaydedilir. Ekranı kapatsan da başlayan yanıt sunucuda devam eder." : "Kaynak için hem başlık hem metin gir."}
           </p>
         </div>
