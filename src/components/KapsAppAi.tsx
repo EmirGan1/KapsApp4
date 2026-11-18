@@ -328,7 +328,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
   useEffect(() => {
     if (!acceptedSubmission) return;
     if (acceptedSubmission.image) {
-      setPhoto(previous => previous === acceptedSubmission.image ? undefined : previous);
+      setPhotos(previous => previous === acceptedSubmission.image ? [] : previous);
     }
     setDraft(previous => previous.trim() === acceptedSubmission.question ? "" : previous);
     if (acceptedSubmission.source) {
@@ -347,6 +347,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
     setDeleting(null);
     setDraft("");
     clearPhoto();
+    setPdfNotice("");
     setSource({ title: "", text: "" });
     setSourceOpen(false);
     void history.open(id);
@@ -354,12 +355,12 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
 
   function send(event?: FormEvent) {
     event?.preventDefault();
-    const question = draft.trim() || (photo ? "Bu fotoğrafı açıkla. Okuyamadığın yazıları belirt." : "");
-    if (!question || photoBusy || !sourceValid || sendingBlocked) return;
+    const question = draft.trim() || (photos.length ? "Bu fotoğrafları açıkla. Okuyamadığın yazıları belirt." : hasSource ? "Eklediğim PDF veya kaynak metnini özetle." : "");
+    if (!question || photoBusy || pdfBusy || !sourceValid || sendingBlocked) return;
     const attached = hasSource ? { title: source.title.trim(), text: source.text.trim() } : undefined;
     stickToBottom.current = true;
     setJumpVisible(false);
-    void history.send(question, attached, photo);
+    void history.send(question, attached, photos.length ? photos : undefined);
   }
 
   return (
@@ -475,7 +476,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             {turns.map(turn => (
               <div key={turn.id} className="mb-5 flex min-w-0 flex-col gap-2.5 sm:mb-7">
                 <article aria-label="Senin mesajın" className="min-w-0 max-w-[92%] self-end sm:max-w-[80%]">
-                  {turn.imageHash && <SavedPhoto id={turn.id} imageHash={turn.imageHash} active={active} onLoad={() => { if (stickToBottom.current) scrollToBottom(); }} />}
+                  {turn.imageHash && <div className="grid grid-cols-2 gap-2">{Array.from({ length: Math.max(1, Math.min(AI_MAX_IMAGES, turn.imageCount ?? 1)) }, (_, index) => <SavedPhoto key={index} id={turn.id} imageHash={turn.imageHash!} index={index} active={active} onLoad={() => { if (stickToBottom.current) scrollToBottom(); }} />)}</div>}
                   <UserQuestion content={turn.question} />
                   <div className="flex justify-end"><CopyMessage content={turn.question} label="Mesajı kopyala" /></div>
                 </article>
