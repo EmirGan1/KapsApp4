@@ -2,14 +2,15 @@ export const KAPSAPP_AI_PATH = "/api/kapsapp-ai/chat";
 export const KAPSAPP_AI_STATUS_PATH = "/api/kapsapp-ai/status";
 export const AI_MESSAGE_LIMIT = 30000;
 export const AI_SOURCE_TITLE_LIMIT = 120;
-export const AI_SOURCE_TEXT_LIMIT = 2400;
+export const AI_SOURCE_TEXT_LIMIT = 16000;
+export const AI_MAX_IMAGES = 4;
 export const AI_HISTORY_LIMIT = 6;
 export const AI_IMAGE_BYTES = 750 * 1024;
 export const AI_IMAGE_EDGE = 1536;
 export const KAPSAPP_AI_VISION_MODEL = "gemma4:e2b-it-qat" as const;
 export const KAPSAPP_AI_PHOTO_PATH = "/api/kapsai-photo-turns";
 
-export type ChatMessage = { role: "user" | "assistant"; content: string; image?: string };
+export type ChatMessage = { role: "user" | "assistant"; content: string; image?: string | string[] };
 export type ChatSource = { title: string; text: string };
 export type SourceLabel = { id: string; title: string };
 export type ChatStatusPhase =
@@ -145,26 +146,25 @@ export const KAPSAPP_AI_CONVERSATIONS_PATH = "/api/kapsapp-ai/conversations";
 export const KAPSAPP_AI_PREFERENCE_PATH = "/api/kapsapp-ai/model-preference";
 
 export const KAPSAPP_AI_MODELS = {
-  "groq:openai/gpt-oss-120b": { label: "GPT-OSS 120B · Groq", profile: "Güçlü · Bulut", description: "Groq altyapısında güçlü sohbet · ücretsiz kota geçerli · metinler Groq’a gönderilir" },
-  "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": { label: "LFM 1.2B", profile: "Hızlı", description: "Kısa İngilizce sohbetler ve mesaj taslakları" },
-  "gemma4:e2b-it-qat": { label: "Gemma 4 E2B", profile: "Dengeli", description: "Genel sohbet, fotoğraf ve adım adım çözümler" },
-  "granite4.1:3b-q4_K_M": { label: "Granite 4.1 3B", profile: "Ayrıntılı", description: "Daha ayrıntılı yanıtlar, daha uzun sürebilir" },
-  "qwen3.5:2b-q4_K_M": { label: "Qwen3.5 2B", profile: "Hafif", description: "Günlük sorular ve kısa açıklamalar" },
+  "groq:openai/gpt-oss-120b": { label: "GPT-OSS 120B · Groq", profile: "Güçlü · Bulut", description: "Groq üzerinde bulut sohbeti · metinler Groq'a gönderilir" },
+  "gemma4:e2b-it-qat": { label: "Gemma 4 E2B", profile: "Varsayılan · Yerel", description: "Hızlı ve güvenilir genel sohbet · PDF metni ve fotoğraf analizi" },
+  "qwen3.5:4b-q4_K_M": { label: "Qwen 3.5 4B", profile: "Alternatif · Yerel", description: "Akıl yürütme, kod ve uzun açıklamalar; daha yavaş olabilir" },
 } as const;
 export type KapsAiModel = keyof typeof KAPSAPP_AI_MODELS;
-export type LegacyKapsAiModel = "llama3.2" | "qwen3:0.6b";
+export type LegacyKapsAiModel = "llama3.2" | "qwen3:0.6b" | "granite4.1:3b-q4_K_M" | "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m" | "qwen3.5:2b-q4_K_M";
 export type StoredKapsAiModel = KapsAiModel | LegacyKapsAiModel;
-export const KAPSAPP_AI_DEFAULT_MODEL: KapsAiModel = "granite4.1:3b-q4_K_M";
+export const KAPSAPP_AI_DEFAULT_MODEL: KapsAiModel = "gemma4:e2b-it-qat";
 export function isKapsAiModel(value: unknown): value is KapsAiModel {
   return typeof value === "string" && Object.hasOwn(KAPSAPP_AI_MODELS, value);
 }
 export function isLegacyKapsAiModel(value: unknown): value is LegacyKapsAiModel {
-  return value === "llama3.2" || value === "qwen3:0.6b";
+  return value === "llama3.2" || value === "qwen3:0.6b" || value === "granite4.1:3b-q4_K_M" || value === "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m" || value === "qwen3.5:2b-q4_K_M";
 }
 export function kapsAiModelLabel(model: unknown): string {
   if (isKapsAiModel(model)) return KAPSAPP_AI_MODELS[model].label;
   if (model === "llama3.2") return "Llama 3.2 (eski sohbet)";
   if (model === "qwen3:0.6b") return "Qwen3 0.6B (eski sohbet)";
+  if (typeof model === "string" && isLegacyKapsAiModel(model)) return `${model} (eski sohbet)`;
   return "Bilinmeyen eski model";
 }
 
