@@ -185,6 +185,7 @@ export type SavedChatTurn = {
   notice?: string;
   generationMs?: number;
   imageHash?: string;
+  imageCount?: number;
 };
 
 export type SavedChatSummary = { id: string; title: string };
