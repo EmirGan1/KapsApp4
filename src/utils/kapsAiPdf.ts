@@ -1,4 +1,5 @@
 import { AI_SOURCE_TEXT_LIMIT } from "../shared/kapsAppAi";
+import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 export type PreparedKapsAiPdf = { title: string; text: string; pages: number; truncated: boolean };
 
@@ -10,9 +11,7 @@ export async function prepareKapsAiPdf(file: File): Promise<PreparedKapsAiPdf> {
   }
   if (file.size > 12 * 1024 * 1024) throw new Error("PDF en fazla 12 MB olabilir.");
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url
-  ).toString();
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   const data = new Uint8Array(await file.arrayBuffer());
   const task = pdfjs.getDocument({ data, useSystemFonts: true });
   let pdf;
