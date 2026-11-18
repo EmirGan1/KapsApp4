@@ -66,7 +66,7 @@ export async function openGroqChat(messages: Message[], signal: AbortSignal) {
     method: "POST", signal,
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: "openai/gpt-oss-120b", messages: messages.map(({ role, content }) => ({ role, content })),
-      stream: true, reasoning_effort: "low", max_completion_tokens: 2048, temperature: 0.2 }),
+      stream: true, reasoning_effort: "low", max_completion_tokens: 12288, temperature: 0.2 }),
   }).catch(error => {
     if (signal.aborted) throw error;
     throw new GroqFailure("Groq hizmetine şu anda ulaşılamıyor. Yerel bir model seçebilirsin.");

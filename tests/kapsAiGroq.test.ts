@@ -35,7 +35,7 @@ test("Groq route streams without Ollama; handles quotas without leaking key; loc
     const payload = JSON.parse(init.body);
     assert.equal(payload.model, 'openai/gpt-oss-120b');
     assert.equal(payload.reasoning_effort, 'low');
-    assert.equal(payload.max_completion_tokens, 2048);
+    assert.equal(payload.max_completion_tokens, 12288);
     assert.equal(payload.messages[0].role, 'system');
     assert.ok(!('options' in payload));
     if (quota) return new Response('test-secret-never-return', { status: 429 });

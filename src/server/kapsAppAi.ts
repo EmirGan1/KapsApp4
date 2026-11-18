@@ -20,10 +20,10 @@ import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase, KapsAiModel, 
 
 export const KAPSAPP_AI_MODEL = KAPSAPP_AI_DEFAULT_MODEL;
 const MODEL_OPTIONS: Record<Exclude<KapsAiModel, typeof GROQ_MODEL>, { threads: number; context: number; coldMemoryMiB?: number }> = {
-  "granite4.1:3b-q4_K_M": { threads: 4, context: 3072 },
-  "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": { threads: 3, context: 2048 },
-  "qwen3.5:2b-q4_K_M": { threads: 3, context: 2048 },
-  "gemma4:e2b-it-qat": { threads: 3, context: 3072, coldMemoryMiB: 4608 },
+  "granite4.1:3b-q4_K_M": { threads: 4, context: 16384 },
+  "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": { threads: 3, context: 16384 },
+  "qwen3.5:2b-q4_K_M": { threads: 3, context: 16384 },
+  "gemma4:e2b-it-qat": { threads: 3, context: 16384, coldMemoryMiB: 4608 },
 };
 
 export const KAPSAPP_AI_SYSTEM_PROMPT = `You are KapsAI, a helpful, accurate and concise assistant.
@@ -57,8 +57,8 @@ const DEFAULT_MODEL_LOAD_TIMEOUT_MS = 120_000;
 const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 180_000;
 const DEFAULT_TOKEN_IDLE_TIMEOUT_MS = 60_000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 420_000;
-const DEFAULT_GENERATION_TIMEOUT_MS = 900_000;
-const DEFAULT_OUTPUT_TOKENS = 2048;
+const DEFAULT_GENERATION_TIMEOUT_MS = 3_600_000;
+const DEFAULT_OUTPUT_TOKENS = 12288;
 const HEARTBEAT_INTERVAL_MS = 8_000;
 const STATUS_TTL_MS = 2 * 60_000;
 const MIB = 1024 * 1024;
