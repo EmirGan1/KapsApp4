@@ -67,6 +67,17 @@ const MathMarkdown = memo(function MathMarkdown({
             }
             return <pre>{children}</pre>;
           },
+          table: ({ children }) => (
+            <div className="my-4 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200 dark:border-slate-700" role="region" aria-label="Veri tablosu" tabIndex={0}>
+              <table className="w-max min-w-full border-collapse text-left text-sm tabular-nums [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+                {children}
+              </table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100">{children}</thead>,
+          th: ({ children }) => <th className="border-b border-r border-slate-200 px-3 py-2 font-semibold last:border-r-0 dark:border-slate-700">{children}</th>,
+          td: ({ children }) => <td className="border-b border-r border-slate-200 px-3 py-2 align-top last:border-r-0 dark:border-slate-700">{children}</td>,
+          tr: ({ children }) => <tr className="even:bg-slate-50/70 dark:even:bg-slate-800/40">{children}</tr>,
           img: ({ alt }) => (alt ? <span>{alt}</span> : null),
           a: ({ children }) => <span className="text-violet-700 dark:text-violet-300">{children}</span>,
         }}
