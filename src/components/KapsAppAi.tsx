@@ -5,11 +5,12 @@ import Markdown from "react-markdown";
 import remarkMath from "remark-math";
 import remarkGfm from "remark-gfm";
 import {
-  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, KAPSAPP_AI_TURNS_PATH, AI_SOURCE_TITLE_LIMIT, isKapsAiModel, KAPSAPP_AI_MODELS, kapsAiModelLabel, normalizeMathMarkdown,
+  AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, AI_MAX_IMAGES, KAPSAPP_AI_TURNS_PATH, AI_SOURCE_TITLE_LIMIT, isKapsAiModel, KAPSAPP_AI_MODELS, kapsAiModelLabel, normalizeMathMarkdown,
 } from "../shared/kapsAppAi";
 import type { ChatSource, ChatStatusPhase } from "../shared/kapsAppAi";
 import { getApiUrl, getAuthHeaders } from "../utils/api";
 import { prepareKapsAiPhoto } from "../utils/kapsAiPhoto";
+import { prepareKapsAiPdf } from "../utils/kapsAiPdf";
 import KapsAppAiEquation from "./KapsAppAiEquation";
 import { useKapsAiHistory } from "./useKapsAiHistory";
 
@@ -185,7 +186,7 @@ function CopyMessage({ content, label }: { content: string; label: string }) {
   );
 }
 
-function SavedPhoto({ id, imageHash, active, onLoad }: { id: string; imageHash: string; active: boolean; onLoad: () => void }) {
+function SavedPhoto({ id, imageHash, index = 0, active, onLoad }: { id: string; imageHash: string; index?: number; active: boolean; onLoad: () => void }) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -199,7 +200,7 @@ function SavedPhoto({ id, imageHash, active, onLoad }: { id: string; imageHash: 
     setFailed(false);
     void (async () => {
       try {
-        const response = await fetch(getApiUrl(`${KAPSAPP_AI_TURNS_PATH}/${id}/image`), {
+        const response = await fetch(getApiUrl(`${KAPSAPP_AI_TURNS_PATH}/${id}/image?index=${index}`), {
           headers: getAuthHeaders(), cache: "no-store", signal: controller.signal,
         });
         if (!response.ok) throw new Error("Photo unavailable");
@@ -219,7 +220,7 @@ function SavedPhoto({ id, imageHash, active, onLoad }: { id: string; imageHash: 
       clearTimeout(timeout);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [id, imageHash, active, attempt]);
+  }, [id, imageHash, index, active, attempt]);
   if (failed) return <button type="button" className={secondary} onClick={() => setAttempt(value => value + 1)}>Fotoğrafı tekrar yükle</button>;
   if (!url) return <p className="p-3 text-xs text-slate-500" role="status">Fotoğraf yükleniyor…</p>;
   return <a href={url} target="_blank" rel="noreferrer" aria-label="Fotoğrafı büyük aç" className="mb-2 block overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
@@ -244,10 +245,13 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
   const history = useKapsAiHistory(active);
   const { turns, conversationId, activeTurn, pendingSubmission, acceptedSubmission, actionPending } = history;
   const [draft, setDraft] = useState("");
-  const [photo, setPhoto] = useState<string>();
+  const [photos, setPhotos] = useState<string[]>([]);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
+  const pdfInput = useRef<HTMLInputElement>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfNotice, setPdfNotice] = useState("");
   const photoVersion = useRef(0);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [source, setSource] = useState<ChatSource>({ title: "", text: "" });
@@ -263,22 +267,44 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
 
   function clearPhoto() {
     photoVersion.current++;
-    setPhoto(undefined);
+    setPhotos([]);
     setPhotoBusy(false);
     setPhotoError("");
   }
 
-  async function attachPhoto(file: File) {
+  async function attachPhotos(files: File[]) {
+    if (!files.length) return;
+    if (photos.length + files.length > AI_MAX_IMAGES) {
+      setPhotoError(`Tek mesajda en fazla ${AI_MAX_IMAGES} fotoğraf ekleyebilirsin.`);
+      return;
+    }
     const version = ++photoVersion.current;
     setPhotoBusy(true);
     setPhotoError("");
     try {
-      const prepared = await prepareKapsAiPhoto(file);
-      if (version === photoVersion.current) setPhoto(prepared);
+      const prepared: string[] = [];
+      for (const file of files) prepared.push(await prepareKapsAiPhoto(file));
+      if (version === photoVersion.current) setPhotos(previous => [...previous, ...prepared].slice(0, AI_MAX_IMAGES));
     } catch (error) {
       if (version === photoVersion.current) setPhotoError(error instanceof Error ? error.message : "Fotoğraf hazırlanamadı.");
     } finally {
       if (version === photoVersion.current) setPhotoBusy(false);
+    }
+  }
+
+  async function attachPdf(file: File) {
+    setPdfBusy(true);
+    setPdfNotice("");
+    setPhotoError("");
+    try {
+      const result = await prepareKapsAiPdf(file);
+      setSource({ title: result.title, text: result.text });
+      setSourceOpen(true);
+      setPdfNotice(`${result.pages} sayfalık PDF'den metin çıkarıldı.${result.truncated ? " Metin sınırı nedeniyle yalnızca ilk bölümü eklendi." : ""}`);
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : "PDF okunamadı.");
+    } finally {
+      setPdfBusy(false);
     }
   }
 
