@@ -1,6 +1,6 @@
 export const KAPSAPP_AI_PATH = "/api/kapsapp-ai/chat";
 export const KAPSAPP_AI_STATUS_PATH = "/api/kapsapp-ai/status";
-export const AI_MESSAGE_LIMIT = 6000;
+export const AI_MESSAGE_LIMIT = 30000;
 export const AI_SOURCE_TITLE_LIMIT = 120;
 export const AI_SOURCE_TEXT_LIMIT = 2400;
 export const AI_HISTORY_LIMIT = 6;

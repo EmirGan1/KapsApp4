@@ -403,7 +403,7 @@ export function registerKapsAppAi(
       if (req.is("application/json")) next();
       else res.status(415).json({ error: "Sohbet isteği JSON olmalı." });
     },
-    express.json({ limit: "96kb", inflate: false }),
+    express.json({ limit: "512kb", inflate: false }),
     parseError,
     async (req: Request, res: Response) => {
       const chat = parseChat(req.body);
@@ -845,7 +845,7 @@ export function registerKapsAppAi(
     ? Number(value) : Number.MAX_SAFE_INTEGER;
   const capacity = () => 1 + maxQueue - (activeOwner !== undefined && !durableJob ? 1 : 0) - waitingQueue.length;
   const guard = [checkDevice, requireAuth] as const;
-  const json = express.json({ limit: "56kb", inflate: false });
+  const json = express.json({ limit: "256kb", inflate: false });
   const photoJson = express.json({ limit: "1100kb", inflate: false });
 
   function saved(handler: (req: Request, res: Response, owner: string) => Promise<unknown>): RequestHandler {
