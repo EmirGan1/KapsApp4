@@ -8,11 +8,11 @@ manifest="$script_dir/checkpoint.sha256"
 model=desklib/ai-text-detector-v1.01
 if [[ "${2:-english}" == turkish ]]; then
   manifest="$script_dir/turkish-checkpoint.sha256"
-  model=ertoluk/ai-metin-dedektor
+  model=ads2009/turkish-ai-text-detector-berturk-v2
 fi
 revision=5fdea974cd4287c61674951ec78803aa274e2fb7
 if [[ "${2:-english}" == turkish ]]; then
-  revision=2df7f6df282445a42353bb87fb512c4cb7c06fb5
+  revision=bc9df3aab4cb42cf8e6bea0a7fb377b12b8bb661
 fi
 base="https://huggingface.co/$model/resolve/$revision"
 if [[ -d "$target" ]]; then

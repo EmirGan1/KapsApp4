@@ -27,7 +27,7 @@ working directory. Run them from a staging checkout of the candidate commit.
 ```bash
 getent passwd kapsapp-desklib >/dev/null || sudo useradd --system --no-create-home --shell /usr/sbin/nologin kapsapp-desklib
 sudo install -d -m 0755 /opt/kapsapp-desklib/app
-sudo install -m 0644 services/desklib/{model.py,service.py,benchmark.py} /opt/kapsapp-desklib/app/
+sudo install -m 0644 services/desklib/{model.py,service.py,benchmark.py,turkish_text.py} /opt/kapsapp-desklib/app/
 sudo python3.12 -m venv /opt/kapsapp-desklib/venv
 sudo /opt/kapsapp-desklib/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.7.1'
 sudo /opt/kapsapp-desklib/venv/bin/pip install -r services/desklib/requirements.txt
@@ -163,78 +163,85 @@ scores. A 49,996-character sample with 7,954 words completed in 54.5 seconds.
 The longer run peaked at 2,064 MiB RSS. Actual VDS latency depends on CPU load.
 
 
-## Turkish routing upgrade
+## Turkish BERTurk v2 replacement
 
-### Turkish checkpoint withdrawn after direct verification
+The Turkish route now uses
+[ads2009/turkish-ai-text-detector-berturk-v2](https://huggingface.co/ads2009/turkish-ai-text-detector-berturk-v2)
+at revision `bc9df3aab4cb42cf8e6bea0a7fb377b12b8bb661`, Apache-2.0.
+Weights and tokenizer files are verified by `turkish-checkpoint.sha256`.
+The float32 model is about 443 MB, including tokenizer and metadata, and its
+classifier maps 0 to HUMAN and 1 to AI. Inference is local and uses one resident
+model at a time. English continues to use Desklib.
 
-The pinned Turkish checkpoint is currently evaluated only by the offline benchmark.
-Public requests return an unscored Turkish result, and the UI explains the accuracy
-failure. Previously cached Turkish scores also receive this explanation, without
-human/AI percentages in either display or clipboard output.
+The publisher's `tr_v2_norm_1` preparation is implemented in `turkish_text.py`,
+following the [published preprocessing specification](https://huggingface.co/spaces/ads2009/sentinel-ai/blob/main/backend.py).
+It normalizes Unicode and typographic punctuation, removes formatting and boilerplate,
+and preserves Turkish case. Exact output parity was checked on six diagnostic samples.
+Inference uses every token in balanced windows of at most 254 content tokens,
+plus two special tokens. Texts below 60 normalized words receive no score.
+More than 32 windows or mixed-language windows receive no score.
 
-On 2026-11-18, the exact SHA-256-verified weights were tested with CPU PyTorch 2.7.1
-and Transformers 4.51.3. The provenance-verified 1927 Gençliğe Hitabe received an
-aggregate AI score of 0.9970624, versus 0.9965899 using the model card's first-256-token
-method. A ChatGPT-generated expository sample scored 0.9972121, while a generated
-casual narrative scored 0.0203233. Labels match config.json and the model card.
-These three samples demonstrate a false positive and a false negative, without
-establishing a population accuracy estimate. Arbitrary threshold changes would
-not resolve the observed issue.
+Signals require every window to be below 0.2 for human-like or above 0.8 for AI-like.
+These are conservative product margins, without statistical calibration.
+Other scored cases are inconclusive. Model scores are not percentages of AI-written
+text. The interface identifies the model as experimental and warns that personal
+narratives and rewritten AI text can receive a human-like signal.
 
-The exact smoke samples are in `tests/fixtures/ai-detector-tr-smoke.jsonl`.
-They must remain a diagnostic subset, separate from any threshold-fitting corpus.
-On the VDS, benchmark them with the existing benchmark command using that absolute
-file path. Future Turkish classification needs a replacement or calibrated model
-and independent validation. The historical configuration below describes the
-withdrawn checkpoint and its offline benchmark behavior.
+### Measured diagnostic results
 
-The service identifies English and Turkish locally. English uses the pinned Desklib
-checkpoint. Turkish uses Apache-2.0 licensed
-[ertoluk/ai-metin-dedektor](https://huggingface.co/ertoluk/ai-metin-dedektor/tree/2df7f6df282445a42353bb87fb512c4cb7c06fb5).
-The original float32 XLM-RoBERTa classifier uses class 1 for AI, 256-token inputs
-including special tokens, a 60-word minimum, and up to 32 windows.
-Every window must be above 0.950 to report an AI signal, or below 0.480 to report
-a human signal. Other scored cases are inconclusive. These are publisher thresholds,
-without KapsApp accuracy validation. The UI identifies Turkish results as experimental.
-Mixed-language windows return no score. Submitted text is not translated.
+The exact checkpoint was run on CPU PyTorch 2.7.1 and Transformers 4.51.3
+on 2026-11-18 using the production normalization and inference code.
 
-Only one model is resident at once under the existing inference lock. Changing
-language unloads the previous model, so the first request after switching can be slower.
-The missing Turkish checkpoint causes a retryable error rather than English scoring.
+| Sample | Verified label | AI-class score | Signal |
+| --- | --- | --- | --- |
+| Gençliğe Hitabe, 1927 | Human | 0.00370 | Human-like |
+| Expository paragraph generated by ChatGPT | AI | 0.99823 | AI-like |
+| Casual narrative generated by ChatGPT | AI | 0.00170 | Human-like, missed detection |
+| Literary analysis generated by ChatGPT | AI | 0.98103 | AI-like |
+| Technical explanation generated by ChatGPT | AI | 0.96849 | AI-like |
+| Private user-submitted student essay, 615 words | Human, user-provided provenance | 0.01171 | Human-like |
 
-Run the following from the updated repository on the existing VDS. Download completes
-and SHA-256 checks pass before replacing the running service code.
+These six samples are a diagnostic comparison, without population accuracy claims.
+The user's text is excluded from repository fixtures. The five public samples are
+in `tests/fixtures/ai-detector-tr-smoke.jsonl`. Sample classifications can change
+across revisions, runtimes and preprocessing. The 615-word text took about 1.7 seconds
+on the development CPU with the model loaded. VDS latency still needs measurement.
+A second BERTurk candidate, `berturk-last`, produced disagreeing windows on the
+student essay and was not selected.
 
-```bash
-cd /var/www/KapsApp &&
-bash services/desklib/provision-model.sh /opt/kapsapp-desklib/turkish-model turkish &&
-chgrp -R kapsapp-desklib /opt/kapsapp-desklib/turkish-model &&
-chmod 0750 /opt/kapsapp-desklib/turkish-model &&
-install -m 0644 services/desklib/{model.py,service.py,benchmark.py} /opt/kapsapp-desklib/app/ &&
-systemctl restart kapsapp-desklib &&
-curl --fail --silent --show-error http://127.0.0.1:8765/healthz
-```
+The former `ertoluk/ai-metin-dedektor` checkpoint produced an AI-class score of
+0.99146 on the private essay and 0.99706 on the historical speech. Cached results
+from that withdrawn model remain marked unvalidated, without displayed percentages.
 
-Build/restart the Node application using the existing deployment command as well.
-The new checkpoint needs about 1.13 GB of disk space, plus temporary download space.
+### Upgrade on the existing VDS
 
-### Local accuracy evaluation
-
-Provide a UTF-8 JSONL file with one record per independently sourced text.
-Each record needs `id`, `source`, `label` (`human`, `ai`, or `edited`), and `text`.
-Use human-authored Turkish prose with verified provenance, and label AI texts with
-the generating model and prompt in `source`. Include multiple topics and lengths
-and outputs from Gemma, Granite, Qwen and LFM. Keep edited samples separately labeled.
-Use disjoint validation and final evaluation samples, grouped by original document
-and author, if tuning thresholds. The script does not tune thresholds automatically.
+Update the repository and Node build with the established `guncelle` command,
+then run the service upgrade from the repository root:
 
 ```bash
-sudo -u kapsapp-desklib env DESKLIB_MODEL_DIR=/opt/kapsapp-desklib/model   /opt/kapsapp-desklib/venv/bin/python /opt/kapsapp-desklib/app/benchmark.py /absolute/path/to/verified-samples.jsonl
+bash services/desklib/upgrade-turkish.sh
 ```
 
-Results contain sample IDs, model scores and metrics, without raw text.
-Reports separate languages and show false positives among scored human samples,
-false negatives among scored AI samples, inconclusive counts and skipped samples.
-An empty group has no rate. Publisher metrics are not measurements of KapsApp.
-Hardware latency, peak memory and local classification accuracy still require
-execution on the VDS with the actual weights and verified samples.
+The upgrade downloads about 443 MB into the new
+`/opt/kapsapp-desklib/turkish-berturk-v2` directory. It verifies hashes before
+updating the Python service, restarts it, waits for health, and makes an actual
+Turkish inference request. It uses the existing Python environment and systemd
+unit. Existing model files may remain in their older directory. If using a custom
+`TURKISH_DETECTOR_MODEL_DIR` service override, update it to the new versioned
+directory before running the upgrade.
+
+### Repeatable local evaluation
+
+Use UTF-8 JSONL records with `id`, `source`, `label` (`human`, `ai`, or
+`edited`), and `text`. Keep authors, documents and generating models separate
+between any threshold-tuning and final evaluation sets. Include multiple genres
+and generators. The benchmark leaves thresholds fixed and prints IDs and metrics
+without raw text.
+
+```bash
+sudo -u kapsapp-desklib env DESKLIB_MODEL_DIR=/opt/kapsapp-desklib/model   /opt/kapsapp-desklib/venv/bin/python /opt/kapsapp-desklib/app/benchmark.py /var/www/KapsApp/tests/fixtures/ai-detector-tr-smoke.jsonl
+```
+
+Reports separate languages and include scored/skipped counts, inconclusive cases,
+false positives, missed AI signals, median latency and maximum latency.
+Zero-count groups have no rate. Broader independent validation remains pending.

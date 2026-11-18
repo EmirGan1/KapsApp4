@@ -4,7 +4,7 @@ import {
   FileText, LoaderCircle, LockKeyhole, RotateCcw, ShieldCheck,
 } from 'lucide-react';
 import { getApiUrl, getAuthHeaders } from '../utils/api';
-import { AI_TEXT_LIMIT as MAX_LENGTH, assessAiDetectorResult, parseDetectorResult, type DetectorResult } from '../utils/aiDetectorAssessment';
+import { AI_TEXT_LIMIT as MAX_LENGTH, assessAiDetectorResult, parseDetectorResult, TURKISH_MODEL, LEGACY_TURKISH_MODEL, type DetectorResult } from '../utils/aiDetectorAssessment';
 
 const JOBS = '/api/ai-checker/jobs';
 
@@ -182,7 +182,7 @@ export default function AiChecker({ active }: { active: boolean }) {
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
             <span className="inline-flex items-center gap-1.5"><ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400"/> Metin kaydedilmez</span>
             <span className="inline-flex items-center gap-1.5"><LockKeyhole size={15}/> Sunucuda yerel model</span>
-            <span className="inline-flex items-center gap-1.5"><FileText size={15}/> İngilizce · Türkçe değerlendirme beklemede</span>
+            <span className="inline-flex items-center gap-1.5"><FileText size={15}/> Türkçe ve İngilizce</span>
           </div>
         </header>
 
@@ -190,7 +190,7 @@ export default function AiChecker({ active }: { active: boolean }) {
           <div className="px-4 pt-5 sm:px-6 sm:pt-6 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-semibold text-base">Metnini analiz et</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">İngilizce için en az 120 kelime kullan. Türkçe değerlendirme, model doğruluk sorunu nedeniyle geçici olarak durduruldu.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Türkçe için en az 60, İngilizce için en az 120 kelime kullan. Dil otomatik algılanır.</p>
             </div>
             <button type="button" onClick={paste} disabled={busy || pasting}
               className="inline-flex items-center gap-2 min-h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
@@ -243,7 +243,7 @@ export default function AiChecker({ active }: { active: boolean }) {
                   {assessment?.title}
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{assessment?.detail}</p>
-                <p className="mt-2 text-xs text-slate-500">{result.model.startsWith('ertoluk/') ? 'Türkçe model · Doğruluk kontrolünü geçemedi' : 'İngilizce model · Desklib'}</p>
+                <p className="mt-2 text-xs text-slate-500">{result.model === TURKISH_MODEL ? 'Türkçe · BERTurk v2 · Deneysel' : result.model === LEGACY_TURKISH_MODEL ? 'Eski Türkçe model · Yeniden analiz et' : 'İngilizce · Desklib'}</p>
               </div>
               <button type="button" onClick={() => void copy()} className="inline-flex items-center gap-2 min-h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
                 {copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Kopyalandı' : 'Sonucu kopyala'}
@@ -268,7 +268,7 @@ export default function AiChecker({ active }: { active: boolean }) {
             </details>}
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed space-y-2">
               <p>{result.words.toLocaleString('tr-TR')} kelime{result.scores && assessment?.kind !== 'unvalidated' && ` · ${result.segmentAi.length} bölüm değerlendirildi`}</p>
-              <p>Skorlar modelin değerlendirmesini gösterir. Düzenlenmiş ve akademik metinlerde tahmin hataları görülebilir.</p>
+              <p>Skorlar metnin yüzde kaçının AI olduğunu göstermez. Skorlar modelin değerlendirmesini gösterir. Düzenlenmiş ve akademik metinlerde tahmin hataları görülebilir.</p>
             </div>
           </div>
         </section>}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { AiCheckerError, createAiChecker } from '../src/server/aiChecker';
-import { DESKLIB_MODEL, DESKLIB_REVISION } from '../src/utils/aiDetectorAssessment';
+import { DESKLIB_MODEL, DESKLIB_REVISION, TURKISH_MODEL, TURKISH_REVISION, assessAiDetectorResult } from '../src/utils/aiDetectorAssessment';
 
 const fixture = {
   model: DESKLIB_MODEL, revision: DESKLIB_REVISION, words: 4, tokens: 0,
@@ -75,5 +75,21 @@ test('real Desklib integration returns stable scores and skips Turkish and short
   } catch (error) {
     if (error instanceof AiCheckerError) assert.fail(error.message);
     throw error;
+  } finally { checker.stop(); }
+});
+
+
+test('authenticated job pipeline accepts the pinned Turkish model and preserves its model identity', async () => {
+  const payload = {
+    model: TURKISH_MODEL, revision: TURKISH_REVISION, language: 'turkish',
+    words: 615, tokens: 996, truncated: false,
+    scores: [0.988, 0.012], segmentAi: [0.037, 0.004, 0.003, 0.003],
+  };
+  const checker = createAiChecker({ request: async () => ({ status: 200, data: payload }) });
+  try {
+    const result = await checker.analyze('turkish-owner', 'Private Turkish sample');
+    assert.equal(result.model, TURKISH_MODEL);
+    assert.equal(assessAiDetectorResult(result).kind, 'human_signal');
+    assert.ok(!JSON.stringify(checker.latest('turkish-owner')).includes('Private Turkish sample'));
   } finally { checker.stop(); }
 });

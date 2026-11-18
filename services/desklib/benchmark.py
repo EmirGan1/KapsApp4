@@ -30,7 +30,7 @@ def main():
             raise ValueError("Each sample needs a verified label and source")
         text = record["text"]
         start = clock()
-        result = detector.analyze(text, evaluate_turkish=True)
+        result = detector.analyze(text)
         duration = round((clock() - start) * 1000)
         scores = result["scores"]
         segments = result["segmentAi"]
@@ -39,8 +39,8 @@ def main():
         if scores is not None:
             durations[result["language"]].append(duration)
             turkish = result["language"] == "turkish"
-            ai_signal = all(x > 0.95 if turkish else x >= 0.5 for x in segments)
-            human_signal = all(x < (0.48 if turkish else 0.5) for x in segments)
+            ai_signal = all(x > 0.8 if turkish else x >= 0.5 for x in segments)
+            human_signal = all(x < (0.2 if turkish else 0.5) for x in segments)
             vote = "mixed"
             if ai_signal:
                 vote = "ai"

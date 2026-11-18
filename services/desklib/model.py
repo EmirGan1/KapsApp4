@@ -7,6 +7,8 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import gc
+import json
+from turkish_text import normalize_turkish
 import math
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -19,8 +21,8 @@ from transformers import AutoConfig, AutoModel, AutoModelForSequenceClassificati
 
 MODEL_ID = "desklib/ai-text-detector-v1.01"
 REVISION = "5fdea974cd4287c61674951ec78803aa274e2fb7"
-TURKISH_MODEL_ID = "ertoluk/ai-metin-dedektor"
-TURKISH_REVISION = "2df7f6df282445a42353bb87fb512c4cb7c06fb5"
+TURKISH_MODEL_ID = "ads2009/turkish-ai-text-detector-berturk-v2"
+TURKISH_REVISION = "bc9df3aab4cb42cf8e6bea0a7fb377b12b8bb661"
 TURKISH_MIN_WORDS = 60
 MAX_CHARS = 50_000
 MAX_SEGMENTS = 32
@@ -83,7 +85,7 @@ class Detector:
     def load_model(self, language):
         if self.loaded_language == language:
             return
-        directory = os.environ.get("TURKISH_DETECTOR_MODEL_DIR", "/opt/kapsapp-desklib/turkish-model") if language == "turkish" else os.environ["DESKLIB_MODEL_DIR"]
+        directory = os.environ.get("TURKISH_DETECTOR_MODEL_DIR", "/opt/kapsapp-desklib/turkish-berturk-v2") if language == "turkish" else os.environ["DESKLIB_MODEL_DIR"]
         path = Path(directory).resolve(strict=True)
         # The service lock serializes language switches. Keep just one set of weights.
         self.loaded_language = None
@@ -91,8 +93,11 @@ class Detector:
         gc.collect()
         if language == "turkish":
             config = AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
-            if config.model_type != "xlm-roberta" or config.num_labels != 2 or config.id2label != {0: "insan", 1: "AI"}:
+            if config.model_type != "bert" or config.num_labels != 2 or config.id2label != {0: "HUMAN", 1: "AI"}:
                 raise RuntimeError("Unexpected Turkish detector architecture or label mapping")
+            metadata = json.loads((path / "sentinel_meta.json").read_text())
+            if metadata.get("norm_version") != "tr_v2_norm_1" or metadata.get("max_len") != 256:
+                raise RuntimeError("Unexpected Turkish input profile")
             self.tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False, use_fast=True)
             self.model, loading = AutoModelForSequenceClassification.from_pretrained(
                 path, config=config, local_files_only=True, use_safetensors=True,
@@ -177,9 +182,11 @@ class Detector:
         finally:
             torch.set_num_threads(self.threads)
 
-    def analyze(self, text, *, evaluate_turkish=False):
-        words = len(re.findall(r"\S+", text))
+    def analyze(self, text):
         language = self.language(text)
+        if language == "turkish":
+            text = normalize_turkish(text)
+        words = len(re.findall(r"\S+", text))
         result = {
             "model": TURKISH_MODEL_ID if language == "turkish" else MODEL_ID,
             "revision": TURKISH_REVISION if language == "turkish" else REVISION, "words": words,
@@ -188,11 +195,6 @@ class Detector:
         }
         minimum = TURKISH_MIN_WORDS if language == "turkish" else MIN_WORDS
         if language == "unsupported" or words < minimum:
-            return result
-
-        # The pinned Turkish checkpoint failed provenance-verified smoke tests.
-        # Only the offline benchmark may evaluate it until a replacement is validated.
-        if language == "turkish" and not evaluate_turkish:
             return result
 
         self.load_model(language)

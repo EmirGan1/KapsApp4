@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assessAiDetectorResult, DESKLIB_MODEL, DESKLIB_REVISION, TURKISH_MODEL, TURKISH_REVISION, parseDetectorResult, type DetectorResult } from '../src/utils/aiDetectorAssessment';
+import { assessAiDetectorResult, DESKLIB_MODEL, DESKLIB_REVISION, TURKISH_MODEL, TURKISH_REVISION, LEGACY_TURKISH_MODEL, LEGACY_TURKISH_REVISION, parseDetectorResult, type DetectorResult } from '../src/utils/aiDetectorAssessment';
 
 const sample: DetectorResult = {
   model: DESKLIB_MODEL, revision: DESKLIB_REVISION, words: 260, tokens: 340, truncated: false,
@@ -45,7 +45,7 @@ test('results from the old detector, wrong revisions and invalid scores are reje
 
 
 test('withdrawn Turkish checkpoint cannot report an AI or human verdict even from cached scores', () => {
-  const tr: DetectorResult = { ...sample, model: TURKISH_MODEL, revision: TURKISH_REVISION, language: 'turkish', words: 100 };
+  const tr: DetectorResult = { ...sample, model: LEGACY_TURKISH_MODEL, revision: LEGACY_TURKISH_REVISION, language: 'turkish', words: 100 };
   for (const score of [0, 0.02, 0.48, 0.95, 0.997, 1]) {
     const payload = { ...tr, scores: [1 - score, score], segmentAi: [score] };
     const parsed = parseDetectorResult(payload);
@@ -60,6 +60,22 @@ test('withdrawn Turkish checkpoint cannot report an AI or human verdict even fro
   assert.equal(parseDetectorResult({ ...tr, language: 'english' }), null);
   assert.equal(parseDetectorResult({ ...tr, revision: DESKLIB_REVISION }), null);
   const short = { ...unscored, words: 59 };
+  assert.ok(parseDetectorResult(short));
+  assert.equal(assessAiDetectorResult(short).kind, 'insufficient');
+});
+
+
+test('BERTurk v2 uses uncertainty margins, model identity and every window', () => {
+  const tr: DetectorResult = { ...sample, model: TURKISH_MODEL, revision: TURKISH_REVISION, language: 'turkish', words: 100 };
+  assert.ok(parseDetectorResult(tr));
+  assert.equal(assessAiDetectorResult({ ...tr, segmentAi: [0.03, 0.004] }).kind, 'human_signal');
+  assert.equal(assessAiDetectorResult({ ...tr, segmentAi: [0.96, 0.99] }).kind, 'ai_signal');
+  for (const windows of [[0.2], [0.8], [0.99, 0.01]]) {
+    assert.equal(assessAiDetectorResult({ ...tr, segmentAi: windows }).kind, 'inconclusive');
+  }
+  assert.equal(parseDetectorResult({ ...tr, revision: LEGACY_TURKISH_REVISION }), null);
+  assert.equal(parseDetectorResult({ ...tr, scores: null, tokens: 0, segmentAi: [] }), null);
+  const short = { ...tr, words: 59, scores: null, tokens: 0, segmentAi: [] };
   assert.ok(parseDetectorResult(short));
   assert.equal(assessAiDetectorResult(short).kind, 'insufficient');
 });
