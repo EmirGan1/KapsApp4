@@ -33,7 +33,7 @@ export function parseDetectorResult(value: unknown): DetectorResult | null {
     || !Array.isArray(segmentAi) || segmentAi.length > AI_SEGMENT_LIMIT || !segmentAi.every(isScore)) return null;
 
   const minimum = turkish ? TURKISH_MIN_WORDS : AI_MIN_WORDS;
-  const scored = (turkish && language === 'turkish' || english && language === 'english') && words >= minimum && !truncated;
+  const scored = (turkish && language === 'turkish' && scores !== null || english && language === 'english') && words >= minimum && !truncated;
   if (scored) {
     if (!Array.isArray(scores) || scores.length !== 2 || !scores.every(isScore)
       || Math.abs(scores[0] + scores[1] - 1) > 1e-9 || !segmentAi.length || !tokens) return null;
@@ -58,12 +58,16 @@ export function assessAiDetectorResult(result: DetectorResult) {
     return { kind: 'partial', title: 'Metin analiz sınırını aşıyor',
       detail: 'Bu metin modelin 32 bölümlük analiz sınırını aşıyor. Metni daha küçük bölümlere ayır.' };
   }
-  // The 0.5 split comes from the model card. These are model signals, without local calibration.
-  if (result.segmentAi.every(score => turkish ? score > 0.95 : score >= 0.5)) {
+  if (turkish) {
+    return { kind: 'unvalidated', title: 'Türkçe dedektör doğrulanamadı',
+      detail: 'Bu model insan yazımı ve AI metinlerini güvenilir biçimde ayıramadığı için Türkçe sonuç üretimi durduruldu.' };
+  }
+  // The English model card uses 0.5. Its scores are not proof of authorship.
+  if (result.segmentAi.every(score => score >= 0.5)) {
     return { kind: 'ai_signal', title: 'AI benzeri özellikler tespit edildi',
       detail: 'Model skoru AI üretimi yönünde. Bu değerlendirme yazarlığı kanıtlamaz.' };
   }
-  if (result.segmentAi.every(score => score < (turkish ? 0.48 : 0.5))) {
+  if (result.segmentAi.every(score => score < 0.5)) {
     return { kind: 'human_signal', title: 'İnsan yazımıyla uyumlu özellikler',
       detail: 'Model skoru insan yazımı yönünde. Bu değerlendirme yazarlığı kanıtlamaz.' };
   }

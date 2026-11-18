@@ -165,6 +165,29 @@ The longer run peaked at 2,064 MiB RSS. Actual VDS latency depends on CPU load.
 
 ## Turkish routing upgrade
 
+### Turkish checkpoint withdrawn after direct verification
+
+The pinned Turkish checkpoint is currently evaluated only by the offline benchmark.
+Public requests return an unscored Turkish result, and the UI explains the accuracy
+failure. Previously cached Turkish scores also receive this explanation, without
+human/AI percentages in either display or clipboard output.
+
+On 2026-11-18, the exact SHA-256-verified weights were tested with CPU PyTorch 2.7.1
+and Transformers 4.51.3. The provenance-verified 1927 Gençliğe Hitabe received an
+aggregate AI score of 0.9970624, versus 0.9965899 using the model card's first-256-token
+method. A ChatGPT-generated expository sample scored 0.9972121, while a generated
+casual narrative scored 0.0203233. Labels match config.json and the model card.
+These three samples demonstrate a false positive and a false negative, without
+establishing a population accuracy estimate. Arbitrary threshold changes would
+not resolve the observed issue.
+
+The exact smoke samples are in `tests/fixtures/ai-detector-tr-smoke.jsonl`.
+They must remain a diagnostic subset, separate from any threshold-fitting corpus.
+On the VDS, benchmark them with the existing benchmark command using that absolute
+file path. Future Turkish classification needs a replacement or calibrated model
+and independent validation. The historical configuration below describes the
+withdrawn checkpoint and its offline benchmark behavior.
+
 The service identifies English and Turkish locally. English uses the pinned Desklib
 checkpoint. Turkish uses Apache-2.0 licensed
 [ertoluk/ai-metin-dedektor](https://huggingface.co/ertoluk/ai-metin-dedektor/tree/2df7f6df282445a42353bb87fb512c4cb7c06fb5).

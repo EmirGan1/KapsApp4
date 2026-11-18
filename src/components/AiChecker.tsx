@@ -147,7 +147,7 @@ export default function AiChecker({ active }: { active: boolean }) {
   const copy = async () => {
     if (!result) return;
     const assessment = assessAiDetectorResult(result);
-    const scores = result.scores
+    const scores = result.scores && assessment.kind !== 'unvalidated'
       ? `\nİnsan Yazımı: %${percent(result.scores[0])}\nAI Üretimi: %${percent(result.scores[1])}\nBunlar model skorlarıdır.` : '';
     const summary = `KapsApp AI Metin Dedektörü\n${assessment.title}\n${assessment.detail}${scores}`;
     try {
@@ -182,7 +182,7 @@ export default function AiChecker({ active }: { active: boolean }) {
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
             <span className="inline-flex items-center gap-1.5"><ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400"/> Metin kaydedilmez</span>
             <span className="inline-flex items-center gap-1.5"><LockKeyhole size={15}/> Sunucuda yerel model</span>
-            <span className="inline-flex items-center gap-1.5"><FileText size={15}/> Türkçe ve İngilizce</span>
+            <span className="inline-flex items-center gap-1.5"><FileText size={15}/> İngilizce · Türkçe değerlendirme beklemede</span>
           </div>
         </header>
 
@@ -190,7 +190,7 @@ export default function AiChecker({ active }: { active: boolean }) {
           <div className="px-4 pt-5 sm:px-6 sm:pt-6 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-semibold text-base">Metnini analiz et</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Türkçe için en az 60, İngilizce için en az 120 kelime kullan. Dil otomatik algılanır.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">İngilizce için en az 120 kelime kullan. Türkçe değerlendirme, model doğruluk sorunu nedeniyle geçici olarak durduruldu.</p>
             </div>
             <button type="button" onClick={paste} disabled={busy || pasting}
               className="inline-flex items-center gap-2 min-h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
@@ -243,13 +243,13 @@ export default function AiChecker({ active }: { active: boolean }) {
                   {assessment?.title}
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{assessment?.detail}</p>
-                <p className="mt-2 text-xs text-slate-500">{result.model.startsWith('ertoluk/') ? 'Türkçe model · Deneysel · Yerel doğruluk ölçümü bekleniyor' : 'İngilizce model · Desklib'}</p>
+                <p className="mt-2 text-xs text-slate-500">{result.model.startsWith('ertoluk/') ? 'Türkçe model · Doğruluk kontrolünü geçemedi' : 'İngilizce model · Desklib'}</p>
               </div>
               <button type="button" onClick={() => void copy()} className="inline-flex items-center gap-2 min-h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
                 {copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Kopyalandı' : 'Sonucu kopyala'}
               </button>
             </div>
-            {result.scores && <details className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+            {result.scores && assessment?.kind !== 'unvalidated' && <details className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
               <summary className="cursor-pointer select-none text-sm font-semibold text-slate-700 dark:text-slate-200">Model skorlarını göster</summary>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
               {[
@@ -267,7 +267,7 @@ export default function AiChecker({ active }: { active: boolean }) {
             </div>
             </details>}
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed space-y-2">
-              <p>{result.words.toLocaleString('tr-TR')} kelime{result.scores && ` · ${result.segmentAi.length} bölüm değerlendirildi`}</p>
+              <p>{result.words.toLocaleString('tr-TR')} kelime{result.scores && assessment?.kind !== 'unvalidated' && ` · ${result.segmentAi.length} bölüm değerlendirildi`}</p>
               <p>Skorlar modelin değerlendirmesini gösterir. Düzenlenmiş ve akademik metinlerde tahmin hataları görülebilir.</p>
             </div>
           </div>

@@ -44,19 +44,22 @@ test('results from the old detector, wrong revisions and invalid scores are reje
 });
 
 
-test('Turkish routing validates model identity, length and conservative decision boundaries', () => {
+test('withdrawn Turkish checkpoint cannot report an AI or human verdict even from cached scores', () => {
   const tr: DetectorResult = { ...sample, model: TURKISH_MODEL, revision: TURKISH_REVISION, language: 'turkish', words: 100 };
-  assert.ok(parseDetectorResult(tr));
-  assert.equal(assessAiDetectorResult(tr).kind, 'inconclusive');
-  assert.equal(assessAiDetectorResult({ ...tr, segmentAi: [0.951, 0.99] }).kind, 'ai_signal');
-  assert.equal(assessAiDetectorResult({ ...tr, segmentAi: [0.47, 0.479] }).kind, 'human_signal');
-  for (const score of [0.48, 0.95]) {
-    assert.equal(assessAiDetectorResult({ ...tr, segmentAi: [score] }).kind, 'inconclusive');
+  for (const score of [0, 0.02, 0.48, 0.95, 0.997, 1]) {
+    const payload = { ...tr, scores: [1 - score, score], segmentAi: [score] };
+    const parsed = parseDetectorResult(payload);
+    assert.ok(parsed);
+    assert.equal(assessAiDetectorResult(parsed).kind, 'unvalidated');
   }
+  const unscored = { ...tr, tokens: 0, scores: null, segmentAi: [] };
+  const parsed = parseDetectorResult(unscored);
+  assert.ok(parsed);
+  assert.equal(assessAiDetectorResult(parsed).kind, 'unvalidated');
+  assert.equal(parseDetectorResult({ ...unscored, tokens: 1 }), null);
   assert.equal(parseDetectorResult({ ...tr, language: 'english' }), null);
   assert.equal(parseDetectorResult({ ...tr, revision: DESKLIB_REVISION }), null);
-  const short = { ...tr, words: 59, tokens: 0, scores: null, segmentAi: [] };
+  const short = { ...unscored, words: 59 };
   assert.ok(parseDetectorResult(short));
   assert.equal(assessAiDetectorResult(short).kind, 'insufficient');
-  assert.equal(parseDetectorResult({ ...tr, words: 59 }), null);
 });

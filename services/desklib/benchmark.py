@@ -30,7 +30,7 @@ def main():
             raise ValueError("Each sample needs a verified label and source")
         text = record["text"]
         start = clock()
-        result = detector.analyze(text)
+        result = detector.analyze(text, evaluate_turkish=True)
         duration = round((clock() - start) * 1000)
         scores = result["scores"]
         segments = result["segmentAi"]

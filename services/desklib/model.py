@@ -177,7 +177,7 @@ class Detector:
         finally:
             torch.set_num_threads(self.threads)
 
-    def analyze(self, text):
+    def analyze(self, text, *, evaluate_turkish=False):
         words = len(re.findall(r"\S+", text))
         language = self.language(text)
         result = {
@@ -188,6 +188,11 @@ class Detector:
         }
         minimum = TURKISH_MIN_WORDS if language == "turkish" else MIN_WORDS
         if language == "unsupported" or words < minimum:
+            return result
+
+        # The pinned Turkish checkpoint failed provenance-verified smoke tests.
+        # Only the offline benchmark may evaluate it until a replacement is validated.
+        if language == "turkish" and not evaluate_turkish:
             return result
 
         self.load_model(language)
