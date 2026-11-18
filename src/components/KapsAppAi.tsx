@@ -581,10 +581,13 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
               onChange={event => setDraft(event.target.value)}
               onPaste={event => {
                 if (sendingBlocked || photoBusy || pdfBusy) return;
-                const file = Array.from(event.clipboardData.items).find(item => item.type.startsWith("image/"))?.getAsFile();
-                if (file) {
+                const files = Array.from(event.clipboardData.items)
+                  .filter(item => item.type.startsWith("image/"))
+                  .map(item => item.getAsFile())
+                  .filter((item): item is File => Boolean(item));
+                if (files.length) {
                   event.preventDefault();
-                  void attachPhoto(file);
+                  void attachPhotos(files);
                 }
               }}
               onKeyDown={event => {
