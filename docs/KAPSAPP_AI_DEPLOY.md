@@ -178,3 +178,11 @@ backup retention policy.
 Deploy using the usual repository install/build/PM2 restart procedure. This change
 does not require detector Python-service installation. After deployment, submit a
 photo, verify the answer's Gemma label, reopen the conversation and check a follow-up.
+
+## Optional Groq cloud model
+
+The model picker includes **GPT-OSS 120B · Groq** (`groq:openai/gpt-oss-120b`). It uses the fixed HTTPS Groq chat completions endpoint with low reasoning effort, streaming and a 2048 completion-token cap. Local model selection stays unchanged. Groq bypasses Ollama memory probes/loading and uses the existing authenticated queue, saved history, cancellation and generation duration. Photo turns and photo follow-ups remain on local Gemma. The UI discloses that cloud messages and retained text context are sent to Groq. No automatic external fallback is performed for local models.
+
+After updating/building on the VDS, run `bash scripts/setup-kapsai-groq.sh` as root. Paste the API key at the hidden terminal prompt. It installs `/etc/kapsapp/groq-api-key` with root-only access, restarts the existing PM2 app and checks a short real API response. Never put the key in Git, a Vite variable, a URL or a shell command argument. Alternatively the server supports `GROQ_API_KEY` or `GROQ_API_KEY_FILE`; these are server-only. The default file is read on each request so rotation takes effect without rebuilding. The setup assumes the existing root-run PM2 deployment; a different service user needs suitably restricted file access.
+
+Keep the Groq account on Free plan. Organization-wide request and token limits are shared across users. A quota response displays an explicit message inviting a local model choice. No billing upgrades or paid subscriptions are configured by the app. Test with `node --import tsx --test tests/kapsAiGroq.test.ts`.

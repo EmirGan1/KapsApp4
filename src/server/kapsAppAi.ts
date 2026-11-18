@@ -1,3 +1,4 @@
+import { GROQ_MODEL, GroqFailure, openGroqChat } from "./kapsAiGroq";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
@@ -18,7 +19,7 @@ import {
 import type { ChatEvent, ChatMessage, ChatSource, ChatStatusPhase, KapsAiModel, SavedChatTurn } from "../shared/kapsAppAi";
 
 export const KAPSAPP_AI_MODEL = KAPSAPP_AI_DEFAULT_MODEL;
-const MODEL_OPTIONS: Record<KapsAiModel, { threads: number; context: number; coldMemoryMiB?: number }> = {
+const MODEL_OPTIONS: Record<Exclude<KapsAiModel, typeof GROQ_MODEL>, { threads: number; context: number; coldMemoryMiB?: number }> = {
   "granite4.1:3b-q4_K_M": { threads: 4, context: 3072 },
   "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": { threads: 3, context: 2048 },
   "qwen3.5:2b-q4_K_M": { threads: 3, context: 2048 },
@@ -42,7 +43,7 @@ Be clear, respectful and practical.
 Public KapsApp profile (use when relevant):
 - KapsApp (kapsapp.online) was founded by Emirhan Madenci, known on the platform as Emirgan. He is the founder and lead administrator. KapsAI is part of KapsApp and does not speak on his behalf.
 - KapsApp brings student tools, social features and games together. It includes a course archive with past papers and IA/EE examples, an agenda, an IB score calculator, announcements, direct and group messaging, general chat, voice rooms and games such as KapsStrike and Kapstorial.
-- KapsAI is the platform’s local chat assistant. The separate AI text detector estimates whether text may be AI-generated.
+- KapsAI is the platform’s chat assistant, offering local models and an optional Groq-hosted model. The separate AI text detector estimates whether text may be AI-generated.
 - For questions about Emirhan, use only the public founder facts listed here. Do not infer personal details or invent a biography. For KapsApp, do not guess about release dates, live status or features outside the available information.`;
 
 const OLLAMA_HOST = "127.0.0.1";
@@ -558,31 +559,36 @@ export function registerKapsAppAi(
       signal.throwIfAborted();
 
       const modelTag = model;
-      const { threads, context, coldMemoryMiB } = MODEL_OPTIONS[model];
-      const probeBudget = Math.min(2500, connectTimeoutMs);
-      const loaded = await ollamaModels("/api/ps", signal, probeBudget);
-      const loadedTags = new Set((loaded ?? []).map(tag => tag.toLowerCase()));
-      const otherModels = Object.keys(MODEL_OPTIONS).filter(
-        tag => tag !== model && loadedTags.has(tag.toLowerCase()),
-      );
-      for (const other of otherModels) {
-        const response = await fetch(`http://${OLLAMA_HOST}:${OLLAMA_PORT}/api/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: other, keep_alive: 0 }),
-          signal: AbortSignal.any([signal, AbortSignal.timeout(probeBudget)]),
-        });
-        await response.body?.cancel();
-        if (!response.ok) throw new ModelFailure(UNAVAILABLE, 503, "upstream");
-      }
-      const available = await availableMemory();
-      const isModelWarm = loadedTags.has(modelTag.toLowerCase());
-      const coldLimit = Math.max(coldMemMib, coldMemoryMiB ?? 0);
-      if (available < 1024 * MIB || (!isModelWarm && available < coldLimit * MIB)) {
-        if (!loaded && available >= 1024 * MIB) {
-          throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
+      const cloud = model === GROQ_MODEL;
+      const { threads, context } = cloud ? { threads: 0, context: 0 } : MODEL_OPTIONS[model];
+      let isModelWarm = cloud;
+      if (!cloud) {
+        const { coldMemoryMiB } = MODEL_OPTIONS[model];
+        const probeBudget = Math.min(2500, connectTimeoutMs);
+        const loaded = await ollamaModels("/api/ps", signal, probeBudget);
+        const loadedTags = new Set((loaded ?? []).map(tag => tag.toLowerCase()));
+        const otherModels = Object.keys(MODEL_OPTIONS).filter(
+          tag => tag !== model && loadedTags.has(tag.toLowerCase()),
+        );
+        for (const other of otherModels) {
+          const response = await fetch(`http://${OLLAMA_HOST}:${OLLAMA_PORT}/api/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: other, keep_alive: 0 }),
+            signal: AbortSignal.any([signal, AbortSignal.timeout(probeBudget)]),
+          });
+          await response.body?.cancel();
+          if (!response.ok) throw new ModelFailure(UNAVAILABLE, 503, "upstream");
         }
-        throw new ModelFailure(LOW_MEMORY);
+        const available = await availableMemory();
+        isModelWarm = loadedTags.has(modelTag.toLowerCase());
+        const coldLimit = Math.max(coldMemMib, coldMemoryMiB ?? 0);
+        if (available < 1024 * MIB || (!isModelWarm && available < coldLimit * MIB)) {
+          if (!loaded && available >= 1024 * MIB) {
+            throw new ModelFailure("Ollama, model durumunu doğrulayamadı. Biraz sonra tekrar dene.", 503, "upstream");
+          }
+          throw new ModelFailure(LOW_MEMORY);
+        }
       }
       signal.throwIfAborted();
 
@@ -652,12 +658,18 @@ export function registerKapsAppAi(
       });
 
       const generationStartedAt = performance.now();
-      const upstream = await openOllamaChatStream(payload, signal, connectTimeoutMs);
-      if (upstream.status !== 200) throw modelFailure(upstream.errorText ?? "", upstream.status, model);
-      if (!upstream.stream) throw new ModelFailure(UNAVAILABLE);
+      let frames: AsyncIterable<OllamaFrame>;
+      if (cloud) {
+        frames = await openGroqChat(preparedMessages, signal);
+      } else {
+        const upstream = await openOllamaChatStream(payload, signal, connectTimeoutMs);
+        if (upstream.status !== 200) throw modelFailure(upstream.errorText ?? "", upstream.status, model);
+        if (!upstream.stream) throw new ModelFailure(UNAVAILABLE);
+        frames = readJsonLines<OllamaFrame>(upstream.stream);
+      }
 
       let hasOutput = false;
-      for await (const frame of readJsonLines<OllamaFrame>(upstream.stream)) {
+      for await (const frame of frames) {
         if (frame.error) throw modelFailure(frame.error, undefined, model);
         const text = frame.message?.content;
         if (text) {
@@ -735,7 +747,9 @@ export function registerKapsAppAi(
                   : "Yanıt üretim süresi sınırına ulaştı. Yanıtın gelen kısmı korundu.",
             timeoutReason === "queue" ? 503 : 504,
           )
-        : error instanceof ModelFailure
+        : error instanceof GroqFailure
+          ? new ModelFailure(error.message, error.status)
+          : error instanceof ModelFailure
           ? error
           : new ModelFailure(RESPONSE_INTERRUPTED, 503, "transport");
       if (failure.diagnostic || (timeoutReason && timeoutReason !== "queue")) {

@@ -145,6 +145,7 @@ export const KAPSAPP_AI_CONVERSATIONS_PATH = "/api/kapsapp-ai/conversations";
 export const KAPSAPP_AI_PREFERENCE_PATH = "/api/kapsapp-ai/model-preference";
 
 export const KAPSAPP_AI_MODELS = {
+  "groq:openai/gpt-oss-120b": { label: "GPT-OSS 120B · Groq", profile: "Güçlü · Bulut", description: "Groq altyapısında güçlü sohbet · ücretsiz kota geçerli · metinler Groq’a gönderilir" },
   "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m": { label: "LFM 1.2B", profile: "Hızlı", description: "Kısa İngilizce sohbetler ve mesaj taslakları" },
   "gemma4:e2b-it-qat": { label: "Gemma 4 E2B", profile: "Dengeli", description: "Genel sohbet, fotoğraf ve adım adım çözümler" },
   "granite4.1:3b-q4_K_M": { label: "Granite 4.1 3B", profile: "Ayrıntılı", description: "Daha ayrıntılı yanıtlar, daha uzun sürebilir" },

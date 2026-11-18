@@ -552,6 +552,7 @@ export default function KapsAppAi({ active = true }: { active?: boolean } = {}) 
             )}
           </div>
           <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+            {history.model === "groq:openai/gpt-oss-120b" && <span className="mb-1 block text-violet-700 dark:text-violet-300">Bulut modeli: Mesajların ve sohbet bağlamın Groq’a gönderilir. Ücretsiz kota geçerlidir. Fotoğraflar Gemma ile yerel işlenir.</span>}
             {sourceValid ? "Sohbetler hesabına kaydedilir. Ekranı kapatsan da başlayan yanıt sunucuda devam eder." : "Kaynak için hem başlık hem metin gir."}
           </p>
         </div>
