@@ -4,7 +4,7 @@ import { AI_HISTORY_LIMIT, KAPSAPP_AI_DEFAULT_MODEL, isKapsAiModel, isLegacyKaps
 
 const PAGE_SIZE = 30;
 const PENDING = "state IN ('queued', 'running')";
-const columns = "seq, id, conversation_id, question, source_title, state, answer, notice, model, generation_ms, image_hash, requested_model";
+const columns = "seq, id, conversation_id, question, source_title, state, answer, notice, model, generation_ms, image_hash, requested_model, image_data";
 
 function savedTurn(row: Row): SavedChatTurn {
   const state = String(row.state);
@@ -21,6 +21,7 @@ function savedTurn(row: Row): SavedChatTurn {
     notice: row.notice ? String(row.notice) : undefined,
     generationMs: row.generation_ms == null ? undefined : Number(row.generation_ms),
     imageHash: row.image_hash ? String(row.image_hash) : undefined,
+    imageCount: row.image_data ? (String(row.image_data).startsWith("[") ? (JSON.parse(String(row.image_data)) as string[]).length : 1) : undefined,
   };
 }
 
@@ -168,7 +169,7 @@ export function createKapsAiHistory(db: Client) {
         args: [owner, conversationId, before, AI_HISTORY_LIMIT / 2],
       });
       return rows.reverse().flatMap((row): ChatMessage[] => [
-        { role: "user", content: String(row.question), image: row.image_data ? String(row.image_data) : undefined },
+        { role: "user", content: String(row.question), image: row.image_data ? (String(row.image_data).startsWith("[") ? JSON.parse(String(row.image_data)) as string[] : String(row.image_data)) : undefined },
         { role: "assistant", content: String(row.answer).slice(0, 6000) },
       ]);
     },
