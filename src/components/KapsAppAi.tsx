@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { ArrowUp, Check, ChevronDown, Clock3, Copy, FileText, ImagePlus, X, History, LoaderCircle, Plus, RotateCcw, Sparkles, Square, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkMath from "remark-math";
+import remarkGfm from "remark-gfm";
 import {
   AI_MESSAGE_LIMIT, AI_SOURCE_TEXT_LIMIT, KAPSAPP_AI_TURNS_PATH, AI_SOURCE_TITLE_LIMIT, isKapsAiModel, KAPSAPP_AI_MODELS, kapsAiModelLabel, normalizeMathMarkdown,
 } from "../shared/kapsAppAi";
@@ -16,7 +17,7 @@ const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-x
 const secondary = `${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800`;
 const field = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
 const headerButton = "max-sm:gap-1 max-sm:px-2 max-sm:text-xs";
-const MATH_PLUGINS = [remarkMath];
+const MATH_PLUGINS = [remarkMath, remarkGfm];
 
 function extractText(children: unknown): string {
   if (typeof children === "string") return children;
