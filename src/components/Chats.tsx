@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { Friend, Message, MediaModalData } from "../types";
 import { Send, Image as ImageIcon, Mic, Users, Plus, X, Reply, Smile, FileText, Download, Paperclip, Maximize2, Trash2, Loader2, Phone, PhoneCall, Check, CheckCheck, Camera } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { TRAVEL_PATH } from "../shared/travel";
+import { travelRequest } from "./travel/useTravel";
 import Avatar from "./Avatar";
 import MediaModal from "./MediaModal";
 import { getApiUrl, getAuthHeaders } from "../utils/api";
@@ -46,6 +49,16 @@ export default function Chats({
   onActiveChatUserChange?: (userId: number | null) => void,
   onActiveChatChange?: (hasActive: boolean) => void,
 }) {
+  const navigate = useNavigate();
+  const [travelPartner, setTravelPartner] = useState<number | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    travelRequest<{ userId: number; members: { id: number }[] }>("/access")
+      .then(access => {
+        if (!disposed && access.userId === currentUserId) setTravelPartner(access.members.find(m => m.id !== access.userId)?.id ?? null);
+      }).catch(() => { if (!disposed) setTravelPartner(null); });
+    return () => { disposed = true; };
+  }, [currentUserId]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeTab, setActiveTab] = useState<"friends" | "groups">("friends");
@@ -1061,7 +1074,10 @@ export default function Chats({
 
               {/* Sesli Arama (1-on-1 Call) Button in DM */}
               {activeTab === "friends" && (
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex items-center gap-1 sm:gap-2 flex-wrap justify-end">
+                  {travelPartner === activeChat.id && (
+                    <button className="min-h-10 px-2 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800" onClick={() => navigate(TRAVEL_PATH)}>Gezi Planlama</button>
+                  )}
                   {currentCall && currentCall.peer.peerId === activeChat.id ? (
                     <button
                       onClick={() => setIsMinimized(false)}
