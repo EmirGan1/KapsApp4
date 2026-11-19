@@ -4,7 +4,7 @@ export { safeDecodeURI };
 
 // Centralized Route Configuration & SEO Metadata for KapsApp
 
-export type AppTab = "ib-m27" | "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ai-checker" | "kapsapp-ai" | "ayvalik-cas" | "settings";
+export type AppTab = "travel" | "ib-m27" | "dashboard" | "chats" | "announcements" | "agenda" | "global" | "feed" | "folders" | "friends" | "profile" | "notifications" | "subject" | "games" | "voice" | "map" | "admin" | "weather" | "ib-calculator" | "ai-checker" | "kapsapp-ai" | "ayvalik-cas" | "settings";
 
 export interface RouteMeta {
   path: string;
@@ -178,6 +178,7 @@ export function getTabFromPathname(pathname: string): {
   subject?: string;
   userId?: number;
 } {
+  if (/^\/gezi-planlama(?:\/|$)/.test(pathname)) return { tab: "travel" };
   const cleanPath = pathname.replace(/\/+$/, "") || "/";
 
   // IB M27 Exam Schedule aliases
@@ -265,6 +266,7 @@ export function getPathFromTab(
 
   switch (tab) {
     case "ib-m27": return "/ib-m27-sinavlari";
+    case "travel": return "/gezi-planlama";
     case "dashboard": return "/";
     case "ayvalik-cas": return "/ayvalik-cas";
     case "chats": return "/sohbetler";

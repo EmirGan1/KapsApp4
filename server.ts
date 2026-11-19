@@ -23,6 +23,7 @@ import { registerActivityGames } from "./src/server/activityGames";
 import { initAyvalikCasTables, registerAyvalikCasRoutes } from "./src/server/ayvalikController";
 import { setupChatSocketHandlers } from "./src/server/socket";
 import { initPasswordResetDb, registerPasswordResetRoutes } from "./src/server/passwordResetController";
+import { registerTravel } from "./src/server/travel";
 import { registerKapsAppAi } from "./src/server/kapsAppAi";
 import { AI_CHECKER_PATH, AI_CHECKER_JOBS_PATH, AiCheckerError, createAiChecker } from "./src/server/aiChecker";
 import { AI_CHECKER_RESULT_NOTIFICATION, AI_TEXT_LIMIT, assessAiDetectorResult } from "./src/utils/aiDetectorAssessment";
@@ -1172,6 +1173,10 @@ async function startServer() {
     const ready = await aiChecker.health();
     res.status(ready ? 200 : 503).json({ ready });
   });
+  registerTravel(app, client, async req => {
+    const user = await authenticateToken(req);
+    return user ? { id: user.id } : null;
+  }, checkDeviceBan);
   registerKapsAppAi(app, async req => {
     const user = await authenticateToken(req);
     return user?.id == null ? null : String(user.id);

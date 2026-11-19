@@ -101,6 +101,7 @@ import { SUBJECTS } from "./utils/subjectResources";
 import SubjectResources from "./components/SubjectResources";
 import AiChecker, { clearLegacyAiCheckerData } from "./components/AiChecker";
 
+const TravelPlanner = lazy(() => import("./components/travel/TravelPlanner"));
 const KapsAppAi = lazy(() => import("./components/KapsAppAi"));
 
 export default function App() {
@@ -200,7 +201,7 @@ export default function App() {
       ? `${activeSubject} dersi için paylaşılan ders notları, çalışma klasörleri ve öğrenci tartışmaları.`
       : "KapsApp; gerçek zamanlı sesli sohbet kanalları, canlı harita ve ders klasörleri platformudur.",
     canonical: `https://kapsapp.online${location.pathname}`,
-    noindex: false,
+    noindex: activeTab === "travel",
   };
 
   useSEO({
@@ -1804,6 +1805,7 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="app-content flex-1 flex flex-col min-h-0 min-w-0 relative w-full max-w-full overflow-hidden">
+        {activeTab === 'travel' && <Suspense fallback={<p role="status" className="m-auto">Gezi defteri açılıyor…</p>}><TravelPlanner key={currentUserId} /></Suspense>}
         {activeTab === 'dashboard' && (
           <Dashboard 
             socket={socket} 
