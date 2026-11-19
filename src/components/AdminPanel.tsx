@@ -13,6 +13,7 @@ import { getApiUrl, getAuthHeaders } from "../utils/api";
 import { COURSE_ROLES, CourseRole, sortRolesByPosition } from "../types";
 import RoleBadges from "./RoleBadges";
 import PasswordResetRequests from "./PasswordResetRequests";
+import UniversityVault, { universityRequest } from "./UniversityVault";
 import AdminPanelShell, { type AdminTab } from "./AdminPanelShell";
 import EditRolesModal from "./EditRolesModal";
 import CreateRoleModal from "./CreateRoleModal";
@@ -90,6 +91,8 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ socket, currentUsername, onUserClick, onPendingCountChange }: AdminPanelProps) {
+  const [universityAccess, setUniversityAccess] = useState(false);
+  useEffect(() => { setUniversityAccess(false); let alive=true; universityRequest("/access").then(()=>{if(alive)setUniversityAccess(true);}).catch(()=>{}); return()=>{alive=false;}; }, [currentUsername, socket]);
   const [activeTab, setActiveTab] = useState<AdminTab>("home");
   const [loading, setLoading] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
@@ -1038,7 +1041,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
         </div>
       )}
 
-      <AdminPanelShell activeTab={activeTab} onSelect={handleTabChange} registrations={registrationCount}
+      <AdminPanelShell universityAccess={universityAccess} activeTab={activeTab} onSelect={handleTabChange} registrations={registrationCount}
         resets={resetCount} refreshKey={refreshKey} onRefresh={() => {
           fetchPendingUsers();
           fetchUsers();
@@ -1046,6 +1049,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
           fetchActiveTables();
           setRefreshKey(key => key + 1);
         }}>
+        {activeTab === "university" && universityAccess && <UniversityVault />}
         <div hidden={activeTab !== "resets"}>
           <PasswordResetRequests socket={socket} onCountChange={setResetCount} refreshKey={refreshKey} />
         </div>
