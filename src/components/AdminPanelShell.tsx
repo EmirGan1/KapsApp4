@@ -3,6 +3,7 @@ import { ArrowUpRight, Award, Clock, Crown, Flame, Gamepad2, KeyRound, Laptop, L
 import AdminServerStatus from "./AdminServerStatus";
 
 const sections = {
+  university: { label: "Üniversite belgeleri hazırlık", detail: "CV, sertifika ve başvuru arşivi", icon: Award },
   home: { label: "Ana menü", detail: "", icon: LayoutGrid },
   pending: { label: "Kayıt istekleri", detail: "", icon: UserCheck },
   resets: { label: "Şifre sıfırlama", detail: "", icon: KeyRound },
@@ -24,6 +25,7 @@ const actionTabs = tabs.filter(tab => tab !== "home" && tab !== "pending" && tab
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300";
 
 type Props = {
+  universityAccess?: boolean;
   activeTab: AdminTab;
   onSelect: (tab: AdminTab) => void;
   registrations: number | null;
@@ -33,7 +35,9 @@ type Props = {
   children: ReactNode;
 };
 
-export default function AdminPanelShell({ activeTab, onSelect, registrations, resets, refreshKey, onRefresh, children }: Props) {
+export default function AdminPanelShell({ universityAccess = false, activeTab, onSelect, registrations, resets, refreshKey, onRefresh, children }: Props) {
+  const visibleTabs = tabs.filter(tab => tab !== "university" || universityAccess);
+  const visibleActions = actionTabs.filter(tab => tab !== "university" || universityAccess);
   const counts = { pending: registrations, resets };
   const scrollArea = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -64,7 +68,7 @@ export default function AdminPanelShell({ activeTab, onSelect, registrations, re
               <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 lg:hidden">
                 <select aria-label="Panel bölümü" value={activeTab} onChange={event => onSelect(event.target.value as AdminTab)}
                   className={`min-h-11 min-w-0 rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-white ${focus}`}>
-                  {tabs.map(tab => <option key={tab} value={tab}>{sections[tab].label}</option>)}
+                  {visibleTabs.map(tab => <option key={tab} value={tab}>{sections[tab].label}</option>)}
                 </select>
                 {requestTabs.map(tab => (
                   <button type="button" key={tab} onClick={() => onSelect(tab)}
@@ -76,7 +80,7 @@ export default function AdminPanelShell({ activeTab, onSelect, registrations, re
                 ))}
               </div>
               <div className="hidden space-y-0.5 lg:block">
-                {tabs.map(tab => {
+                {visibleTabs.map(tab => {
                   const { label, icon: Icon } = sections[tab];
                   return (
                     <button type="button" key={tab} onClick={() => onSelect(tab)}
@@ -118,7 +122,7 @@ export default function AdminPanelShell({ activeTab, onSelect, registrations, re
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2 2xl:grid-cols-3">
-                  {actionTabs.map(tab => {
+                  {visibleActions.map(tab => {
                     const { label, detail, icon: Icon } = sections[tab];
                     return (
                       <button type="button" key={tab} onClick={() => onSelect(tab)}
