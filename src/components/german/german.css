@@ -407,3 +407,490 @@
     animation: none !important;
   }
 }
+
+.kg-activity-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; margin:24px 0; }
+.kg .kg-activity-card { display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:12px; padding:22px; min-height:210px; background:var(--g-card); color:var(--g-ink); border:1px solid var(--g-line); border-radius:20px; transition:transform .15s,box-shadow .15s; }
+.kg .kg-activity-card:hover { transform:translateY(-3px); box-shadow:0 10px 25px #0001; }
+.kg-activity-card > span:not(.kg-activity-icon) { color:var(--g-muted); font-size:13px; }
+.kg-activity-card strong { font-size:18px; }
+.kg-activity-card small { margin-top:auto; }
+.kg-activity-icon { display:grid; place-items:center; width:44px; height:44px; border-radius:14px; background:var(--g-bg); color:var(--g-accent); font-size:25px; }
+.kg…4587 tokens truncated… old.rows.map((r) => [String(r.id), JSON.parse(String(r.data))]),
+      );
+      const oldIds = new Set(old.rows.map((r) => String(r.id)));
+      const oldByGerman = new Map<string, typeof old.rows>();
+      for (const row of old.rows) {
+        const key = normalize(JSON.parse(String(row.data)).de);
+        oldByGerman.set(key, [...(oldByGerman.get(key) ?? []), row]);
+      }
+      const occurrences = new Map<string, number>();
+      for (const entry of parsed.entries) {
+        const key = normalize(entry.de);
+        occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
+      }
+      const tx = await db.transaction("write");
+      let added = 0;
+      try {
+        // An ambiguous parse must not archive the last good source.
+        if (parsed.warnings.length && parsed.entries.length === 0)
+          throw new Error(
+            "Google belgesindeki ifadeler inceleme gerektiriyor.",
+          );
+        await tx.execute("UPDATE german_words SET active=0");
+        for (const entry of parsed.entries) {
+          let identity = entry.id;
+          const prior = oldByGerman.get(normalize(entry.de)) ?? [];
+          if (
+            !oldIds.has(identity) &&
+            prior.length === 1 &&
+            occurrences.get(normalize(entry.de)) === 1
+          )
+            identity = String(prior[0].id);
+          const data = { ...entry, id: identity };
+          const previous = oldData.get(identity);
+          if (
+            previous &&
+            (normalize(previous.de) !== normalize(entry.de) ||
+              normalize(previous.tr) !== normalize(entry.tr))
+          ) {
+            await tx.execute({
+              sql: "DELETE FROM german_tasks WHERE EXISTS(SELECT 1 FROM json_each(german_tasks.data,'$.vocabularyIds') WHERE value=?)",
+              args: [identity],
+            });
+          }
+          if (!oldIds.has(identity)) added++;
+          await tx.execute({
+            sql: "INSERT INTO german_words VALUES(?,?,1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,active=1",
+            args: [identity, JSON.stringify(data), new Date().toISOString()],
+          });
+        }
+        await tx.commit();
+      } finally {
+        tx.close();
+      }
+      let published = 0,
+        aiError = "";
+      try {
+        const active = await words();
+        const weak = await db.execute(
+          "SELECT word_id FROM german_memory ORDER BY json_extract(data,'$.due') LIMIT 100",
+        );
+        active.sort(
+          (a, b) =>
+            Number(weak.rows.some((r) => r.word_id === b.id)) -
+            Number(weak.rows.some((r) => r.word_id === a.id)),
+        );
+        published = await generate(active);
+      } catch (e) {
+        aiError = (e as Error).message;
+      }
+      await db.execute({
+        sql: "UPDATE german_jobs SET status=?,finished_at=?,summary=? WHERE id=?",
+        args: [
+          aiError ? "partial" : "done",
+          new Date().toISOString(),
+          JSON.stringify({
+            added,
+            duplicates: parsed.duplicates,
+            warnings: parsed.warnings,
+            published,
+            error: aiError,
+          }),
+          job,
+        ],
+      });
+    } catch {
+      await db.execute({
+        sql: "UPDATE german_jobs SET status='error',finished_at=?,summary=? WHERE id=?",
+        args: [
+          new Date().toISOString(),
+          "Google eşitlemesi tamamlanamadı. Son başarılı veriler korundu; bağlantıyı kontrol edin.",
+          job,
+        ],
+      });
+    } finally {
+      await db.execute({
+        sql: "DELETE FROM german_lock WHERE token=?",
+        args: [token],
+      });
+    }
+  }
+  router.post("/admin/sync", admin, (_req, res) => {
+    void pipeline().catch(() => {});
+    res.status(202).json({ queued: true });
+  });
+  router.post(
+    "/sessions",
+    wrap(async (req, res) => {
+      const { module = "vocabulary", mode = "practice", activity = "mixed" } = req.body ?? {};
+      if (
+        !["vocabulary", ...Object.keys(EXAM_STRUCTURE)].includes(module) ||
+        !["practice", "exam"].includes(mode)
+      )
+        return res.sendStatus(400);
+      if (activity !== "mixed" && !activities.some(a => a[0] === activity)) return res.sendStatus(400);
+      if (module === "Hören")
+        return res.status(409).json({
+          error:
+            "Güvenilir ses sağlayıcısı yapılandırılmadığı için Hören henüz kullanılamıyor.",
+        });
+      const active = await db.execute({
+        sql: "SELECT id FROM german_sessions WHERE user_id=? AND state='active' AND module=?",
+        args: [res.locals.germanUser, module],
+      });
+      if (active.rows.length) return res.json({ id: active.rows[0].id });
+      const vocab = await words();
+      let tasks = (
+        await db.execute(
+          "SELECT data FROM german_tasks ORDER BY created_at DESC LIMIT 500",
+        )
+      ).rows
+        .map((r) => JSON.parse(String(r.data)) as Task)
+        .filter(
+          (t) =>
+            t.module === module &&
+            t.vocabularyIds.every((id) => vocab.some((w) => w.id === id)),
+        );
+      const memory = await db.execute({
+        sql: "SELECT word_id,data FROM german_memory WHERE user_id=?",
+        args: [res.locals.germanUser],
+      });
+      if (module === "vocabulary") {
+        const due = new Map(memory.rows.map(r => [String(r.word_id), Date.parse(JSON.parse(String(r.data)).due)]));
+        const prioritized = [...vocab].sort((a, b) => (due.get(a.id) ?? 0) - (due.get(b.id) ?? 0));
+        const games = buildActivities(prioritized, activity);
+        tasks = activity === "mixed" ? [...games.slice(0, 10), ...tasks, ...games.slice(10)] : games;
+      }
+      if (module !== "vocabulary") tasks.sort(
+        (a, b) =>
+          Date.parse(
+            JSON.parse(
+              String(
+                memory.rows.find((r) => r.word_id === a.vocabularyIds[0])
+                  ?.data ?? JSON.stringify(newMemory()),
+              ),
+            ).due,
+          ) -
+          Date.parse(
+            JSON.parse(
+              String(
+                memory.rows.find((r) => r.word_id === b.vocabularyIds[0])
+                  ?.data ?? JSON.stringify(newMemory()),
+              ),
+            ).due,
+          ),
+      );
+      if (mode === "exam" && module !== "vocabulary") {
+        const config = EXAM_STRUCTURE[module as keyof typeof EXAM_STRUCTURE];
+        const selected: Task[] = [];
+        for (let p = 1; p <= config.parts.length; p++) {
+          const part = tasks
+            .filter((t) => t.part === p)
+            .slice(0, config.parts[p - 1]);
+          if (part.length < config.parts[p - 1])
+            return res.status(409).json({
+              error:
+                "Tam bölüm denemesi için yeterli doğrulanmış görev yok. Bölüm bazlı alıştırma yapabilirsin.",
+            });
+          selected.push(...part);
+        }
+        tasks = selected;
+      } else tasks = tasks.slice(0, module === "vocabulary" ? 10 : 3);
+      if (!tasks.length)
+        return res.status(409).json({
+          error:
+            "Bu yöntem için uygun kelime bulunamadı. Google Docs kelimelerini eşitle veya başka bir alıştırma seç.",
+        });
+      const id = randomUUID(),
+        start = new Date(),
+        minutes =
+          module === "vocabulary"
+            ? 15
+            : EXAM_STRUCTURE[module as keyof typeof EXAM_STRUCTURE].minutes;
+      await db.execute({
+        sql: "INSERT INTO german_sessions(id,user_id,module,mode,tasks,started_at,deadline) VALUES(?,?,?,?,?,?,?)",
+        args: [
+          id,
+          res.locals.germanUser,
+          module,
+          mode,
+          JSON.stringify(tasks),
+          start.toISOString(),
+          new Date(start.getTime() + minutes * 60000).toISOString(),
+        ],
+      });
+      res.json({ id });
+    }),
+  );
+  async function owned(id: string, user: number) {
+    return (
+      await db.execute({
+        sql: "SELECT * FROM german_sessions WHERE id=? AND user_id=?",
+        args: [id, user],
+      })
+    ).rows[0];
+  }
+  router.get(
+    "/sessions/:id",
+    wrap(async (req, res) => {
+      const s = await owned(req.params.id, res.locals.germanUser);
+      if (!s) return res.sendStatus(404);
+      const tasks = JSON.parse(String(s.tasks)) as Task[];
+      res.json({
+        ...s,
+        tasks: tasks.map((t) =>
+          s.state === "done"
+            ? t
+            : {
+                ...t,
+                answer: undefined,
+                alternatives: undefined,
+                explanation: undefined,
+                evidence: undefined,
+              },
+        ),
+        answers: JSON.parse(String(s.answers)),
+        results:
+          s.mode === "exam" && s.state !== "done"
+            ? {}
+            : JSON.parse(String(s.results)),
+        serverNow: new Date().toISOString(),
+      });
+    }),
+  );
+  router.post(
+    "/sessions/:id/answer",
+    wrap(async (req, res) => {
+      const s = await owned(req.params.id, res.locals.germanUser);
+      if (!s) return res.sendStatus(404);
+      const { taskId, answer, version } = req.body ?? {};
+      if (
+        typeof answer !== "string" ||
+        answer.length > 12000 ||
+        !Number.isSafeInteger(version)
+      )
+        return res.sendStatus(400);
+      if (s.state !== "active" || Date.now() > Date.parse(String(s.deadline)))
+        return res.status(409).json({
+          error:
+            "Oturum süresi doldu veya tamamlandı. Kaydedilmiş yanıtlarla sonuçlandırabilirsin.",
+        });
+      const tasks = JSON.parse(String(s.tasks)) as Task[];
+      if (!tasks.some((t) => t.id === taskId)) return res.sendStatus(400);
+      const answers = { ...JSON.parse(String(s.answers)), [taskId]: answer };
+      const r = await db.execute({
+        sql: "UPDATE german_sessions SET answers=?,version=version+1 WHERE id=? AND user_id=? AND version=? AND state='active'",
+        args: [JSON.stringify(answers), s.id, res.locals.germanUser, version],
+      });
+      if (!r.rowsAffected)
+        return res.status(409).json({
+          error:
+            "Oturum başka sekmede değişti. Yenileyip taslağını yeniden kaydet.",
+        });
+      const task = tasks.find((t) => t.id === taskId)!;
+      if (!req.body.draft && s.mode === "practice" && (task.options.length || task.interaction || normalize(task.answer) === normalize(answer))) {
+        const correct = normalize(task.answer) === normalize(answer);
+        return res.json({
+          ok: true,
+          feedback: { score: correct ? 1 : 0, feedback: task.explanation },
+        });
+      }
+      res.json({ ok: true });
+    }),
+  );
+  router.post(
+    "/sessions/:id/retry",
+    wrap(async (req, res) => {
+      const s = await owned(req.params.id, res.locals.germanUser);
+      if (!s) return res.sendStatus(404);
+      if (s.state !== "done") return res.sendStatus(409);
+      const results = JSON.parse(String(s.results));
+      if (!Object.values(results).some((r: any) => r.pending))
+        return res.json({ ok: true });
+      const claim = await db.execute({
+        sql: "UPDATE german_sessions SET state='grading',version=version+1 WHERE id=? AND user_id=? AND state='done'",
+        args: [s.id, res.locals.germanUser],
+      });
+      if (claim.rowsAffected)
+        void grade(String(s.id), res.locals.germanUser).catch(() => {});
+      res.status(202).json({ ok: true });
+    }),
+  );
+  router.post(
+    "/sessions/:id/submit",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser,
+        s = await owned(req.params.id, user);
+      if (!s) return res.sendStatus(404);
+      if (s.state !== "active") return res.json({ ok: true });
+      const r = await db.execute({
+        sql: "UPDATE german_sessions SET state='grading',version=version+1 WHERE id=? AND user_id=? AND state='active'",
+        args: [s.id, user],
+      });
+      if (!r.rowsAffected)
+        return res.status(409).json({ error: "Değerlendirme devam ediyor." });
+      void grade(String(s.id), user).catch(() => {});
+      res.status(202).json({ ok: true });
+    }),
+  );
+  async function grade(id: string, user: number) {
+    const s = await owned(id, user);
+    if (!s) return;
+    const tasks = JSON.parse(String(s.tasks)) as Task[],
+      answers = JSON.parse(String(s.answers)),
+      results: any = JSON.parse(String(s.results));
+    const newlyGraded = new Set<string>();
+    for (const t of tasks) {
+      if (results[t.id] && !results[t.id].pending) continue;
+      const answer = answers[t.id] ?? "";
+      let result: any;
+      const exact = [t.answer, ...t.alternatives].some(
+        (a) =>
+          a &&
+          normalize(a).replace(/[.!?]$/u, "") ===
+            normalize(answer).replace(/[.!?]$/u, ""),
+      );
+      if (!answer.trim())
+        result = { score: 0, feedback: "Yanıt verilmedi.", pending: false };
+      else if (t.options.length || t.interaction || exact)
+        result = {
+          score: exact ? 1 : 0,
+          feedback: t.explanation,
+          suggestedAnswer: t.answer,
+          pending: false,
+        };
+      else
+        try {
+          const out = await germanAI(
+            'Grade fairly. Accept correct synonyms and word order variants. Identify substantive meaning/grammar errors, not stylistic differences. Return {"score":number from 0 to 1,"confidence":number,"feedback":Turkish string,"suggestedAnswer":string,"errorTypes":string[],"criteria":object}. For Schreiben use Erfüllung,Kohärenz,Wortschatz,Strukturen with evidence; estimated unofficial practice only. For Sprechen evaluate typed transcript only, exclude pronunciation and fluency scoring. Do not invent spoken observations.',
+            { task: t, answer },
+          );
+          const v = out.value;
+          if (
+            !Number.isFinite(v.score) ||
+            v.score < 0 ||
+            v.score > 1 ||
+            !Number.isFinite(v.confidence) ||
+            v.confidence < 0.8 ||
+            typeof v.feedback !== "string" ||
+            typeof v.suggestedAnswer !== "string"
+          )
+            throw new Error();
+          result = { ...v, pending: false, unofficial: true };
+        } catch {
+          result = {
+            score: null,
+            pending: true,
+            feedback: "AI değerlendirmesi bekliyor. Yanıtın kaydedildi.",
+          };
+        }
+      results[t.id] = result;
+      if (!result.pending) newlyGraded.add(t.id);
+    }
+    const tx = await db.transaction("write");
+    try {
+      const current = await tx.execute({
+        sql: "SELECT state FROM german_sessions WHERE id=? AND user_id=?",
+        args: [id, user],
+      });
+      if (current.rows[0]?.state !== "grading") return;
+      // Only vocabulary recall updates mastery; exam exposure is reported separately.
+      if (s.module === "vocabulary")
+        for (const t of tasks) {
+          const r = results[t.id];
+          if (r.pending || !newlyGraded.has(t.id)) continue;
+          for (const word of t.vocabularyIds) {
+            const old = await tx.execute({
+              sql: "SELECT data FROM german_memory WHERE user_id=? AND word_id=?",
+              args: [user, word],
+            });
+            const next = review(
+              old.rows[0] ? JSON.parse(String(old.rows[0].data)) : newMemory(),
+              r.score >= 0.8,
+              !t.options.length && !t.interaction,
+            );
+            await tx.execute({
+              sql: "INSERT INTO german_memory VALUES(?,?,?) ON CONFLICT(user_id,word_id) DO UPDATE SET data=excluded.data",
+              args: [user, word, JSON.stringify(next)],
+            });
+          }
+        }
+      await tx.execute({
+        sql: "UPDATE german_sessions SET results=?,state='done',version=version+1 WHERE id=? AND user_id=?",
+        args: [JSON.stringify(results), id, user],
+      });
+      await tx.commit();
+    } finally {
+      tx.close();
+    }
+  }
+  // Persisted recovery of grading requests interrupted by PM2 restart.
+  void ready
+    .then(async () => {
+      for (const r of (
+        await db.execute(
+          "SELECT id,user_id FROM german_sessions WHERE state='grading' LIMIT 20",
+        )
+      ).rows)
+        await grade(String(r.id), Number(r.user_id));
+    })
+    .catch(() => {});
+  let ticking = false;
+  const tick = async () => {
+    if (ticking) return;
+    ticking = true;
+    try {
+      await ready;
+      const local = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "Europe/Istanbul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        hour12: false,
+      }).format(new Date());
+      const connected = await db.execute(
+        "SELECT key FROM german_settings WHERE key='google_token'",
+      );
+      if (!connected.rows.length) return;
+      const date = local.slice(0, 10),
+        hour = Number(local.slice(11, 13));
+      if (hour < 3) return;
+      const last = await db.execute(
+        "SELECT started_at FROM german_jobs WHERE status IN ('done','partial') ORDER BY started_at DESC LIMIT 1",
+      );
+      const previous = last.rows[0]?.started_at;
+      if (previous && Date.now() - Date.parse(String(previous)) < 1800000)
+        return;
+      if (
+        previous &&
+        new Intl.DateTimeFormat("sv-SE", {
+          timeZone: "Europe/Istanbul",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date(String(previous))) === date
+      )
+        return;
+      const failed = await db.execute(
+        "SELECT started_at FROM german_jobs ORDER BY started_at DESC LIMIT 1",
+      );
+      if (
+        failed.rows[0] &&
+        Date.now() - Date.parse(String(failed.rows[0].started_at)) < 3600000
+      )
+        return;
+      await pipeline();
+    } catch {
+    } finally {
+      ticking = false;
+    }
+  };
+  const timer = setInterval(() => void tick(), 60000);
+  timer.unref();
+  void tick();
+  router.use(((error, _req, res, _next) =>
+    res
+      .status(error.status === 413 ? 413 : 400)
+      .json({ error: "Geçersiz istek." })) as express.ErrorRequestHandler);
+}
