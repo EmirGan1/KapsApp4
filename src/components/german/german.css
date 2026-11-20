@@ -430,3 +430,10 @@
 .kg button:focus-visible,.kg select:focus-visible { outline:3px solid var(--g-accent); outline-offset:3px; }
 @media(max-width:480px) { .kg-activity-grid { grid-template-columns:1fr 1fr; gap:10px; } .kg .kg-activity-card { padding:14px; min-height:220px; } .kg-activity-card strong { font-size:16px; } }
 @media(prefers-reduced-motion:reduce) { .kg .kg-activity-card { transition:none; } .kg .kg-activity-card:hover { transform:none; } }
+.kg-study-filters { display:flex; flex-wrap:wrap; gap:24px; padding:20px; background:var(--g-bg); border-radius:16px; margin:20px 0; }
+.kg-study-filters > label { display:grid; gap:8px; flex:1; min-width:180px; }
+.kg-study-filters select { padding:12px; min-height:48px; background:var(--g-card); color:var(--g-ink); border:1px solid var(--g-line); border-radius:10px; width:100%; }
+.kg-study-filters fieldset { border:0; min-width:0; flex:2; }
+.kg-levels { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+.kg-levels label { display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; background:var(--g-card); border:1px solid var(--g-line); border-radius:10px; cursor:pointer; }
+.kg .kg-levels input { width:18px; height:18px; accent-color:var(--g-accent); }

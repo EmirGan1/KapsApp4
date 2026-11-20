@@ -1,22 +1,24 @@
 import { randomUUID, randomInt } from 'node:crypto';
-import { activities } from '../../shared/germanActivities';
+import { activities, type StudyDirection } from '../../shared/germanActivities';
 import { normalize, type Task, type Vocabulary } from './learning';
 export function shuffle<T>(items: T[]): T[] {
   const a = [...items];
   for (let i = a.length - 1; i > 0; i--) { const j = randomInt(i + 1); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
-export function buildActivities(words: Vocabulary[], selected = 'mixed'): Task[] {
+export function buildActivities(words: Vocabulary[], selected = 'mixed', direction: StudyDirection = 'tr_de'): Task[] {
   const byType = new Map<string, Task[]>();
   const add = (w: Vocabulary, type: string, prompt: string, answer: string, options: string[] = [], interaction?: Task['interaction']) => {
     const task: Task = { id: randomUUID(), module: 'vocabulary', type, part: 1, level: w.level, prompt, passage: '', answer, options, alternatives: [], explanation: `${w.de} — ${w.tr}`, vocabularyIds: [w.id], evidence: '', fingerprint: randomUUID(), interaction };
     byType.set(type, [...(byType.get(type) ?? []), task]);
   };
   for (const w of words) {
+    const reverse = direction === 'tr_de' || (direction === 'mixed' && randomInt(2) === 1);
+    const source = reverse ? w.tr : w.de, target = reverse ? w.de : w.tr;
     const meanings = w.tr.split(/\s*\/\s*/u).filter(Boolean);
     const other = shuffle(words.filter(v => v.id !== w.id && !meanings.some(m => v.tr.includes(m)) && normalize(v.de) !== normalize(w.de)));
     if (other.length >= 2) {
-      add(w, 'choice', `“${w.de}” ne anlama geliyor?`, w.tr, shuffle([w.tr, ...other.slice(0, 3).map(v => v.tr)]));
+      add(w, 'choice', `“${source}” karşılığını seç.`, target, shuffle([target, ...other.slice(0, 3).map(v => reverse ? v.de : v.tr)]));
       const wrong = other[0];
       const truth = randomInt(2) === 1;
       add(w, 'true_false', `${w.de} = ${truth ? w.tr : wrong.tr}`, truth ? 'Doğru' : 'Yanlış', ['Doğru', 'Yanlış']);
@@ -38,7 +40,18 @@ export function buildActivities(words: Vocabulary[], selected = 'mixed'): Task[]
       const chars = Array.from(w.de), answer = chars[pos]; chars[pos] = '＿';
       add(w, 'missing', chars.join('') + ' · ' + w.tr, answer, shuffle([...new Set([answer, ...'aein'.split('')])]).slice(0, 5));
     }
-    add(w, 'translation', `Almanca yaz: ${w.tr}`, w.de);
+    add(w, 'translation', `${reverse ? 'Almanca' : 'Türkçe'} yaz: ${source}`, target);
+    // Only use full sentences actually present in the connected source.
+    if (tokens.length >= 3 && /[.!?]$/u.test(w.de.trim())) {
+      add(w, 'sentence_translation', `${reverse ? 'Almancaya' : 'Türkçeye'} çevir: ${source}`, target);
+      add(w, 'sentence_ordering', `Almanca cümleyi kur: ${w.tr}`, w.de, [], { tiles: shuffle(tokens) });
+      const index = tokens.findIndex((token, i) => i > 0 && /^[a-zäöüß]{3,}$/iu.test(token));
+      if (index >= 0) {
+        const hidden = tokens[index], masked = [...tokens]; masked[index] = '_____';
+        const distractors = [...new Set(words.flatMap(v => v.de.split(/\s+/u)).filter(t => /^[a-zäöüß]{3,}$/iu.test(t) && normalize(t) !== normalize(hidden)))];
+        if (distractors.length >= 2) add(w, 'sentence_gap', `${masked.join(' ')}\n${w.tr}`, hidden, shuffle([hidden, ...shuffle(distractors).slice(0, 3)]));
+      }
+    }
   }
   // Round-robin preserves diversity after the caller truncates the session.
   const keys = selected === 'mixed' ? activities.map(a => a[0]) : [selected];
