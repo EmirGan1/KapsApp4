@@ -102,6 +102,7 @@ import SubjectResources from "./components/SubjectResources";
 import AiChecker, { clearLegacyAiCheckerData } from "./components/AiChecker";
 
 const TravelPlanner = lazy(() => import("./components/travel/TravelPlanner"));
+const KapsGerman = lazy(() => import("./components/german/KapsGerman"));
 const KapsAppAi = lazy(() => import("./components/KapsAppAi"));
 
 export default function App() {
@@ -1806,6 +1807,7 @@ export default function App() {
       {/* Main Content Area */}
       <div className="app-content flex-1 flex flex-col min-h-0 min-w-0 relative w-full max-w-full overflow-hidden">
         {activeTab === 'travel' && <Suspense fallback={<p role="status" className="m-auto">Gezi defteri açılıyor…</p>}><TravelPlanner key={currentUserId} /></Suspense>}
+        {activeTab === 'german' && <Suspense fallback={<p role="status">Kaps German açılıyor…</p>}><KapsGerman key={currentUserId} /></Suspense>}
         {activeTab === 'dashboard' && (
           <Dashboard 
             socket={socket} 

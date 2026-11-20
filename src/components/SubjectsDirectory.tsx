@@ -17,6 +17,8 @@ import {
   ArrowRight,
   FileText
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { getAuthHeaders } from "../utils/api";
 import { getApiUrl } from "../utils/api";
 import { sortRolesByPosition } from "../types";
 import { SUBJECT_ROLE_GROUPS } from "../utils/subjectResources";
@@ -181,9 +183,12 @@ export default function SubjectsDirectory({
     })
     .sort((a, b) => Number(isMySubject(b)) - Number(isMySubject(a)));
 
+  const [germanAccess,setGermanAccess] = useState(false);
+  useEffect(()=>{let alive=true;fetch(getApiUrl("/api/kaps-german/access"),{headers:getAuthHeaders()}).then(r=>{if(alive)setGermanAccess(r.ok);}).catch(()=>{});return()=>{alive=false;};},[]);
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-7 pb-28">
+        {germanAccess && <Link to="/dersler/kaps-german" className="mb-6 flex min-h-24 items-center justify-between gap-5 rounded-2xl border border-emerald-300/30 bg-emerald-950 px-6 py-5 text-white"><div><span className="text-xs text-emerald-200">Kişisel Almanca çalışma alanı</span><h2 className="mt-1 text-2xl font-semibold">Kaps German</h2><p className="mt-1 text-xs text-emerald-100">Kelimelerin, tekrarların ve Goethe B1 hazırlığın.</p></div><Languages size={30}/></Link>}
         {/* ========================================================= */}
         {/* ACADEMIC STUDIO DIRECTORY HEADER                          */}
         {/* ========================================================= */}
