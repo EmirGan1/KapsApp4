@@ -313,3 +313,48 @@ test("idempotent Google synchronization preserves memory, archives removed sourc
     db.close();
   }
 });
+
+test('practice lifecycle: expired resume, blank submission guard, cursor, concurrent start and finish', async () => {
+  const db = createClient({ url: 'file::memory:' }), app = express();
+  await db.execute('CREATE TABLE users(id INTEGER PRIMARY KEY,username TEXT)');
+  await db.execute("INSERT INTO users VALUES(1,'Emirgan')");
+  registerGerman(app, db, async () => ({ id: 1 }), (_q,_r,n) => n());
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const ask = (path: string, body?: unknown) => fetch(`http://127.0.0.1:${address.port}/api/kaps-german${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type':'application/json', Authorization:'Bearer lifecycle-test' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  try {
+    await ask('/access');
+    for (const line of ['der Apfel — elma', 'die Schule — okul']) {
+      const w = parseDocument({ body:{ content:[paragraph(line)] } }).entries[0];
+      await db.execute({sql:'INSERT INTO german_words VALUES(?,?,1,?)',args:[w.id,JSON.stringify(w),new Date().toISOString()]});
+    }
+    const starts = await Promise.all([ask('/sessions', {activity:'translation'}), ask('/sessions', {activity:'translation'})]);
+    const ids = await Promise.all(starts.map(r => r.json()));
+    assert.equal(ids[0].id, ids[1].id);
+    const id = ids[0].id;
+    await db.execute({sql:'UPDATE german_sessions SET deadline=? WHERE id=?', args:['2020-01-01T00:00:00Z',id]});
+    assert.equal((await ask('/sessions', {activity:'translation'}).then(r=>r.json())).id,id);
+    assert.equal((await ask('/sessions/'+id+'/submit',{})).status,422);
+    let session = await ask('/sessions/'+id).then(r=>r.json());
+    assert.equal(session.state,'active');
+    const stored = JSON.parse(String((await db.execute({sql:'SELECT tasks FROM german_sessions WHERE id=?',args:[id]})).rows[0].tasks));
+    const saved = await ask('/sessions/'+id+'/answer', {taskId:session.tasks[0].id,answer:stored[0].answer,version:session.version,draft:true,positionTaskId:session.tasks[1].id});
+    assert.equal(saved.status,200);
+    session = await ask('/sessions/'+id).then(r=>r.json());
+    assert.equal(session.position,1);
+    assert.equal(session.answers[stored[0].id],stored[0].answer);
+    assert.equal(session.answers.__currentTask,undefined);
+    assert.equal((await ask('/sessions/'+id+'/submit',{})).status,202);
+    await ask('/sessions/'+id+'/submit',{}); // Repeated finish is idempotent.
+    for(let i=0;i<100;i++) { session=await ask('/sessions/'+id).then(r=>r.json()); if(session.state==='done')break; await new Promise(r=>setTimeout(r,10)); }
+    assert.equal(session.state,'done');
+    assert.equal(session.results[stored[0].id].score,1);
+    assert.notEqual((await ask('/sessions',{activity:'translation'}).then(r=>r.json())).id,id);
+    const exam = await ask('/sessions',{activity:'translation',mode:'exam'}).then(r=>r.json());
+    assert.notEqual(exam.id,id);
+    await db.execute({sql:'UPDATE german_sessions SET deadline=? WHERE id=?',args:['2020-01-01T00:00:00Z',exam.id]});
+    const es = await ask('/sessions/'+exam.id).then(r=>r.json());
+    assert.equal((await ask('/sessions/'+exam.id+'/answer',{taskId:es.tasks[0].id, answer:'late', version:es.version})).status,409);
+    assert.equal((await db.execute('PRAGMA integrity_check')).rows[0].integrity_check,'ok');
+  } finally { server.closeAllConnections(); await new Promise<void>(r=>server.close(()=>r())); db.close(); }
+});
