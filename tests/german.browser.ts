@@ -46,7 +46,7 @@ await vite.listen();
 const a = vite.httpServer!.address();
 assert.ok(a && typeof a !== "string");
 const base = "http://127.0.0.1:" + a.port;
-const browser = await chromium.launch();
+const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 try {
   await page.goto(base + "/dersler/kaps-german");
@@ -94,6 +94,24 @@ try {
   for (const content of ["die Schule — okul", "das Haus — ev", "Ich freue mich darauf. — Bunu sabırsızlıkla bekliyorum.", "der Baum — ağaç / ağaç bitkisi"]) {
     const w = parseDocument({ body: { content: [{ paragraph: { elements: [{ textRun: { content } }] } }] } }).entries[0];
     await db.execute({ sql: "INSERT INTO german_words VALUES(?,?,1,?)", args: [w.id, JSON.stringify(w), new Date().toISOString()] });
+  }
+  for (const direction of ['de_tr', 'tr_de']) {
+    await db.execute("UPDATE german_sessions SET state='done' WHERE state='active'");
+    await page.goto(base + "/dersler/kaps-german?tab=practice");
+    await page.getByRole('combobox', { name: 'Soru yönü' }).selectOption(direction);
+    for (const level of ['A1', 'B2', 'C1']) await page.getByRole('checkbox', { name: level, exact: true }).uncheck();
+    assert.equal(await page.getByRole('checkbox', { checked: true }).count(), 2);
+    await page.getByRole('button', { name: /Çeviri Görevi/ }).click();
+    await page.locator('.kg-activity-badge').waitFor();
+    const sid = new URL(page.url()).searchParams.get('session');
+    const row = (await db.execute({ sql: 'SELECT tasks FROM german_sessions WHERE id=?', args: [sid!] })).rows[0];
+    const tasks = JSON.parse(String(row.tasks));
+    for (const task of tasks) {
+      assert.ok(['A2','B1'].includes(task.level));
+      const source = JSON.parse(String((await db.execute({ sql: 'SELECT data FROM german_words WHERE id=?', args: [task.vocabularyIds[0]] })).rows[0].data));
+      assert.equal(task.answer, direction === 'de_tr' ? source.tr : source.de);
+    }
+    console.log('PASS mobile multi-level selection and backend language direction: ' + direction);
   }
   for (const [type, title] of activities) {
     await db.execute("UPDATE german_sessions SET state='done' WHERE state='active'");
