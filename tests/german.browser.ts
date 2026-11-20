@@ -4,6 +4,7 @@ import express from "express";
 import { createClient } from "@libsql/client";
 import { chromium } from "playwright";
 import { registerGerman } from "../src/server/german";
+import { activities } from "../src/shared/germanActivities";
 import { parseDocument } from "../src/server/german/learning";
 const db = createClient({ url: "file::memory:" }),
   app = express();
@@ -68,19 +69,18 @@ try {
     args: [word.id, JSON.stringify(word), new Date().toISOString()],
   });
   await page.reload();
-  await page
-    .getByRole("button", { name: "Çalışmaya Başla", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Alıştırmalar", exact: true }).click();
+  await page.getByRole("button", { name: /Çeviri Görevi/ }).click();
   await page
     .getByRole("textbox", { name: "Yanıtın", exact: true })
-    .fill("elma");
+    .fill("der Apfel");
   await page.waitForTimeout(1800);
   await page.reload();
   assert.equal(
     await page
       .getByRole("textbox", { name: "Yanıtın", exact: true })
       .inputValue(),
-    "elma",
+    "der Apfel",
   );
   page.once("dialog", (d) => d.accept());
   await page
@@ -90,6 +90,41 @@ try {
     .getByRole("heading", { name: "Oturum sonuçları", exact: true })
     .waitFor();
   assert.ok((await page.locator("main").textContent())?.includes("100 / 100"));
+  // Exercise every interaction against the real authenticated backend on mobile.
+  for (const content of ["die Schule — okul", "das Haus — ev", "Ich freue mich darauf. — Bunu sabırsızlıkla bekliyorum.", "der Baum — ağaç / ağaç bitkisi"]) {
+    const w = parseDocument({ body: { content: [{ paragraph: { elements: [{ textRun: { content } }] } }] } }).entries[0];
+    await db.execute({ sql: "INSERT INTO german_words VALUES(?,?,1,?)", args: [w.id, JSON.stringify(w), new Date().toISOString()] });
+  }
+  for (const [type, title] of activities) {
+    await db.execute("UPDATE german_sessions SET state='done' WHERE state='active'");
+    await page.goto(base + "/dersler/kaps-german?tab=practice");
+    await page.getByRole("button", { name: new RegExp(title) }).click();
+    await page.locator('.kg-activity-badge').waitFor();
+    const sessionId = new URL(page.url()).searchParams.get('session');
+    const row = (await db.execute({ sql: 'SELECT tasks FROM german_sessions WHERE id=?', args: [sessionId!] })).rows[0];
+    const task = JSON.parse(String(row.tasks))[0];
+    assert.equal(task.type, type);
+    const input = page.locator('.kg-activity-input');
+    if (task.interaction?.tiles) {
+      const wanted = type === 'spelling' ? Array.from(task.answer) : task.answer.split(' ');
+      for (const tile of wanted) await input.locator('.kg-tiles button:not(:disabled)').filter({ hasText: new RegExp('^' + String(tile === ' ' ? '␣' : tile).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') }).first().click();
+    } else if (type === 'matching') {
+      const answers = JSON.parse(task.answer);
+      for (let i = 0; i < answers.length; i++) await input.locator('select').nth(i).selectOption(answers[i]);
+    } else if (type === 'multi') {
+      for (const a of task.answer.split(' | ')) await input.getByRole('button').nth(task.options.indexOf(a)).click();
+    } else if (task.options.length) {
+      const optionIndex = task.options.indexOf(task.answer);
+      await input.getByRole('button').nth(optionIndex).click();
+    } else await input.getByRole('textbox').fill(task.answer);
+    await page.getByRole('button', { name: 'Yanıtı kontrol et', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: 'Harika, doğru!' }).waitFor();
+    await page.reload();
+    await page.locator('.kg-activity-badge').waitFor();
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    console.log('PASS mobile interaction, server evaluation and reload: ' + type);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page
     .getByRole("button", { name: "Goethe B1 Hazırlık", exact: true })
     .click();
