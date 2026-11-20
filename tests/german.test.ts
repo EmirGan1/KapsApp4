@@ -123,6 +123,9 @@ test("real API permissions, source-independent recall, private sessions, version
       sql: "INSERT INTO german_words VALUES(?,?,1,?)",
       args: [word.id, JSON.stringify(word), new Date().toISOString()],
     });
+    assert.equal((await ask('/sessions', 1, { levels: [] })).status, 400);
+    assert.equal((await ask('/sessions', 1, { levels: ['C1'] })).status, 409);
+    assert.equal((await ask('/sessions', 1, { levels: ['B1'], direction: 'invalid' })).status, 400);
     const start = await ask("/sessions", 1, {
       module: "vocabulary",
       mode: "practice",
