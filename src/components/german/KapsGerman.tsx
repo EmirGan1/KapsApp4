@@ -1,3 +1,5 @@
+import ActivityInput from './ActivityInput';
+import { activities, activityLabel } from '../../shared/germanActivities';
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -147,9 +149,9 @@ export default function KapsGerman() {
       setBusy(false);
     }
   };
-  const start = (module = "vocabulary", mode = "practice") =>
+  const start = (module = "vocabulary", mode = "practice", activity = "mixed") =>
     void action(async () => {
-      const r = await request("/sessions", { module, mode });
+      const r = await request("/sessions", { module, mode, activity });
       setIndex(0);
       setAnswers({});
       navigate(
@@ -159,18 +161,19 @@ export default function KapsGerman() {
           r.id,
       );
     });
-  const save = async () => {
+  const save = async (draft = false) => {
     if (!session) return;
     const task = session.tasks[index],
       answer = answers[task.id] ?? "";
     const result = await request("/sessions/" + session.id + "/answer", {
+      draft,
       taskId: task.id,
       answer,
       version: session.version,
     });
     const updated = await request("/sessions/" + session.id);
     setSession(updated);
-    setFeedback(result.feedback ?? updated.results?.[task.id] ?? null);
+    if (!draft) setFeedback(result.feedback ?? updated.results?.[task.id] ?? null);
   };
   useEffect(() => {
     if (
@@ -192,7 +195,7 @@ export default function KapsGerman() {
       return;
     const timer = setTimeout(() => {
       autoSaved.current = identity;
-      void action(save);
+      void action(() => save(true));
     }, 1000);
     return () => clearTimeout(timer);
   }, [answers, index, session, busy, sessionId]);
@@ -212,7 +215,7 @@ export default function KapsGerman() {
   }, [now, session]);
   const submit = () =>
     void action(async () => {
-      if (Date.parse(session.deadline) > Date.now()) await save();
+      if (Date.parse(session.deadline) > Date.now()) await save(true);
       if (
         !confirm(
           "Bu oturumu tamamlayıp değerlendirmeye göndermek istiyor musun?",
@@ -323,7 +326,7 @@ export default function KapsGerman() {
                 <section className="kg-card kg-task">
                   <p>
                     {index + 1} / {session.tasks.length} ·{" "}
-                    {session.tasks[index]?.type}
+                    {activityLabel(session.tasks[index]?.type)}
                   </p>
                   <div className="kg-progress">
                     <i
@@ -336,49 +339,7 @@ export default function KapsGerman() {
                     {session.tasks[index]?.passage}
                   </p>
                   <h2 lang="de">{session.tasks[index]?.prompt}</h2>
-                  {session.tasks[index]?.options.length > 0 ? (
-                    <div className="kg-options">
-                      {session.tasks[index].options.map((o: string) => (
-                        <button
-                          key={o}
-                          aria-pressed={answers[session.tasks[index].id] === o}
-                          onClick={() =>
-                            setAnswers((a) => ({
-                              ...a,
-                              [session.tasks[index].id]: o,
-                            }))
-                          }
-                        >
-                          {o}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <>
-                      <textarea
-                        ref={input}
-                        aria-label="Yanıtın"
-                        rows={8}
-                        maxLength={12000}
-                        value={answers[session.tasks[index]?.id] ?? ""}
-                        onChange={(e) =>
-                          setAnswers((a) => ({
-                            ...a,
-                            [session.tasks[index].id]: e.target.value,
-                          }))
-                        }
-                      />
-                      <p className="kg-note">
-                        {
-                          (answers[session.tasks[index].id] ?? "")
-                            .trim()
-                            .split(/\s+/u)
-                            .filter(Boolean).length
-                        }{" "}
-                        kelime
-                      </p>
-                    </>
-                  )}
+                  <ActivityInput key={session.tasks[index].id} task={session.tasks[index]} value={answers[session.tasks[index].id] ?? ""} disabled={busy} onChange={value => { setFeedback(null); setAnswers(a => ({ ...a, [session.tasks[index].id]: value })); }} />
                   {session.module === "Sprechen" && (
                     <>
                       <p className="kg-note">
@@ -426,14 +387,14 @@ export default function KapsGerman() {
                     </>
                   )}
                   <div className="kg-actions">
-                    <button disabled={busy} onClick={() => void action(save)}>
-                      Yanıtı kaydet
+                    <button disabled={busy} onClick={() => void action(() => save())}>
+                      Yanıtı kontrol et
                     </button>
                     <button
                       disabled={busy}
                       onClick={() =>
                         void action(async () => {
-                          await save();
+                          await save(true);
                           setIndex((i) => Math.max(0, i - 1));
                           setFeedback(null);
                         })
@@ -445,7 +406,7 @@ export default function KapsGerman() {
                       disabled={busy || index === session.tasks.length - 1}
                       onClick={() =>
                         void action(async () => {
-                          await save();
+                          await save(true);
                           setIndex((i) => i + 1);
                           setFeedback(null);
                         })
@@ -458,8 +419,8 @@ export default function KapsGerman() {
                     </button>
                   </div>
                   {feedback && session.mode === "practice" && (
-                    <p className="kg-note" role="status">
-                      {feedback.feedback}
+                    <p className={`kg-feedback ${feedback.score === 1 ? "kg-success" : ""}`} role="status">
+                      <strong>{feedback.score === 1 ? "Harika, doğru! " : "Bir kez daha düşün. "}</strong>{feedback.feedback}
                     </p>
                   )}
                   <p className="kg-note">
@@ -665,15 +626,10 @@ export default function KapsGerman() {
               )}
               {tab === "practice" && (
                 <section className="kg-card">
-                  <h2>10 soruluk günlük çalışma</h2>
-                  <p>
-                    Hazır soru bankası kullanılır. AI kapalıysa kendi
-                    koleksiyonundaki ifadelerle anlam hatırlama çalışması
-                    yapılır.
-                  </p>
-                  <button onClick={() => start()} disabled={busy}>
-                    Çalışmaya Başla
-                  </button>
+                  <div className="kg-section"><div><p className="kg-note">KENDİ KELİMELERİN. YENİ MEYDAN OKUMALAR.</p><h2>Bugün nasıl öğrenmek istersin?</h2></div><button onClick={() => start()} disabled={busy}>Karışık çalışmaya başla →</button></div>
+                  <p>10 soruluk turlar · İlerlemen kaydedilir · Hız baskısı yok</p>
+                  <div className="kg-activity-grid">{activities.map(([id, title, description, icon]) => <button className="kg-activity-card" key={id} disabled={busy} onClick={() => start("vocabulary", "practice", id)}><span className="kg-activity-icon">{icon}</span><strong>{title}</strong><span>{description}</span><small>Çalışmaya başla →</small></button>)}</div>
+                  <p className="kg-note">Artikel için artikelli isim, sıralama için en az üç kelimelik ifade, çoklu seçim için / ile ayrılmış birden fazla anlam gerekir. Kart oyunları en az üç farklı kelimeyle açılır. Devam eden turun varsa önce o açılır.</p>
                 </section>
               )}
               {tab === "goethe" && (
