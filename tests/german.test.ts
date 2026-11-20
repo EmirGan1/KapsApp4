@@ -126,15 +126,21 @@ test("real API permissions, source-independent recall, private sessions, version
     const start = await ask("/sessions", 1, {
       module: "vocabulary",
       mode: "practice",
+      activity: "translation",
     }).then((r) => r.json());
-    const s = await ask("/sessions/" + start.id).then((r) => r.json());
+    let s = await ask("/sessions/" + start.id).then((r) => r.json());
+    const draft = await ask("/sessions/" + start.id + "/answer", 1, {
+      taskId: s.tasks[0].id, answer: "der Apfel", version: s.version, draft: true,
+    }).then(r => r.json());
+    assert.equal(draft.feedback, undefined, "Autosave must not reveal solutions");
+    s = await ask("/sessions/" + start.id).then((r) => r.json());
     assert.equal(s.tasks[0].answer, undefined);
     assert.equal((await ask("/sessions/" + start.id, 2)).status, 404);
     assert.equal(
       (
         await ask("/sessions/" + start.id + "/answer", 1, {
           taskId: s.tasks[0].id,
-          answer: "elma",
+          answer: "der Apfel",
           version: s.version,
         })
       ).status,
