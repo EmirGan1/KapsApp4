@@ -1,3 +1,5 @@
+import { buildActivities } from './activities';
+import { activities } from '../../shared/germanActivities';
 import express from "express";
 import type { Express, Request, RequestHandler } from "express";
 import type { Client } from "@libsql/client";
@@ -411,12 +413,13 @@ export function registerGerman(
   router.post(
     "/sessions",
     wrap(async (req, res) => {
-      const { module = "vocabulary", mode = "practice" } = req.body ?? {};
+      const { module = "vocabulary", mode = "practice", activity = "mixed" } = req.body ?? {};
       if (
         !["vocabulary", ...Object.keys(EXAM_STRUCTURE)].includes(module) ||
         !["practice", "exam"].includes(mode)
       )
         return res.sendStatus(400);
+      if (activity !== "mixed" && !activities.some(a => a[0] === activity)) return res.sendStatus(400);
       if (module === "Hören")
         return res.status(409).json({
           error:
@@ -443,24 +446,13 @@ export function registerGerman(
         sql: "SELECT word_id,data FROM german_memory WHERE user_id=?",
         args: [res.locals.germanUser],
       });
-      if (module === "vocabulary" && !tasks.length)
-        tasks = vocab.map((v) => ({
-          id: "recall-" + v.id,
-          module,
-          type: "recall",
-          part: 1,
-          level: v.level,
-          prompt: v.de,
-          passage: "",
-          options: [],
-          answer: v.tr,
-          alternatives: v.tr.split(/\s*\/\s*/u),
-          explanation: v.tr,
-          vocabularyIds: [v.id],
-          evidence: "",
-          fingerprint: v.id,
-        }));
-      tasks.sort(
+      if (module === "vocabulary") {
+        const due = new Map(memory.rows.map(r => [String(r.word_id), Date.parse(JSON.parse(String(r.data)).due)]));
+        const prioritized = [...vocab].sort((a, b) => (due.get(a.id) ?? 0) - (due.get(b.id) ?? 0));
+        const games = buildActivities(prioritized, activity);
+        tasks = activity === "mixed" ? [...games.slice(0, 10), ...tasks, ...games.slice(10)] : games;
+      }
+      if (module !== "vocabulary") tasks.sort(
         (a, b) =>
           Date.parse(
             JSON.parse(
@@ -498,7 +490,7 @@ export function registerGerman(
       if (!tasks.length)
         return res.status(409).json({
           error:
-            "Önce Google Docs kelimelerini eşitle ve doğrulanmış soruların hazırlanmasını bekle.",
+            "Bu yöntem için uygun kelime bulunamadı. Google Docs kelimelerini eşitle veya başka bir alıştırma seç.",
         });
       const id = randomUUID(),
         start = new Date(),
@@ -587,7 +579,7 @@ export function registerGerman(
             "Oturum başka sekmede değişti. Yenileyip taslağını yeniden kaydet.",
         });
       const task = tasks.find((t) => t.id === taskId)!;
-      if (s.mode === "practice" && task.options.length) {
+      if (!req.body.draft && s.mode === "practice" && (task.options.length || task.interaction || normalize(task.answer) === normalize(answer))) {
         const correct = normalize(task.answer) === normalize(answer);
         return res.json({
           ok: true,
@@ -651,7 +643,7 @@ export function registerGerman(
       );
       if (!answer.trim())
         result = { score: 0, feedback: "Yanıt verilmedi.", pending: false };
-      else if (t.options.length || exact)
+      else if (t.options.length || t.interaction || exact)
         result = {
           score: exact ? 1 : 0,
           feedback: t.explanation,
@@ -706,7 +698,7 @@ export function registerGerman(
             const next = review(
               old.rows[0] ? JSON.parse(String(old.rows[0].data)) : newMemory(),
               r.score >= 0.8,
-              !t.options.length,
+              !t.options.length && !t.interaction,
             );
             await tx.execute({
               sql: "INSERT INTO german_memory VALUES(?,?,?) ON CONFLICT(user_id,word_id) DO UPDATE SET data=excluded.data",

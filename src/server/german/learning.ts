@@ -203,6 +203,7 @@ export const EXAM_STRUCTURE = {
   },
 };
 export type Task = {
+  interaction?: { tiles?: string[]; left?: string[]; right?: string[] };
   id: string;
   module: string;
   type: string;
