@@ -1,5 +1,5 @@
 import ActivityInput from './ActivityInput';
-import { activities, activityLabel } from '../../shared/germanActivities';
+import { activities, activityLabel, studyLevels, type StudyDirection } from '../../shared/germanActivities';
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -77,6 +77,8 @@ export default function KapsGerman() {
     [now, setNow] = useState(Date.now());
   const [speech, setSpeech] = useState(""),
     [feedback, setFeedback] = useState<any>(null);
+  const [direction, setDirection] = useState<StudyDirection>("tr_de");
+  const [levels, setLevels] = useState<string[]>(["A1", "A2", "B1", "B2", "C1"]);
   const sessionRef = useRef<any>(null);
   const autoSaved = useRef("");
   const expired = useRef("");
@@ -151,7 +153,8 @@ export default function KapsGerman() {
   };
   const start = (module = "vocabulary", mode = "practice", activity = "mixed") =>
     void action(async () => {
-      const r = await request("/sessions", { module, mode, activity });
+      if (module === "vocabulary" && !levels.length) throw new Error("En az bir seviye seç.");
+      const r = await request("/sessions", { module, mode, activity, direction, levels });
       setIndex(0);
       setAnswers({});
       navigate(
@@ -627,6 +630,12 @@ export default function KapsGerman() {
               {tab === "practice" && (
                 <section className="kg-card">
                   <div className="kg-section"><div><p className="kg-note">KENDİ KELİMELERİN. YENİ MEYDAN OKUMALAR.</p><h2>Bugün nasıl öğrenmek istersin?</h2></div><button onClick={() => start()} disabled={busy}>Karışık çalışmaya başla →</button></div>
+                  <div className="kg-study-filters">
+                    <label>Soru yönü<select aria-label="Soru yönü" value={direction} onChange={e => setDirection(e.target.value as StudyDirection)}><option value="de_tr">Almanca → Türkçe</option><option value="tr_de">Türkçe → Almanca</option><option value="mixed">İki yön karışık</option></select></label>
+                    <fieldset><legend>Çalışma seviyeleri · birden fazla seçebilirsin</legend><div className="kg-levels">{studyLevels.map(level => <label key={level}><input type="checkbox" checked={levels.includes(level)} onChange={e => setLevels(old => e.target.checked ? [...old, level] : old.filter(l => l !== level))} />{level}</label>)}</div></fieldset>
+                  </div>
+                  {!levels.length && <p role="alert">Başlamak için en az bir seviye seç.</p>}
+                  <p className="kg-note">Dil yönü anlam kartlarına ve çevirilere uygulanır. Artikel, yazım ve cümle kurma Almanca çalışılır. Seviye seçimi soru kaynağını ve seçenekleri sınırlar. Açık turun varsa mevcut ayarlarıyla devam eder.</p>
                   <p>10 soruluk turlar · İlerlemen kaydedilir · Hız baskısı yok</p>
                   <div className="kg-activity-grid">{activities.map(([id, title, description, icon]) => <button className="kg-activity-card" key={id} disabled={busy} onClick={() => start("vocabulary", "practice", id)}><span className="kg-activity-icon">{icon}</span><strong>{title}</strong><span>{description}</span><small>Çalışmaya başla →</small></button>)}</div>
                   <p className="kg-note">Artikel için artikelli isim, sıralama için en az üç kelimelik ifade, çoklu seçim için / ile ayrılmış birden fazla anlam gerekir. Kart oyunları en az üç farklı kelimeyle açılır. Devam eden turun varsa önce o açılır.</p>
