@@ -427,8 +427,8 @@ export function registerGerman(
             "Güvenilir ses sağlayıcısı yapılandırılmadığı için Hören henüz kullanılamıyor.",
         });
       const active = await db.execute({
-        sql: "SELECT id FROM german_sessions WHERE user_id=? AND state='active' AND module=?",
-        args: [res.locals.germanUser, module],
+        sql: "SELECT id FROM german_sessions WHERE user_id=? AND state='active' AND module=? AND mode=? ORDER BY started_at DESC",
+        args: [res.locals.germanUser, module, mode],
       });
       if (active.rows.length) return res.json({ id: active.rows[0].id });
       const vocab = (await words()).filter(w => module !== "vocabulary" || levels.includes(w.level));
@@ -499,7 +499,14 @@ export function registerGerman(
           module === "vocabulary"
             ? 15
             : EXAM_STRUCTURE[module as keyof typeof EXAM_STRUCTURE].minutes;
-      await db.execute({
+      const tx = await db.transaction("write");
+      try {
+        const existing = await tx.execute({
+          sql: "SELECT id FROM german_sessions WHERE user_id=? AND state='active' AND module=? AND mode=? ORDER BY started_at DESC LIMIT 1",
+          args: [res.locals.germanUser, module, mode],
+        });
+        if (existing.rows.length) { await tx.commit(); return res.json({ id: existing.rows[0].id }); }
+      await tx.execute({
         sql: "INSERT INTO german_sessions(id,user_id,module,mode,tasks,started_at,deadline) VALUES(?,?,?,?,?,?,?)",
         args: [
           id,
@@ -511,6 +518,8 @@ export function registerGerman(
           new Date(start.getTime() + minutes * 60000).toISOString(),
         ],
       });
+        await tx.commit();
+      } catch (error) { await tx.rollback(); throw error; }
       res.json({ id });
     }),
   );
@@ -541,7 +550,8 @@ export function registerGerman(
                 evidence: undefined,
               },
         ),
-        answers: JSON.parse(String(s.answers)),
+        position: Math.max(0, tasks.findIndex(t => t.id === JSON.parse(String(s.answers)).__currentTask)),
+        answers: Object.fromEntries(Object.entries(JSON.parse(String(s.answers))).filter(([key]) => key !== "__currentTask")),
         results:
           s.mode === "exam" && s.state !== "done"
             ? {}
@@ -555,21 +565,22 @@ export function registerGerman(
     wrap(async (req, res) => {
       const s = await owned(req.params.id, res.locals.germanUser);
       if (!s) return res.sendStatus(404);
-      const { taskId, answer, version } = req.body ?? {};
+      const { taskId, answer, version, positionTaskId } = req.body ?? {};
       if (
         typeof answer !== "string" ||
         answer.length > 12000 ||
         !Number.isSafeInteger(version)
       )
         return res.sendStatus(400);
-      if (s.state !== "active" || Date.now() > Date.parse(String(s.deadline)))
+      if (s.state !== "active" || (s.mode === "exam" && Date.now() > Date.parse(String(s.deadline))))
         return res.status(409).json({
           error:
             "Oturum süresi doldu veya tamamlandı. Kaydedilmiş yanıtlarla sonuçlandırabilirsin.",
         });
       const tasks = JSON.parse(String(s.tasks)) as Task[];
       if (!tasks.some((t) => t.id === taskId)) return res.sendStatus(400);
-      const answers = { ...JSON.parse(String(s.answers)), [taskId]: answer };
+      if (positionTaskId !== undefined && !tasks.some(t => t.id === positionTaskId)) return res.sendStatus(400);
+      const answers = { ...JSON.parse(String(s.answers)), [taskId]: answer, __currentTask: positionTaskId ?? taskId };
       const r = await db.execute({
         sql: "UPDATE german_sessions SET answers=?,version=version+1 WHERE id=? AND user_id=? AND version=? AND state='active'",
         args: [JSON.stringify(answers), s.id, res.locals.germanUser, version],
@@ -615,6 +626,12 @@ export function registerGerman(
         s = await owned(req.params.id, user);
       if (!s) return res.sendStatus(404);
       if (s.state !== "active") return res.json({ ok: true });
+      if (s.mode === "practice") {
+        const tasks = JSON.parse(String(s.tasks)) as Task[];
+        const answers = JSON.parse(String(s.answers));
+        if (!tasks.some(t => typeof answers[t.id] === "string" && answers[t.id].trim()))
+          return res.status(422).json({ error: "Henüz yanıt vermedin. Çalışmaya devam edebilir veya kaydedip çıkabilirsin." });
+      }
       const r = await db.execute({
         sql: "UPDATE german_sessions SET state='grading',version=version+1 WHERE id=? AND user_id=? AND state='active'",
         args: [s.id, user],
