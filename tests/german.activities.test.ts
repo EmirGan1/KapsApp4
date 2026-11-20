@@ -53,3 +53,12 @@ test('multi-level selection rejects empty or invalid client settings', () => {
   assert.equal(validStudyFilters('de_tr', ['C9']), false);
   assert.equal(validStudyFilters('xx', ['B1']), false);
 });
+
+test('large collections prepare a bounded pool and still find sentences after early vocabulary', () => {
+  const large = Array.from({length:5000}, (_,i) => ({...words[0],id:'large-'+i,de:'der Begriff'+i,tr:'anlam'+i}));
+  large.push(words[3]);
+  const tasks = buildActivities(large);
+  assert.ok(tasks.length < 500);
+  assert.ok(tasks.some(t => t.type === 'sentence_ordering'));
+  assert.ok(buildActivities(large, 'sentence_translation').every(t => t.vocabularyIds[0] === words[3].id));
+});
