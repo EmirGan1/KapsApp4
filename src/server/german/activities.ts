@@ -7,16 +7,26 @@ export function shuffle<T>(items: T[]): T[] {
   return a;
 }
 export function buildActivities(words: Vocabulary[], selected = 'mixed', direction: StudyDirection = 'tr_de'): Task[] {
+  // Prepare a bounded session pool, never thousands of unused permutations.
+  const sentence = (w: Vocabulary) => w.de.trim().split(/\s+/u).length >= 3 && /[.!?]$/u.test(w.de.trim());
+  let candidates: Vocabulary[];
+  if (selected.startsWith('sentence_')) candidates = words.filter(sentence).slice(0, 16);
+  else if (selected === 'article') candidates = words.filter(w => /^(der|die|das) /u.test(w.de)).slice(0, 16);
+  else if (selected === 'ordering') candidates = words.filter(w => w.de.split(/\s+/u).length >= 3).slice(0, 16);
+  else if (selected === 'multi') candidates = words.filter(w => w.tr.includes('/')).slice(0, 16);
+  else candidates = words.slice(0, 16);
+  if (selected === 'mixed') candidates = [...new Map([...candidates, ...words.filter(sentence).slice(0, 4), ...words.filter(w => /^(der|die|das) /u.test(w.de)).slice(0, 4), ...words.filter(w => w.tr.includes('/')).slice(0, 4)].map(w => [w.id, w])).values()];
+  const distractorPool = [...new Map([...words.slice(0, 32), ...candidates].map(w => [w.id, w])).values()];
   const byType = new Map<string, Task[]>();
   const add = (w: Vocabulary, type: string, prompt: string, answer: string, options: string[] = [], interaction?: Task['interaction']) => {
     const task: Task = { id: randomUUID(), module: 'vocabulary', type, part: 1, level: w.level, prompt, passage: '', answer, options, alternatives: [], explanation: `${w.de} — ${w.tr}`, vocabularyIds: [w.id], evidence: '', fingerprint: randomUUID(), interaction };
     byType.set(type, [...(byType.get(type) ?? []), task]);
   };
-  for (const w of words) {
+  for (const w of candidates) {
     const reverse = direction === 'tr_de' || (direction === 'mixed' && randomInt(2) === 1);
     const source = reverse ? w.tr : w.de, target = reverse ? w.de : w.tr;
     const meanings = w.tr.split(/\s*\/\s*/u).filter(Boolean);
-    const other = shuffle(words.filter(v => v.id !== w.id && !meanings.some(m => v.tr.includes(m)) && normalize(v.de) !== normalize(w.de)));
+    const other = shuffle(distractorPool.filter(v => v.id !== w.id && !meanings.some(m => v.tr.includes(m)) && normalize(v.de) !== normalize(w.de)));
     if (other.length >= 2) {
       add(w, 'choice', `“${source}” karşılığını seç.`, target, shuffle([target, ...other.slice(0, 3).map(v => reverse ? v.de : v.tr)]));
       const wrong = other[0];
@@ -48,7 +58,7 @@ export function buildActivities(words: Vocabulary[], selected = 'mixed', directi
       const index = tokens.findIndex((token, i) => i > 0 && /^[a-zäöüß]{3,}$/iu.test(token));
       if (index >= 0) {
         const hidden = tokens[index], masked = [...tokens]; masked[index] = '_____';
-        const distractors = [...new Set(words.flatMap(v => v.de.split(/\s+/u)).filter(t => /^[a-zäöüß]{3,}$/iu.test(t) && normalize(t) !== normalize(hidden)))];
+        const distractors = [...new Set(distractorPool.flatMap(v => v.de.split(/\s+/u)).filter(t => /^[a-zäöüß]{3,}$/iu.test(t) && normalize(t) !== normalize(hidden)))];
         if (distractors.length >= 2) add(w, 'sentence_gap', `${masked.join(' ')}\n${w.tr}`, hidden, shuffle([hidden, ...shuffle(distractors).slice(0, 3)]));
       }
     }
@@ -56,6 +66,6 @@ export function buildActivities(words: Vocabulary[], selected = 'mixed', directi
   // Round-robin preserves diversity after the caller truncates the session.
   const keys = selected === 'mixed' ? activities.map(a => a[0]) : [selected];
   const result: Task[] = [];
-  for (let i = 0; i < words.length; i++) keys.forEach((key, offset) => { const group = byType.get(key); if (group && i < group.length) result.push(group[(i + offset) % group.length]); });
+  for (let i = 0; i < candidates.length; i++) keys.forEach((key, offset) => { const group = byType.get(key); if (group && i < group.length) result.push(group[(i + offset) % group.length]); });
   return result;
 }
