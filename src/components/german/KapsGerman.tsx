@@ -27,6 +27,7 @@ async function request(path: string, data?: unknown) {
       ),
       body: data === undefined ? undefined : JSON.stringify(data),
       cache: "no-store",
+      keepalive: data !== undefined,
       signal: AbortSignal.timeout(45000),
     });
   } catch {
@@ -81,7 +82,13 @@ export default function KapsGerman() {
   const [levels, setLevels] = useState<string[]>(["A1", "A2", "B1", "B2", "C1"]);
   const sessionRef = useRef<any>(null);
   const autoSaved = useRef("");
+  const answerRef = useRef(answers);
+  answerRef.current = answers;
   const expired = useRef("");
+  const actionLock = useRef(false);
+  const [reloadSession, setReloadSession] = useState(0);
+  const [clockOffset, setClockOffset] = useState(0);
+  const [saveStatus, setSaveStatus] = useState("");
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
@@ -111,17 +118,22 @@ export default function KapsGerman() {
       return;
     }
     let alive = true;
+    setSession(null);
+    sessionRef.current = null;
+    let initial = true;
     const load = () =>
       request("/sessions/" + sessionId)
         .then((s) => {
           if (!alive) return;
+          sessionRef.current = s;
           setSession(s);
+          setClockOffset(Date.parse(s.serverNow) - Date.now());
+          if (initial) { setIndex(s.position ?? 0); initial = false; }
           setAnswers((old) => ({ ...s.answers, ...old }));
         })
         .catch((e) => {
           if (alive) setError(e.message);
         });
-    setAnswers({});
     void load();
     const t = setInterval(() => {
       if (!document.hidden && sessionRef.current?.state !== "active")
@@ -131,16 +143,21 @@ export default function KapsGerman() {
       alive = false;
       clearInterval(t);
     };
-  }, [sessionId]);
+  }, [sessionId, reloadSession]);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
   const go = (next: string) => {
     setFeedback(null);
-    navigate("/dersler/kaps-german?tab=" + next);
+    void action(async () => {
+      if (session?.state === "active") await save(true);
+      navigate("/dersler/kaps-german?tab=" + next);
+    });
   };
   const action = async (fn: () => Promise<void>) => {
+    if (actionLock.current) return;
+    actionLock.current = true;
     setError("");
     setBusy(true);
     try {
@@ -148,6 +165,7 @@ export default function KapsGerman() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      actionLock.current = false;
       setBusy(false);
     }
   };
@@ -155,8 +173,12 @@ export default function KapsGerman() {
     void action(async () => {
       if (module === "vocabulary" && !levels.length) throw new Error("En az bir seviye seç.");
       const r = await request("/sessions", { module, mode, activity, direction, levels });
-      setIndex(0);
+      if (session?.state === "active") await save(true);
+      setSession(null);
       setAnswers({});
+      setFeedback(null);
+      setSaveStatus("");
+      setReloadSession(n => n + 1);
       navigate(
         "/dersler/kaps-german?tab=" +
           (module === "vocabulary" ? "practice" : "goethe") +
@@ -164,19 +186,29 @@ export default function KapsGerman() {
           r.id,
       );
     });
-  const save = async (draft = false) => {
-    if (!session) return;
-    const task = session.tasks[index],
-      answer = answers[task.id] ?? "";
-    const result = await request("/sessions/" + session.id + "/answer", {
-      draft,
-      taskId: task.id,
-      answer,
-      version: session.version,
-    });
-    const updated = await request("/sessions/" + session.id);
-    setSession(updated);
-    if (!draft) setFeedback(result.feedback ?? updated.results?.[task.id] ?? null);
+  const save = async (draft = false, nextIndex = index) => {
+    if (!session || session.state !== "active") return;
+    const targetId = session.id, task = session.tasks[index];
+    const run = async () => {
+      setSaveStatus("Kaydediliyor…");
+      const current = sessionRef.current;
+      if (!current || current.id !== targetId || current.state !== "active") return;
+      const answer = answerRef.current[task.id] ?? "";
+      const result = await request("/sessions/" + targetId + "/answer", {
+        draft, taskId: task.id, answer, version: current.version,
+        positionTaskId: session.tasks[nextIndex]?.id ?? task.id,
+      });
+      const updated = await request("/sessions/" + targetId);
+      if (sessionRef.current?.id !== targetId) return;
+      sessionRef.current = updated;
+      setSession(updated);
+      setSaveStatus("Kaydedildi");
+      if (draft && (answerRef.current[task.id] ?? "") !== answer) await run();
+      if (!draft) setFeedback(result.feedback ?? updated.results?.[task.id] ?? null);
+    };
+    const job = saveQueue.current.catch(() => {}).then(run);
+    saveQueue.current = job;
+    try { await job; } catch (error) { setSaveStatus("Kaydedilemedi. Bağlantını kontrol edip tekrar kaydet."); throw error; }
   };
   useEffect(() => {
     if (
@@ -206,7 +238,10 @@ export default function KapsGerman() {
     if (
       !session ||
       session.state !== "active" ||
-      Date.parse(session.deadline) > now ||
+      session.mode !== "exam" ||
+      busy ||
+      session.id !== sessionId ||
+      Date.parse(session.deadline) > now + clockOffset ||
       expired.current === session.id
     )
       return;
@@ -218,7 +253,7 @@ export default function KapsGerman() {
   }, [now, session]);
   const submit = () =>
     void action(async () => {
-      if (Date.parse(session.deadline) > Date.now()) await save(true);
+      if (session.mode === "practice" || Date.parse(session.deadline) > Date.now() + clockOffset) await save(true);
       if (
         !confirm(
           "Bu oturumu tamamlayıp değerlendirmeye göndermek istiyor musun?",
@@ -229,6 +264,18 @@ export default function KapsGerman() {
       setSession(await request("/sessions/" + session.id));
       await refresh();
     });
+  useEffect(() => {
+    const reconnect = () => { autoSaved.current = ""; setReloadSession(n => n + 1); };
+    window.addEventListener("online", reconnect);
+    return () => window.removeEventListener("online", reconnect);
+  }, []);
+  useEffect(() => {
+    const background = () => {
+      if (document.hidden && session?.state === "active") void save(true).catch(() => {});
+    };
+    document.addEventListener("visibilitychange", background);
+    return () => document.removeEventListener("visibilitychange", background);
+  }, [session, index]);
   const words = data?.words ?? [],
     sessions = data?.sessions ?? [],
     learned = words.filter((w: any) => w.memory.attempts > 0),
@@ -289,6 +336,7 @@ export default function KapsGerman() {
             .map(([id, label]) => (
               <button
                 key={id}
+                disabled={busy}
                 aria-current={tab === id ? "page" : undefined}
                 onClick={() => go(id)}
               >
@@ -302,7 +350,7 @@ export default function KapsGerman() {
               {error}
             </p>
           )}
-          {session ? (
+          {sessionId && (!session || session.id !== sessionId) ? <section className="kg-card"><p role="status">{error ? "Çalışman açılamadı. Kaydedilmiş yanıtların korunuyor." : "Çalışman yükleniyor…"}</p>{error && <><button disabled={busy} onClick={() => {setError("");setReloadSession(n => n + 1);}}>Tekrar dene</button><button onClick={() => go("practice")}>Alıştırmalara dön</button></>}</section> : session ? (
             <>
               <div className="kg-section">
                 <h2>
@@ -311,11 +359,7 @@ export default function KapsGerman() {
                     : session.module + " · Goethe tarzı çalışma"}
                 </h2>
                 <span>
-                  {Math.max(
-                    0,
-                    Math.ceil((Date.parse(session.deadline) - now) / 60000),
-                  )}{" "}
-                  dk ·{" "}
+                  {session.mode === "practice" ? "Süresiz çalışma" : Math.max(0, Math.ceil((Date.parse(session.deadline) - now - clockOffset) / 60000)) + " dk"} ·{" "}
                   {session.mode === "exam" ? "Sınav modu" : "Alıştırma modu"}
                 </span>
               </div>
@@ -342,7 +386,7 @@ export default function KapsGerman() {
                     {session.tasks[index]?.passage}
                   </p>
                   <h2 lang="de">{session.tasks[index]?.prompt}</h2>
-                  <ActivityInput key={session.tasks[index].id} task={session.tasks[index]} value={answers[session.tasks[index].id] ?? ""} disabled={busy} onChange={value => { setFeedback(null); setAnswers(a => ({ ...a, [session.tasks[index].id]: value })); }} />
+                  <ActivityInput key={session.tasks[index].id} task={session.tasks[index]} value={answers[session.tasks[index].id] ?? ""} disabled={false} onChange={value => { setFeedback(null); setAnswers(a => ({ ...a, [session.tasks[index].id]: value })); }} />
                   {session.module === "Sprechen" && (
                     <>
                       <p className="kg-note">
@@ -389,15 +433,17 @@ export default function KapsGerman() {
                       <p role="status">{speech}</p>
                     </>
                   )}
+                  <p role="status" aria-live="polite">{saveStatus}</p>
                   <div className="kg-actions">
+                    <button disabled={busy} onClick={() => go(session.module === "vocabulary" ? "practice" : "goethe")}>Kaydet ve çık</button>
                     <button disabled={busy} onClick={() => void action(() => save())}>
                       Yanıtı kontrol et
                     </button>
                     <button
-                      disabled={busy}
+                      disabled={busy || index === 0}
                       onClick={() =>
                         void action(async () => {
-                          await save(true);
+                          await save(true, Math.max(0, index - 1));
                           setIndex((i) => Math.max(0, i - 1));
                           setFeedback(null);
                         })
@@ -409,7 +455,7 @@ export default function KapsGerman() {
                       disabled={busy || index === session.tasks.length - 1}
                       onClick={() =>
                         void action(async () => {
-                          await save(true);
+                          await save(true, index + 1);
                           setIndex((i) => i + 1);
                           setFeedback(null);
                         })
