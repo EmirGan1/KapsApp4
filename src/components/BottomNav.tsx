@@ -102,8 +102,8 @@ export default function BottomNav({
     }
   }, [isMobileMoreOpen]);
 
-  // Automatically hide bottom navigation bar when user is inside an active voice/video room or active chat
-  if (isInVoiceRoom || isChatOpen) {
+  // Automatically hide bottom navigation bar when user is inside an active voice/video room, active chat, or Kaps German
+  if (isInVoiceRoom || isChatOpen || activeTab === 'german') {
     return null;
   }
 

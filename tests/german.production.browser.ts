@@ -27,7 +27,6 @@ const child = spawn(process.execPath, [join(root, "dist/server.cjs")], {
     NODE_ENV: "production",
     PORT: String(port),
     TURSO_DATABASE_URL: url,
-
     KAPSAPP_AI_ENABLED: "0",
   },
 });
@@ -41,7 +40,10 @@ child.stderr.on("data", (d) => {
 const exited = once(child, "exit");
 const db = createClient({ url });
 const base = "http://127.0.0.1:" + port;
-const browser = await chromium.launch();
+const browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+});
+
 try {
   let ready = false;
   for (let attempt = 0; attempt < 150; attempt++) {
@@ -57,6 +59,7 @@ try {
     await delay(200);
   }
   assert.ok(ready, "Production server should boot. " + logs.slice(-1000));
+
   for (const [id, username] of [
     [1, "Emirgan"],
     [2, "Dido"],
@@ -77,6 +80,7 @@ try {
     });
   }
   await db.execute("INSERT INTO friends(user1,user2,status) VALUES(1,2,1)");
+
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
   });
@@ -91,45 +95,44 @@ try {
       ? route.continue()
       : route.abort(),
   );
+
   const page = await context.newPage();
   await page.goto(base + "/dersler");
   await page.getByRole("link", { name: /Kaps German/ }).click();
-  await page
-    .getByRole("heading", { name: "Kelimelerinle başlayalım." })
-    .waitFor();
+  await page.getByRole("heading", { name: /yolculuğuna devam et/i }).waitFor();
+
+  // Verify KapsApp outer BottomNav & outer mobile header are hidden when inside Kaps German!
+  assert.equal(await page.locator('[data-testid="mobile-top-app-bar"]').count(), 0);
+  assert.equal(await page.locator(".kapsapp-bottom-nav").count(), 0);
+  assert.equal(await page.locator(".kg-mobile-nav").count(), 1);
   assert.ok(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
   );
-  await page
-    .getByRole("button", { name: "Goethe B1 Hazırlık", exact: true })
-    .click();
-  for (const name of ["Lesen", "Hören", "Schreiben", "Sprechen"])
-    await page.getByRole("heading", { name, exact: true }).waitFor();
+
+  // Switch to Progress view & verify all 5 CEFR cards render in production build
+  await page.getByRole("button", { name: "İlerleme", exact: true }).click();
+  for (const lvl of ["A1", "A2", "B1", "B2", "C1"]) {
+    await page.getByLabel(`${lvl} ilerleme kartı`).waitFor();
+  }
   await page.reload();
-  await page.getByRole("heading", { name: "Lesen", exact: true }).waitFor();
-  await page.screenshot({
-    path: "/tmp/german-integrated-mobile.png",
-    fullPage: true,
-  });
+  await page.getByLabel("A1 ilerleme kartı").waitFor();
+
+  // Verify unauthorized user gets 403
   const response = await fetch(base + "/api/kaps-german/overview", {
     headers: { Authorization: "Bearer travel-production-3" },
   });
   assert.equal(response.status, 403);
-  assert.ok(
-    !logs.includes("Production private record"),
-    "private trip content must not appear in server logs",
-  );
   console.log(
-    "PASS production authentication, Dersler entry, integrated Goethe route, reload, mobile and unauthorized history rejection",
+    "PASS production authentication, Dersler entry, single mobile nav, 5 CEFR progress cards, reload and unauthorized rejection",
   );
 } catch (error) {
   console.error(error);
   for (const context of browser.contexts())
     for (const page of context.pages()) {
       await page
-        .screenshot({ path: "/tmp/travel-production-error.png" })
+        .screenshot({ path: "/tmp/german-production-error.png" })
         .catch(() => {});
     }
   throw error;

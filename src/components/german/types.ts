@@ -1,0 +1,233 @@
+import type {
+  CefrLevel,
+  MasteryStatus,
+  StoredCefrLevel,
+  StudyDirection,
+} from "../../shared/germanActivities";
+
+export type GermanTab = "learn" | "practice" | "words" | "progress" | "profile";
+
+export interface MasteryRecord {
+  wordId: string;
+  cefrLevel: StoredCefrLevel;
+  consecutiveCorrect: number;
+  totalCorrect: number;
+  totalIncorrect: number;
+  masteryStatus: MasteryStatus;
+  lastPracticedAt: string | null;
+  masteredAt: string | null;
+}
+
+export interface ProgressByLevelItem {
+  level: CefrLevel;
+  trName: string;
+  enName: string;
+  subtitle: string;
+  accent: string;
+  total: number;
+  mastered: number;
+  almostMastered: number;
+  learning: number;
+  notLearned: number;
+  mistakes: number;
+  remaining: number;
+  percent: number;
+  statusText: string;
+}
+
+export interface GermanStats {
+  totalXp: number;
+  currentStreak: number;
+  longestStreak: number;
+  lastActiveDay: string | null;
+  dailyGoalXp: number;
+  todayXp: number;
+  todayWordsMastered: number;
+  todayExercises: number;
+  todayCorrect: number;
+  todayTotal: number;
+  selectedLevels: CefrLevel[];
+  preferredDirection: StudyDirection;
+  perfectLessons: number;
+}
+
+export interface OverallSummary {
+  totalValidated: number;
+  totalMastered: number;
+  totalAlmostMastered: number;
+  totalLearning: number;
+  totalNotLearned: number;
+  totalMistakeWords: number;
+  unclassifiedCount: number;
+  percent: number;
+  accuracy: number | null;
+}
+
+export interface AchievementItem {
+  id: string;
+  title: string;
+  description: string;
+  target: number;
+  metric: string;
+  current: number;
+  unlocked: boolean;
+  unlockedAt: string | null;
+}
+
+export interface LearningPathNode {
+  id: string;
+  level: CefrLevel;
+  order: number;
+  topic: string;
+  totalWords: number;
+  masteredWords: number;
+  percent: number;
+  status: "completed" | "current" | "available" | "review";
+}
+
+export interface LearningPathLevel {
+  level: CefrLevel;
+  nodes: LearningPathNode[];
+}
+
+export interface SessionSummaryRow {
+  id: string;
+  module: string;
+  mode: "practice" | "exam";
+  state: "active" | "grading" | "done";
+  started_at: string;
+  deadline: string;
+  results: Record<string, TaskResult>;
+  filters: {
+    levels?: CefrLevel[];
+    activity?: string;
+    direction?: StudyDirection;
+    topic?: string;
+    reviewMode?: boolean;
+  };
+}
+
+export interface JobRow {
+  id: string;
+  started_at: string;
+  finished_at?: string | null;
+  status: string;
+  summary?: string | null;
+}
+
+export interface OverviewResponse {
+  progressByLevel: ProgressByLevelItem[];
+  overall: OverallSummary;
+  stats: GermanStats;
+  achievements: AchievementItem[];
+  learningPath: LearningPathLevel[];
+  sessions: SessionSummaryRow[];
+  jobs: JobRow[];
+  examStructure: Record<string, any>;
+  audioAvailable: boolean;
+  pronunciationAvailable: boolean;
+}
+
+export interface VocabItem {
+  id: string;
+  de: string;
+  tr: string;
+  level: StoredCefrLevel;
+  cefrSource: string;
+  topic: string;
+  article?: string;
+  plural?: string;
+  pos?: string;
+  grammar?: string;
+  exampleDe?: string;
+  exampleTr?: string;
+  mastery: MasteryRecord;
+}
+
+export interface VocabularyResponse {
+  items: VocabItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  topics: string[];
+}
+
+export interface GermanTask {
+  id: string;
+  module: string;
+  type: string;
+  part: number;
+  level: string;
+  topic?: string;
+  prompt: string;
+  passage: string;
+  options: string[];
+  answer?: string;
+  alternatives?: string[];
+  explanation?: string;
+  vocabularyIds: string[];
+  evidence?: string;
+  interaction?: {
+    tiles?: string[];
+    left?: string[];
+    right?: string[];
+    audioText?: string;
+    audioLang?: string;
+    hintTr?: string;
+    wordMeta?: {
+      de: string;
+      tr: string;
+      article?: string;
+      topic?: string;
+      grammar?: string;
+      exampleDe?: string;
+      exampleTr?: string;
+    };
+  };
+}
+
+export interface TaskResult {
+  score: number | null;
+  skipped?: boolean;
+  feedback?: string;
+  suggestedAnswer?: string;
+  pending?: boolean;
+  unofficial?: boolean;
+}
+
+export interface ActiveSession {
+  id: string;
+  module: string;
+  mode: "practice" | "exam";
+  state: "active" | "grading" | "done";
+  started_at: string;
+  deadline: string;
+  version: number;
+  position: number;
+  filters: {
+    levels?: CefrLevel[];
+    activity?: string;
+    direction?: StudyDirection;
+    topic?: string;
+    wordIds?: string[];
+    reviewMode?: boolean;
+  };
+  tasks: GermanTask[];
+  answers: Record<string, string>;
+  results: Record<string, TaskResult>;
+  masteryMap: Record<string, MasteryRecord>;
+  serverNow: string;
+}
+
+export interface CheckTaskResponse {
+  ok: boolean;
+  skipped?: boolean;
+  alreadyChecked?: boolean;
+  result: TaskResult;
+  masteryUpdates: Record<string, MasteryRecord>;
+  xpAwarded: number;
+  newlyMastered: Array<{ wordId: string; de: string; tr: string; level: string }>;
+  newlyUnlockedAchievements: string[];
+  version: number;
+}

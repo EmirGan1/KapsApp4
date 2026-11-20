@@ -1180,7 +1180,7 @@ async function startServer() {
     return user ? { id: user.id } : null;
   }, checkDeviceBan);
   registerUniversity(app, client, async req => { const user = await authenticateToken(req); return user ? { id: user.id } : null; }, checkDeviceBan);
-  registerGerman(app, client, async req => { const user = await authenticateToken(req); return user ? { id: user.id } : null; }, checkDeviceBan);
+  registerGerman(app, client, async req => { const user = await authenticateToken(req); return user ? { id: user.id } : null; }, checkDeviceBan, { autoSeedCurriculum: process.env.KAPS_GERMAN_AUTO_SEED !== "0" });
   registerKapsAppAi(app, async req => {
     const user = await authenticateToken(req);
     return user?.id == null ? null : String(user.id);

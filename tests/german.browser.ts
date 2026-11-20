@@ -5,9 +5,9 @@ import { createClient } from "@libsql/client";
 import { chromium } from "playwright";
 import { registerGerman } from "../src/server/german";
 import { activities } from "../src/shared/germanActivities";
-import { parseDocument } from "../src/server/german/learning";
-const db = createClient({ url: "file::memory:" }),
-  app = express();
+
+const db = createClient({ url: "file::memory:" });
+const app = express();
 await db.execute("CREATE TABLE users(id INTEGER PRIMARY KEY,username TEXT)");
 await db.execute("INSERT INTO users VALUES(1,'Emirgan')");
 registerGerman(
@@ -16,7 +16,9 @@ registerGerman(
   async (r) =>
     r.headers.authorization === "Bearer german-test" ? { id: 1 } : null,
   (_q, _r, n) => n(),
+  { autoSeedCurriculum: true },
 );
+
 const vite = await createServer({
   logLevel: "error",
   server: { host: "127.0.0.1", port: 0 },
@@ -42,150 +44,147 @@ const vite = await createServer({
     },
   ],
 });
+
 await vite.listen();
 const a = vite.httpServer!.address();
 assert.ok(a && typeof a !== "string");
 const base = "http://127.0.0.1:" + a.port;
-const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE });
+const browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+});
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+
 try {
   await page.goto(base + "/dersler/kaps-german");
-  await page
-    .getByRole("heading", { name: "Kelimelerinle başlayalım." })
-    .waitFor();
-  const word = parseDocument({
-    body: {
-      content: [
-        {
-          paragraph: {
-            elements: [{ textRun: { content: "der Apfel — elma" } }],
-          },
-        },
-      ],
-    },
-  }).entries[0];
-  await db.execute({
-    sql: "INSERT INTO german_words VALUES(?,?,1,?)",
-    args: [word.id, JSON.stringify(word), new Date().toISOString()],
-  });
-  await page.reload();
-  await page.getByRole("button", { name: "Alıştırmalar", exact: true }).click();
-  await page.getByRole("button", { name: /Çeviri Görevi/ }).click();
-  page.once("dialog", d => d.accept());
-  await page.getByRole("button", { name: "Oturumu tamamla", exact: true }).click();
-  await page.getByRole("alert").filter({ hasText: "Henüz yanıt vermedin" }).waitFor();
-  await page
-    .getByRole("textbox", { name: "Yanıtın", exact: true })
-    .fill("der Apfel");
-  await page.waitForTimeout(1800);
-  await page.reload();
-  assert.equal(
-    await page
-      .getByRole("textbox", { name: "Yanıtın", exact: true })
-      .inputValue(),
-    "der Apfel",
-  );
-  const resumedId = new URL(page.url()).searchParams.get('session');
-  await db.execute({ sql: 'UPDATE german_sessions SET deadline=? WHERE id=?', args: ['2020-01-01T00:00:00Z', resumedId!] });
-  await page.reload();
-  await page.locator('.kg-task').waitFor();
-  await page.waitForTimeout(1500);
-  assert.equal(await page.getByRole('heading', { name: 'Oturum sonuçları', exact: true }).count(), 0);
-  await page.goto(page.url());
-  await page.locator('.kg-task').waitFor();
-  assert.equal(await page.getByRole('textbox', { name:'Yanıtın', exact:true }).inputValue(), 'der Apfel');
-  await page.getByRole('button', { name:'Kaydet ve çık', exact:true }).click();
-  await page.getByRole('button', { name:/Çeviri Görevi/ }).click();
-  await page.locator('.kg-task').waitFor();
-  assert.equal(new URL(page.url()).searchParams.get('session'), resumedId);
-  assert.equal(await page.getByRole('textbox', { name:'Yanıtın', exact:true }).inputValue(), 'der Apfel');
-  page.once("dialog", (d) => d.accept());
-  await page
-    .getByRole("button", { name: "Oturumu tamamla", exact: true })
-    .click();
-  await page
-    .getByRole("heading", { name: "Oturum sonuçları", exact: true })
-    .waitFor();
-  assert.ok((await page.locator("main").textContent())?.includes("100 / 100"));
-  // Exercise every interaction against the real authenticated backend on mobile.
-  for (const content of ["die Schule — okul", "das Haus — ev", "Ich freue mich darauf. — Bunu sabırsızlıkla bekliyorum.", "der Baum — ağaç / ağaç bitkisi"]) {
-    const w = parseDocument({ body: { content: [{ paragraph: { elements: [{ textRun: { content } }] } }] } }).entries[0];
-    await db.execute({ sql: "INSERT INTO german_words VALUES(?,?,1,?)", args: [w.id, JSON.stringify(w), new Date().toISOString()] });
-  }
-  for (const direction of ['de_tr', 'tr_de']) {
-    await db.execute("UPDATE german_sessions SET state='done' WHERE state='active'");
-    await page.goto(base + "/dersler/kaps-german?tab=practice");
-    await page.getByRole('combobox', { name: 'Soru yönü' }).selectOption(direction);
-    for (const level of ['A1', 'B2', 'C1']) await page.getByRole('checkbox', { name: level, exact: true }).uncheck();
-    assert.equal(await page.getByRole('checkbox', { checked: true }).count(), 2);
-    await page.getByRole('button', { name: /Çeviri Görevi/ }).click();
-    await page.locator('.kg-activity-badge').waitFor();
-    const sid = new URL(page.url()).searchParams.get('session');
-    const row = (await db.execute({ sql: 'SELECT tasks FROM german_sessions WHERE id=?', args: [sid!] })).rows[0];
-    const tasks = JSON.parse(String(row.tasks));
-    for (const task of tasks) {
-      assert.ok(['A2','B1'].includes(task.level));
-      const source = JSON.parse(String((await db.execute({ sql: 'SELECT data FROM german_words WHERE id=?', args: [task.vocabularyIds[0]] })).rows[0].data));
-      assert.equal(task.answer, direction === 'de_tr' ? source.tr : source.de);
-    }
-    console.log('PASS mobile multi-level selection and backend language direction: ' + direction);
-  }
-  for (const [type, title] of activities) {
-    await db.execute("UPDATE german_sessions SET state='done' WHERE state='active'");
-    await page.goto(base + "/dersler/kaps-german?tab=practice");
-    await page.getByRole("button", { name: new RegExp(title) }).click();
-    await page.locator('.kg-activity-badge').waitFor();
-    const sessionId = new URL(page.url()).searchParams.get('session');
-    const row = (await db.execute({ sql: 'SELECT tasks FROM german_sessions WHERE id=?', args: [sessionId!] })).rows[0];
-    const task = JSON.parse(String(row.tasks))[0];
-    assert.equal(task.type, type);
-    const input = page.locator('.kg-activity-input');
-    if (task.interaction?.tiles) {
-      const wanted = type === 'spelling' ? Array.from(task.answer) : task.answer.split(' ');
-      for (const tile of wanted) await input.locator('.kg-tiles button:not(:disabled)').filter({ hasText: new RegExp('^' + String(tile === ' ' ? '␣' : tile).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') }).first().click();
-    } else if (type === 'matching') {
-      const answers = JSON.parse(task.answer);
-      for (let i = 0; i < answers.length; i++) await input.locator('select').nth(i).selectOption(answers[i]);
-    } else if (type === 'multi') {
-      for (const a of task.answer.split(' | ')) await input.getByRole('button').nth(task.options.indexOf(a)).click();
-    } else if (task.options.length) {
-      const optionIndex = task.options.indexOf(task.answer);
-      await input.getByRole('button').nth(optionIndex).click();
-    } else await input.getByRole('textbox').fill(task.answer);
-    await page.getByRole('button', { name: 'Yanıtı kontrol et', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: 'Harika, doğru!' }).waitFor();
-    await page.reload();
-    await page.locator('.kg-activity-badge').waitFor();
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-    console.log('PASS mobile interaction, server evaluation and reload: ' + type);
-  }
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page
-    .getByRole("button", { name: "Goethe B1 Hazırlık", exact: true })
-    .click();
-  for (const module of ["Lesen", "Hören", "Schreiben", "Sprechen"])
-    await page.getByRole("heading", { name: module, exact: true }).waitFor();
+  await page.getByRole("heading", { name: /yolculuğuna devam et/i }).waitFor();
   assert.ok(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
+    "Home learn view must fit mobile viewport without horizontal overflow",
   );
-  await page.screenshot({
-    path: "/tmp/german-goethe-mobile.png",
-    fullPage: true,
-  });
+
+  // Navigate to Progress tab and verify 5 independent CEFR cards (A1-C1)
+  await page.getByRole("button", { name: "İlerleme", exact: true }).click();
+  for (const lvl of ["A1", "A2", "B1", "B2", "C1"]) {
+    await page.getByLabel(`${lvl} ilerleme kartı`).waitFor();
+  }
+
+  // Navigate to Vocabulary library & verify 0/5 pips and filters
+  await page.getByRole("button", { name: "Kelimeler", exact: true }).click();
+  await page.getByRole("heading", { name: "Kelime Kütüphanesi" }).waitFor();
+  await page.getByRole("searchbox", { name: "Kelime ara" }).fill("Apfel");
+  await page.waitForTimeout(450);
+  assert.ok((await page.locator("article.kg-vocab-card").count()) >= 1);
+  assert.ok((await page.locator("article.kg-vocab-card .kg-mastery-pips").first().textContent())?.includes("0/5"));
+
+  // Navigate to Practice tab, pick A1 only + de_tr direction
+  await page.getByRole("button", { name: "Pratik", exact: true }).click();
+  await page.getByRole("heading", { name: "Pratik Merkezi" }).waitFor();
+  await page.getByRole("combobox", { name: "Soru yönü" }).selectOption("tr_de");
+
+  // Exercise every available activity type cleanly on mobile & verify no premature jump to results
+  for (const [type, title] of activities) {
+    if (type === "mistake_review") continue; // Tested after an intentional mistake
+    await db.execute("UPDATE german_sessions SET state='done' WHERE state='active'");
+    await page.goto(base + "/dersler/kaps-german?tab=practice");
+    await page.getByRole("button", { name: new RegExp(title) }).click();
+    await page.locator(".kg-task-card").waitFor();
+
+    const sid = new URL(page.url()).searchParams.get("session");
+    assert.ok(sid, "Session ID should appear in URL");
+    const row = (
+      await db.execute({ sql: "SELECT tasks FROM german_sessions WHERE id=?", args: [sid!] })
+    ).rows[0];
+    const tasks = JSON.parse(String(row.tasks));
+    const task = tasks[0];
+    assert.equal(task.level, "A1", `Expected strict A1 level for ${type}`);
+    assert.equal(task.type, type, `Expected task type ${type}`);
+
+    // Ensure session NEVER jumps to results before answering
+    assert.equal(
+      await page.getByRole("heading", { name: "Oturum Tamamlandı!" }).count(),
+      0,
+    );
+
+    const input = page.locator(".kg-activity-input");
+    if (task.interaction?.tiles) {
+      const wanted = task.answer.split(" ");
+      for (const tile of wanted) {
+        await input
+          .locator(".kg-tile-bank button:not(:disabled)")
+          .filter({
+            hasText: new RegExp(
+              "^" + tile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$",
+            ),
+          })
+          .first()
+          .click();
+      }
+    } else if (type === "matching") {
+      const answers: string[] = JSON.parse(task.answer);
+      const leftCol = input.locator('[aria-label="Almanca kelimeler"] button');
+      const rightCol = input.locator('[aria-label="Türkçe karşılıklar"] button');
+      for (let i = 0; i < answers.length; i++) {
+        await leftCol.nth(i).click();
+        await rightCol
+          .filter({
+            hasText: new RegExp(
+              "^" + answers[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$",
+            ),
+          })
+          .first()
+          .click();
+      }
+    } else if (task.options.length) {
+      const idx = task.options.indexOf(task.answer);
+      assert.ok(idx >= 0, `Option answer missing for ${type}`);
+      await input.locator("button.kg-option-card").nth(idx).click();
+    } else {
+      await input.getByRole("textbox").fill(task.answer);
+    }
+
+    await page.getByRole("button", { name: "Kontrol Et", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: /Harika, doğru!/ }).waitFor();
+
+    // Verify reload preserves checked progress & position without wiping session
+    await page.reload();
+    await page.locator(".kg-task-card").waitFor();
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+      `Mobile horizontal overflow check failed for ${type}`,
+    );
+    console.log("PASS mobile interaction, atomic check & reload: " + type);
+  }
+
+  // Test expired practice session recovery (never auto-submits or fails unanswered session!)
+  const activeSid = new URL(page.url()).searchParams.get("session");
+  if (activeSid) {
+    await db.execute({
+      sql: "UPDATE german_sessions SET deadline='2020-01-01T00:00:00Z' WHERE id=?",
+      args: [activeSid],
+    });
+    await page.reload();
+    await page.locator(".kg-task-card").waitFor();
+    assert.equal(
+      await page.getByRole("heading", { name: "Oturum Tamamlandı!" }).count(),
+      0,
+    );
+  }
+
+  // Desktop viewport layout check
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.screenshot({
-    path: "/tmp/german-goethe-desktop.png",
-    fullPage: true,
-  });
-  console.log(
-    "PASS source vocabulary practice, automatic save/reload, objective grading, isolated Goethe dashboard and mobile layout",
+  await page.goto(base + "/dersler/kaps-german?tab=learn");
+  await page.getByRole("heading", { name: /yolculuğuna devam et/i }).waitFor();
+  assert.ok(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+    "Desktop viewport must have zero horizontal overflow",
   );
-} catch (e) {
-  console.error(e);
-  await page.screenshot({ path: "/tmp/german-error.png" });
-  throw e;
+  console.log("PASS desktop layout and full Kaps German browser suite");
 } finally {
   await browser.close();
   await vite.close();

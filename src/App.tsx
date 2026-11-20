@@ -1278,7 +1278,7 @@ export default function App() {
       }}
     >
       <div
-        data-bottom-nav-hidden={(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || activeTab === "games") ? "true" : undefined}
+        data-bottom-nav-hidden={(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || activeTab === "games" || activeTab === "german") ? "true" : undefined}
         className="app-shell kapsapp-viewport flex flex-col lg:flex-row w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] lg:pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       >
       <NotificationPermissionPrompt />
@@ -1324,8 +1324,8 @@ export default function App() {
         isEmirgan={isEmirgan}
       />
 
-      {/* Native Mobile Top Navigation Bar (Automatically hidden during full-screen Chat thread, Voice Room, or Game) */}
-      {!(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || activeTab === "games") && (
+      {/* Native Mobile Top Navigation Bar (Automatically hidden during full-screen Chat thread, Voice Room, Game, or Kaps German) */}
+      {!(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || activeTab === "games" || activeTab === "german") && (
         <header
           data-testid="mobile-top-app-bar"
           className="lg:hidden flex items-center justify-between px-3 h-[54px] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 shrink-0 z-30 select-none transition-colors duration-200"

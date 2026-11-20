@@ -1,29 +1,59 @@
 import { createHash } from "node:crypto";
-export const normalize = (value: string) =>
-  value.normalize("NFC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("de");
+import {
+  MASTERY_TARGET,
+  isCefrLevel,
+  masteryStatusFromStreak,
+  type CefrLevel,
+  type MasteryStatus,
+  type StoredCefrLevel,
+} from "../../shared/germanActivities";
+import {
+  canonicalWordKey,
+  classifyVocabularyEntry,
+  normalizeText,
+  parseCefrHeading,
+  type CefrSource,
+} from "./cefr";
+import type { CurriculumEntry, PartOfSpeech } from "./curriculum";
+
+export const normalize = normalizeText;
+
 export const fingerprint = (value: string) =>
   createHash("sha256").update(value.normalize("NFC")).digest("hex");
+
 export type Vocabulary = {
   id: string;
+  canonicalKey: string;
   de: string;
   tr: string;
+  alternatives?: string[];
   raw: string;
   topic: string;
-  level: string;
+  level: StoredCefrLevel;
+  cefrSource: CefrSource;
   article: string;
+  plural?: string;
+  pos?: PartOfSpeech;
   grammar: string;
+  exampleDe?: string;
+  exampleTr?: string;
+  conjugation?: CurriculumEntry["conjugation"];
+  completion?: CurriculumEntry["completion"];
 };
+
 export function parseDocument(doc: any) {
-  const lines: string[] = [];
-  function blocks(content: any[]) {
+  type RawLine = { text: string; tabLevel?: CefrLevel | null };
+  const lines: RawLine[] = [];
+
+  function blocks(content: any[], tabLevel: CefrLevel | null = null) {
     for (const b of content ?? []) {
-      if (b.paragraph)
-        lines.push(
-          (b.paragraph.elements ?? [])
-            .map((e: any) => e.textRun?.content ?? "")
-            .join(""),
-        );
-      if (b.table)
+      if (b.paragraph) {
+        const txt = (b.paragraph.elements ?? [])
+          .map((e: any) => e.textRun?.content ?? "")
+          .join("");
+        lines.push({ text: txt, tabLevel });
+      }
+      if (b.table) {
         for (const row of b.table.tableRows ?? []) {
           const cells = (row.tableCells ?? []).map((cell: any) =>
             (cell.content ?? [])
@@ -35,67 +65,192 @@ export function parseDocument(doc: any) {
               .join(" ")
               .trim(),
           );
-          if (cells.length === 2) lines.push(cells.join(" — "));
-          else for (const cell of row.tableCells ?? []) blocks(cell.content);
+          if (cells.length === 2) {
+            lines.push({ text: cells.join(" — "), tabLevel });
+          } else {
+            for (const cell of row.tableCells ?? []) blocks(cell.content, tabLevel);
+          }
         }
+      }
     }
   }
+
   function tabs(values: any[]) {
     for (const t of values ?? []) {
-      blocks(t.documentTab?.body?.content);
+      const tabTitle = String(t.tabProperties?.title ?? t.documentTab?.tabProperties?.title ?? "");
+      const tabLevel = parseCefrHeading(tabTitle);
+      if (tabLevel) {
+        lines.push({ text: `__RESET_TAB_LEVEL__:${tabLevel}`, tabLevel });
+      } else {
+        lines.push({ text: `__RESET_TAB_LEVEL__:NONE`, tabLevel: null });
+      }
+      blocks(t.documentTab?.body?.content, tabLevel);
       tabs(t.childTabs);
     }
   }
+
   if (doc.tabs?.length) tabs(doc.tabs);
-  else blocks(doc.body?.content);
-  if (lines.join("").length > 1_000_000)
+  else blocks(doc.body?.content, null);
+
+  if (lines.map((l) => l.text).join("").length > 1_000_000) {
     throw new Error("Kaynak belge çok büyük.");
-  let topic = "",
-    level = "B1";
-  const entries: Vocabulary[] = [],
-    warnings: string[] = [];
+  }
+
+  let topic = "";
+  let headingLevel: CefrLevel | null = null;
+  const entries: Vocabulary[] = [];
+  const warnings: string[] = [];
   let duplicates = 0;
   const seen = new Set<string>();
-  for (const rawLine of lines.join("\n").split(/\r?\n/u)) {
-    const raw = rawLine.normalize("NFC").trim();
-    if (!raw) continue;
-    const line = raw.replace(/^\s*(?:[•*#]+|\d+[.)])\s*/u, "");
-    if (/^(?:A1|A2|B1|B2|C1)$/u.test(line)) {
-      level = line;
+
+  for (const item of lines) {
+    if (item.text.startsWith("__RESET_TAB_LEVEL__:")) {
+      const tag = item.text.slice("__RESET_TAB_LEVEL__:".length);
+      headingLevel = tag === "NONE" ? null : (tag as CefrLevel);
+      topic = "";
       continue;
     }
-    const match = line.match(/^(.{1,300}?)\s+(?:—|–|->|=|-)\s+(.{1,600})$/u);
-    if (!match) {
-      if (line.length < 100 && !/[—=]/u.test(line)) topic = line;
-      warnings.push(raw.slice(0, 600));
-      continue;
+
+    for (const rawLine of item.text.split(/\r?\n/u)) {
+      const raw = rawLine.normalize("NFC").trim();
+      if (!raw) continue;
+      const line = raw.replace(/^\s*(?:[•*#]+|\d+[.)])\s*/u, "").trim();
+
+      const detectedHeading = parseCefrHeading(line);
+      if (detectedHeading) {
+        headingLevel = detectedHeading;
+        continue;
+      }
+
+      const match = line.match(/^(.{1,300}?)\s+(?:—|–|->|=|-)\s+(.{1,600})$/u);
+      if (!match) {
+        if (line.length < 100 && !/[—=]/u.test(line)) {
+          topic = line;
+        }
+        warnings.push(raw.slice(0, 600));
+        continue;
+      }
+
+      const de = match[1].trim();
+      const tr = match[2].trim();
+      const cKey = canonicalWordKey(de);
+      const dedupeKey = cKey + "\0" + normalize(tr);
+      if (seen.has(dedupeKey)) {
+        duplicates++;
+        continue;
+      }
+      seen.add(dedupeKey);
+
+      const classified = classifyVocabularyEntry({
+        de,
+        headingLevel,
+      });
+
+      entries.push({
+        id: fingerprint(normalize(de) + "\0" + normalize(tr)),
+        canonicalKey: cKey,
+        de,
+        tr,
+        raw,
+        topic: topic || "Genel",
+        level: classified.level,
+        cefrSource: classified.source,
+        article: de.match(/^(der|die|das)\s/u)?.[1] ?? "",
+        grammar:
+          de
+            .match(/(?:Akk\.|Dat\.|Gen\.|sich|für|mit|auf|von|zu)/gu)
+            ?.join(" ") ?? "",
+      });
     }
-    const de = match[1].trim(),
-      tr = match[2].trim();
-    const key = normalize(de) + "\0" + normalize(tr);
-    if (seen.has(key)) {
-      duplicates++;
-      continue;
-    }
-    seen.add(key);
-    entries.push({
-      id: fingerprint(key),
-      de,
-      tr,
-      raw,
-      topic,
-      level,
-      article: de.match(/^(der|die|das)\s/u)?.[1] ?? "",
-      grammar:
-        de
-          .match(/(?:Akk\.|Dat\.|Gen\.|sich|für|mit|auf|von|zu)/gu)
-          ?.join(" ") ?? "",
-    });
   }
-  if (entries.length > 5000)
+
+  if (entries.length > 5000) {
     throw new Error("Bir kaynakta en fazla 5.000 ifade işlenebilir.");
+  }
   return { entries, warnings: warnings.slice(0, 100), duplicates };
 }
+
+export interface MasteryRecord {
+  wordId: string;
+  cefrLevel: StoredCefrLevel;
+  consecutiveCorrect: number;
+  totalCorrect: number;
+  totalIncorrect: number;
+  masteryStatus: MasteryStatus;
+  lastPracticedAt: string | null;
+  masteredAt: string | null;
+}
+
+export function newMastery(
+  wordId = "",
+  cefrLevel: StoredCefrLevel = "UNCLASSIFIED",
+): MasteryRecord {
+  return {
+    wordId,
+    cefrLevel,
+    consecutiveCorrect: 0,
+    totalCorrect: 0,
+    totalIncorrect: 0,
+    masteryStatus: "not_learned",
+    lastPracticedAt: null,
+    masteredAt: null,
+  };
+}
+
+/**
+ * Five-Consecutive-Correct Mastery Rule:
+ * - Correct answer: consecutiveCorrect + 1, totalCorrect + 1.
+ *   Reaching 5 consecutive sets masteryStatus = "mastered" and permanently records masteredAt.
+ * - Incorrect answer: consecutiveCorrect resets to 0, totalIncorrect + 1.
+ *   Optional review of already-mastered words NEVER erases permanent mastery!
+ */
+export function applyMasteryAttempt(
+  old: MasteryRecord,
+  correct: boolean,
+  options: { isReview?: boolean; now?: Date } = {},
+): MasteryRecord {
+  const nowIso = (options.now ?? new Date()).toISOString();
+  const isReview = options.isReview === true;
+  const alreadyMastered =
+    old.masteryStatus === "mastered" || old.masteredAt !== null;
+
+  if (correct) {
+    const nextConsecutive = Math.min(MASTERY_TARGET, old.consecutiveCorrect + 1);
+    const becomesMastered = alreadyMastered || nextConsecutive >= MASTERY_TARGET;
+    return {
+      ...old,
+      consecutiveCorrect: alreadyMastered ? MASTERY_TARGET : nextConsecutive,
+      totalCorrect: old.totalCorrect + 1,
+      masteryStatus: masteryStatusFromStreak(nextConsecutive, becomesMastered),
+      lastPracticedAt: nowIso,
+      masteredAt: old.masteredAt ?? (becomesMastered ? nowIso : null),
+    };
+  }
+
+  // Incorrect answer
+  if (isReview && alreadyMastered) {
+    // Optional review exercises must NEVER erase completed mastery status.
+    return {
+      ...old,
+      totalIncorrect: old.totalIncorrect + 1,
+      consecutiveCorrect: MASTERY_TARGET,
+      masteryStatus: "mastered",
+      lastPracticedAt: nowIso,
+      masteredAt: old.masteredAt ?? nowIso,
+    };
+  }
+
+  return {
+    ...old,
+    consecutiveCorrect: 0,
+    totalIncorrect: old.totalIncorrect + 1,
+    masteryStatus: alreadyMastered ? "mastered" : "not_learned",
+    lastPracticedAt: nowIso,
+    masteredAt: alreadyMastered ? old.masteredAt : null,
+  };
+}
+
+// Legacy Memory representation maintained alongside MasteryRecord for compatibility
 export type Memory = {
   attempts: number;
   correct: number;
@@ -107,7 +262,13 @@ export type Memory = {
   spaced: number;
   productive: number;
   state: string;
+  consecutiveCorrect?: number;
+  totalCorrect?: number;
+  totalIncorrect?: number;
+  masteryStatus?: MasteryStatus;
+  masteredAt?: string | null;
 };
+
 export const newMemory = (): Memory => ({
   attempts: 0,
   correct: 0,
@@ -118,58 +279,87 @@ export const newMemory = (): Memory => ({
   last: null,
   spaced: 0,
   productive: 0,
-  state: "new",
+  state: "not_learned",
+  consecutiveCorrect: 0,
+  totalCorrect: 0,
+  totalIncorrect: 0,
+  masteryStatus: "not_learned",
+  masteredAt: null,
 });
-/** SM-2 inspired schedule, not FSRS. Promotion requires reviews separated by >=20 hours. No calibrated retention probability. */
+
+export function memoryToMastery(
+  raw: any,
+  wordId: string,
+  cefrLevel: StoredCefrLevel,
+): MasteryRecord {
+  if (!raw || typeof raw !== "object") return newMastery(wordId, cefrLevel);
+  if (typeof raw.consecutiveCorrect === "number" && typeof raw.masteryStatus === "string") {
+    const mastered = raw.masteryStatus === "mastered" || raw.masteredAt != null;
+    return {
+      wordId,
+      cefrLevel,
+      consecutiveCorrect: mastered ? MASTERY_TARGET : Math.max(0, Math.min(MASTERY_TARGET, raw.consecutiveCorrect)),
+      totalCorrect: Math.max(0, Number(raw.totalCorrect ?? raw.correct ?? 0)),
+      totalIncorrect: Math.max(0, Number(raw.totalIncorrect ?? 0)),
+      masteryStatus: masteryStatusFromStreak(raw.consecutiveCorrect, mastered),
+      lastPracticedAt: raw.lastPracticedAt ?? raw.last ?? null,
+      masteredAt: raw.masteredAt ?? (mastered ? raw.last ?? new Date().toISOString() : null),
+    };
+  }
+  const attempts = Math.max(0, Number(raw.attempts ?? 0));
+  const correct = Math.max(0, Number(raw.correct ?? 0));
+  const legacyMastered = raw.state === "mastered";
+  const streak = legacyMastered
+    ? MASTERY_TARGET
+    : Math.max(0, Math.min(MASTERY_TARGET - 1, Number(raw.streak ?? 0)));
+  return {
+    wordId,
+    cefrLevel,
+    consecutiveCorrect: streak,
+    totalCorrect: correct,
+    totalIncorrect: Math.max(0, attempts - correct),
+    masteryStatus: masteryStatusFromStreak(streak, legacyMastered),
+    lastPracticedAt: typeof raw.last === "string" ? raw.last : null,
+    masteredAt: legacyMastered ? (typeof raw.last === "string" ? raw.last : new Date().toISOString()) : null,
+  };
+}
+
+export function masteryToMemory(m: MasteryRecord): Memory {
+  const attempts = m.totalCorrect + m.totalIncorrect;
+  return {
+    attempts,
+    correct: m.totalCorrect,
+    streak: m.consecutiveCorrect,
+    ease: 2.5,
+    interval: m.masteryStatus === "mastered" ? 30 : m.consecutiveCorrect,
+    due:
+      m.masteryStatus === "mastered"
+        ? new Date(Date.now() + 30 * 86400000).toISOString()
+        : new Date().toISOString(),
+    last: m.lastPracticedAt,
+    spaced: m.consecutiveCorrect,
+    productive: m.consecutiveCorrect,
+    state: m.masteryStatus,
+    consecutiveCorrect: m.consecutiveCorrect,
+    totalCorrect: m.totalCorrect,
+    totalIncorrect: m.totalIncorrect,
+    masteryStatus: m.masteryStatus,
+    masteredAt: m.masteredAt,
+  };
+}
+
 export function review(
   old: Memory,
   correct: boolean,
-  production: boolean,
+  _production: boolean,
   now = new Date(),
+  isReview = false,
 ): Memory {
-  const spaced =
-    old.last === null || now.getTime() - Date.parse(old.last) >= 20 * 3600000;
-  const next = {
-    ...old,
-    attempts: old.attempts + 1,
-    correct: old.correct + Number(correct),
-    last: now.toISOString(),
-  };
-  if (!correct) {
-    next.streak = 0;
-    next.interval = 1;
-    next.ease = Math.max(1.3, old.ease - 0.2);
-    next.state = "needs_review";
-  } else {
-    next.streak++;
-    if (spaced) {
-      next.spaced++;
-      if (production) next.productive++;
-      next.interval =
-        old.spaced === 0
-          ? 1
-          : old.spaced === 1
-            ? 6
-            : Math.min(120, Math.max(1, Math.round(old.interval * old.ease)));
-    }
-    next.state =
-      next.productive >= 3 &&
-      next.spaced >= 4 &&
-      next.interval >= 21 &&
-      next.streak >= 3
-        ? "mastered"
-        : next.spaced >= 3 && next.streak >= 2
-          ? "strong"
-          : next.streak >= 2
-            ? "improving"
-            : "learning";
-  }
-  next.due =
-    spaced || !correct
-      ? new Date(now.getTime() + next.interval * 86400000).toISOString()
-      : old.due;
-  return next;
+  const prev = memoryToMastery(old, "", "UNCLASSIFIED");
+  const next = applyMasteryAttempt(prev, correct, { isReview, now });
+  return masteryToMemory(next);
 }
+
 export const EXAM_STRUCTURE = {
   Lesen: {
     minutes: 65,
@@ -202,13 +392,31 @@ export const EXAM_STRUCTURE = {
     formats: ["joint_planning", "presentation", "response"],
   },
 };
+
 export type Task = {
-  interaction?: { tiles?: string[]; left?: string[]; right?: string[] };
+  interaction?: {
+    tiles?: string[];
+    left?: string[];
+    right?: string[];
+    audioText?: string;
+    audioLang?: string;
+    hintTr?: string;
+    wordMeta?: {
+      de: string;
+      tr: string;
+      article?: string;
+      topic?: string;
+      grammar?: string;
+      exampleDe?: string;
+      exampleTr?: string;
+    };
+  };
   id: string;
   module: string;
   type: string;
   part: number;
   level: string;
+  topic?: string;
   prompt: string;
   passage: string;
   options: string[];
@@ -219,6 +427,7 @@ export type Task = {
   evidence: string;
   fingerprint: string;
 };
+
 export function validateTask(value: any, words: Vocabulary[]): Task | null {
   if (!value || typeof value !== "object") return null;
   for (const field of [
@@ -253,17 +462,16 @@ export function validateTask(value: any, words: Vocabulary[]): Task | null {
     value.vocabularyIds.length > 8
   )
     return null;
-  if (value.vocabularyIds.some((id: any) => !words.some((w) => w.id === id)))
-    return null;
+  const matchedWords = value.vocabularyIds
+    .map((id: any) => words.find((w) => w.id === id))
+    .filter(Boolean) as Vocabulary[];
+  if (matchedWords.length !== value.vocabularyIds.length) return null;
+  // Never validate unclassified vocabulary into level-restricted tasks
+  if (matchedWords.some((w) => !isCefrLevel(w.level))) return null;
   const context = normalize(value.passage + " " + value.prompt);
   if (
-    !value.vocabularyIds.some((id: string) =>
-      context.includes(
-        normalize(words.find((w) => w.id === id)!.de).replace(
-          /^(der|die|das) /u,
-          "",
-        ),
-      ),
+    !matchedWords.some((w) =>
+      context.includes(normalize(w.de).replace(/^(der|die|das) /u, "")),
     )
   )
     return null;
@@ -296,23 +504,28 @@ export function validateTask(value: any, words: Vocabulary[]): Task | null {
     (!value.answer.trim() ||
       ![
         "multiple_choice",
+        "choice",
         "gap",
         "article",
         "conjugation",
         "cases",
         "correction",
+        "sentence_completion",
+        "translation",
         "translation_de_tr",
         "translation_tr_de",
       ].includes(value.type))
   )
     return null;
-  if (value.module === "Hören") return null; // Never publish listening tasks until a secure audio provider is implemented.
+  if (value.module === "Hören") return null;
+
+  const taskLevel = isCefrLevel(value.level) ? value.level : matchedWords[0].level;
   return {
     ...value,
     id: fingerprint(
       JSON.stringify([value.module, value.prompt, value.passage]),
     ),
-    level: "B1",
+    level: taskLevel,
     fingerprint: fingerprint(normalize(value.prompt + " " + value.passage)),
   };
 }
