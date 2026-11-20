@@ -71,6 +71,9 @@ try {
   await page.reload();
   await page.getByRole("button", { name: "Alıştırmalar", exact: true }).click();
   await page.getByRole("button", { name: /Çeviri Görevi/ }).click();
+  page.once("dialog", d => d.accept());
+  await page.getByRole("button", { name: "Oturumu tamamla", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Henüz yanıt vermedin" }).waitFor();
   await page
     .getByRole("textbox", { name: "Yanıtın", exact: true })
     .fill("der Apfel");
@@ -82,6 +85,20 @@ try {
       .inputValue(),
     "der Apfel",
   );
+  const resumedId = new URL(page.url()).searchParams.get('session');
+  await db.execute({ sql: 'UPDATE german_sessions SET deadline=? WHERE id=?', args: ['2020-01-01T00:00:00Z', resumedId!] });
+  await page.reload();
+  await page.locator('.kg-task').waitFor();
+  await page.waitForTimeout(1500);
+  assert.equal(await page.getByRole('heading', { name: 'Oturum sonuçları', exact: true }).count(), 0);
+  await page.getByRole('button', { name:'Çalışmaya Başla', exact:true }).click();
+  await page.locator('.kg-task').waitFor();
+  assert.equal(await page.getByRole('textbox', { name:'Yanıtın', exact:true }).inputValue(), 'der Apfel');
+  await page.getByRole('button', { name:'Kaydet ve çık', exact:true }).click();
+  await page.getByRole('button', { name:/Çeviri Görevi/ }).click();
+  await page.locator('.kg-task').waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('session'), resumedId);
+  assert.equal(await page.getByRole('textbox', { name:'Yanıtın', exact:true }).inputValue(), 'der Apfel');
   page.once("dialog", (d) => d.accept());
   await page
     .getByRole("button", { name: "Oturumu tamamla", exact: true })
