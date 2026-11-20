@@ -89,6 +89,8 @@ export default function KapsGerman() {
   const [reloadSession, setReloadSession] = useState(0);
   const [clockOffset, setClockOffset] = useState(0);
   const [saveStatus, setSaveStatus] = useState("");
+  const [starting, setStarting] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
@@ -172,7 +174,12 @@ export default function KapsGerman() {
   const start = (module = "vocabulary", mode = "practice", activity = "mixed") =>
     void action(async () => {
       if (module === "vocabulary" && !levels.length) throw new Error("En az bir seviye seç.");
-      const r = await request("/sessions", { module, mode, activity, direction, levels });
+      setStarting(true);
+      scrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
+      let r;
+      try { r = await request("/sessions", { module, mode, activity, direction, levels }); }
+      finally { setStarting(false); }
+      if (typeof r?.id !== "string" || !r.id) throw new Error("Çalışma açılamadı. Tekrar dene.");
       if (session?.state === "active") await save(true);
       setSession(null);
       setAnswers({});
@@ -276,6 +283,9 @@ export default function KapsGerman() {
     document.addEventListener("visibilitychange", background);
     return () => document.removeEventListener("visibilitychange", background);
   }, [session, index]);
+  useEffect(() => {
+    if (session?.id && session.id === sessionId) scrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [session?.id, sessionId]);
   const words = data?.words ?? [],
     sessions = data?.sessions ?? [],
     learned = words.filter((w: any) => w.memory.attempts > 0),
@@ -303,7 +313,7 @@ export default function KapsGerman() {
     );
   return (
     <div className="kg">
-      <div className="kg-scroll">
+      <div className="kg-scroll" ref={scrollRef}>
         <header className="kg-header">
           <Link to="/dersler">
             <ArrowLeft size={16} />
@@ -314,7 +324,7 @@ export default function KapsGerman() {
           </strong>
           <span>B1 · kişisel öğrenme</span>
         </header>
-        <section className="kg-hero">
+        {!sessionId && !starting && <section className="kg-hero">
           <p>DÜZENLİ ÇALIŞ. KALICI ÖĞREN.</p>
           <h1>
             Almancan, senin
@@ -329,7 +339,7 @@ export default function KapsGerman() {
             <Play size={17} />
             Çalışmaya Başla
           </button>
-        </section>
+        </section>}
         <nav aria-label="Kaps German bölümleri">
           {tabs
             .filter(([id]) => id !== "admin" || access.admin)
@@ -350,7 +360,7 @@ export default function KapsGerman() {
               {error}
             </p>
           )}
-          {sessionId && (!session || session.id !== sessionId) ? <section className="kg-card"><p role="status">{error ? "Çalışman açılamadı. Kaydedilmiş yanıtların korunuyor." : "Çalışman yükleniyor…"}</p>{error && <><button disabled={busy} onClick={() => {setError("");setReloadSession(n => n + 1);}}>Tekrar dene</button><button onClick={() => go("practice")}>Alıştırmalara dön</button></>}</section> : session ? (
+          {starting ? <section className="kg-card" role="status"><Loader2 className="animate-spin" aria-hidden="true" /><h2>Çalışman hazırlanıyor…</h2><p>Kaydedilmiş turun kontrol ediliyor ve soruların açılıyor.</p></section> : sessionId && (!session || session.id !== sessionId) ? <section className="kg-card"><p role="status">{error ? "Çalışman açılamadı. Kaydedilmiş yanıtların korunuyor." : "Çalışman yükleniyor…"}</p>{error && <><button disabled={busy} onClick={() => {setError("");setReloadSession(n => n + 1);}}>Tekrar dene</button><button onClick={() => go("practice")}>Alıştırmalara dön</button></>}</section> : session ? (
             <>
               <div className="kg-section">
                 <h2>
