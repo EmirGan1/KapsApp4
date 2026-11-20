@@ -1,5 +1,5 @@
 import { buildActivities } from './activities';
-import { activities } from '../../shared/germanActivities';
+import { activities, studyLevels, validStudyFilters } from '../../shared/germanActivities';
 import express from "express";
 import type { Express, Request, RequestHandler } from "express";
 import type { Client } from "@libsql/client";
@@ -413,12 +413,13 @@ export function registerGerman(
   router.post(
     "/sessions",
     wrap(async (req, res) => {
-      const { module = "vocabulary", mode = "practice", activity = "mixed" } = req.body ?? {};
+      const { module = "vocabulary", mode = "practice", activity = "mixed", direction = "tr_de", levels = [...studyLevels] } = req.body ?? {};
       if (
         !["vocabulary", ...Object.keys(EXAM_STRUCTURE)].includes(module) ||
         !["practice", "exam"].includes(mode)
       )
         return res.sendStatus(400);
+      if (module === "vocabulary" && !validStudyFilters(direction, levels)) return res.status(400).json({ error: "Geçerli bir dil yönü ve en az bir seviye seç." });
       if (activity !== "mixed" && !activities.some(a => a[0] === activity)) return res.sendStatus(400);
       if (module === "Hören")
         return res.status(409).json({
@@ -430,7 +431,7 @@ export function registerGerman(
         args: [res.locals.germanUser, module],
       });
       if (active.rows.length) return res.json({ id: active.rows[0].id });
-      const vocab = await words();
+      const vocab = (await words()).filter(w => module !== "vocabulary" || levels.includes(w.level));
       let tasks = (
         await db.execute(
           "SELECT data FROM german_tasks ORDER BY created_at DESC LIMIT 500",
@@ -449,7 +450,7 @@ export function registerGerman(
       if (module === "vocabulary") {
         const due = new Map(memory.rows.map(r => [String(r.word_id), Date.parse(JSON.parse(String(r.data)).due)]));
         const prioritized = [...vocab].sort((a, b) => (due.get(a.id) ?? 0) - (due.get(b.id) ?? 0));
-        const games = buildActivities(prioritized, activity);
+        const games = buildActivities(prioritized, activity, direction);
         tasks = activity === "mixed" ? [...games.slice(0, 10), ...tasks, ...games.slice(10)] : games;
       }
       if (module !== "vocabulary") tasks.sort(
