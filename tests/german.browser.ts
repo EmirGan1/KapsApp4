@@ -91,7 +91,7 @@ try {
   await page.locator('.kg-task').waitFor();
   await page.waitForTimeout(1500);
   assert.equal(await page.getByRole('heading', { name: 'Oturum sonuçları', exact: true }).count(), 0);
-  await page.getByRole('button', { name:'Çalışmaya Başla', exact:true }).click();
+  await page.goto(page.url());
   await page.locator('.kg-task').waitFor();
   assert.equal(await page.getByRole('textbox', { name:'Yanıtın', exact:true }).inputValue(), 'der Apfel');
   await page.getByRole('button', { name:'Kaydet ve çık', exact:true }).click();
