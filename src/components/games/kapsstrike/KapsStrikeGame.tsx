@@ -1737,7 +1737,7 @@ export default function KapsStrikeGame({
                 : "Yerel antrenman"}
               {settings.showDebugStats && hud.networkSample && (
                 <span>
-                  {" · Endpoint: "}{socket?.io?.uri || (typeof window !== "undefined" ? window.location.origin : "unknown")}
+                  {" · Endpoint: "}{(socket?.io as unknown as { uri?: string } | undefined)?.uri || (typeof window !== "undefined" ? window.location.origin : "unknown")}
                   {" · Transport: "}{hud.networkSample.transport}
                   {" · Ham RTT: "}{hud.networkSample.rawRttMs !== undefined ? `${hud.networkSample.rawRttMs} ms` : "—"}
                   {" · Filtreli RTT: "}{hud.networkSample.filteredRttMs !== undefined ? `${hud.networkSample.filteredRttMs} ms` : "—"}

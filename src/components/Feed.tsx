@@ -1,3 +1,4 @@
+import { MentionTextarea } from "./Mentions";
 import { uploadFile } from "../utils/uploadFile";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Socket } from "socket.io-client";
@@ -1083,7 +1084,7 @@ export default function Feed({
         {(!activeSubject || folderViewMode === "all" || folderViewMode === "feed") && (
         <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-2xs border border-slate-200/80 dark:border-slate-800 sm:rounded-3xl transition-colors duration-200">
           <form onSubmit={handlePostSubmit}>
-            <textarea
+            <MentionTextarea kind="post"
               placeholder={activeSubject ? `${activeSubject} çalışma alanında soru sor, ders notu veya fotoğraf/video paylaş... (50 dosyaya kadar)` : "Ne düşünüyorsun? Fotoğraf, ders notu veya düşünce paylaş... (Ctrl+Enter ile paylaş)"}
               className="w-full bg-transparent border-none focus:ring-0 resize-none mb-3 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none p-1.5 text-sm sm:text-base"
               rows={2}

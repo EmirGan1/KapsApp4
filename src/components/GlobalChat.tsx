@@ -1,3 +1,4 @@
+import { MentionInput, MentionHighlight } from "./Mentions";
 import { getUploadError } from "../utils/uploadErrors";
 import { formatMessageDate } from "../utils/messageDate";
 import React, { useState, useEffect, useRef } from "react";
@@ -33,6 +34,11 @@ export default function GlobalChat({
 }) {
   // Stale-While-Revalidate: Instant 0ms load from memory cache
   const [messages, setMessages] = useState<any[]>(() => [...globalChatCache.messages]);
+  useEffect(() => {
+    if (!socket) return;
+    const persisted = (data: any) => { if(data.kind === 'global') setMessages(prev => prev.map(m => String(m.id) === String(data.tempId) ? {...m,id:data.id} : m)); };
+    socket.on('mention_message_id', persisted);return () => { socket.off('mention_message_id',persisted); };
+  }, [socket]);
   const [newMessage, setNewMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -652,9 +658,9 @@ export default function GlobalChat({
 
                     {/* Text Message */}
                     {msg.type === "text" && (
-                      <p className="privacy-sensitive break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap text-[15px] leading-relaxed select-text">
-                        {msg.content}
-                      </p>
+                      <div className="privacy-sensitive break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap text-[15px] leading-relaxed select-text">
+                        <MentionHighlight kind="global" target={msg.id}>{msg.content}</MentionHighlight>
+                      </div>
                     )}
 
                     {/* Image Message */}
@@ -939,7 +945,7 @@ export default function GlobalChat({
                   <span>Fotoğraf sıkıştırılıyor ve yükleniyor...</span>
                 </div>
               ) : (
-                <input
+                <MentionInput kind="global"
                   type="text" data-chat-composer enterKeyHint="send"
                   placeholder="Mesaj yaz... (maks 1000)"
                   value={newMessage}

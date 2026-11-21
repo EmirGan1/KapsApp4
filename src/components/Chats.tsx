@@ -1,3 +1,4 @@
+import { MentionInput, MentionHighlight } from "./Mentions";
 import DmEmojiPicker from "./DmEmojiPicker";
 import { isDmForeground } from "../utils/dmVisibility";
 import { getUploadError } from "../utils/uploadErrors";
@@ -175,6 +176,11 @@ export default function Chats({
   }, [targetGroupId, socket, groups, onTargetGroupHandled]);
   
   const [messages, setMessages] = useState<any[]>([]);
+  useEffect(() => {
+    if (!socket) return;
+    const persisted = (data: any) => { if(data.kind === 'group') setMessages(prev => prev.map(m => String(m.id) === String(data.tempId) ? {...m,id:data.id} : m)); };
+    socket.on('mention_message_id', persisted);return () => { socket.off('mention_message_id',persisted); };
+  }, [socket]);
   const [text, setText] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -1264,7 +1270,7 @@ export default function Chats({
                           </div>
                         )}
 
-                        {msg.type === 'text' && <p className="privacy-sensitive text-[15px] text-slate-800 dark:text-slate-100 leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap select-text">{msg.content}</p>}
+                        {msg.type === 'text' && <div className="privacy-sensitive text-[15px] text-slate-800 dark:text-slate-100 leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap select-text"><MentionHighlight kind={activeTab === "friends" ? "dm" : "group"} target={msg.id}><p>{msg.content}</p></MentionHighlight></div>}
                         {msg.type === 'image' && (
                           <div className="relative group cursor-pointer overflow-hidden rounded-xl max-w-xs md:max-w-sm" onClick={() => openMediaModal(msg)}>
                             <img src={msg.content} referrerPolicy="no-referrer" alt="Fotoğraf" className="w-full object-cover rounded-xl hover:opacity-95 transition-opacity" />
@@ -1487,7 +1493,7 @@ export default function Chats({
                     </div>
                   ) : (
                     <form onSubmit={handleSendText}>
-                      <input 
+                      <MentionInput kind={activeTab === "friends" ? "dm" : "group"} scope={activeTab === "friends" ? `${currentUserId}:${activeChat?.id}` : activeChat?.id}
                         ref={composerRef} type="text" data-chat-composer enterKeyHint="send"
                         placeholder="Mesaj yazın... (maks 1000)" 
                         maxLength={1000}

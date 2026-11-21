@@ -3,7 +3,7 @@ import { Server, Socket } from "socket.io";
 /**
  * Socket.IO Genel Sohbet ve Oda Senkronizasyon Yardımcısı
  */
-export function setupChatSocketHandlers(io: Server, socket: Socket, user: any, client: any, messageRamCache: any, getUser: any) {
+export function setupChatSocketHandlers(io: Server, socket: Socket, user: any, client: any, messageRamCache: any, getUser: any, mention?: (...args: any[]) => Promise<void>) {
   // 1. Oda abonelikleri (general, global)
   socket.on("join_room", (room: string) => {
     if (room && typeof room === "string" && !room.startsWith("dm-user:")) {
@@ -90,8 +90,11 @@ export function setupChatSocketHandlers(io: Server, socket: Socket, user: any, c
       client.execute({
         sql: "INSERT INTO global_messages (sender, type, content, reply_to, reactions, file_name, file_size, created_at) VALUES (?, ?, ?, ?, '[]', ?, ?, ?)",
         args: [user.id, type, content, reply_to || null, file_name || null, file_size || null, nowIso]
-      }).then((res: any) => {
+      }).then(async (res: any) => {
+        const oldId=popMsg.id;
         popMsg.id = Number(res.lastInsertRowid);
+        io.emit("mention_message_id", {kind:"global",tempId:oldId,id:popMsg.id});
+        if(type === "text") await mention?.("global",popMsg.id,Number(user.id),content);
       }).catch((err: any) => {
         console.error("Async global msg error:", err);
       });

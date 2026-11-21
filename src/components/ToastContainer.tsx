@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { MessageSquare, Heart, MessageCircle, UserPlus, UserCheck, Bell, Users, X, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
 
 export interface ToastItem {
+  metadata?: string;
   id: string;
   type: string;
   senderId?: number | null;

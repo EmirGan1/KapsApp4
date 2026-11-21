@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import express from 'express';
+import {createClient} from '@libsql/client';
+import {createServer} from 'vite';
+import {chromium} from 'playwright';
+import {createMentionService} from '../src/server/mentions';
+const db=createClient({url:':memory:'});
+await db.batch(['CREATE TABLE users(id INTEGER PRIMARY KEY,username TEXT,avatar TEXT,isBanned INTEGER DEFAULT 0)','CREATE TABLE notifications(id INTEGER PRIMARY KEY,user_id INTEGER,type TEXT,content TEXT,read INTEGER,sender_id INTEGER,target_id INTEGER,metadata TEXT,created_at TEXT)','CREATE TABLE global_messages(id INTEGER PRIMARY KEY,sender INTEGER,content TEXT)',"INSERT INTO users(id,username) VALUES(1,'Emirgan'),(2,'Ayşe'),(3,'Ali Can')","INSERT INTO global_messages VALUES(10,1,'@Ayşe burada')"],'write');
+const service=await createMentionService(db,{to:()=>({emit:()=>{}})},{deliver:async()=>{}});await service.record('global',10,1,'@Ayşe burada');
+const app=express();app.use(express.json());service.routes(app,async req=>(await db.execute({sql:'SELECT * FROM users WHERE id=?',args:[Number(req.headers.authorization?.replace('Bearer ',''))]})).rows[0]);
+const vite=await createServer({logLevel:'error',server:{host:'127.0.0.1',port:0},plugins:[{name:'mentions-fixture',configureServer(s){s.middlewares.use('/api/mentions',(q,r,n)=>{q.url='/api/mentions'+q.url;app(q as any,r as any,n);});s.middlewares.use('/__mentions',async(q,r)=>{r.setHeader('Content-Type','text/html');r.end(await s.transformIndexHtml('/__mentions','<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/mentions.fixture.tsx"></script>'));});}}]});await vite.listen();const base=`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`;
+const browser=await chromium.launch();
+try{for(const width of [1365,390]){
+ const context=await browser.newContext({viewport:{width,height:844},hasTouch:width===390,isMobile:width===390});const page=await context.newPage();page.setDefaultTimeout(12000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/__mentions?user=1');const input=page.getByRole('textbox',{name:'Mesaj yaz'});
+ await input.fill('@');await page.getByRole('option',{name:'@herkes Bu alandaki herkes'}).waitFor();await page.getByRole('option',{name:'@Ayşe',exact:true})[width===390?'tap':'click']();assert.equal(await input.inputValue(),'@Ayşe ');
+ await input.pressSequentially('@Ali');await page.getByRole('option',{name:'@Ali Can',exact:true}).waitFor();await input.press('Enter');assert.equal(await input.inputValue(),'@Ayşe @Ali Can ');assert.equal(await page.evaluate(()=>(window as any).submitted),undefined,'Autocomplete Enter must not submit');
+ const textarea=page.getByRole('textbox',{name:'Gönderi yaz'});await textarea.fill('Merhaba @Ay');await page.getByRole('option',{name:'@Ayşe',exact:true})[width===390?'tap':'click']();assert.equal(await textarea.inputValue(),'Merhaba @Ayşe ');
+ await input.fill('@');await page.getByRole('listbox').waitFor();await input.press('Escape');assert.equal(await page.getByRole('listbox').count(),0);
+ await page.goto(base+'/__mentions?user=2');await input.fill('@');await page.getByRole('option',{name:'@Ayşe',exact:true}).waitFor();assert.equal(await page.getByRole('option',{name:/@herkes/}).count(),0);await input.press('Escape');
+ const receipt=()=>db.execute("SELECT seen_at FROM mentions WHERE target='10' AND user_id=2");
+ await db.execute("UPDATE mentions SET seen_at=NULL WHERE target='10'");await page.reload();
+ await page.waitForTimeout(2100);assert.equal((await receipt()).rows[0].seen_at,null,'Offscreen content cannot be marked seen');
+ await page.evaluate(()=>(window as any).foreground(false));await page.locator('[data-mention-id="10"]').scrollIntoViewIfNeeded();await page.waitForTimeout(2100);assert.equal((await receipt()).rows[0].seen_at,null,'Background content cannot be marked seen');
+ await page.evaluate(()=>(window as any).foreground(true));await page.locator('.mention-unread').waitFor();await page.locator('.mention-seen').waitFor();assert.ok((await receipt()).rows[0].seen_at);
+ await page.reload();await page.locator('.mention-seen').waitFor();
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('open-mention',{detail:{kind:'global',target:'10'}})));await page.getByRole('dialog').waitFor();await page.getByRole('dialog').getByText('@Ayşe burada',{exact:true}).waitFor();
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:`/workspace/scratch/eb4732f1954e/mentions-${width}.png`});await page.getByRole('button',{name:'Kapat',exact:true}).click();assert.equal(await page.getByRole('dialog').count(),0);
+ assert.deepEqual(errors,[]);console.log(`PASS ${width}: multi-user autocomplete, reserved broadcast, post input, keyboard, unseen/offscreen/background, durable seen highlight and exact notification preview`);await context.close();
+}}finally{await browser.close();await vite.close();db.close();}

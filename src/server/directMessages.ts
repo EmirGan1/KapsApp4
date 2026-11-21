@@ -23,9 +23,9 @@ export function validEmoji(emoji: unknown): emoji is string {
     /^(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*(?:[\u{E0020}-\u{E007E}]+\u{E007F})?)$/u.test(emoji);
 }
 const reactionLocks = new Map<number, Promise<unknown>>();
-export function registerDirectMessages({ io, socket, db, presence, getUser, notify, push }: {
+export function registerDirectMessages({ io, socket, db, presence, getUser, notify, push, mention }: {
   io: Server; socket: Socket; db: Client; presence: DmPresence;
-  getUser: (id: number) => Promise<any>; notify: (...args: any[]) => Promise<any>; push: any;
+  getUser: (id: number) => Promise<any>; notify: (...args: any[]) => Promise<any>; push: any; mention?: (...args:any[])=>Promise<void>;
 }) {
   const me = Number(socket.data.user.id);
   const userRoom = (id: number) => `dm-user:${id}`;
@@ -99,6 +99,7 @@ export function registerDirectMessages({ io, socket, db, presence, getUser, noti
     const message = { ...await populate(row), client_id: data.client_id };
     io.to(userRoom(me)).to(userRoom(partner)).emit('new_message', message);
     if (typeof cb === 'function') cb({ success: true, message });
+    if (data.type === "text") await mention?.("dm",message.id,me,message.content,`${me}:${partner}`).catch(console.error);
     if (!presence.viewing(partner, me)) {
       const sender = await getUser(me);
       const preview = data.type === 'text' ? message.content.slice(0, 120) : `📎 ${data.file_name || data.type}`;

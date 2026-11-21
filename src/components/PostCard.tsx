@@ -1,3 +1,4 @@
+import { MentionHighlight } from "./Mentions";
 import React, { useState } from 'react';
 import { 
   Heart, 
@@ -119,9 +120,7 @@ export const PostCard: React.FC<PostCardProps> = ({
 
       {/* Caption */}
       {post.caption && (
-        <p className="px-4 pb-3 text-slate-800 dark:text-slate-200 text-[15px] leading-relaxed whitespace-pre-wrap">
-          {post.caption}
-        </p>
+        <div className="px-4 pb-3 text-slate-800 dark:text-slate-200 text-[15px] leading-relaxed whitespace-pre-wrap"><MentionHighlight kind="post" target={post.id}>{post.caption}</MentionHighlight></div>
       )}
 
       {/* MultiMediaPostViewer: Displays single or multiple photos, videos, and files */}

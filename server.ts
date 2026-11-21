@@ -1,3 +1,4 @@
+import { createMentionService } from './src/server/mentions';
 import { DmPresence, registerDirectMessages } from './src/server/directMessages';
 import express from "express";
 import cors from "cors";
@@ -1524,6 +1525,9 @@ async function startServer() {
     maxHttpBufferSize: 2e6 // 2 MB limit for balanced memory usage under 1GB RAM ceiling
   });
 
+  const mentions = await createMentionService(client, io, devicePush);
+  mentions.routes(app, authenticateToken);
+
   // Start Agenda reminder Cron job
   try {
     startAgendaCronJobs(client, io);
@@ -2173,6 +2177,7 @@ async function startServer() {
       });
 
       const newPostId = Number(insertRes.lastInsertRowid);
+      await mentions.record("post", newPostId, userId, rawCaption).catch(console.error);
       const newPost = {
         id: newPostId,
         user_id: userId,
@@ -7070,6 +7075,7 @@ async function startServer() {
         });
 
         const newPostId = Number(insertRes.lastInsertRowid);
+        await mentions.record("post", newPostId, userId, rawCaption).catch(console.error);
         const pUser = await getUser(userId);
         const newPost = {
           id: newPostId,
@@ -8756,7 +8762,7 @@ async function startServer() {
 
     // Chat with In-Memory RAM Cache & Dynamic Pagination (Zero message loss, full history persistence)
     registerDirectMessages({ io, socket, db: client, presence: dmPresence, getUser,
-      notify: addNotification, push: devicePush });
+      notify: addNotification, push: devicePush, mention: mentions.record });
 
     const populateMessage = async (m: any, type: "global" | "group") => {
       const sUser = await getUser(m.sender);
@@ -8840,7 +8846,7 @@ async function startServer() {
     });
 
     // Global Chat Handlers (Room Join, Dual Broadcast, Fast Response)
-    setupChatSocketHandlers(io, socket, user, client, messageRamCache, getUser);
+    setupChatSocketHandlers(io, socket, user, client, messageRamCache, getUser, mentions.record);
 
     socket.on("clear_global_chat", async () => {
       try {
@@ -9115,8 +9121,11 @@ async function startServer() {
       client.execute({
         sql: "INSERT INTO group_messages (group_id, sender, type, content, reply_to, reactions, file_name, file_size, created_at) VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?)",
         args: [group_id, user.id, type, content, reply_to || null, file_name || null, file_size || null, nowIso]
-      }).then(res => {
+      }).then(async res => {
+        const oldId = popMsg.id;
         popMsg.id = Number(res.lastInsertRowid);
+        for (const memberId of JSON.parse(String(membership.rows[0].members || "[]"))) io.to(`dm-user:${Number(memberId)}`).emit("mention_message_id", {kind:"group",tempId:oldId,id:popMsg.id});
+        if(type === "text") await mentions.record("group", popMsg.id, Number(user.id), content, group_id);
       }).catch(err => {
         console.error("Async group msg persist error:", err);
       });

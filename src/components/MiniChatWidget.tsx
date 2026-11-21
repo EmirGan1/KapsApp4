@@ -1,3 +1,4 @@
+import { MentionInput, MentionHighlight } from "./Mentions";
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Socket } from "socket.io-client";
@@ -34,6 +35,11 @@ export default function MiniChatWidget({
   className = ""
 }: MiniChatWidgetProps) {
   const [messages, setMessages] = useState<MiniChatMessage[]>([]);
+  useEffect(() => {
+    if (!socket) return;
+    const persisted = (data: any) => { if(data.kind === 'global') setMessages(prev => prev.map(m => String(m.id) === String(data.tempId) ? {...m,id:data.id} : m)); };
+    socket.on('mention_message_id', persisted);return () => { socket.off('mention_message_id',persisted); };
+  }, [socket]);
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -210,9 +216,7 @@ export default function MiniChatWidget({
                         {timeStr}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 break-words line-clamp-1 privacy-sensitive">
-                      {msg.content}
-                    </p>
+                    <div className="text-xs text-slate-600 dark:text-slate-300 break-words privacy-sensitive"><MentionHighlight kind="global" target={msg.id}>{msg.content}</MentionHighlight></div>
                   </div>
                 </div>
               );
@@ -228,7 +232,7 @@ export default function MiniChatWidget({
       {/* Hızlı Yanıt Kutusu */}
       <form onSubmit={handleSendMessage} className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2">
-          <input
+          <MentionInput kind="global"
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}

@@ -1,3 +1,4 @@
+import { MentionTargetPreview, notifyMentionsChanged, mentionPersisted } from "./components/Mentions";
 import { dismissDeviceNotification, hasDevicePush, NotificationPermissionPrompt, removeDevicePush, showDeviceNotification, syncDevicePush } from "./components/DeviceNotifications";
 import { AI_CHECKER_RESULT_NOTIFICATION } from "./utils/aiDetectorAssessment";
 import { useChatViewport } from "./utils/chatViewport";
@@ -487,6 +488,7 @@ export default function App() {
     senderColor?: string;
     target_id?: number | null;
     notifId?: number;
+    metadata?: string;
   }) => {
     // Respect Do Not Disturb / Odak Modu
     if (preferencesRef.current.doNotDisturb) {
@@ -559,6 +561,7 @@ export default function App() {
           timestamp: Date.now(),
           target_id: incoming.target_id,
           notifId: incoming.notifId,
+          metadata: incoming.metadata,
         };
 
         // Set auto-dismiss timer (6000ms)
@@ -631,6 +634,10 @@ export default function App() {
     }
     setUnreadNotificationsCount((prev) => Math.max(0, prev - 1));
 
+    if (notif.type === 'mention') {
+      try { const metadata = typeof notif.metadata === 'string' ? JSON.parse(notif.metadata) : notif.metadata; if (metadata?.kind && metadata?.target) window.dispatchEvent(new CustomEvent('open-mention', {detail:metadata})); } catch {}
+      return;
+    }
     const senderId = notif.senderId || notif.sender_id;
     const groupId = notif.chatId || notif.groupId || notif.group_id || notif.roomId || notif.room_id || (notif.type === "new_group_message" ? notif.target_id : null);
 
@@ -763,7 +770,10 @@ export default function App() {
         localStorage.setItem("lan_user_id", id.toString());
       });
       
+      newSocket.on("mention_updated", notifyMentionsChanged);
+      newSocket.on("mention_message_id", mentionPersisted);
       newSocket.on("new_notification", (notif: any) => {
+        if(notif?.type === "mention") notifyMentionsChanged();
         if (!notif) return;
         // Smart suppression: If user is actively inside the DM chat with the sender, do NOT show toast or increment badge
         const senderId = Number(notif?.sender_id || notif?.senderId);
@@ -775,6 +785,7 @@ export default function App() {
         if (notif && notif.content) {
           let title = "Yeni Bildirim";
           if (notif.type === "new_message" || notif.type === "dm") title = "Yeni Mesaj";
+          else if (notif.type === "mention") title = "Etiketlendin";
           else if (notif.type === "like") title = "Yeni Beğeni";
           else if (notif.type === "comment") title = "Yeni Yorum";
           else if (notif.type === "follow") title = "Yeni Takipçi";
@@ -784,7 +795,7 @@ export default function App() {
 
           if (!isDemoSession && notif.type !== "new_message" && notif.type !== "dm" &&
               notif.type !== AI_CHECKER_RESULT_NOTIFICATION &&
-              !(notif.type === "new_group_message" && hasDevicePush())) {
+              !((notif.type === "new_group_message" || notif.type === "mention") && hasDevicePush())) {
             void showDeviceNotification(title, notif.content, notif.id);
           }
 
@@ -802,6 +813,7 @@ export default function App() {
             senderName,
             target_id: notif.target_id,
             notifId: notif.id,
+            metadata: notif.metadata,
           });
         }
       });
@@ -1972,6 +1984,7 @@ export default function App() {
             }}
           />
         )}
+        <MentionTargetPreview />
         {activeTab === 'notifications' && <Notifications socket={socket} onNotificationClick={handleNotificationClick} />}
         {activeTab === 'profile' && (
           <Profile 
