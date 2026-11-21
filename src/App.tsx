@@ -683,8 +683,11 @@ export default function App() {
         localStorage.getItem("lan_is_demo") === "true";
 
       const newSocket = io(socketUrl || undefined, socketOptions);
+      // Never switch hosts after a successful connection: that would interrupt live matches.
+      let hasConnectedSuccessfully = false;
       
       const onConnect = () => {
+        hasConnectedSuccessfully = true;
         setSocket(newSocket);
         if (!isDemoSession && preferencesRef.current.desktopNotifs) void syncDevicePush();
         newSocket.emit("heartbeat");
@@ -717,7 +720,7 @@ export default function App() {
           if (!isDemoSession) {
             handleLogout();
           }
-        } else if (!socketProxyFallback && socketUrl === "https://ws.kapsapp.online") {
+        } else if (!hasConnectedSuccessfully && !socketProxyFallback && socketUrl === "https://ws.kapsapp.online") {
           // A failed direct WebSocket connection must not take down messaging and calls.
           // React effect cleanup disconnects the original socket before opening the fallback.
           console.warn("[Socket.IO] Direct realtime endpoint unavailable; falling back to page origin.", err.message);
