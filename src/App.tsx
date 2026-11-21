@@ -132,6 +132,8 @@ export default function App() {
   const navigate = useNavigate();
 
   const [socket, setSocket] = useState<Socket | null>(null);
+  // Switch back to the Cloudflare-served origin only if the direct realtime endpoint fails.
+  const [socketProxyFallback, setSocketProxyFallback] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<number[]>([]);
   const [currentUserId, setCurrentUserId] = useState<number>(Number(localStorage.getItem("lan_user_id")) || 0);
   
@@ -659,7 +661,9 @@ export default function App() {
 
   useEffect(() => {
     if (token) {
-      const socketUrl = getSocketUrl();
+      const socketUrl = socketProxyFallback && typeof window !== "undefined"
+        ? window.location.origin
+        : getSocketUrl();
       const hwFingerprint = getCachedHardwareFingerprint();
       const socketOptions = { 
         path: "/socket.io",
@@ -713,6 +717,11 @@ export default function App() {
           if (!isDemoSession) {
             handleLogout();
           }
+        } else if (!socketProxyFallback && socketUrl === "https://ws.kapsapp.online") {
+          // A failed direct WebSocket connection must not take down messaging and calls.
+          // React effect cleanup disconnects the original socket before opening the fallback.
+          console.warn("[Socket.IO] Direct realtime endpoint unavailable; falling back to page origin.", err.message);
+          setSocketProxyFallback(true);
         }
       });
 
@@ -1010,7 +1019,7 @@ export default function App() {
         newSocket.disconnect();
       };
     }
-  }, [token]);
+  }, [token, socketProxyFallback]);
 
   const handleAuthSuccess = (newToken: string, newUsername: string, newAvatar: string | null, id: number, newColor?: string) => {
     localStorage.setItem("lan_token", newToken);
