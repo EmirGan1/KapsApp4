@@ -53,6 +53,7 @@ const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
 });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+page.setDefaultTimeout(15000);
 page.on("pageerror", error => console.error("PAGE ERROR:", error.message));
 page.on("response", response => { if (response.status() >= 400) console.error("HTTP ERROR:", response.status(), response.url()); });
 
@@ -115,6 +116,7 @@ try {
     if (type === "mistake_review") continue; // Tested after an intentional mistake
     await db.execute("UPDATE german_sessions SET state='done' WHERE state='active'");
     await page.goto(base + "/dersler/kaps-german?tab=practice");
+    await page.getByRole("button", { name: "Tümü", exact: true }).click();
     await page.getByRole("button", { name: new RegExp(title) }).click();
     await page.locator(".kg-task-card").waitFor();
 
@@ -133,6 +135,9 @@ try {
       assert.equal(await page.locator('.kg-task-meta .kg-speak-btns').count(), 0);
     }
 
+    if (type === 'choice' || type === 'sentence_translation') {
+      assert.equal(await page.locator('.kg-task-card .kg-word').count(), 0, 'Translations must stay locked before checking');
+    }
     // Ensure session NEVER jumps to results before answering
     assert.equal(
       await page.getByRole("heading", { name: "Oturum Tamamlandı!" }).count(),
@@ -184,6 +189,26 @@ try {
     await page.getByRole("button", { name: "Kontrol Et", exact: true }).click();
     await page.getByRole("status").filter({ hasText: /Harika, doğru!/ }).waitFor();
 
+    await page.locator('.kg-word-notice.is-unlocked').waitFor();
+    if (type === 'choice' || type === 'article') {
+      const chip = page.locator('.kg-word-chips .kg-word').first();
+      await chip.click();
+      await page.getByRole('tooltip').waitFor();
+      const box = await page.getByRole('tooltip').boundingBox();
+      assert.ok(box && box.width <= 270 && box.height < 220, 'Word tooltip should fit its content');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.getByRole('tooltip').count(), 0);
+      await chip.evaluate((element: HTMLElement) => element.blur());
+      await chip.focus();
+      await page.getByRole('tooltip').waitFor();
+      await page.keyboard.press('Escape');
+      if (type === 'choice') {
+        await page.getByRole('button', { name: 'Cümleyi çözümle', exact: true }).click();
+        await page.locator('.kg-word-breakdown').waitFor();
+        assert.ok(await page.locator('.kg-word-breakdown dt').count() > 0);
+        await page.screenshot({ path: '/workspace/scratch/eb4732f1954e/german-word-help-mobile.png' });
+      }
+    }
     // Verify reload preserves checked progress & position without wiping session
     await page.reload();
     await page.locator(".kg-task-card").waitFor();
@@ -364,6 +389,23 @@ try {
   assert.equal(await page.getByRole('dialog', { name: 'Testin oluşturuluyor' }).count(), 0);
   await page.unroute('**/api/kaps-german/sessions');
   console.log('PASS failed preparation unlocks the page without losing context');
+  await page.goto(base + '/dersler/kaps-german?tab=practice');
+  await page.getByRole('heading', {name:'Pratik Merkezi'}).waitFor();
+  assert.equal(await page.locator('.kg-practice-card').count(),4, 'A first visit should show only the four word activities');
+  await page.getByRole('button',{name:'Cümle',exact:true}).click();
+  assert.equal(await page.locator('.kg-practice-card').count(),6);
+  await page.getByText('Çalışma ayarları',{exact:true}).click();
+  await page.getByRole('combobox',{name:'Çeldirici zorluğu'}).waitFor();
+  assert.ok((await page.getByRole('combobox',{name:'Konu Kategorisi'}).locator('option').count()) > 2);
+  for (const width of [390,1440]) {
+    await page.setViewportSize({width,height:900});
+    for (const theme of ['', 'dark', 'theme-navy', 'theme-emerald', 'theme-pink', 'theme-amethyst']) {
+      await page.evaluate(theme => { document.documentElement.className=theme; },theme);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${theme} ${width} overflow`);
+    }
+    await page.screenshot({path:`/workspace/scratch/eb4732f1954e/german-practice-polish-${width}.png`});
+  }
+  console.log('PASS grouped practice, advanced settings and all six themes at mobile/desktop widths');
   console.log("PASS desktop layout and full Kaps German AI & Pronunciation browser suite");
 } catch (error) {
   console.error((await page.locator("body").innerText()).slice(0, 4000));

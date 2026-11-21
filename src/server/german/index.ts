@@ -1,3 +1,6 @@
+import { questionWords } from './glossary';
+import { freshPractice } from './freshPractice';
+import { recentQuestionHistory, preferNovelQuestions, questionKey } from './questionHistory';
 import { gradeOpenSentence, needsSentenceReview } from './sentenceGrading';
 import { preparationStep, registerPreparationProgress } from './preparation';
 import express from "express";
@@ -888,7 +891,7 @@ export function registerGerman(
         const storedFilters = String(row.filters ?? "{}");
         if (
           module !== "vocabulary" ||
-          storedFilters === filterKey
+          JSON.stringify({ ...JSON.parse(storedFilters), freshness: undefined }) === filterKey
         ) {
           return res.json({ id: row.id });
         }
@@ -924,6 +927,8 @@ export function registerGerman(
       }
 
       let tasks: Task[] = [];
+      let freshness: { newQuestions: number; aiQuestions: number; total: number } | undefined;
+      let summarizeFreshness: ((items: Task[]) => typeof freshness) | undefined;
       if (module === "vocabulary") {
         if (!scopedWords.length) {
           return res.status(409).json({
@@ -983,7 +988,8 @@ export function registerGerman(
             : [...unmastered, ...mastered];
         }
 
-        const recentWordIds = await getRecentSessionWordIds(db, userId, 3);
+        const recentWordIds = await getRecentSessionWordIds(db, userId, 10);
+        const history = await recentQuestionHistory(db, userId);
         const masteryStreakByWordId = new Map<string, number>(
           studyPool.map((w) => [w.id, w.mastery.consecutiveCorrect]),
         );
@@ -995,12 +1001,14 @@ export function registerGerman(
           {
             mistakeWordIds: mistakeIds,
             recentWordIds,
+            recentQuestionKeys: new Set(history.counts.keys()),
+            wordExposureCounts: history.wordCounts,
             distractorWords: levelFilteredWords,
             reviewMode: !!reviewMode,
             difficulty: normalizedDifficulty,
             masteryStreakByWordId,
             satzbauMode: normalizedSatzbauMode,
-            limit: 12,
+            limit: 24,
           },
         );
 
@@ -1021,10 +1029,15 @@ export function registerGerman(
               validateTask(t, levelFilteredWords) !== null,
           );
 
-        tasks =
-          activity === "mixed"
-            ? [...generatedGames.slice(0, 8), ...storedTasks.slice(0, 2), ...generatedGames.slice(8)]
-            : generatedGames;
+        const bank = storedTasks.filter(t =>
+          (activity === 'mixed' || activity === 'mistake_review' || t.type === activity) &&
+          (direction === 'mixed' || t.direction === direction || t.direction === 'de_only' || t.type === 'satzbau') &&
+          (t.type !== 'satzbau' || !normalizedSatzbauMode || t.satzbauMode === normalizedSatzbauMode));
+        const generatedAI = await freshPractice(db, { userId, templates: generatedGames, words: studyPool,
+          history, onProgress: (stage, percent) => preparationStep(db, res, stage, percent) });
+        tasks = preferNovelQuestions([...generatedAI, ...bank, ...generatedGames], history, 10);
+        summarizeFreshness = items => ({ newQuestions: items.filter(t => !history.counts.has(questionKey(t))).length,
+          aiQuestions: items.filter(t => generatedAI.some(g => g.id === t.id)).length, total: items.length });
 
         // Post-generation safety check: verify every task strictly belongs to selected CEFR levels!
         tasks = tasks.filter(
@@ -1090,6 +1103,7 @@ export function registerGerman(
         });
       }
 
+      freshness = summarizeFreshness?.(tasks);
       const id = randomUUID();
       const start = new Date();
       const minutes =
@@ -1106,7 +1120,7 @@ export function registerGerman(
           args: [userId, module, mode],
         });
         for (const row of concurrent.rows) {
-          if (module !== "vocabulary" || String(row.filters ?? "{}") === filterKey) {
+          if (module !== "vocabulary" || JSON.stringify({ ...JSON.parse(String(row.filters ?? "{}")), freshness: undefined }) === filterKey) {
             await tx.commit();
             return res.json({ id: row.id });
           }
@@ -1122,7 +1136,7 @@ export function registerGerman(
             JSON.stringify(tasks),
             start.toISOString(),
             new Date(start.getTime() + minutes * 60000).toISOString(),
-            filterKey,
+            JSON.stringify({ ...filterObj, freshness }),
           ],
         });
         await tx.commit();
@@ -1239,6 +1253,8 @@ export function registerGerman(
             ? hydrated
             : {
                 ...hydrated,
+                sentenceDe: undefined,
+                sentenceTr: undefined,
                 answer: undefined,
                 alternatives: undefined,
                 explanation: undefined,
@@ -2011,6 +2027,18 @@ export function registerGerman(
 
   // ==================== NEW AI & LEARNING UPGRADE ROUTES ====================
 
+  router.post('/sessions/:id/words', wrap(async (req, res) => {
+    const session = await owned(req.params.id, res.locals.germanUser);
+    if (!session) return res.sendStatus(404);
+    const task = (JSON.parse(String(session.tasks)) as Task[]).find(t => t.id === req.body?.taskId);
+    if (!task) return res.sendStatus(404);
+    if (session.mode === 'exam' && session.state !== 'done') return res.json({ words: [], reviewed: false });
+    const result = JSON.parse(String(session.results || '{}'))[task.id];
+    const reviewed = session.state === 'done' || Boolean(result && !result.pending && !result.skipped && result.score !== null);
+    const words = await activeWordsList();
+    res.json({ words: questionWords(task, words, reviewed), reviewed });
+  }));
+
   router.post(
     "/ai/explain",
     wrap(async (req, res) => {
@@ -2027,15 +2055,11 @@ export function registerGerman(
 
       const storedAnswers = JSON.parse(String(s.answers ?? "{}"));
       const storedResults = JSON.parse(String(s.results ?? "{}"));
-      const studentAnswer =
-        typeof answer === "string" ? answer : String(storedAnswers[taskId] ?? "");
       const taskRes = storedResults[taskId];
-      const isCorrect =
-        typeof req.body?.isCorrect === "boolean"
-          ? req.body.isCorrect
-          : taskRes && taskRes.score !== null
-            ? Number(taskRes.score) >= 0.8
-            : false;
+      const checked = taskRes && !taskRes.pending && !taskRes.skipped && taskRes.score !== null;
+      if (!checked || (s.mode === 'exam' && s.state !== 'done')) return res.status(409).json({ error: 'Açıklama için önce yanıtını kontrol et veya sınavı bitir.' });
+      const studentAnswer = String(storedAnswers[taskId] ?? '');
+      const isCorrect = Number(taskRes.score) >= 0.8;
 
       const { uniqueWords } = await loadDeduplicatedWordsWithMastery(db, user, false);
       const primaryWord =
@@ -2048,6 +2072,7 @@ export function registerGerman(
         isCorrect,
         detailed: Boolean(detailed),
         wordMeta: primaryWord,
+        words: uniqueWords,
       });
       res.json(explanation);
     }),

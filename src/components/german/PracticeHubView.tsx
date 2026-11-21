@@ -47,6 +47,8 @@ export function PracticeHubView({
   }) => void;
   busy: boolean;
 }) {
+  const [group, setGroup] = useState("word");
+  const groups: Record<string, string[]> = { word: ["choice", "matching", "article", "translation"], sentence: ["satzbau", "gap", "ordering", "sentence_translation", "sentence_completion", "conjugation"], listening: ["listening"], review: ["mistake_review"] };
   const [includeMasteredReview, setIncludeMasteredReview] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
   const [satzbauMode, setSatzbauMode] = useState<SatzbauMode | "mixed">("mixed");
@@ -58,9 +60,9 @@ export function PracticeHubView({
   const availableCategories = (() => {
     const map = new Map<string, string>();
     for (const lvl of selectedLevels) {
-      for (const cat of (overview.curriculumHierarchy as any)?.[lvl] ?? []) {
-        if (!map.has(cat.categoryId)) {
-          map.set(cat.categoryId, `${cat.icon} ${cat.titleTr} (${cat.titleDe})`);
+      for (const cat of overview.curriculumHierarchy?.[lvl] ?? []) {
+        if (!map.has(cat.id)) {
+          map.set(cat.id, `${cat.icon} ${cat.titleTr} (${cat.titleDe})`);
         }
       }
     }
@@ -86,7 +88,7 @@ export function PracticeHubView({
               Pratik Merkezi
             </h1>
             <p className="kg-section-sub">
-              Seviye, konu kategorisi, çeldirici zorluğu ve soru yönünü seç; seçili seviye dışından tek bir kelime bile gelmez.
+              Seviyeni seç, nasıl çalışacağına karar ver.
             </p>
           </div>
           <button
@@ -95,7 +97,7 @@ export function PracticeHubView({
             className="kg-btn kg-btn-primary"
             onClick={() => startWithFilters("mixed")}
           >
-            <Play size={17} /> Karışık Akıllı Ders Başlat
+            <Play size={17} /> Karışık Çalışmaya Başla
           </button>
         </div>
 
@@ -126,26 +128,6 @@ export function PracticeHubView({
             </select>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label htmlFor="kg-difficulty-select" style={{ fontSize: 13, fontWeight: 800 }}>
-              Çeldirici zorluğu:
-            </label>
-            <select
-              id="kg-difficulty-select"
-              aria-label="Çeldirici zorluğu"
-              className="kg-select"
-              value={difficulty}
-              onChange={(e) =>
-                onChangeDifficulty?.(e.target.value as DistractorDifficulty)
-              }
-            >
-              <option value="adaptive">Adaptif (Ustalığa Göre Otomatik)</option>
-              <option value="easy">Kolay (Açık Anlamsal Fark)</option>
-              <option value="normal">Normal (Aynı Konu ve Sözcük Türü)</option>
-              <option value="challenging">Zorlayıcı (Yakın Bağlam & Gramer)</option>
-            </select>
-          </div>
-
           {availableCategories.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <label htmlFor="kg-practice-cat-select" style={{ fontSize: 13, fontWeight: 800 }}>
@@ -168,6 +150,28 @@ export function PracticeHubView({
             </div>
           )}
 
+
+        </div>
+        <details className="kg-disclosure kg-practice-settings"><summary>Çalışma ayarları</summary><div className="kg-settings-grid">          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label htmlFor="kg-difficulty-select" style={{ fontSize: 13, fontWeight: 800 }}>
+              Çeldirici zorluğu:
+            </label>
+            <select
+              id="kg-difficulty-select"
+              aria-label="Çeldirici zorluğu"
+              className="kg-select"
+              value={difficulty}
+              onChange={(e) =>
+                onChangeDifficulty?.(e.target.value as DistractorDifficulty)
+              }
+            >
+              <option value="adaptive">Adaptif (Ustalığa Göre Otomatik)</option>
+              <option value="easy">Kolay (Açık Anlamsal Fark)</option>
+              <option value="normal">Normal (Aynı Konu ve Sözcük Türü)</option>
+              <option value="challenging">Zorlayıcı (Yakın Bağlam & Gramer)</option>
+            </select>
+          </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <label htmlFor="kg-satzbau-mode-select" style={{ fontSize: 13, fontWeight: 800 }}>
               Cümle Kurma (Satzbau) Modu:
@@ -188,8 +192,7 @@ export function PracticeHubView({
                 ),
               )}
             </select>
-          </div>
-        </div>
+          </div></div></details>
       </div>
 
       {/* Personalized AI Reinforcement */}
@@ -197,15 +200,15 @@ export function PracticeHubView({
         <section className="kg-reinforce-card" style={{ marginTop: 0 }} aria-label="Bana Özel Pekiştirme">
           <div className="kg-reinforce-head">
             <span className="kg-badge-soft">
-              <Sparkles size={13} /> Kişiselleştirilmiş AI Pekiştirme
+              <Sparkles size={13} /> Sana özel
             </span>
             <span className="kg-reinforce-dir tabular-nums">
               Seviyeler: {selectedLevels.join(", ")}
             </span>
           </div>
-          <h2>Zayıf kelimelerine ve sık yaptığın hatalara özel çalışma oluştur.</h2>
+          <h2>Hatalarını öğrenmeye dönüştür.</h2>
           <p>
-            Yalnızca seçili CEFR seviyelerindeki geçmiş hatalarını, 4/5 ustalaşmaya yakın kelimelerini ve zayıf kaldığın alıştırma türlerini önceliklendirir.
+            Geçmiş yanıtlarına göre hazırlanmış kısa bir pekiştirme.
           </p>
           <div className="kg-reinforce-actions" style={{ alignItems: "center", justifyContent: "space-between" }}>
             <label className="kg-toggle-chip">
@@ -228,7 +231,7 @@ export function PracticeHubView({
                 })
               }
             >
-              <Sparkles size={16} /> ✨ Bana Özel Pekiştirme Oluştur
+              <Sparkles size={16} /> Bana Özel Pekiştirme Oluştur
             </button>
           </div>
         </section>
@@ -237,8 +240,11 @@ export function PracticeHubView({
       {/* 12 Interactive Exercise Types (Including Cümle Kurma — Satzbau) */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <h2 className="kg-section-title">Alıştırma Türleri</h2>
+        <div className="kg-activity-filters" role="group" aria-label="Alıştırma kategorileri">
+          {[["all", "Tümü"], ["word", "Kelime"], ["sentence", "Cümle"], ["listening", "Dinleme"], ["review", "Tekrar"]].map(([key, label]) => <button key={key} type="button" className={`kg-filter-chip ${group === key ? "is-active" : ""}`} aria-pressed={group === key} onClick={() => setGroup(key)}>{label}</button>)}
+        </div>
         <div className="kg-practice-grid">
-          {activities.map(([type, title, desc, icon]) => {
+          {activities.filter(([type]) => group === "all" || groups[group]?.includes(type)).map(([type, title, desc, icon]) => {
             const noMistakes =
               type === "mistake_review" && overview.overall.totalMistakeWords === 0;
             return (
@@ -267,9 +273,9 @@ export function PracticeHubView({
       </div>
 
       {/* Goethe B1 Exam Modules */}
-      <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <details className="kg-card kg-disclosure kg-exam-options">
+        <summary>Goethe Sınav Hazırlık</summary>
         <div>
-          <h2 className="kg-section-title">Goethe Sınav Hazırlık</h2>
           <p className="kg-section-sub">
             Gerçek Goethe formatında okuma, AI ön değerlendirmeli yazma ve konuşma pratiği yapabilirsin.
           </p>
@@ -323,7 +329,7 @@ export function PracticeHubView({
           Not: Tam Goethe B1 <strong>Hören</strong> ses paketi henüz yapılandırılmadı; kelime
           düzeyinde dinleme çalışmak için yukarıdaki <strong>Dinleme Alıştırması</strong> kartını kullanabilirsin.
         </p>
-      </div>
+      </details>
     </div>
   );
 }

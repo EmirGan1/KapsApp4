@@ -454,6 +454,8 @@ export type TaskObjective =
   | "exam";
 
 export type Task = {
+  sentenceDe?: string;
+  sentenceTr?: string;
   activity?: string;
   satzbauMode?: SatzbauMode;
   subPrompt?: string;

@@ -1,3 +1,4 @@
+import type { WordMeaning } from '../../shared/germanGlossary';
 import type {
   CefrLevel,
   DistractorDifficulty,
@@ -290,6 +291,8 @@ export interface LevelAudioPackManifest {
 }
 
 export interface GermanTask {
+  sentenceDe?: string;
+  sentenceTr?: string;
   id: string;
   module: string;
   type: string;
@@ -401,6 +404,9 @@ export interface TaskResult extends Partial<Omit<SchreibenEvaluationResult, "sco
 }
 
 export interface MistakeExplanationResponse {
+  correctedSentenceDe: string;
+  correctedSentenceTr: string;
+  wordBreakdown: WordMeaning[];
   headlineTr: string;
   whyWrongOrRightTr: string;
   correctMeaningTr: string;
@@ -513,6 +519,7 @@ export interface ActiveSession {
     parentSessionId?: string;
     reinforcementDirection?: StudyDirection;
     aiGeneratedCount?: number;
+    freshness?: { newQuestions: number; aiQuestions: number; total: number };
   };
   tasks: GermanTask[];
   answers: Record<string, string>;

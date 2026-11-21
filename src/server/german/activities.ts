@@ -1,3 +1,4 @@
+import { questionKey } from './questionHistory';
 import { randomInt, randomUUID } from "node:crypto";
 import {
   activities,
@@ -292,7 +293,15 @@ function selectBalancedCandidates(
     const mistakes = shuffle(items.filter((w) => mistakeSet.has(w.id)));
     const freshUnseen = shuffle(items.filter((w) => !mistakeSet.has(w.id) && !recentSet.has(w.id)));
     const recentlySeen = shuffle(items.filter((w) => !mistakeSet.has(w.id) && recentSet.has(w.id)));
-    return [...mistakes, ...freshUnseen, ...recentlySeen];
+    // Rotate weak words as well: mistakes must not permanently starve unseen words.
+    const byExposure = (a: Vocabulary, b: Vocabulary) => (options.wordExposureCounts?.get(a.id) || 0) - (options.wordExposureCounts?.get(b.id) || 0);
+    mistakes.sort(byExposure); freshUnseen.sort(byExposure); recentlySeen.sort(byExposure);
+    const result: Vocabulary[] = [];
+    while (mistakes.length || freshUnseen.length) {
+      if (mistakes.length) result.push(mistakes.shift()!);
+      result.push(...freshUnseen.splice(0, 2));
+    }
+    return [...result, ...recentlySeen];
   };
 
   const levelQueues = [...groupedByLevel.values()].map(sortAndRotateTier);
@@ -315,6 +324,8 @@ function selectBalancedCandidates(
 export interface BuildActivityOptions {
   mistakeWordIds?: Set<string>;
   recentWordIds?: Set<string>;
+  recentQuestionKeys?: Set<string>;
+  wordExposureCounts?: Map<string, number>;
   reviewMode?: boolean;
   limit?: number;
   forceDirectionByWordId?: Map<string, "de_tr" | "tr_de">;
@@ -457,6 +468,7 @@ export function buildActivities(
         wordMeta: makeWordMeta(w),
       },
     };
+    task.fingerprint = questionKey(task);
     const validated = validateTask(task, validationPool);
     if (!validated) return;
     byType.set(type, [...(byType.get(type) ?? []), validated]);
@@ -1087,7 +1099,7 @@ export function buildActivities(
 
   if (selected !== "mixed" && selected !== "mistake_review") {
     const group = byType.get(selected) ?? [];
-    return group.slice(0, limit);
+    return [...group].sort((a, b) => Number(options.recentQuestionKeys?.has(questionKey(a)) || false) - Number(options.recentQuestionKeys?.has(questionKey(b)) || false)).slice(0, limit);
   }
 
   const keys =
@@ -1104,6 +1116,7 @@ export function buildActivities(
 
   // Multiple passes: Pass 0 covers each candidate once in exact priority order;
   // subsequent passes only run if fewer unique candidates exist than `limit`.
+  for (const freshOnly of [true, false]) {
   for (let pass = 0; pass < keys.length && result.length < limit; pass++) {
     let addedInPass = false;
     for (const w of candidates) {
@@ -1116,6 +1129,7 @@ export function buildActivities(
         if (tried.has(k)) continue;
         const candidateTask = wordMap.get(k);
         if (!candidateTask || usedFingerprints.has(candidateTask.fingerprint)) continue;
+        if (freshOnly && options.recentQuestionKeys?.has(questionKey(candidateTask))) continue;
         usedFingerprints.add(candidateTask.fingerprint);
         tried.add(k);
         usedWordTypes.set(w.id, tried);
@@ -1132,6 +1146,7 @@ export function buildActivities(
     if (!addedInPass) break;
   }
 
+  }
   return result.slice(0, limit);
 }
 

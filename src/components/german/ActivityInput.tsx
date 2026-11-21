@@ -4,6 +4,8 @@ import { speakGermanWithStatus } from "./api";
 import { PronunciationGuideBox, useGermanVoiceStatus } from "./PronunciationGuideBox";
 import type { GermanTask, TaskResult } from "./types";
 
+import { GermanWordText } from "./WordHelp";
+
 const GERMAN_CHARS = ["ä", "ö", "ü", "ß", "Ä", "Ö", "Ü"];
 
 function reconstructTileIndices(
@@ -90,7 +92,7 @@ export default function ActivityInput({
       {satzbauMode === "correct_sentence" && task.flawedSentenceDe && (
         <div className="kg-satzbau-flawed-box">
           <span>Hatalı Cümle:</span>
-          <code lang="de">{task.flawedSentenceDe}</code>
+          <code lang="de"><GermanWordText text={task.flawedSentenceDe} /></code>
         </div>
       )}
       {task.hint && (!hintRevealsModel || answerReviewed) && <p className="kg-satzbau-hint">{task.hint}</p>}

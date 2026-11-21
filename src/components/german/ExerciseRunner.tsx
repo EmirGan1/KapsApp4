@@ -1,3 +1,5 @@
+import { QuestionVocabularyProvider, GermanWordText } from './WordHelp';
+import { AnswerExplanation } from './AnswerExplanation';
 import { useSessionPreparation } from './SessionPreparation';
 import { taskHelpPolicy } from '../../shared/germanTaskHelp';
 import { useEffect, useRef, useState } from "react";
@@ -1206,7 +1208,7 @@ export function ExerciseRunner({
                     <SchreibenEvaluationCard result={r} studentText={answers[t.id] ?? ""} />
                   )}
 
-                  {!isSchreiben && r && !r.skipped && (
+                  {!isSchreiben && r && !r.skipped && !r.pending && r.score !== null && (
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button
                         type="button"
@@ -1224,36 +1226,7 @@ export function ExerciseRunner({
                     </div>
                   )}
 
-                  {exp && (
-                    <div className="kg-ai-explain-card">
-                      {exp.possibleQuestionIssue && (
-                        <div className="kg-alert" style={{ marginBottom: 6 }}>
-                          <span>
-                            Soru anahtarında veya yapısında belirsizlik olabilir. Hata Bildir ile incelemeye gönderebilirsin.
-                          </span>
-                        </div>
-                      )}
-                      <strong>{exp.headlineTr}</strong>
-                      <p>{exp.whyWrongOrRightTr}</p>
-                      <p>
-                        <strong>Doğru Anlam:</strong> {exp.correctMeaningTr}
-                      </p>
-                      <p>
-                        <strong>Kural:</strong> {exp.ruleTr}
-                      </p>
-                      <p>
-                        <strong>Örnek:</strong> <span lang="de">{exp.example.de}</span> — {exp.example.tr}
-                      </p>
-                      <p>
-                        <strong>Hatırlama İpucu:</strong> {exp.memoryTipTr}
-                      </p>
-                      {exp.detailedNoteTr && (
-                        <p>
-                          <strong>Ayrıntılı Not:</strong> {exp.detailedNoteTr}
-                        </p>
-                      )}
-                    </div>
-                  )}
+                  {exp && <AnswerExplanation explanation={exp} />}
                 </div>
               );
             })}
@@ -1356,7 +1329,9 @@ export function ExerciseRunner({
             </div>
           )}
 
+          {session.filters.freshness && index === 0 && <div className="kg-session-freshness"><Sparkles size={14} /><span>{session.filters.freshness.newQuestions} yeni soru · {session.filters.freshness.total} soruluk çalışma</span>{session.filters.freshness.aiQuestions > 0 && <span className="kg-badge-soft">Yeni bağlamlar</span>}</div>}
           {task && (
+            <QuestionVocabularyProvider key={task.id} task={task} sessionId={session.id} reviewed={Boolean(isPractice && isChecked)} enabled={isPractice} explanation={currentExplanation} onExplain={() => void handleExplainTask(task, Boolean(currentExplanation))} loading={explainBusy === task.id}>
             <div className="kg-task-card">
               <div className="kg-task-meta">
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1398,7 +1373,7 @@ export function ExerciseRunner({
                 </div>
               </div>
 
-              <h2 className="kg-task-prompt">{task.prompt}</h2>
+              <h2 className="kg-task-prompt"><GermanWordText text={task.prompt} /></h2>
 
               {canShowWordPronunciation && task.interaction?.wordMeta?.pronunciation && (
                 <PronunciationGuideBox
@@ -1409,8 +1384,8 @@ export function ExerciseRunner({
               )}
 
               {task.passage && (
-                <div className="kg-task-passage" lang="de">
-                  {task.passage}
+                <div className="kg-task-passage" lang={task.direction === "tr_de" ? "tr" : "de"}>
+                  <GermanWordText text={task.passage} />
                 </div>
               )}
 
@@ -1538,58 +1513,9 @@ export function ExerciseRunner({
                 </div>
               )}
 
-              {/* Inline AI Explain Card when user requested explanation during active practice */}
-              {currentExplanation && (
-                <div className="kg-ai-explain-card" role="region" aria-label="AI Açıklaması">
-                  <div className="kg-section-head">
-                    <span className="kg-badge-soft">
-                      <Sparkles size={13} /> AI Açıklaması
-                    </span>
-                    {!currentExplanation.detailedNoteTr && (
-                      <button
-                        type="button"
-                        disabled={explainBusy === task.id}
-                        className="kg-btn kg-btn-ghost kg-btn-sm"
-                        onClick={() => void handleExplainTask(task, true)}
-                      >
-                        Daha ayrıntılı açıkla
-                      </button>
-                    )}
-                  </div>
-                  {currentExplanation.possibleQuestionIssue && (
-                    <div className="kg-alert">
-                      <span>
-                        Bu sorunun cevabında veya ifadesinde belirsizlik olabilir. "Hata Var" ile incelemeye gönderebilirsin.
-                      </span>
-                    </div>
-                  )}
-                  <strong>{currentExplanation.headlineTr}</strong>
-                  <p>{currentExplanation.whyWrongOrRightTr}</p>
-                  <p>
-                    <strong>Doğru Anlam:</strong> {currentExplanation.correctMeaningTr}
-                  </p>
-                  <p>
-                    <strong>Dilbilgisi Kuralı:</strong> {currentExplanation.ruleTr}
-                  </p>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                    <p style={{ margin: 0 }}>
-                      <strong>Örnek:</strong>{" "}
-                      <span lang="de">{currentExplanation.example.de}</span> —{" "}
-                      {currentExplanation.example.tr}
-                    </p>
-                    <GermanSpeakButtons text={currentExplanation.example.de} compact />
-                  </div>
-                  <p>
-                    <strong>Hatırlama İpucu:</strong> {currentExplanation.memoryTipTr}
-                  </p>
-                  {currentExplanation.detailedNoteTr && (
-                    <p>
-                      <strong>Ayrıntılı Açıklama:</strong> {currentExplanation.detailedNoteTr}
-                    </p>
-                  )}
-                </div>
-              )}
+              {currentExplanation && <AnswerExplanation explanation={currentExplanation} />}
             </div>
+            </QuestionVocabularyProvider>
           )}
 
           {!isPractice && confirmFinish && (

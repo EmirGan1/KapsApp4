@@ -146,8 +146,7 @@ export function HomeLearnView({
                   : "Almanca öğrenmeye başla"}
               </h1>
               <p>
-                Konu kategorilerine ayrılmış yapılandırılmış ünitelerle ilerle. Her kelimeyi{" "}
-                <strong>5 kez üst üste</strong> doğru yanıtlayarak kalıcı olarak ustalaş.
+                Kısa bir çalışma, yeni bir adım. Her kelimede hedefin <strong>5 doğru üst üste.</strong>
               </p>
             </div>
           </div>
@@ -215,7 +214,7 @@ export function HomeLearnView({
               className="kg-btn kg-hero-secondary"
               onClick={onOpenProgress}
             >
-              Tüm Seviyeler (A1–C1)
+              İlerlememi Gör
             </button>
           </div>
         </section>
@@ -295,7 +294,7 @@ export function HomeLearnView({
           progressByLevel={overview.progressByLevel}
         />
 
-        <GermanLevelAudioPackCard level={activePathLevel} compact />
+        <details className="kg-disclosure kg-audio-settings"><summary>Ses ve çevrimdışı kullanım</summary><GermanLevelAudioPackCard level={activePathLevel} compact /></details>
       </div>
 
       {/* Quick Practice Actions */}

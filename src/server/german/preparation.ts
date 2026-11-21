@@ -48,6 +48,6 @@ export function registerPreparationProgress(router: Router, db: Client) {
 export async function preparationStep(db: Client, res: Response, stage: string, percent: number) {
   const id = res.locals.germanPreparationId;
   if (!id) return;
-  await db.execute({ sql: 'UPDATE german_preparations SET stage=?,percent=MAX(percent,?),updated_at=? WHERE id=? AND user_id=? AND status=?',
-    args: [stage, Math.min(95, percent), Date.now(), id, res.locals.germanUser, 'working'] });
+  await db.execute({ sql: `UPDATE german_preparations SET stage=?,percent=MAX(percent,?),estimate_ms=CASE WHEN ?='generating_ai' THEN MAX(estimate_ms,35000) ELSE estimate_ms END,updated_at=? WHERE id=? AND user_id=? AND status=?`,
+    args: [stage, Math.min(95, percent), stage, Date.now(), id, res.locals.germanUser, 'working'] });
 }
