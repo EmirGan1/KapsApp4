@@ -1,21 +1,57 @@
-import { useState } from "react";
-import { Award, Flame, RefreshCw, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Award,
+  CheckCircle2,
+  Flag,
+  Flame,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { activityLabel } from "../../shared/germanActivities";
-import { germanRequest } from "./api";
-import type { OverviewResponse } from "./types";
+import {
+  fetchAdminAudits,
+  fetchAdminReports,
+  fetchGermanAIStatus,
+  fetchMyReports,
+  germanRequest,
+  resolveAdminAudit,
+  resolveAdminReport,
+  runAdminQualityScan,
+} from "./api";
+import type { OverviewResponse, QuestionAuditItem, QuestionReportItem } from "./types";
+
+const REPORT_STATUS_LABELS: Record<string, string> = {
+  pending_review: "İnceleniyor",
+  ai_flagged_issue: "AI Sorun Tespit Etti",
+  resolved_corrected: "Düzeltildi",
+  resolved_disabled: "Devre Dışı Bırakıldı",
+  rejected: "Reddedildi",
+};
 
 export function ProfileAdminView({
   overview,
   isAdmin,
   dailyGoalXp,
+  showTurkishPronunciation = true,
+  autoSessionReview = false,
   onChangeDailyGoal,
+  onTogglePronunciation,
+  onToggleAutoSessionReview,
   onResumeSession,
   onOverviewChanged,
 }: {
   overview: OverviewResponse;
   isAdmin: boolean;
   dailyGoalXp: number;
+  showTurkishPronunciation?: boolean;
+  autoSessionReview?: boolean;
   onChangeDailyGoal: (xp: number) => void;
+  onTogglePronunciation?: (next: boolean) => void;
+  onToggleAutoSessionReview?: (next: boolean) => void;
   onResumeSession: (sessionId: string) => void;
   onOverviewChanged: () => void;
 }) {
@@ -23,6 +59,67 @@ export function ProfileAdminView({
   const [users, setUsers] = useState<Array<{ id: number; username: string; enabled: number }>>([]);
   const [adminMsg, setAdminMsg] = useState("");
   const [adminBusy, setAdminBusy] = useState(false);
+
+  // User's own reports
+  const [myReports, setMyReports] = useState<any[]>([]);
+
+  // Admin AI Status, Reports, Audits
+  const [aiStatus, setAiStatus] = useState<any>(null);
+  const [reportFilter, setReportFilter] = useState<"open" | "resolved" | "all">("open");
+  const [adminReports, setAdminReports] = useState<QuestionReportItem[]>([]);
+  const [editReportDrafts, setEditReportDrafts] = useState<
+    Record<
+      string,
+      {
+        correctedPrompt: string;
+        correctedAnswer: string;
+        adminNote: string;
+        regradeWrongAttempts: boolean;
+      }
+    >
+  >({});
+  const [auditData, setAuditData] = useState<{
+    summary: Record<string, number>;
+    items: QuestionAuditItem[];
+  } | null>(null);
+
+  useEffect(() => {
+    void fetchMyReports().then(setMyReports).catch(() => {});
+  }, []);
+
+  const loadAdminQueues = async (status: "open" | "resolved" | "all" = reportFilter) => {
+    if (!isAdmin) return;
+    try {
+      const [statusRes, reportsRes, auditsRes] = await Promise.all([
+        fetchGermanAIStatus().catch(() => null),
+        fetchAdminReports(status).catch(() => []),
+        fetchAdminAudits().catch(() => null),
+      ]);
+      if (statusRes) setAiStatus(statusRes);
+      setAdminReports(reportsRes);
+      setEditReportDrafts((prev) => {
+        const next = { ...prev };
+        for (const r of reportsRes) {
+          if (!next[r.id]) {
+            next[r.id] = {
+              correctedPrompt: r.taskSnapshot?.prompt ?? "",
+              correctedAnswer: r.aiReview?.aiReview?.suggestedFix?.answer || r.currentAnswer || "",
+              adminNote: "",
+              regradeWrongAttempts: true,
+            };
+          }
+        }
+        return next;
+      });
+      if (auditsRes) setAuditData(auditsRes);
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (isAdmin) {
+      void loadAdminQueues(reportFilter);
+    }
+  }, [isAdmin, reportFilter]);
 
   const searchUsers = async () => {
     setAdminBusy(true);
@@ -84,12 +181,83 @@ export function ProfileAdminView({
     }
   };
 
+  const handleRunQualityScan = async () => {
+    setAdminBusy(true);
+    setAdminMsg("");
+    try {
+      const out = await runAdminQualityScan({
+        limit: 12,
+        useAI: true,
+        includeGeneratedSample: true,
+      });
+      setAdminMsg(
+        `Kalite taraması tamamlandı: ${out.scannedCount} soru incelendi (Onaylı: ${out.summary.approved ?? 0}, İnceleme: ${out.summary.needs_review ?? 0}, Reddedilen: ${out.summary.rejected ?? 0}).`,
+      );
+      await loadAdminQueues(reportFilter);
+    } catch (e: any) {
+      setAdminMsg(e?.message || "AI soru taraması başlatılamadı.");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const handleResolveReport = async (
+    reportId: string,
+    action: "approve_correction" | "disable" | "reject",
+  ) => {
+    const draft = editReportDrafts[reportId];
+    setAdminBusy(true);
+    setAdminMsg("");
+    try {
+      const res = await resolveAdminReport(reportId, {
+        action,
+        adminNote: draft?.adminNote,
+        correctedPrompt: draft?.correctedPrompt,
+        correctedAnswer: draft?.correctedAnswer,
+        regradeWrongAttempts: Boolean(draft?.regradeWrongAttempts),
+      });
+      setAdminMsg(
+        action === "approve_correction"
+          ? `Rapor düzeltmesi onaylandı${res.regradedCount > 0 ? ` (${res.regradedCount} deneme yeniden puanlandı)` : ""}.`
+          : action === "disable"
+            ? "Soru yeni oturumlardan devre dışı bırakıldı."
+            : "Rapor reddedildi.",
+      );
+      await loadAdminQueues(reportFilter);
+    } catch (e: any) {
+      setAdminMsg(e?.message || "Rapor çözümlenemedi.");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const handleResolveAudit = async (
+    taskFingerprint: string,
+    action: "approve_correction" | "disable",
+  ) => {
+    setAdminBusy(true);
+    setAdminMsg("");
+    try {
+      await resolveAdminAudit({ taskFingerprint, action });
+      setAdminMsg(
+        action === "disable"
+          ? "Soru devre dışı bırakıldı ve kuyruktan düşürüldü."
+          : "Soru onaylandı.",
+      );
+      await loadAdminQueues(reportFilter);
+    } catch (e: any) {
+      setAdminMsg(e?.message || "Denetim kararı kaydedilemedi.");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
   return (
     <div className="kg-container">
-      {/* Streak, XP & Daily Goal */}
+      {/* Streak, XP, Daily Goal & Learning Preferences */}
       <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <h1 className="kg-section-title" style={{ fontSize: 22 }}>
-          Profil & Başarımlar
+          Profil & Öğrenme Tercihleri
         </h1>
         <div className="kg-stats-column" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
           <div className="kg-mini-stat">
@@ -133,6 +301,29 @@ export function ProfileAdminView({
             </button>
           ))}
         </div>
+
+        <div className="kg-pref-toggles">
+          {onTogglePronunciation && (
+            <label className="kg-toggle-chip">
+              <input
+                type="checkbox"
+                checked={showTurkishPronunciation}
+                onChange={(e) => onTogglePronunciation(e.target.checked)}
+              />
+              <span>Türkçe okunuşları göster</span>
+            </label>
+          )}
+          {onToggleAutoSessionReview && (
+            <label className="kg-toggle-chip">
+              <input
+                type="checkbox"
+                checked={autoSessionReview}
+                onChange={(e) => onToggleAutoSessionReview(e.target.checked)}
+              />
+              <span>Oturum bitiminde AI çalışma analizini otomatik aç</span>
+            </label>
+          )}
+        </div>
       </div>
 
       {/* Achievements Grid */}
@@ -145,7 +336,7 @@ export function ProfileAdminView({
               <div
                 key={ach.id}
                 style={{
-                  border: `2px solid ${ach.unlocked ? "var(--kg-gold-dark)" : "var(--kg-border)"}`,
+                  border: `1.5px solid ${ach.unlocked ? "var(--kg-gold-dark)" : "var(--kg-border)"}`,
                   background: ach.unlocked ? "var(--kg-gold-soft)" : "var(--kg-surface-soft)",
                   borderRadius: 16,
                   padding: 14,
@@ -177,6 +368,35 @@ export function ProfileAdminView({
           })}
         </div>
       </div>
+
+      {/* User's Submitted Reports */}
+      {myReports.length > 0 && (
+        <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <h2 className="kg-section-title">Bildirdiğim Sorular</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {myReports.slice(0, 10).map((rep) => (
+              <div key={rep.id} className="kg-report-row">
+                <div>
+                  <strong style={{ fontSize: 13.5 }}>
+                    {rep.level} · {activityLabel(rep.exercise_type)}
+                  </strong>
+                  <div className="kg-section-sub" style={{ margin: 0 }}>
+                    Neden: {rep.reason} · {new Date(rep.created_at).toLocaleString("tr-TR")}
+                  </div>
+                  {rep.admin_note && (
+                    <div className="kg-vocab-meta" style={{ marginTop: 3 }}>
+                      Not: {rep.admin_note}
+                    </div>
+                  )}
+                </div>
+                <span className="kg-badge-soft">
+                  {REPORT_STATUS_LABELS[rep.status] ?? rep.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Session History */}
       <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -230,10 +450,24 @@ export function ProfileAdminView({
 
       {/* Admin Controls */}
       {isAdmin && (
-        <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <ShieldCheck size={20} style={{ color: "var(--kg-green)" }} />
-            <h2 className="kg-section-title">Yönetici Araçları</h2>
+        <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="kg-section-head">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ShieldCheck size={20} style={{ color: "var(--kg-green)" }} />
+              <h2 className="kg-section-title">Yönetici Araçları & Kalite Denetimi</h2>
+            </div>
+            {aiStatus && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span className="kg-badge-soft">
+                  Groq: {aiStatus.groqConfigured ? aiStatus.groqModel : "Tanımsız"}
+                </span>
+                {aiStatus.ollamaConfigured && (
+                  <span className="kg-badge-accent">
+                    Ollama: {aiStatus.ollamaModel}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {adminMsg && (
@@ -255,6 +489,14 @@ export function ProfileAdminView({
               type="button"
               disabled={adminBusy}
               className="kg-btn kg-btn-blue kg-btn-sm"
+              onClick={() => void handleRunQualityScan()}
+            >
+              <Sparkles size={15} /> AI Soru Kalite Taraması
+            </button>
+            <button
+              type="button"
+              disabled={adminBusy}
+              className="kg-btn kg-btn-sm"
               onClick={() => void startGoogleSync()}
             >
               Google Docs Eşitle
@@ -268,6 +510,247 @@ export function ProfileAdminView({
             </button>
           </div>
 
+          {/* Reported Questions Inbox */}
+          <div className="kg-admin-subpanel">
+            <div className="kg-section-head">
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Flag size={16} style={{ color: "var(--kg-red)" }} />
+                <strong style={{ fontSize: 15 }}>Raporlanan Sorular</strong>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["open", "resolved", "all"] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={`kg-btn kg-btn-sm ${reportFilter === f ? "kg-btn-blue" : ""}`}
+                    onClick={() => setReportFilter(f)}
+                  >
+                    {f === "open" ? "Açık" : f === "resolved" ? "Çözümlenmiş" : "Tümü"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {adminReports.length === 0 ? (
+              <p className="kg-section-sub" style={{ margin: 0 }}>
+                Bu görünümde raporlanmış soru bulunmuyor.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {adminReports.map((rep) => {
+                  const draft = editReportDrafts[rep.id] ?? {
+                    correctedPrompt: rep.taskSnapshot?.prompt ?? "",
+                    correctedAnswer: rep.currentAnswer ?? "",
+                    adminNote: "",
+                    regradeWrongAttempts: true,
+                  };
+                  const isOpen =
+                    rep.status === "pending_review" || rep.status === "ai_flagged_issue";
+                  return (
+                    <div key={rep.id} className="kg-admin-report-card">
+                      <div className="kg-section-head">
+                        <div>
+                          <strong style={{ fontSize: 14 }}>
+                            {rep.level} · {activityLabel(rep.exerciseType)} ·{" "}
+                            <span className="kg-vocab-meta">{rep.username}</span>
+                          </strong>
+                          <div className="kg-section-sub" style={{ margin: 0 }}>
+                            Neden: <strong>{rep.reason}</strong>
+                            {rep.comment ? ` — "${rep.comment}"` : ""}
+                          </div>
+                        </div>
+                        <span
+                          className={
+                            rep.status === "ai_flagged_issue" ? "kg-badge-warn" : "kg-badge-soft"
+                          }
+                        >
+                          {REPORT_STATUS_LABELS[rep.status] ?? rep.status}
+                        </span>
+                      </div>
+
+                      <div className="kg-vocab-example">
+                        <div>
+                          <strong>Soru:</strong> {rep.taskSnapshot?.prompt}
+                        </div>
+                        <div>
+                          <strong>Mevcut Cevap:</strong> {rep.currentAnswer || "—"} ·{" "}
+                          <strong>Öğrenci Cevabı:</strong> {rep.studentAnswer || "—"}
+                        </div>
+                        {rep.aiReview?.aiReview?.summaryTr && (
+                          <div style={{ marginTop: 4 }}>
+                            <strong>AI İncelemesi:</strong> {rep.aiReview.aiReview.summaryTr}
+                          </div>
+                        )}
+                      </div>
+
+                      {isOpen && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                            <input
+                              type="text"
+                              className="kg-input"
+                              placeholder="Düzeltilmiş soru metni"
+                              value={draft.correctedPrompt}
+                              onChange={(e) =>
+                                setEditReportDrafts((prev) => ({
+                                  ...prev,
+                                  [rep.id]: { ...draft, correctedPrompt: e.target.value },
+                                }))
+                              }
+                            />
+                            <input
+                              type="text"
+                              className="kg-input"
+                              placeholder="Düzeltilmiş doğru cevap"
+                              value={draft.correctedAnswer}
+                              onChange={(e) =>
+                                setEditReportDrafts((prev) => ({
+                                  ...prev,
+                                  [rep.id]: { ...draft, correctedAnswer: e.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                          <input
+                            type="text"
+                            className="kg-input"
+                            placeholder="Yönetici notu (isteğe bağlı)"
+                            value={draft.adminNote}
+                            onChange={(e) =>
+                              setEditReportDrafts((prev) => ({
+                                ...prev,
+                                [rep.id]: { ...draft, adminNote: e.target.value },
+                              }))
+                            }
+                          />
+                          <label className="kg-toggle-chip">
+                            <input
+                              type="checkbox"
+                              checked={draft.regradeWrongAttempts}
+                              onChange={(e) =>
+                                setEditReportDrafts((prev) => ({
+                                  ...prev,
+                                  [rep.id]: {
+                                    ...draft,
+                                    regradeWrongAttempts: e.target.checked,
+                                  },
+                                }))
+                              }
+                            />
+                            <span>Yanlış işaretlenen denemeleri yeniden puanla</span>
+                          </label>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              disabled={adminBusy}
+                              className="kg-btn kg-btn-primary kg-btn-sm"
+                              onClick={() => void handleResolveReport(rep.id, "approve_correction")}
+                            >
+                              <CheckCircle2 size={14} /> Düzeltmeyi Onayla
+                            </button>
+                            <button
+                              type="button"
+                              disabled={adminBusy}
+                              className="kg-btn kg-btn-danger kg-btn-sm"
+                              onClick={() => void handleResolveReport(rep.id, "disable")}
+                            >
+                              <Trash2 size={14} /> Soruyu Devre Dışı Bırak
+                            </button>
+                            <button
+                              type="button"
+                              disabled={adminBusy}
+                              className="kg-btn kg-btn-sm"
+                              onClick={() => void handleResolveReport(rep.id, "reject")}
+                            >
+                              Raporu Reddet
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Quality Audit Queue */}
+          {auditData && (
+            <div className="kg-admin-subpanel">
+              <div className="kg-section-head">
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <ShieldAlert size={16} style={{ color: "var(--kg-blue)" }} />
+                  <strong style={{ fontSize: 15 }}>Soru Kalite Denetimi Özeti</strong>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <span className="kg-badge-accent tabular-nums">
+                    Onaylı: {auditData.summary.approved ?? 0}
+                  </span>
+                  <span className="kg-badge-soft tabular-nums">
+                    İnceleme: {auditData.summary.needs_review ?? 0}
+                  </span>
+                  <span className="kg-badge-warn tabular-nums">
+                    Reddedilen: {auditData.summary.rejected ?? 0}
+                  </span>
+                </div>
+              </div>
+
+              {auditData.items
+                .filter((a) => a.auditStatus !== "approved")
+                .slice(0, 8)
+                .map((item) => (
+                  <div key={item.taskFingerprint} className="kg-admin-report-card">
+                    <div className="kg-section-head">
+                      <strong>
+                        {item.level} · {item.module} ·{" "}
+                        {item.taskSnapshot?.prompt?.slice(0, 80) ?? item.taskId}
+                      </strong>
+                      <span
+                        className={
+                          item.auditStatus === "rejected" ? "kg-badge-warn" : "kg-badge-soft"
+                        }
+                      >
+                        {item.auditStatus === "rejected" ? "Sorunlu" : "İnceleme Gerekli"}
+                      </span>
+                    </div>
+                    {item.deterministicIssues.length > 0 && (
+                      <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12.5 }}>
+                        {item.deterministicIssues.map((di, i) => (
+                          <li key={i}>{di.messageTr}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {item.aiReview?.summaryTr && (
+                      <p className="kg-section-sub" style={{ margin: "4px 0 0" }}>
+                        {item.aiReview.summaryTr}
+                      </p>
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                      <button
+                        type="button"
+                        disabled={adminBusy}
+                        className="kg-btn kg-btn-danger kg-btn-sm"
+                        onClick={() => void handleResolveAudit(item.taskFingerprint, "disable")}
+                      >
+                        Soruyu Devre Dışı Bırak
+                      </button>
+                      <button
+                        type="button"
+                        disabled={adminBusy}
+                        className="kg-btn kg-btn-sm"
+                        onClick={() =>
+                          void handleResolveAudit(item.taskFingerprint, "approve_correction")
+                        }
+                      >
+                        Onayla
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {/* User Permissions */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input
               type="search"
@@ -297,7 +780,7 @@ export function ProfileAdminView({
                     justifyContent: "space-between",
                     padding: "9px 12px",
                     borderRadius: 12,
-                    border: "2px solid var(--kg-border)",
+                    border: "1.5px solid var(--kg-border)",
                   }}
                 >
                   <strong>{u.username}</strong>

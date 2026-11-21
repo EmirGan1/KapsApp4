@@ -206,7 +206,15 @@ try {
       await page.waitForTimeout(100);
     }
     await page.getByRole("heading", { name: "Oturum Tamamlandı!" }).waitFor();
-    await page.getByText("Bu kelimeleri ters yönde de pekiştir.").waitFor();
+    await page.getByText(/Bu kelimeleri ters yönde veya AI ile pekiştir\./).waitFor();
+
+    // Test AI Session Review button on completion screen (gracefully falls back if offline)
+    await page.getByRole("button", { name: /AI Çalışma Analizi/ }).click();
+    await page.locator(".kg-ai-review-content").waitFor();
+
+    // Test AI Personalized Reinforcement launcher visible
+    await page.getByRole("button", { name: /Bana Özel Pekiştirme Oluştur/ }).waitFor();
+
     await page.getByRole("button", { name: "Pekiştirmeye Başla", exact: true }).click();
     await page.getByText("Ters Yön Pekiştirmesi").waitFor();
     const reinSid = new URL(page.url()).searchParams.get("session");
@@ -216,8 +224,49 @@ try {
     ).rows[0];
     assert.equal(String(reinRow.parent_session_id), activeSid);
     assert.equal(String(reinRow.reinforcement_direction), "de_tr");
-    console.log("PASS reverse-direction reinforcement UI launch");
+    console.log("PASS reverse-direction reinforcement UI launch & AI completion review");
   }
+
+  // Test Vocabulary Library pronunciation toggle + Detail Study Card Modal on mobile
+  await page.goto(base + "/dersler/kaps-german?tab=words");
+  await page.getByRole("heading", { name: "Kelime Kütüphanesi" }).waitFor();
+  await page.getByRole("searchbox", { name: "Kelime ara" }).fill("Apfel");
+  await page.waitForTimeout(350);
+  await page.locator(".kg-pron-box").first().waitFor();
+  await page.getByLabel("Türkçe okunuşları göster").uncheck();
+  await page.waitForTimeout(150);
+  assert.equal(await page.locator(".kg-pron-box").count(), 0);
+  await page.getByLabel("Türkçe okunuşları göster").check();
+  await page.locator(".kg-pron-box").first().waitFor();
+
+  await page.getByRole("button", { name: /Kartı Aç/ }).first().click();
+  await page.getByRole("dialog").waitFor();
+  await page.getByRole("dialog").getByRole("button", { name: /Başka Örnek Göster/ }).waitFor();
+  await page.getByRole("button", { name: "Kartı kapat" }).click();
+  console.log("PASS mobile vocabulary pronunciation toggle & study card modal");
+
+  // Test active session Report Modal preserves state & Profile/Admin view renders cleanly
+  await db.execute("UPDATE german_sessions SET state='done' WHERE state='active'");
+  await page.goto(base + "/dersler/kaps-german?tab=practice");
+  await page.getByRole("button", { name: /Çoktan Seçmeli/ }).click();
+  await page.locator(".kg-task-card").waitFor();
+  await page.getByRole("button", { name: "Bu soruda hata bildir" }).click();
+  await page.getByRole("dialog").waitFor();
+  await page.getByRole("button", { name: "Raporu Gönder" }).click();
+  await page.getByRole("status").filter({ hasText: /Rapor alındı/ }).waitFor();
+
+  await page.goto(base + "/dersler/kaps-german?tab=profile");
+  await page.getByRole("heading", { name: "Bildirdiğim Sorular" }).waitFor();
+  await page.getByRole("heading", { name: /Yönetici Araçları/ }).waitFor();
+  await page.getByText("Raporlanan Sorular").waitFor();
+  await page.getByRole("button", { name: /AI Soru Kalite Taraması/ }).click();
+  await page.getByText("Soru Kalite Denetimi Özeti").waitFor();
+  assert.ok(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+    "Mobile profile & admin views must fit viewport without horizontal overflow",
+  );
 
   // Desktop viewport layout check
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -229,7 +278,15 @@ try {
     ),
     "Desktop viewport must have zero horizontal overflow",
   );
-  console.log("PASS desktop layout and full Kaps German browser suite");
+  await page.goto(base + "/dersler/kaps-german?tab=profile");
+  await page.getByText("Raporlanan Sorular").waitFor();
+  assert.ok(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+    "Desktop profile & admin views must have zero horizontal overflow",
+  );
+  console.log("PASS desktop layout and full Kaps German AI & Pronunciation browser suite");
 } finally {
   await browser.close();
   await vite.close();

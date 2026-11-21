@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw, Volume2 } from "lucide-react";
-import { activityLabel } from "../../shared/germanActivities";
-import { isSpeechSupported, speakGerman } from "./api";
+import { RotateCcw, Snail, Volume2 } from "lucide-react";
+import { speakGermanWithStatus } from "./api";
+import { PronunciationGuideBox, useGermanVoiceStatus } from "./PronunciationGuideBox";
 import type { GermanTask, TaskResult } from "./types";
 
 const GERMAN_CHARS = ["ä", "ö", "ü", "ß", "Ä", "Ö", "Ü"];
@@ -27,12 +27,14 @@ export default function ActivityInput({
   onChange,
   disabled,
   result,
+  showTurkishPronunciation = true,
 }: {
   task: GermanTask;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
   result?: TaskResult;
+  showTurkishPronunciation?: boolean;
 }) {
   const tiles = task.interaction?.tiles;
   const isSpelling = task.type === "spelling";
@@ -41,11 +43,14 @@ export default function ActivityInput({
   );
   const [activeLeftIdx, setActiveLeftIdx] = useState<number | null>(null);
   const [showAudioFallback, setShowAudioFallback] = useState(false);
+  const [audioNotice, setAudioNotice] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const voiceStatus = useGermanVoiceStatus();
 
   useEffect(() => {
     setActiveLeftIdx(null);
     setShowAudioFallback(false);
+    setAudioNotice("");
     if (tiles) {
       setSelectedTiles(reconstructTileIndices(tiles, value, isSpelling));
     } else {
@@ -74,7 +79,6 @@ export default function ActivityInput({
     const handleLeftClick = (idx: number) => {
       if (disabled) return;
       if (pairs[idx]) {
-        // Clicking an already paired left item clears its pairing
         const next = [...pairs];
         next[idx] = "";
         onChange(JSON.stringify(next));
@@ -92,7 +96,6 @@ export default function ActivityInput({
         if (existingOwner >= 0) next[existingOwner] = "";
         next[activeLeftIdx] = rightVal;
         onChange(JSON.stringify(next));
-        // Auto-advance to next unpaired left item for smooth speed
         const nextUnpaired = next.findIndex((p, i) => i !== activeLeftIdx && !p);
         setActiveLeftIdx(nextUnpaired >= 0 ? nextUnpaired : null);
       } else if (existingOwner >= 0) {
@@ -239,43 +242,63 @@ export default function ActivityInput({
   }
 
   const audioText = task.interaction?.audioText;
-  const speechOk = isSpeechSupported();
+  const playListening = (rate: number) => {
+    if (!audioText) return;
+    setAudioNotice("");
+    const res = speakGermanWithStatus(audioText, rate);
+    if (!res.ok) {
+      setShowAudioFallback(true);
+      setAudioNotice(
+        res.reason === "no-german-voice" || res.reason === "unsupported"
+          ? "Tarayıcıda Almanca (de-DE) ses paketi bulunmadığı için sesli okuma açılamadı; aşağıdan yazılı ifadeyi görebilirsin."
+          : "Ses oynatılamadı; metni aşağıda görebilirsin.",
+      );
+    }
+  };
 
-  // Listening Audio Box (optional above options)
+  // Listening Audio Box
   const listeningControls =
     task.type === "listening" && audioText ? (
       <div className="kg-listen-box">
         <button
           type="button"
           className="kg-btn kg-btn-blue kg-btn-sm"
-          onClick={() => {
-            if (!speakGerman(audioText, 0.95)) setShowAudioFallback(true);
-          }}
+          onClick={() => playListening(0.95)}
         >
-          <Volume2 size={17} /> Dinle (Normal)
+          <Volume2 size={17} /> Dinle
         </button>
         <button
           type="button"
           className="kg-btn kg-btn-sm"
-          onClick={() => {
-            if (!speakGerman(audioText, 0.72)) setShowAudioFallback(true);
-          }}
+          onClick={() => playListening(0.68)}
         >
-          0.75x Yavaş
+          <Snail size={15} /> Yavaş Dinle
         </button>
-        {!speechOk && (
+        {voiceStatus.status !== "ready" && (
           <button
             type="button"
             className="kg-btn kg-btn-ghost kg-btn-sm"
             onClick={() => setShowAudioFallback((v) => !v)}
           >
-            {showAudioFallback ? "Metni Gizle" : "Ses desteklenmiyorsa metni gör"}
+            {showAudioFallback ? "Metni Gizle" : "Metni Göster"}
           </button>
         )}
+        {audioNotice && (
+          <div className="kg-voice-notice" style={{ width: "100%" }} role="status">
+            {audioNotice}
+          </div>
+        )}
         {showAudioFallback && (
-          <strong lang="de" style={{ width: "100%", fontSize: 15 }}>
-            {audioText}
-          </strong>
+          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
+            <strong lang="de" style={{ fontSize: 15 }}>
+              {audioText}
+            </strong>
+            <PronunciationGuideBox
+              pronunciation={task.interaction?.wordMeta?.pronunciation}
+              showTurkishPronunciation={showTurkishPronunciation}
+              compact
+            />
+          </div>
         )}
       </div>
     ) : null;

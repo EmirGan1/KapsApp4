@@ -24,6 +24,11 @@ import {
   type MasteryRecord,
   type Vocabulary,
 } from "./learning";
+import {
+  lookupCuratedPronunciation,
+  resolvePronunciation,
+  type PronunciationGuide,
+} from "./pronunciation";
 
 export function localDayKey(date = new Date(), timeZone = "Europe/Istanbul"): string {
   try {
@@ -124,6 +129,122 @@ export async function initGermanSchema(db: Client) {
         unlocked_at TEXT NOT NULL,
         PRIMARY KEY(user_id, achievement_id)
       )`,
+      `CREATE TABLE IF NOT EXISTS german_ai_cache(
+        cache_key TEXT PRIMARY KEY,
+        feature TEXT NOT NULL,
+        source_id TEXT NOT NULL DEFAULT '',
+        content_version TEXT NOT NULL DEFAULT 'v1',
+        prompt_version TEXT NOT NULL DEFAULT 'v1',
+        provider TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'ok',
+        response_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT
+      )`,
+      "CREATE INDEX IF NOT EXISTS german_ai_cache_feature ON german_ai_cache(feature, source_id)",
+      `CREATE TABLE IF NOT EXISTS german_question_reports(
+        id TEXT PRIMARY KEY,
+        dedupe_key TEXT NOT NULL,
+        task_fingerprint TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        word_id TEXT NOT NULL DEFAULT '',
+        exercise_type TEXT NOT NULL,
+        level TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        comment TEXT NOT NULL DEFAULT '',
+        task_snapshot TEXT NOT NULL,
+        current_answer TEXT NOT NULL,
+        student_answer TEXT NOT NULL DEFAULT '',
+        content_version TEXT NOT NULL DEFAULT 'v1',
+        ai_review_json TEXT,
+        status TEXT NOT NULL DEFAULT 'pending_review',
+        admin_note TEXT NOT NULL DEFAULT '',
+        correction_json TEXT,
+        created_at TEXT NOT NULL,
+        reviewed_at TEXT,
+        reviewed_by INTEGER
+      )`,
+      "CREATE INDEX IF NOT EXISTS german_reports_dedupe ON german_question_reports(dedupe_key, status)",
+      "CREATE INDEX IF NOT EXISTS german_reports_status ON german_question_reports(status, created_at)",
+      `CREATE TABLE IF NOT EXISTS german_question_audits(
+        task_fingerprint TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        module TEXT NOT NULL,
+        level TEXT NOT NULL,
+        audit_status TEXT NOT NULL,
+        deterministic_issues_json TEXT NOT NULL,
+        ai_review_json TEXT,
+        suggested_correction_json TEXT,
+        task_snapshot TEXT NOT NULL,
+        content_version TEXT NOT NULL DEFAULT 'v1',
+        provider TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        audited_at TEXT NOT NULL,
+        reviewed_by INTEGER,
+        reviewed_at TEXT
+      )`,
+      "CREATE INDEX IF NOT EXISTS german_audits_status ON german_question_audits(audit_status, audited_at)",
+      `CREATE TABLE IF NOT EXISTS german_disabled_questions(
+        task_fingerprint TEXT PRIMARY KEY,
+        reason TEXT NOT NULL,
+        disabled_by INTEGER NOT NULL,
+        disabled_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS german_question_corrections(
+        task_fingerprint TEXT PRIMARY KEY,
+        corrected_task_json TEXT NOT NULL,
+        approved_by INTEGER NOT NULL,
+        approved_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS german_regrade_log(
+        id TEXT PRIMARY KEY,
+        task_fingerprint TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        session_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        old_is_correct INTEGER NOT NULL,
+        new_is_correct INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        approved_by INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS german_session_reviews(
+        session_id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        metrics_snapshot TEXT NOT NULL,
+        review_json TEXT NOT NULL,
+        limited_evidence INTEGER NOT NULL DEFAULT 0,
+        provider TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        content_version TEXT NOT NULL DEFAULT 'v1',
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS german_vocabulary_cards(
+        word_id TEXT PRIMARY KEY,
+        content_version TEXT NOT NULL DEFAULT 'v1',
+        enriched_json TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        validation_status TEXT NOT NULL DEFAULT 'validated',
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS german_pronunciation(
+        word_id TEXT PRIMARY KEY,
+        canonical_key TEXT NOT NULL,
+        ipa TEXT NOT NULL DEFAULT '',
+        turkish_approx TEXT NOT NULL,
+        syllables_json TEXT NOT NULL DEFAULT '[]',
+        stress_syllable INTEGER NOT NULL DEFAULT 0,
+        notes_tr TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'curated',
+        verified INTEGER NOT NULL DEFAULT 0,
+        content_version TEXT NOT NULL DEFAULT 'v1',
+        updated_at TEXT NOT NULL
+      )`,
+      "CREATE INDEX IF NOT EXISTS german_pronunciation_key ON german_pronunciation(canonical_key)",
     ],
     "write",
   );
@@ -134,6 +255,8 @@ export async function initGermanSchema(db: Client) {
   await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN filters TEXT NOT NULL DEFAULT '{}'");
   await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN parent_session_id TEXT DEFAULT NULL");
   await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN reinforcement_direction TEXT DEFAULT NULL");
+  await safeAlter(db, "ALTER TABLE german_user_stats ADD COLUMN show_turkish_pronunciation INTEGER NOT NULL DEFAULT 1");
+  await safeAlter(db, "ALTER TABLE german_user_stats ADD COLUMN auto_session_review INTEGER NOT NULL DEFAULT 0");
 
   await db.batch(
     [
@@ -374,7 +497,85 @@ export async function seedBuiltinCurriculum(db: Client): Promise<{ inserted: num
   } finally {
     tx.close();
   }
+  await syncCuratedPronunciations(db);
   return { inserted, enriched };
+}
+
+export async function syncCuratedPronunciations(db: Client): Promise<number> {
+  const wordsRows = await db.execute("SELECT id, data, canonical_key FROM german_words WHERE active=1");
+  const existingRows = await db.execute("SELECT word_id, source FROM german_pronunciation");
+  const existingSource = new Map(
+    existingRows.rows.map((r) => [String(r.word_id), String(r.source)]),
+  );
+  const nowIso = new Date().toISOString();
+  let synced = 0;
+
+  const tx = await db.transaction("write");
+  try {
+    for (const r of wordsRows.rows) {
+      const id = String(r.id);
+      const parsed = JSON.parse(String(r.data)) as Vocabulary;
+      const ck = String(r.canonical_key || canonicalWordKey(parsed.de));
+      if (existingSource.get(id) === "admin") continue;
+      const curated = lookupCuratedPronunciation(parsed.de);
+      if (!curated) continue;
+      await tx.execute({
+        sql: `INSERT INTO german_pronunciation(
+                word_id, canonical_key, ipa, turkish_approx, syllables_json, stress_syllable, notes_tr, source, verified, content_version, updated_at
+              ) VALUES(?,?,?,?,?,?,?,?,?, 'v1', ?)
+              ON CONFLICT(word_id) DO UPDATE SET
+                canonical_key=excluded.canonical_key,
+                ipa=excluded.ipa,
+                turkish_approx=excluded.turkish_approx,
+                syllables_json=excluded.syllables_json,
+                stress_syllable=excluded.stress_syllable,
+                notes_tr=excluded.notes_tr,
+                source='curated',
+                verified=1,
+                updated_at=excluded.updated_at
+              WHERE german_pronunciation.source != 'admin'`,
+        args: [
+          id,
+          ck,
+          curated.ipa,
+          curated.turkishApprox,
+          JSON.stringify(curated.syllables),
+          curated.stressSyllable,
+          curated.notesTr,
+          "curated",
+          1,
+          nowIso,
+        ],
+      });
+      synced++;
+    }
+    await tx.commit();
+  } finally {
+    tx.close();
+  }
+  return synced;
+}
+
+export async function getPronunciationMap(db: Client): Promise<Map<string, PronunciationGuide>> {
+  const rows = await db.execute("SELECT * FROM german_pronunciation");
+  const map = new Map<string, PronunciationGuide>();
+  for (const r of rows.rows) {
+    let syllables: string[] = [];
+    try {
+      const s = JSON.parse(String(r.syllables_json ?? "[]"));
+      if (Array.isArray(s)) syllables = s.map(String);
+    } catch {}
+    map.set(String(r.word_id), {
+      ipa: String(r.ipa ?? ""),
+      turkishApprox: String(r.turkish_approx ?? ""),
+      syllables,
+      stressSyllable: Number(r.stress_syllable ?? 0),
+      notesTr: String(r.notes_tr ?? ""),
+      source: String(r.source ?? "curated") as PronunciationGuide["source"],
+      verified: Number(r.verified ?? 0) === 1,
+    });
+  }
+  return map;
 }
 
 export async function getUserMasteryMap(
@@ -421,13 +622,14 @@ export async function loadDeduplicatedWordsWithMastery(
   rawWords: WordWithMastery[];
   unclassifiedCount: number;
 }> {
-  const [wordRes, masteryMap] = await Promise.all([
+  const [wordRes, masteryMap, pronMap] = await Promise.all([
     db.execute(
       includeInactive
         ? "SELECT id, data, active, imported_at FROM german_words ORDER BY imported_at DESC"
         : "SELECT id, data, active, imported_at FROM german_words WHERE active=1 ORDER BY imported_at DESC",
     ),
     getUserMasteryMap(db, userId),
+    getPronunciationMap(db),
   ]);
 
   const rawWords: WordWithMastery[] = [];
@@ -439,10 +641,12 @@ export async function loadDeduplicatedWordsWithMastery(
     const parsed = JSON.parse(String(r.data)) as Vocabulary;
     const ck = parsed.canonicalKey || canonicalWordKey(parsed.de);
     const mastery = masteryMap.get(id) ?? newMastery(id, parsed.level);
+    const pronunciation = resolvePronunciation(parsed.de, pronMap.get(id) ?? null);
     const full: WordWithMastery = {
       ...parsed,
       id,
       canonicalKey: ck,
+      pronunciation,
       active: !!r.active,
       importedAt: String(r.imported_at),
       mastery: { ...mastery, wordId: id, cefrLevel: parsed.level },
@@ -946,6 +1150,11 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
     selectedLevels,
     preferredDirection: String(statsRow?.preferred_direction ?? "tr_de"),
     perfectLessons: Number(statsRow?.perfect_lessons ?? 0),
+    showTurkishPronunciation:
+      statsRow?.show_turkish_pronunciation === undefined || statsRow?.show_turkish_pronunciation === null
+        ? true
+        : Number(statsRow.show_turkish_pronunciation) === 1,
+    autoSessionReview: Number(statsRow?.auto_session_review ?? 0) === 1,
   };
 
   const a1Summary = progressByLevel.find((p) => p.level === "A1");

@@ -7,6 +7,16 @@ import type {
 
 export type GermanTab = "learn" | "practice" | "words" | "progress" | "profile";
 
+export interface PronunciationGuide {
+  ipa: string;
+  turkishApprox: string;
+  syllables: string[];
+  stressSyllable: number;
+  notesTr: string;
+  source: "curated" | "admin" | "ai_needs_review" | "estimated";
+  verified: boolean;
+}
+
 export interface MasteryRecord {
   wordId: string;
   cefrLevel: StoredCefrLevel;
@@ -49,6 +59,8 @@ export interface GermanStats {
   selectedLevels: CefrLevel[];
   preferredDirection: StudyDirection;
   perfectLessons: number;
+  showTurkishPronunciation?: boolean;
+  autoSessionReview?: boolean;
 }
 
 export interface OverallSummary {
@@ -119,6 +131,11 @@ export interface JobRow {
   summary?: string | null;
 }
 
+export interface ReportReasonOption {
+  id: string;
+  labelTr: string;
+}
+
 export interface OverviewResponse {
   progressByLevel: ProgressByLevelItem[];
   overall: OverallSummary;
@@ -130,6 +147,7 @@ export interface OverviewResponse {
   examStructure: Record<string, any>;
   audioAvailable: boolean;
   pronunciationAvailable: boolean;
+  reportReasons?: ReportReasonOption[];
 }
 
 export interface VocabItem {
@@ -145,6 +163,7 @@ export interface VocabItem {
   grammar?: string;
   exampleDe?: string;
   exampleTr?: string;
+  pronunciation?: PronunciationGuide;
   mastery: MasteryRecord;
 }
 
@@ -155,6 +174,26 @@ export interface VocabularyResponse {
   limit: number;
   totalPages: number;
   topics: string[];
+}
+
+export interface VocabularyCardDetail {
+  id: string;
+  de: string;
+  tr: string;
+  level: string;
+  pos?: string;
+  article?: string;
+  plural?: string;
+  topic: string;
+  grammar: string;
+  exampleDe?: string;
+  exampleTr?: string;
+  extraExample?: { de: string; tr: string } | null;
+  grammarNoteTr?: string;
+  usageTipTr?: string;
+  conjugationSummaryTr?: string;
+  pronunciation: PronunciationGuide;
+  enrichedByAI: boolean;
 }
 
 export interface GermanTask {
@@ -191,17 +230,153 @@ export interface GermanTask {
       grammar?: string;
       exampleDe?: string;
       exampleTr?: string;
+      pronunciation?: PronunciationGuide;
     };
   };
 }
 
-export interface TaskResult {
+export interface DiffSegment {
+  type: "equal" | "removed" | "added";
+  text: string;
+}
+
+export interface SchreibenCriterionEvaluation {
+  band: "gut" | "solide" | "ausbaufähig";
+  noteTr: string;
+  evidence?: string;
+}
+
+export interface SchreibenEvaluationResult {
+  score: number;
+  confidence?: number;
+  unofficialPracticeEstimate?: boolean;
+  disclaimerTr?: string;
+  cefrLevel?: string;
+  taskPart?: number;
+  feedback?: string;
+  overallEvaluationTr?: string;
+  strengths?: string[];
+  grammarMistakes?: Array<{
+    original: string;
+    correction: string;
+    explanationTr: string;
+    category: string;
+  }>;
+  vocabularyImprovements?: Array<{
+    original: string;
+    better: string;
+    reasonTr: string;
+  }>;
+  missedRequirements?: string[];
+  correctedVersion?: string;
+  suggestedAnswer?: string;
+  tips?: string[];
+  criteria?: {
+    aufgabenerfuellung?: SchreibenCriterionEvaluation;
+    kohaerenz?: SchreibenCriterionEvaluation;
+    wortschatz?: SchreibenCriterionEvaluation;
+    strukturen?: SchreibenCriterionEvaluation;
+  };
+  diffSegments?: DiffSegment[];
+  originalSubmission?: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface TaskResult extends Partial<Omit<SchreibenEvaluationResult, "score">> {
   score: number | null;
   skipped?: boolean;
   feedback?: string;
   suggestedAnswer?: string;
   pending?: boolean;
   unofficial?: boolean;
+}
+
+export interface MistakeExplanationResponse {
+  headlineTr: string;
+  whyWrongOrRightTr: string;
+  correctMeaningTr: string;
+  ruleTr: string;
+  example: { de: string; tr: string };
+  memoryTipTr: string;
+  detailedNoteTr?: string;
+  possibleQuestionIssue: boolean;
+  cached: boolean;
+  provider: string;
+  fallbackUsed: boolean;
+}
+
+export interface SessionPerformanceReview {
+  overallSummaryTr: string;
+  strongestAreas: string[];
+  areasNeedingPractice: string[];
+  topActions: string[];
+  recommendedFollowUp: {
+    titleTr: string;
+    reasonTr: string;
+    suggestedActivity: string;
+    levels: CefrLevel[];
+  };
+  limitedEvidence: boolean;
+  metrics: {
+    evaluatedCount: number;
+    correctCount: number;
+    wrongCount: number;
+    skippedCount: number;
+    accuracy: number;
+    weakWords: Array<{ de: string; tr: string }>;
+    strongWords: Array<{ de: string; tr: string }>;
+    errorTypes: Record<string, number>;
+  };
+  cached: boolean;
+  provider: string;
+  fallbackUsed: boolean;
+}
+
+export interface QuestionReportItem {
+  id: string;
+  taskFingerprint: string;
+  taskId: string;
+  wordId: string;
+  exerciseType: string;
+  level: string;
+  sessionId: string;
+  userId: number;
+  username?: string;
+  reason: string;
+  comment: string;
+  taskSnapshot: GermanTask;
+  currentAnswer: string;
+  studentAnswer: string;
+  status: string;
+  aiReview?: any;
+  adminNote?: string | null;
+  createdAt: string;
+  reviewedAt?: string | null;
+}
+
+export interface QuestionAuditItem {
+  taskFingerprint: string;
+  taskId: string;
+  module: string;
+  level: string;
+  auditStatus: "approved" | "needs_review" | "rejected";
+  deterministicIssues: Array<{ code: string; severity: string; messageTr: string }>;
+  aiReview?: {
+    verdict: string;
+    summaryTr: string;
+    detectedProblems: string[];
+    suggestedFix?: {
+      prompt?: string;
+      answer?: string;
+      options?: string[];
+      explanation?: string;
+    } | null;
+  } | null;
+  suggestedCorrection?: any;
+  taskSnapshot?: GermanTask | null;
+  auditedAt: string;
+  reviewedAt?: string | null;
 }
 
 export interface ActiveSession {
@@ -229,11 +404,13 @@ export interface ActiveSession {
     reviewMode?: boolean;
     parentSessionId?: string;
     reinforcementDirection?: StudyDirection;
+    aiGeneratedCount?: number;
   };
   tasks: GermanTask[];
   answers: Record<string, string>;
   results: Record<string, TaskResult>;
   masteryMap: Record<string, MasteryRecord>;
+  sessionReview?: SessionPerformanceReview | null;
   serverNow: string;
 }
 

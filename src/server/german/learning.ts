@@ -15,6 +15,7 @@ import {
   type CefrSource,
 } from "./cefr";
 import type { CurriculumEntry, PartOfSpeech } from "./curriculum";
+import type { PronunciationGuide } from "./pronunciation";
 
 export const normalize = normalizeText;
 
@@ -39,6 +40,7 @@ export type Vocabulary = {
   exampleTr?: string;
   conjugation?: CurriculumEntry["conjugation"];
   completion?: CurriculumEntry["completion"];
+  pronunciation?: PronunciationGuide;
 };
 
 export function parseDocument(doc: any) {
@@ -421,6 +423,7 @@ export type Task = {
       grammar?: string;
       exampleDe?: string;
       exampleTr?: string;
+      pronunciation?: PronunciationGuide;
     };
   };
   id: string;

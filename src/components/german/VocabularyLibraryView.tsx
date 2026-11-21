@@ -1,18 +1,49 @@
 import { useEffect, useState } from "react";
-import { CheckSquare, Play, Search, Square, Volume2 } from "lucide-react";
+import {
+  BookmarkPlus,
+  Check,
+  CheckSquare,
+  Expand,
+  Play,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Square,
+  X,
+} from "lucide-react";
 import { studyLevels, type CefrLevel } from "../../shared/germanActivities";
-import { fetchVocabulary, germanRequest, speakGerman } from "./api";
+import {
+  fetchVocabulary,
+  fetchVocabularyCard,
+  germanRequest,
+  requestAnotherWordExample,
+  suggestWordPronunciation,
+} from "./api";
 import { CefrTag, MasteryPips } from "./MasteryPips";
-import type { VocabItem, VocabularyResponse } from "./types";
+import { GermanSpeakButtons, PronunciationGuideBox } from "./PronunciationGuideBox";
+import type { VocabItem, VocabularyCardDetail, VocabularyResponse } from "./types";
+
+const POS_LABELS: Record<string, string> = {
+  noun: "İsim",
+  verb: "Fiil",
+  adj: "Sıfat",
+  adv: "Zarf",
+  conj: "Bağlaç",
+  phrase: "İfade",
+};
 
 export function VocabularyLibraryView({
   isAdmin,
   initialLevel = "ALL",
+  showTurkishPronunciation = true,
+  onTogglePronunciation,
   onPracticeSelected,
   onOverviewChanged,
 }: {
   isAdmin: boolean;
   initialLevel?: string;
+  showTurkishPronunciation?: boolean;
+  onTogglePronunciation?: (next: boolean) => void;
   onPracticeSelected: (wordIds: string[], levels: CefrLevel[]) => void;
   onOverviewChanged: () => void;
 }) {
@@ -27,6 +58,12 @@ export function VocabularyLibraryView({
   const [error, setError] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedWordLevels, setSelectedWordLevels] = useState<Record<string, CefrLevel>>({});
+
+  // Detail card modal state
+  const [activeCardItem, setActiveCardItem] = useState<VocabItem | null>(null);
+  const [cardDetail, setCardDetail] = useState<VocabularyCardDetail | null>(null);
+  const [cardLoading, setCardLoading] = useState(false);
+  const [cardBusyAction, setCardBusyAction] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -77,6 +114,67 @@ export function VocabularyLibraryView({
     }
   };
 
+  const openCard = async (item: VocabItem) => {
+    setActiveCardItem(item);
+    setCardDetail(null);
+    setCardLoading(true);
+    try {
+      const detail = await fetchVocabularyCard(item.id);
+      setCardDetail(detail);
+    } catch {
+      setCardDetail({
+        id: item.id,
+        de: item.de,
+        tr: item.tr,
+        level: item.level,
+        pos: item.pos,
+        article: item.article,
+        plural: item.plural,
+        topic: item.topic,
+        grammar: item.grammar ?? "",
+        exampleDe: item.exampleDe,
+        exampleTr: item.exampleTr,
+        pronunciation: item.pronunciation ?? {
+          ipa: "",
+          turkishApprox: item.de,
+          syllables: [item.de],
+          stressSyllable: 0,
+          notesTr: "Okunuş rehberi yüklenemedi.",
+          source: "estimated",
+          verified: false,
+        },
+        enrichedByAI: false,
+      });
+    } finally {
+      setCardLoading(false);
+    }
+  };
+
+  const handleAnotherExample = async () => {
+    if (!activeCardItem || cardBusyAction) return;
+    setCardBusyAction(true);
+    try {
+      const updated = await requestAnotherWordExample(activeCardItem.id);
+      setCardDetail(updated);
+    } catch (e: any) {
+      setError(e?.message || "Yeni örnek üretilemedi.");
+    } finally {
+      setCardBusyAction(false);
+    }
+  };
+
+  const handleSuggestPronunciation = async () => {
+    if (!activeCardItem || cardBusyAction) return;
+    setCardBusyAction(true);
+    try {
+      const nextPron = await suggestWordPronunciation(activeCardItem.id);
+      setCardDetail((prev) => (prev ? { ...prev, pronunciation: nextPron } : prev));
+    } catch {
+    } finally {
+      setCardBusyAction(false);
+    }
+  };
+
   return (
     <div className="kg-container">
       <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -86,27 +184,39 @@ export function VocabularyLibraryView({
               Kelime Kütüphanesi
             </h1>
             <p className="kg-section-sub">
-              Seviye, konu ve 5/5 ustalık durumuna göre filtrele, dinle veya seçtiklerini çalış.
+              Seviye, konu ve 5/5 ustalık durumuna göre filtrele, okunuşu gör, dinle veya seçtiklerini çalış.
             </p>
           </div>
-          {selectedIds.length > 0 && (
-            <button
-              type="button"
-              className="kg-btn kg-btn-primary kg-btn-sm"
-              onClick={() => {
-                const lvls = [
-                  ...new Set(
-                    selectedIds
-                      .map((id) => selectedWordLevels[id])
-                      .filter((l): l is CefrLevel => Boolean(l)),
-                  ),
-                ];
-                onPracticeSelected(selectedIds, lvls.length ? lvls : ["A1"]);
-              }}
-            >
-              <Play size={15} /> Seçilileri Çalış ({selectedIds.length})
-            </button>
-          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {onTogglePronunciation && (
+              <label className="kg-toggle-chip">
+                <input
+                  type="checkbox"
+                  checked={showTurkishPronunciation}
+                  onChange={(e) => onTogglePronunciation(e.target.checked)}
+                />
+                <span>Türkçe okunuşları göster</span>
+              </label>
+            )}
+            {selectedIds.length > 0 && (
+              <button
+                type="button"
+                className="kg-btn kg-btn-primary kg-btn-sm"
+                onClick={() => {
+                  const lvls = [
+                    ...new Set(
+                      selectedIds
+                        .map((id) => selectedWordLevels[id])
+                        .filter((l): l is CefrLevel => Boolean(l)),
+                    ),
+                  ];
+                  onPracticeSelected(selectedIds, lvls.length ? lvls : ["A1"]);
+                }}
+              >
+                <Play size={15} /> Seçilileri Çalış ({selectedIds.length})
+              </button>
+            )}
+          </div>
         </div>
 
         {/* CEFR Level Filter Pills */}
@@ -228,7 +338,7 @@ export function VocabularyLibraryView({
                 className="kg-btn kg-btn-ghost kg-btn-sm"
                 onClick={() => setSelectedIds([])}
               >
-                Seçimi Temizle
+                Seçimi Temizle ({selectedIds.length})
               </button>
             )}
           </div>
@@ -248,16 +358,7 @@ export function VocabularyLibraryView({
                         <CefrTag level={item.level} />
                         <span className="kg-vocab-meta">
                           {item.topic}
-                          {item.pos
-                            ? ` · ${{
-                                noun: "İsim",
-                                verb: "Fiil",
-                                adj: "Sıfat",
-                                adv: "Zarf",
-                                conj: "Bağlaç",
-                                phrase: "İfade",
-                              }[item.pos] ?? item.pos}`
-                            : ""}
+                          {item.pos ? ` · ${POS_LABELS[item.pos] ?? item.pos}` : ""}
                         </span>
                       </div>
                       <h3 className="kg-vocab-word" lang="de" style={{ marginTop: 6 }}>
@@ -270,20 +371,13 @@ export function VocabularyLibraryView({
                       )}
                     </div>
 
-                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                      <button
-                        type="button"
-                        className="kg-audio-btn"
-                        aria-label={`${item.de} telaffuzunu dinle`}
-                        onClick={() => void speakGerman(item.de)}
-                      >
-                        <Volume2 size={17} />
-                      </button>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                      <GermanSpeakButtons text={item.de} compact />
                       {isClassified && (
                         <button
                           type="button"
                           className="kg-audio-btn"
-                          aria-label={isSelected ? `${item.de} seçimini kaldır` : `${item.de} kelimesini çalışmak için seç`}
+                          aria-label={isSelected ? `${item.de} seçimini kaldır` : `${item.de} tekrar listesine ekle`}
                           aria-pressed={isSelected}
                           onClick={() => toggleSelect(item)}
                         >
@@ -294,6 +388,14 @@ export function VocabularyLibraryView({
                   </div>
 
                   <div className="kg-vocab-tr">{item.tr}</div>
+
+                  {item.pronunciation && (
+                    <PronunciationGuideBox
+                      pronunciation={item.pronunciation}
+                      showTurkishPronunciation={showTurkishPronunciation}
+                      compact
+                    />
+                  )}
 
                   {item.exampleDe && (
                     <div className="kg-vocab-example">
@@ -307,11 +409,21 @@ export function VocabularyLibraryView({
                       streak={item.mastery.consecutiveCorrect}
                       status={item.mastery.masteryStatus}
                     />
-                    {item.mastery.totalIncorrect > 0 && (
-                      <span className="kg-vocab-meta tabular-nums">
-                        Hata: {item.mastery.totalIncorrect}
-                      </span>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {item.mastery.totalIncorrect > 0 && (
+                        <span className="kg-vocab-meta tabular-nums">
+                          Hata: {item.mastery.totalIncorrect}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="kg-btn kg-btn-sm"
+                        style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }}
+                        onClick={() => void openCard(item)}
+                      >
+                        <Expand size={13} /> Kartı Aç
+                      </button>
+                    </div>
                   </div>
 
                   {isAdmin && (
@@ -368,6 +480,169 @@ export function VocabularyLibraryView({
           <p className="kg-section-sub">
             Arama terimini temizleyebilir veya farklı bir seviye seçebilirsin.
           </p>
+        </div>
+      )}
+
+      {/* Word Study Detail Card Modal */}
+      {activeCardItem && (
+        <div
+          className="kg-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="kg-vocab-modal-title"
+        >
+          <div className="kg-modal-card kg-vocab-modal">
+            <div className="kg-section-head">
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <CefrTag level={activeCardItem.level} />
+                <span className="kg-vocab-meta">
+                  {activeCardItem.topic}
+                  {activeCardItem.pos ? ` · ${POS_LABELS[activeCardItem.pos] ?? activeCardItem.pos}` : ""}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="kg-btn kg-btn-ghost kg-btn-sm"
+                aria-label="Kartı kapat"
+                onClick={() => setActiveCardItem(null)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div>
+              <h2 id="kg-vocab-modal-title" lang="de" style={{ fontSize: 24, fontWeight: 800 }}>
+                {activeCardItem.de}
+              </h2>
+              <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>
+                {activeCardItem.tr}
+              </div>
+              {(activeCardItem.article || activeCardItem.plural) && (
+                <div className="kg-vocab-meta" style={{ marginTop: 4 }} lang="de">
+                  {activeCardItem.article ? `Artikel: ${activeCardItem.article}` : ""}
+                  {activeCardItem.article && activeCardItem.plural ? " · " : ""}
+                  {activeCardItem.plural ? `Çoğul: ${activeCardItem.plural}` : ""}
+                </div>
+              )}
+            </div>
+
+            <GermanSpeakButtons text={activeCardItem.de} />
+
+            {cardLoading ? (
+              <div className="kg-section-sub" role="status">
+                Kelime kartı detayları yükleniyor…
+              </div>
+            ) : cardDetail ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <PronunciationGuideBox
+                  pronunciation={cardDetail.pronunciation}
+                  showTurkishPronunciation={true}
+                />
+
+                {!cardDetail.pronunciation.verified && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <span className="kg-vocab-meta">
+                      Bu özel/ek kelime için henüz doğrulanmış IPA kaydı bulunmuyor.
+                    </span>
+                    <button
+                      type="button"
+                      disabled={cardBusyAction}
+                      className="kg-btn kg-btn-sm"
+                      onClick={() => void handleSuggestPronunciation()}
+                    >
+                      <Sparkles size={13} /> AI Okunuş Öner
+                    </button>
+                  </div>
+                )}
+
+                {cardDetail.exampleDe && (
+                  <div className="kg-vocab-example">
+                    <div className="kg-section-head">
+                      <span className="kg-vocab-meta">Ana Örnek Cümle</span>
+                      <GermanSpeakButtons text={cardDetail.exampleDe} compact />
+                    </div>
+                    <strong lang="de" style={{ marginTop: 4 }}>{cardDetail.exampleDe}</strong>
+                    {cardDetail.exampleTr && <span>{cardDetail.exampleTr}</span>}
+                  </div>
+                )}
+
+                {cardDetail.extraExample && (
+                  <div className="kg-vocab-example">
+                    <div className="kg-section-head">
+                      <span className="kg-badge-soft">
+                        <Sparkles size={12} /> Ek Örnek
+                      </span>
+                      <GermanSpeakButtons text={cardDetail.extraExample.de} compact />
+                    </div>
+                    <strong lang="de" style={{ marginTop: 4 }}>{cardDetail.extraExample.de}</strong>
+                    <span>{cardDetail.extraExample.tr}</span>
+                  </div>
+                )}
+
+                {(cardDetail.grammar || cardDetail.grammarNoteTr || cardDetail.conjugationSummaryTr) && (
+                  <div className="kg-ai-list-block">
+                    <strong>Dilbilgisi ve Çekim Notu</strong>
+                    {cardDetail.grammar && <p style={{ margin: "4px 0 0" }}>{cardDetail.grammar}</p>}
+                    {cardDetail.conjugationSummaryTr && (
+                      <p style={{ margin: "4px 0 0" }}>{cardDetail.conjugationSummaryTr}</p>
+                    )}
+                    {cardDetail.grammarNoteTr && (
+                      <p style={{ margin: "4px 0 0" }}>{cardDetail.grammarNoteTr}</p>
+                    )}
+                    {cardDetail.usageTipTr && (
+                      <p style={{ margin: "4px 0 0" }}>
+                        <strong>Kullanım İpucu:</strong> {cardDetail.usageTipTr}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+              {studyLevels.includes(activeCardItem.level as CefrLevel) && (
+                <button
+                  type="button"
+                  className="kg-btn kg-btn-primary kg-btn-sm"
+                  onClick={() => {
+                    const lvl = activeCardItem.level as CefrLevel;
+                    const wid = activeCardItem.id;
+                    setActiveCardItem(null);
+                    onPracticeSelected([wid], [lvl]);
+                  }}
+                >
+                  <Play size={14} /> Pratik Yap
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={cardBusyAction || cardLoading}
+                className="kg-btn kg-btn-blue kg-btn-sm"
+                onClick={() => void handleAnotherExample()}
+              >
+                <RefreshCw size={14} /> {cardBusyAction ? "Hazırlanıyor…" : "Başka Örnek Göster"}
+              </button>
+
+              {studyLevels.includes(activeCardItem.level as CefrLevel) && (
+                <button
+                  type="button"
+                  className="kg-btn kg-btn-sm"
+                  onClick={() => toggleSelect(activeCardItem)}
+                >
+                  {selectedIds.includes(activeCardItem.id) ? (
+                    <>
+                      <Check size={14} /> Tekrar Listesinde
+                    </>
+                  ) : (
+                    <>
+                      <BookmarkPlus size={14} /> Tekrar Listesine Ekle
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { type CefrLevel, type StudyDirection } from "../../shared/germanActivities";
 import {
+  createPersonalizedReinforcement,
   fetchAccess,
   fetchOverview,
   saveStudyPreferences,
@@ -32,6 +33,7 @@ function normalizeTab(raw: string | null): GermanTab {
     case "goethe":
       return "practice";
     case "words":
+    case "vocabulary":
       return "words";
     case "progress":
     case "history":
@@ -64,6 +66,8 @@ export default function KapsGerman() {
   const [selectedLevels, setSelectedLevels] = useState<CefrLevel[]>(["A1"]);
   const [direction, setDirection] = useState<StudyDirection>("tr_de");
   const [dailyGoalXp, setDailyGoalXp] = useState<number>(50);
+  const [showTurkishPronunciation, setShowTurkishPronunciation] = useState<boolean>(true);
+  const [autoSessionReview, setAutoSessionReview] = useState<boolean>(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -81,6 +85,12 @@ export default function KapsGerman() {
       }
       if (data.stats.dailyGoalXp) {
         setDailyGoalXp(data.stats.dailyGoalXp);
+      }
+      if (typeof data.stats.showTurkishPronunciation === "boolean") {
+        setShowTurkishPronunciation(data.stats.showTurkishPronunciation);
+      }
+      if (typeof data.stats.autoSessionReview === "boolean") {
+        setAutoSessionReview(data.stats.autoSessionReview);
       }
       setPrefsLoaded(true);
     }
@@ -124,6 +134,16 @@ export default function KapsGerman() {
       .catch(() => {});
   };
 
+  const handleTogglePronunciation = (next: boolean) => {
+    setShowTurkishPronunciation(next);
+    void saveStudyPreferences({ showTurkishPronunciation: next }).catch(() => {});
+  };
+
+  const handleToggleAutoSessionReview = (next: boolean) => {
+    setAutoSessionReview(next);
+    void saveStudyPreferences({ autoSessionReview: next }).catch(() => {});
+  };
+
   const handleStartSession = async (opts: {
     module?: string;
     mode?: "practice" | "exam";
@@ -155,6 +175,30 @@ export default function KapsGerman() {
     }
   };
 
+  const handleStartPersonalizedReinforcement = async (opts: {
+    levels: CefrLevel[];
+    direction: StudyDirection;
+    includeMasteredReview: boolean;
+  }) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const created = await createPersonalizedReinforcement({
+        levels: opts.levels,
+        direction: opts.direction,
+        includeMasteredReview: opts.includeMasteredReview,
+      });
+      navigate(
+        `/dersler/kaps-german?tab=${activeTab}&session=${encodeURIComponent(created.sessionId)}`,
+      );
+    } catch (e: any) {
+      setError(e?.message || "Kişiselleştirilmiş pekiştirme oluşturulamadı.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (error && !access) {
     return (
       <div className="kg">
@@ -173,12 +217,13 @@ export default function KapsGerman() {
     );
   }
 
-  // Active exercise session takes clean focused viewport
   if (sessionId) {
     return (
       <main className="kg" aria-label="Kaps German Oturum">
         <ExerciseRunner
           sessionId={sessionId}
+          showTurkishPronunciation={showTurkishPronunciation}
+          autoSessionReview={autoSessionReview}
           onExit={() => {
             void refreshOverview();
             navigate(`/dersler/kaps-german?tab=${activeTab}`);
@@ -205,7 +250,7 @@ export default function KapsGerman() {
 
   return (
     <div className="kg">
-      {/* Unified Header (Works cleanly on both Desktop & Mobile without outer KapsApp header collision) */}
+      {/* Unified Header */}
       <header className="kg-topbar">
         <div className="kg-topbar-left">
           <Link to="/dersler" className="kg-back-link">
@@ -294,6 +339,9 @@ export default function KapsGerman() {
                 onChangeLevels={handleChangeLevels}
                 onChangeDirection={handleChangeDirection}
                 onStartSession={(opts) => void handleStartSession(opts)}
+                onStartPersonalizedReinforcement={(opts) =>
+                  void handleStartPersonalizedReinforcement(opts)
+                }
                 busy={busy}
               />
             )}
@@ -302,6 +350,8 @@ export default function KapsGerman() {
               <VocabularyLibraryView
                 isAdmin={Boolean(access?.admin)}
                 initialLevel={vocabLevelFilter}
+                showTurkishPronunciation={showTurkishPronunciation}
+                onTogglePronunciation={handleTogglePronunciation}
                 onPracticeSelected={(wordIds, lvls) =>
                   void handleStartSession({
                     activity: "mixed",
@@ -331,7 +381,11 @@ export default function KapsGerman() {
                 overview={overview}
                 isAdmin={Boolean(access?.admin)}
                 dailyGoalXp={dailyGoalXp}
+                showTurkishPronunciation={showTurkishPronunciation}
+                autoSessionReview={autoSessionReview}
                 onChangeDailyGoal={handleChangeDailyGoal}
+                onTogglePronunciation={handleTogglePronunciation}
+                onToggleAutoSessionReview={handleToggleAutoSessionReview}
                 onResumeSession={(sid) =>
                   navigate(`/dersler/kaps-german?tab=profile&session=${encodeURIComponent(sid)}`)
                 }
@@ -342,7 +396,7 @@ export default function KapsGerman() {
         )}
       </main>
 
-      {/* Mobile Bottom Tab Bar (Single clean 5-tab bar, hidden automatically during ExerciseRunner) */}
+      {/* Mobile Bottom Tab Bar */}
       <nav className="kg-mobile-nav" aria-label="Kaps German mobil menüsü">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;

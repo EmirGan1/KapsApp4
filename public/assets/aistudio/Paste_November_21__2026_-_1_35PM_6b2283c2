@@ -1,0 +1,1026 @@
+# KapsApp4 — Comprehensive Kaps German AI Learning Upgrade and German Pronunciation System
+
+## PROJECT AND OBJECTIVE
+
+Repository: https://github.com/EmirGan1/KapsApp4
+
+Default branch: `main`
+
+Implement a comprehensive, production-ready improvement to the existing **Kaps German** module.
+
+The goal is to transform Kaps German into a more intelligent, reliable, personalized German-learning platform while preserving the existing user experience and avoiding unnecessary AI API calls.
+
+Implement the following nine improvements:
+
+1. AI Explain My Mistake
+2. Report an Incorrect Question
+3. AI Session Performance Review
+4. AI Personalized Reinforcement
+5. AI Question Quality Auditor
+6. AI Goethe Schreiben Evaluation
+7. AI German Vocabulary Cards
+8. Reliable Native German Text-to-Speech
+9. Accurate Turkish-Friendly German Pronunciation Guides
+
+These must operate as components of one coherent AI learning system rather than nine disconnected features.
+
+**Do not merely create a plan. Inspect the repository, implement the features, test them, resolve integration problems, and deliver working code.**
+
+Do not create a pull request. Apply changes directly to the existing `main` branch after verifying the build and tests. Do not delete or reset user data.
+
+---
+
+## 1. EXISTING ARCHITECTURE — INSPECT BEFORE CHANGING
+
+Review these existing files carefully:
+
+Backend:
+- `src/server/german/index.ts`
+- `src/server/german/provider.ts`
+- `src/server/german/activities.ts`
+- `src/server/german/learning.ts`
+- `src/server/german/cefr.ts`
+- `src/server/german/store.ts`
+- `src/server/german/curriculum.ts`
+- `src/server/german/google.ts`
+- `src/server/kapsAppAi.ts`
+- `src/shared/germanActivities.ts`
+- `src/shared/kapsAppAi.ts`
+
+Frontend:
+- `src/components/german/KapsGerman.tsx`
+- `src/components/german/ExerciseRunner.tsx`
+- `src/components/german/VocabularyLibraryView.tsx`
+- `src/components/german/PracticeHubView.tsx`
+- `src/components/german/ProgressDashboardView.tsx`
+- `src/components/german/api.ts`
+- `src/components/german/types.ts`
+- `src/components/german/german.css`
+
+Also inspect the actual test suite, existing database schemas, authentication mechanisms, API error conventions, and any additional files relevant to these features.
+
+Use repository inspection to identify changes since this specification was written. Do not assume the file list is exhaustive.
+
+Existing architecture includes React, TypeScript, Express, SQLite/LibSQL, Groq-backed AI, local Ollama models, CEFR-specific exercises, persistent study sessions, and vocabulary mastery tracking.
+
+Preserve and extend these systems rather than duplicating them.
+
+In particular, retain:
+- The existing vocabulary data and Google Docs synchronization.
+- The five-consecutive-correct mastery system.
+- Existing XP, achievements, and statistics.
+- Stored study sessions and their resume functionality.
+- Existing answer evaluation.
+- Existing reinforcement exercises.
+- Existing German AI generation and validation.
+- User access restrictions and administrative permissions.
+
+Never overwrite previous user attempts, scores, mastered words, or existing session records during a migration.
+
+---
+
+# 2. SHARED AI INFRASTRUCTURE
+
+Build a common AI service for all new German-learning features.
+
+Use the existing `germanAI()` implementation as the starting point.
+
+Currently, it supports Groq and optionally Ollama. Improve this implementation without breaking existing consumers.
+
+### AI provider strategy
+
+Preferred configuration:
+
+**Groq — primary provider for language-sensitive educational tasks**
+
+Use the already-configured Groq API integration and a supported, currently available model.
+
+Do not hardcode an unsupported model name.
+
+**Local Ollama — optional fallback**
+
+Reuse existing locally installed models, such as the project's configured Gemma or Qwen variants, where appropriate.
+
+Confirm model availability before selecting a model.
+
+Do not automatically download large models or allocate additional memory on the production server.
+
+### Performance architecture
+
+Create separate logical queues for:
+
+- Short AI explanations
+- Student writing evaluation
+- Question generation and auditing
+- Background learning recommendations
+
+Replace the existing single-operation bottleneck with bounded concurrency appropriate to the server's available memory and API limits.
+
+Do not increase concurrency blindly.
+
+Implement:
+- Request deduplication
+- Rate limiting
+- Response validation
+- Per-task timeouts
+- Retry with bounded exponential backoff
+- In-flight request tracking
+- Persistent result caching
+- Provider failure handling
+- Safe cancellation
+- Task status reporting
+- Server-side API key protection
+
+Prefer structured JSON responses validated with strict TypeScript schemas.
+
+AI results must never directly overwrite authoritative grading or learning progress without appropriate validation.
+
+Do not expose API credentials to the browser.
+
+### Caching
+
+Use SQLite/LibSQL for reusable educational results.
+
+Cache keys should include relevant identifiers, normalized input, content version, prompt version, and provider/model when necessary.
+
+For example, identical requests to explain the same question and misconception should reuse an existing approved explanation.
+
+Do not make a new paid API request when a valid cached result is already available.
+
+Make cache invalidation automatic when an underlying question, vocabulary entry, or answer changes.
+
+---
+
+# 3. FEATURE ONE — AI EXPLAIN MY MISTAKE
+
+Add a prominent but visually restrained button:
+
+**"✨ AI ile Hatamı Açıkla"**
+
+Display it after the learner submits an answer and receives feedback.
+
+The explanation must consider:
+- The original question
+- The correct answer
+- The learner's answer
+- The question type
+- The learning objective
+- Relevant vocabulary and grammar
+- The student's selected CEFR level
+- Available accepted alternatives
+
+Generate clear Turkish feedback suitable for the student's level.
+
+Structure the explanation as:
+
+1. Why the learner's answer was incorrect
+2. What the correct answer means
+3. Which German grammar or vocabulary rule applies
+4. One short example
+5. One memorable learning tip
+
+Example:
+
+Question: "Ich fahre ___ dem Bus."
+
+Student answer: "der"
+
+Correct answer: "mit"
+
+Explanation:
+
+"Bu cümlede ulaşım aracını belirtmek için 'mit' edatı kullanılır. 'Mit' her zaman Dativ ister. Bu nedenle 'mit dem Bus' ifadesi 'otobüsle' anlamına gelir."
+
+Do not produce unnecessarily long explanations for simple A1 questions.
+
+For more complex B1–C1 questions, allow more detailed explanations.
+
+Provide an optional:
+
+**"Daha ayrıntılı açıkla"**
+
+button.
+
+For correct answers, optionally display:
+
+**"Neden doğru?"**
+
+Do not generate explanations automatically for every single answer. First use the existing explanation if suitable, then cached AI explanations, and only call the AI provider on demand.
+
+The explanation must never claim the learner is wrong if the underlying question is ambiguous or incorrectly keyed.
+
+---
+
+# 4. FEATURE TWO — REPORT AN INCORRECT QUESTION
+
+Add a small action to every exercise:
+
+**"⚑ Bu Soruda Hata Var"**
+
+When clicked, open a simple reporting interface.
+
+Allow the user to select:
+
+- Correct answer is wrong
+- Multiple answers could be correct
+- Question is grammatically incorrect
+- Turkish translation is incorrect
+- Question is above the selected CEFR level
+- Question is unclear or nonsensical
+- Other
+
+Allow an optional text comment.
+
+The report must automatically attach:
+- Question ID
+- Exercise ID
+- User ID
+- Session ID, if applicable
+- Question content and current version
+- Current answer key
+- Student answer, where appropriate
+- Selected reason
+- Creation timestamp
+
+Create a secure server-side reporting endpoint.
+
+Deduplicate repeated reports for the same question and issue category.
+
+### AI-assisted review
+
+After receiving a report, enqueue an independent AI review.
+
+The AI should determine:
+
+- Whether the question is genuinely flawed
+- Whether the original answer key is defensible
+- Whether multiple answers are acceptable
+- Whether a translation is inaccurate
+- Whether a proposed correction is appropriate
+
+Return a structured assessment and confidence indicator.
+
+Never automatically change historical grades based solely on an AI opinion.
+
+If the issue is confirmed, flag the question for administrative review.
+
+Create an admin interface for approving a correction, disabling a question, or rejecting a report.
+
+Users should receive a meaningful status, such as:
+
+"Rapor alındı. Soru incelemeye gönderildi."
+
+If a correction later changes grading, support a controlled, auditable regrading process without deleting attempt history.
+
+---
+
+# 5. FEATURE THREE — AI SESSION PERFORMANCE REVIEW
+
+At the end of a completed Kaps German practice session, add:
+
+**"✨ AI Çalışma Analizi"**
+
+The review should summarize actual performance rather than generating generic encouragement.
+
+Use recorded metrics such as:
+
+- Correct and incorrect answers
+- Vocabulary mastery changes
+- Repeated errors
+- Question types
+- Grammar mistakes
+- CEFR level
+- Time spent where reliably available
+- Previously missed vocabulary
+- Whether errors were systematic or isolated
+
+Example output:
+
+"Bu çalışmada Dativ kullanımında zorlandın. Özellikle 'mit' ve 'nach' edatlarını tekrar etmen faydalı olacaktır. Kelime eşleştirme performansın daha güçlüydü."
+
+Include:
+
+**Strongest areas**
+
+**Areas requiring practice**
+
+**Top three recommended actions**
+
+**Suggested follow-up exercise**
+
+The review must be grounded in actual session records.
+
+Never invent improvements or comparisons when no historical evidence exists.
+
+Generate the review only when requested, or when a user has explicitly enabled automatic post-session AI reviews.
+
+Store completed reviews so reopening a finished session does not require generating them again.
+
+For short sessions with insufficient evidence, present a limited review instead of pretending to have a detailed diagnosis.
+
+---
+
+# 6. FEATURE FOUR — AI PERSONALIZED REINFORCEMENT
+
+Extend the existing reinforcement system.
+
+Do not replace the current deterministic reinforcement generator.
+
+Use it as the reliable foundation.
+
+The new system should identify:
+
+- Frequently missed words
+- Weak grammar concepts
+- Confusing vocabulary pairs
+- Errors that persist across sessions
+- Vocabulary close to mastery
+- Previously mastered vocabulary requiring optional review
+
+Offer:
+
+**"✨ Bana Özel Pekiştirme Oluştur"**
+
+Create exercises that target actual weaknesses.
+
+For example, if the student repeatedly confuses "seit" and "vor", generate different sentence contexts requiring one of those expressions.
+
+The student should not repeatedly receive the same question with only the answer options reordered.
+
+Use a combination of:
+- Vocabulary matching
+- Translation
+- Sentence completion
+- Grammar selection
+- Sentence ordering
+- Error correction
+- Contextual vocabulary questions
+
+Respect the selected CEFR levels.
+
+Do not introduce B2 vocabulary during an A1-only session unless explicitly requested.
+
+Use the existing vocabulary IDs, mastery rules, and exercise format wherever possible.
+
+Before publishing AI-generated activities:
+
+1. Validate the JSON structure.
+2. Check the correct answer against the actual question.
+3. Verify the intended vocabulary and grammar.
+4. Reject empty, unrelated, or placeholder answers.
+5. Detect ambiguous multiple-choice answers.
+6. Check CEFR suitability.
+7. Check for duplicates.
+8. Apply the existing task validation logic.
+
+If AI generation fails, fall back to existing deterministic exercises.
+
+Do not block studying because the AI provider is offline.
+
+---
+
+# 7. FEATURE FIVE — AI QUESTION QUALITY AUDITOR
+
+Create an automatic quality-control system for Kaps German questions.
+
+This is especially important because an AI-generated exercise can be grammatically valid while having an incorrect answer key or misleading options.
+
+Extend the existing `validateTask()` and independent AI validation pipeline.
+
+Use deterministic checks first.
+
+Check for:
+
+- Missing correct answers
+- Incorrect answer keys
+- Options that are duplicated
+- Several valid answers in a supposedly single-answer question
+- A correct answer absent from the options
+- Answers consisting only of an option label
+- Unrelated answer text
+- Broken German grammar
+- Incorrect Turkish translations
+- Misleading sentence gaps
+- Incorrect word inflections
+- Inappropriate CEFR levels
+- Unnatural or nonsensical sentences
+- Inconsistent vocabulary metadata
+- Malformed exercise objects
+
+Use a second AI assessment for linguistic ambiguity and correctness when necessary.
+
+Classify questions as:
+
+- Approved
+- Needs review
+- Rejected
+
+Do not present arbitrary AI confidence scores as scientifically calibrated probabilities.
+
+For uncertain assessments, use a human-review status.
+
+Only publish questions that satisfy the necessary automated checks.
+
+### Existing question database audit
+
+Provide an administrator-only tool:
+
+**"AI Soru Kalite Taraması"**
+
+It should review already stored questions in manageable batches.
+
+Show:
+
+- Total questions examined
+- Approved questions
+- Flagged questions
+- Rejected questions
+- Reasons for flags
+- Suggested corrections
+
+Avoid automatically deleting existing questions.
+
+Allow the administrator to inspect each flagged question and approve changes.
+
+Make the audit resumable and idempotent.
+
+Do not automatically mark every generated question as valid simply because another LLM approved it.
+
+---
+
+# 8. FEATURE SIX — AI GOETHE SCHREIBEN EVALUATION
+
+Improve existing writing evaluation in Kaps German.
+
+Support Goethe A1, A2, and B1 writing practice, and higher levels where suitable tasks and validated criteria are available.
+
+The evaluation must use task-specific criteria rather than a universal generic writing score.
+
+For B1, evaluate relevant dimensions such as:
+
+- Task fulfillment
+- Communicative appropriateness
+- Coherence and organization
+- Vocabulary use
+- Grammatical structures
+- Language accuracy
+
+Check the actual Goethe examination documentation and assessment criteria relevant to the selected level and task before implementing scoring.
+
+Do not invent or misrepresent official Goethe point scales.
+
+Clearly label AI-generated scoring as an unofficial practice estimate, not an official Goethe examination result.
+
+Provide:
+
+1. Overall evaluation
+2. Strengths
+3. Grammar mistakes
+4. Vocabulary improvements
+5. Missed task requirements
+6. Corrected version of the student's writing
+7. A brief explanation of important corrections
+8. Concrete suggestions for improvement
+
+When correcting writing, preserve the student's intended meaning wherever possible.
+
+Distinguish genuine mistakes from acceptable stylistic alternatives.
+
+Do not penalize valid German simply because it differs from a model answer.
+
+Offer two buttons:
+
+**"Hatalarımı Göster"**
+
+**"Düzeltilmiş Metni Göster"**
+
+Highlight corrections visually in a readable and accessible way.
+
+Avoid overwhelming A1 students with advanced grammatical terminology.
+
+Store the original submission and evaluation separately.
+
+Never overwrite the student's original answer.
+
+If AI evaluation is temporarily unavailable, save the submission and allow a retry.
+
+---
+
+# 9. FEATURE SEVEN — AI GERMAN VOCABULARY CARDS
+
+Add an expandable vocabulary card for words in the existing Kaps German vocabulary library.
+
+Each card should show:
+
+- German headword
+- Turkish meaning
+- CEFR level
+- Part of speech
+- Article for nouns
+- Plural for nouns where verified
+- Important conjugation information for verbs
+- German example sentence
+- Turkish translation
+- Relevant grammar notes
+- Native German audio
+- Turkish-friendly pronunciation guide
+
+Example:
+
+**die Wohnung**
+
+Turkish: Daire / konut
+
+Level: A1
+
+Plural: die Wohnungen
+
+German example:
+"Ich suche eine neue Wohnung."
+
+Turkish:
+"Yeni bir daire arıyorum."
+
+Include:
+- Listen to pronunciation
+- Practice this word
+- Show another example
+- Add to review
+
+Where possible, use existing trusted vocabulary metadata rather than asking an LLM to recreate it.
+
+AI should only fill genuinely missing educational content, subject to validation.
+
+Generated plurals, grammatical forms, and example sentences must be checked before being treated as authoritative.
+
+Do not overwrite verified vocabulary metadata with unverified AI suggestions.
+
+Cache successfully reviewed cards.
+
+Make cards responsive and visually consistent with the current Kaps German design.
+
+---
+
+# 10. CRITICAL — FIX GERMAN TEXT-TO-SPEECH
+
+The current pronunciation functionality sometimes produces Turkish-sounding speech instead of proper German pronunciation.
+
+Inspect the existing implementation in:
+
+`src/components/german/api.ts`
+
+The current `speakGerman()` function already sets `SpeechSynthesisUtterance.lang = "de-DE"` and attempts to select a German voice.
+
+However, merely setting `lang` does not guarantee that the browser or operating system actually uses a German-language voice.
+
+Correct this problem comprehensively.
+
+### Requirements
+
+1. Use German pronunciation (`de-DE`) consistently.
+2. Select a confirmed German-language voice rather than relying only on the default system voice.
+3. Handle asynchronous voice loading through `speechSynthesis.onvoiceschanged` or an equivalent listener.
+4. Maintain an up-to-date list of available German voices.
+5. Prefer suitable natural German voices where available.
+6. Do not select a Turkish or English voice to speak German text.
+7. Detect when the device has no usable German voice.
+8. Provide a clear fallback or installation message instead of silently using Turkish speech.
+9. Avoid claiming that `de-DE` alone guarantees correct pronunciation.
+10. Handle mobile browsers and desktop browsers safely.
+11. Prevent overlapping speech by properly canceling or stopping previous playback.
+12. Handle playback errors and unsupported speech synthesis.
+13. Provide a slower playback option for students.
+14. Keep speech output consistent across vocabulary cards, exercises, and sentence examples.
+
+Suggested UI:
+
+**🔊 Dinle**
+
+**🐢 Yavaş Dinle**
+
+Use an accessible icon/button implementation consistent with the application's design.
+
+If the browser does not provide an appropriate German voice, investigate a practical, privacy-conscious fallback such as a German TTS service or pre-generated audio for common vocabulary.
+
+Do not introduce an expensive always-on TTS API without assessing cost and caching.
+
+Avoid downloading large speech models onto the application's existing resource-constrained server.
+
+The system must distinguish speech synthesis from speech recognition.
+
+Do not enable a microphone or request microphone permissions merely to play pronunciation audio.
+
+---
+
+# 11. CRITICAL — ADD TURKISH-FRIENDLY GERMAN PRONUNCIATION
+
+For German vocabulary and relevant German phrases, show a pronunciation approximation written with Turkish characters.
+
+The objective is to help Turkish-speaking beginners read German words without accidentally applying English reading conventions.
+
+### Important linguistic requirement
+
+German pronunciation cannot always be reproduced precisely using ordinary Turkish spelling.
+
+Therefore, implement two complementary representations:
+
+**Primary linguistic representation:**
+Verified German IPA pronunciation.
+
+**Learner-friendly representation:**
+A carefully constructed approximate Turkish pronunciation.
+
+The Turkish representation is a learning aid, not a substitute for authentic German audio.
+
+### Examples
+
+| German | IPA | Approximate Turkish reading |
+|---|---|---|
+| Schule | /ˈʃuːlə/ | şuu-lı |
+| Wasser | /ˈvasɐ/ | vasır |
+| Deutsch | /dɔʏ̯tʃ/ | doyç |
+| Zeit | /tsaɪ̯t/ | tsayt |
+| gehen | /ˈɡeːən/ | gee-ın |
+
+These Turkish readings are approximate and must be verified before being used as production data.
+
+For "gehen", the letter "h" is not separately pronounced. It helps signal the long vowel, and the vowel sequence must be handled accurately. Do not simply assume that every written "h" is silent in German.
+
+For "Schule", "sch" represents /ʃ/, approximately Turkish "ş".
+
+For "Zeit", the German letter "z" represents /ts/, not Turkish "z".
+
+For "Wasser", German "w" represents /v/.
+
+### Rules
+
+1. Do not generate pronunciation through naive character substitution.
+2. Consider IPA, phonological rules, syllable structure, and word stress.
+3. Include long and short vowels.
+4. Handle German diphthongs correctly.
+5. Distinguish the different sounds represented by "ch".
+6. Handle "sch", "sp", "st", "z", "w", "v", "j", "ei", "ie", "eu", "äu", and other relevant combinations correctly.
+7. Handle silent letters and vowel-length markers.
+8. Handle final consonant devoicing.
+9. Handle reduced unstressed vowels such as schwa.
+10. Account for common differences between standard German and Turkish sound systems.
+11. Treat regional and speaker variation appropriately.
+12. Do not imply that German /ç/, /x/, /ʁ/, /y/, or /ø/ can always be represented exactly by ordinary Turkish letters.
+13. Use concise pronunciation notes for difficult sounds.
+14. Distinguish verified IPA from approximate phonetic transcription.
+
+Use reliable German pronunciation resources and reputable dictionaries, with appropriate licensing and attribution.
+
+Do not scrape or redistribute copyrighted dictionary datasets without permission.
+
+### Data model
+
+Extend vocabulary metadata with optional fields such as:
+
+```ts
+pronunciation?: {
+  ipa?: string;
+  turkishApproximation?: string;
+  syllables?: string[];
+  stressSyllable?: number;
+  notesTr?: string;
+  source?: string;
+  verified?: boolean;
+}
+```
+
+Adapt the structure to the existing project conventions.
+
+Do not fabricate phonetic transcriptions when verification is unavailable.
+
+For unverified vocabulary, show a clear limitation or provide German audio without falsely presenting a generated approximation as verified.
+
+Support a cautious, on-demand AI-assisted pronunciation suggestion workflow, followed by validation before publication.
+
+### Visual presentation
+
+For example:
+
+**gehen**
+
+Türkçe: gitmek
+
+Okunuş: **gee-ın** (yaklaşık)
+
+IPA: /ˈɡeːən/
+
+🔊 Dinle
+
+A short note may explain:
+
+"Almancada bu kelimedeki 'h' ayrı bir ses olarak okunmaz. Öncesindeki 'e' uzun telaffuz edilir."
+
+Use natural Turkish learning explanations.
+
+Make the pronunciation line visible in vocabulary cards.
+
+Optionally display it beneath German words in exercise feedback without cluttering the main question.
+
+Add a user preference:
+
+**"Türkçe okunuşları göster"**
+
+This setting should be enabled by default for beginner levels and configurable by the learner.
+
+---
+
+# 12. DATABASE AND BACKEND DESIGN
+
+Extend the existing SQLite/LibSQL database safely.
+
+Add the minimum necessary tables for functionality such as:
+
+- AI explanation cache
+- Question issue reports
+- Question audit results
+- Session AI reviews
+- Vocabulary pronunciation metadata
+- Vocabulary enrichment cache
+- AI generation jobs
+
+Reuse existing tables and relationships wherever appropriate.
+
+Use versioned, additive migrations.
+
+Preserve previous vocabulary IDs and mastery records.
+
+For AI-generated outputs, track:
+- Source question or vocabulary ID
+- Content version
+- AI provider/model
+- Generation timestamp
+- Validation status
+- Approval status where appropriate
+
+Do not store API keys in the database.
+
+Avoid storing unnecessary personal information in AI requests and caches.
+
+Do not send unrelated user messages, private profile information, or other sensitive content to Groq.
+
+Document external processing of the student's submitted learning content.
+
+---
+
+# 13. API IMPLEMENTATION
+
+Use the existing `/api/kaps-german` router.
+
+Create secure endpoints for the new functions.
+
+Possible endpoint structure:
+
+```text
+POST /api/kaps-german/ai/explain
+POST /api/kaps-german/questions/report
+GET  /api/kaps-german/questions/reports
+POST /api/kaps-german/ai/session-review
+POST /api/kaps-german/ai/reinforcement
+POST /api/kaps-german/admin/questions/audit
+GET  /api/kaps-german/admin/questions/audit
+POST /api/kaps-german/ai/schreiben-review
+GET  /api/kaps-german/vocabulary/:id/card
+GET  /api/kaps-german/vocabulary/:id/pronunciation
+```
+
+These are proposed routes, not mandatory exact names. Adapt them to the existing route design.
+
+Every endpoint must:
+- Enforce authentication and applicable access permissions.
+- Validate input.
+- Prevent cross-user access to private sessions.
+- Return predictable errors.
+- Handle rate limits.
+- Avoid duplicate AI work.
+- Avoid leaking secrets.
+- Respect existing administrative permissions.
+
+Never trust a client-provided answer key, score, user ID, or ownership claim.
+
+Retrieve authoritative exercise data from the database.
+
+---
+
+# 14. USER INTERFACE AND DESIGN
+
+Keep the current Kaps German interface recognizable.
+
+Do not redesign the whole application.
+
+Maintain the existing visual language while introducing carefully integrated educational AI features.
+
+Design objectives:
+
+- Clean
+- Modern
+- Fast
+- Readable
+- Mobile-first
+- Friendly but professional
+- Accessible
+- Consistent across desktop and mobile
+
+Avoid copying Duolingo's distinctive visual assets, branding, or interface arrangements.
+
+Use original Kaps German styling.
+
+Do not fill every screen with AI buttons.
+
+Use contextual actions only where relevant.
+
+New AI features should feel integrated into the learning workflow.
+
+### Important mobile requirements
+
+- Buttons must be clickable.
+- Exercise controls must never be hidden behind mobile navigation bars.
+- AI review drawers must scroll correctly.
+- Long explanations must not break the layout.
+- Opening AI feedback must not reset the current answer.
+- Closing a modal must preserve the study session.
+- Loading states must not block unrelated interactions.
+- Speech playback buttons must be responsive.
+- The interface must work when installed as a PWA.
+
+Preserve saved answers and resume behavior.
+
+---
+
+# 15. TESTING AND QUALITY ASSURANCE
+
+Add automated tests for new features.
+
+Test at least:
+
+### AI explanations
+- Incorrect answers
+- Correct alternative answers
+- Empty answers
+- Ambiguous questions
+- Cached explanations
+- AI provider failures
+
+### Question reporting
+- Duplicate reports
+- Invalid question IDs
+- Unauthorized access
+- Administrator review
+- Corrected answer keys
+
+### Session reviews
+- Fully correct sessions
+- Mostly incorrect sessions
+- Partially completed sessions
+- Missing metrics
+- Previously reviewed sessions
+
+### Reinforcement
+- A1-only vocabulary
+- Multiple selected CEFR levels
+- Duplicate avoidance
+- Wrong answer key detection
+- AI failure fallback
+- Existing mastery preservation
+
+### Schreiben
+- Acceptable alternative phrasing
+- Grammar errors
+- Incomplete task fulfillment
+- Valid German with different word order
+- Empty or very long submissions
+- Uncertain grading
+- Provider interruption
+
+### Pronunciation
+- German voice available
+- German voice unavailable
+- Asynchronous voice loading
+- Mobile browser behavior
+- Rapid repeated audio clicks
+- Correct `de-DE` selection
+- No unintended Turkish voice fallback
+- German long vowels
+- German diphthongs
+- German "ch" variants
+- Syllabification and stress
+- IPA/Turkish approximation consistency
+
+Validate representative German vocabulary against reliable pronunciation references.
+
+Test at least 100 representative words spanning A1–C1 and common German phonological patterns.
+
+A phonetic approximation should not be marked verified merely because it looks plausible.
+
+### Regression tests
+
+Run the existing relevant test suites, including TypeScript checks and production build.
+
+Do not break:
+- German exercise sessions
+- User progress
+- Vocabulary import
+- Google Docs synchronization
+- Existing AI chat
+- Authentication
+- Mobile exercise interaction
+
+---
+
+# 16. IMPLEMENTATION ORDER
+
+Implement in this order:
+
+**Phase 1 — Foundation**
+- Shared AI service improvements
+- Job handling
+- Cache
+- Safe additive database migrations
+- Input/output validation
+
+**Phase 2 — Question accuracy**
+- Question quality auditor
+- User question reports
+- Administrator review tools
+
+**Phase 3 — Immediate learning feedback**
+- AI Explain My Mistake
+- Vocabulary cards
+- German pronunciation voice selection
+- Turkish pronunciation guides
+
+**Phase 4 — Personalized learning**
+- Session AI reviews
+- Enhanced reinforcement exercises
+
+**Phase 5 — Goethe writing**
+- Advanced Schreiben evaluation
+- Task-specific scoring and feedback
+
+**Phase 6 — Final verification**
+- Unit tests
+- Integration tests
+- Mobile browser tests
+- Build verification
+- Performance checks
+- Documentation
+
+All seven AI features and both pronunciation improvements are required for completion.
+
+Do not silently skip difficult requirements.
+
+---
+
+# 17. NON-NEGOTIABLE SAFETY AND RELIABILITY RULES
+
+1. Never delete existing user progress.
+2. Never reset vocabulary mastery.
+3. Never rewrite historical student answers.
+4. Never replace authoritative grading with unchecked AI output.
+5. Never publish unvalidated generated questions.
+6. Never label AI estimates as official Goethe results.
+7. Never fabricate verified IPA transcriptions.
+8. Never silently substitute Turkish TTS for German TTS.
+9. Never expose API credentials to client code.
+10. Never create uncontrolled AI request loops.
+11. Never introduce significant additional Ollama memory pressure without validation.
+12. Never make studying entirely dependent on an external AI provider.
+13. Never alter unrelated KapsApp modules unnecessarily.
+14. Never sacrifice responsiveness for optional AI functions.
+15. Never create a PR; commit changes directly to `main` after successful verification.
+
+---
+
+# 18. FINAL DELIVERY REQUIREMENTS
+
+After implementation, provide:
+
+1. Summary of completed features
+2. Exact modified and created files
+3. Any new database tables or migrations
+4. AI provider selection and fallback behavior
+5. Caching and request optimization strategy
+6. German TTS implementation details
+7. IPA and Turkish pronunciation methodology
+8. Test results
+9. Known limitations
+10. Required environment variables
+11. Deployment instructions
+
+If the existing VDS uses the established KapsApp deployment workflow, ensure compatibility with:
+
+```bash
+cd /var/www/KapsApp && npm install --include=dev && npm run build && pm2 restart kapsapp-production
+```
+
+Do not modify the deployment command unnecessarily.
+
+Avoid destructive migration steps.
+
+The final implementation must be functional, efficient, academically responsible, and suitable for an actual German-learning application.
+
+**Primary success criterion:** Kaps German learners receive reliable explanations, trustworthy exercises, personalized learning support, useful Goethe writing feedback, authentic German audio, and carefully verified Turkish-friendly pronunciation assistance — without sacrificing existing functionality or performance.

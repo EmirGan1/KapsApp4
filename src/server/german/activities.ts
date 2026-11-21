@@ -38,6 +38,7 @@ function makeWordMeta(w: Vocabulary) {
     grammar: w.grammar || undefined,
     exampleDe: w.exampleDe || undefined,
     exampleTr: w.exampleTr || undefined,
+    pronunciation: w.pronunciation,
   };
 }
 

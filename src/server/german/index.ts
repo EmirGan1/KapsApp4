@@ -37,8 +37,24 @@ import {
   seedBuiltinCurriculum,
   syncAchievementsTx,
 } from "./store";
-import { germanAI } from "./provider";
+import { germanAI, getGermanAIStatus, runGermanAI } from "./provider";
 import { getDocument, googleToken } from "./google";
+import { resolvePronunciation } from "./pronunciation";
+import {
+  explainAttemptWithAI,
+  generatePersonalizedReinforcement,
+  generateSessionPerformanceReview,
+  getOrEnrichVocabularyCard,
+} from "./aiFeatures";
+import {
+  getDisabledFingerprints,
+  REPORT_REASONS,
+  resolveReportOrAudit,
+  runAdminQualityScanBatch,
+  submitQuestionReport,
+  type ReportReasonId,
+} from "./auditor";
+import { evaluateGoetheSchreibenWithAI } from "./schreiben";
 
 export { seedBuiltinCurriculum };
 
@@ -163,7 +179,8 @@ export function registerGerman(
         ...summary,
         examStructure: EXAM_STRUCTURE,
         audioAvailable: true,
-        pronunciationAvailable: false,
+        pronunciationAvailable: true,
+        reportReasons: REPORT_REASONS,
       });
     }),
   );
@@ -237,6 +254,7 @@ export function registerGerman(
         grammar: w.grammar,
         exampleDe: w.exampleDe,
         exampleTr: w.exampleTr,
+        pronunciation: w.pronunciation ?? resolvePronunciation(w.de),
         mastery: w.mastery,
       }));
 
@@ -255,7 +273,13 @@ export function registerGerman(
     "/preferences",
     wrap(async (req, res) => {
       const user = res.locals.germanUser;
-      const { selectedLevels, preferredDirection, dailyGoalXp } = req.body ?? {};
+      const {
+        selectedLevels,
+        preferredDirection,
+        dailyGoalXp,
+        showTurkishPronunciation,
+        autoSessionReview,
+      } = req.body ?? {};
       const nextLevels =
         Array.isArray(selectedLevels) &&
         selectedLevels.length > 0 &&
@@ -270,22 +294,36 @@ export function registerGerman(
         Number.isSafeInteger(dailyGoalXp) && dailyGoalXp >= 10 && dailyGoalXp <= 500
           ? Number(dailyGoalXp)
           : undefined;
+      const nextShowPron =
+        typeof showTurkishPronunciation === "boolean"
+          ? Number(showTurkishPronunciation)
+          : null;
+      const nextAutoReview =
+        typeof autoSessionReview === "boolean"
+          ? Number(autoSessionReview)
+          : null;
 
       await db.execute({
-        sql: `INSERT INTO german_user_stats(user_id, selected_levels, preferred_direction, daily_goal_xp)
-              VALUES(?,?,?,?)
+        sql: `INSERT INTO german_user_stats(user_id, selected_levels, preferred_direction, daily_goal_xp, show_turkish_pronunciation, auto_session_review)
+              VALUES(?,?,?,?,?,?)
               ON CONFLICT(user_id) DO UPDATE SET
                 selected_levels=COALESCE(?, german_user_stats.selected_levels),
                 preferred_direction=COALESCE(?, german_user_stats.preferred_direction),
-                daily_goal_xp=COALESCE(?, german_user_stats.daily_goal_xp)`,
+                daily_goal_xp=COALESCE(?, german_user_stats.daily_goal_xp),
+                show_turkish_pronunciation=COALESCE(?, german_user_stats.show_turkish_pronunciation),
+                auto_session_review=COALESCE(?, german_user_stats.auto_session_review)`,
         args: [
           user,
           JSON.stringify(nextLevels ?? ["A1"]),
           nextDir ?? "tr_de",
           nextGoal ?? 50,
+          nextShowPron ?? 1,
+          nextAutoReview ?? 0,
           nextLevels ? JSON.stringify(nextLevels) : null,
           nextDir ?? null,
           nextGoal ?? null,
+          nextShowPron,
+          nextAutoReview,
         ],
       });
       res.json({ ok: true });
@@ -883,6 +921,17 @@ export function registerGerman(
           );
       }
 
+      const [disabledSet, correctionRows] = await Promise.all([
+        getDisabledFingerprints(db),
+        db.execute("SELECT task_fingerprint, corrected_task_json FROM german_question_corrections"),
+      ]);
+      const correctionsMap = new Map(
+        correctionRows.rows.map((r) => [String(r.task_fingerprint), JSON.parse(String(r.corrected_task_json)) as Task]),
+      );
+      tasks = tasks
+        .filter((t) => !disabledSet.has(t.fingerprint))
+        .map((t) => correctionsMap.get(t.fingerprint) ?? t);
+
       if (mode === "exam" && module !== "vocabulary") {
         const config = EXAM_STRUCTURE[module as keyof typeof EXAM_STRUCTURE];
         const selected: Task[] = [];
@@ -1004,6 +1053,23 @@ export function registerGerman(
       });
       const childRow = childRes.rows[0];
 
+      const reviewRow = (
+        await db.execute({
+          sql: "SELECT metrics_snapshot, review_json, limited_evidence, provider FROM german_session_reviews WHERE session_id=? AND user_id=?",
+          args: [s.id, user],
+        })
+      ).rows[0];
+      const sessionReview = reviewRow
+        ? {
+            ...JSON.parse(String(reviewRow.review_json)),
+            metrics: JSON.parse(String(reviewRow.metrics_snapshot)),
+            limitedEvidence: Number(reviewRow.limited_evidence) === 1,
+            cached: true,
+            provider: String(reviewRow.provider || "cache"),
+            fallbackUsed: false,
+          }
+        : null;
+
       res.json({
         ...s,
         parentSessionId: s.parent_session_id ? String(s.parent_session_id) : null,
@@ -1020,17 +1086,30 @@ export function registerGerman(
             }
           : null,
         filters: JSON.parse(String(s.filters ?? "{}")),
-        tasks: tasks.map((t) =>
-          s.state === "done" || rawResults[t.id]
-            ? t
+        tasks: tasks.map((t) => {
+          const hydrated =
+            t.interaction?.wordMeta && !t.interaction.wordMeta.pronunciation
+              ? {
+                  ...t,
+                  interaction: {
+                    ...t.interaction,
+                    wordMeta: {
+                      ...t.interaction.wordMeta,
+                      pronunciation: resolvePronunciation(t.interaction.wordMeta.de),
+                    },
+                  },
+                }
+              : t;
+          return s.state === "done" || rawResults[t.id]
+            ? hydrated
             : {
-                ...t,
+                ...hydrated,
                 answer: undefined,
                 alternatives: undefined,
                 explanation: undefined,
                 evidence: undefined,
-              },
-        ),
+              };
+        }),
         position: currentTaskIndex,
         answers: Object.fromEntries(
           Object.entries(rawAnswers).filter(([key]) => key !== "__currentTask"),
@@ -1038,6 +1117,7 @@ export function registerGerman(
         results:
           s.mode === "exam" && s.state !== "done" ? {} : rawResults,
         masteryMap: masterySnapshot,
+        sessionReview,
         serverNow: new Date().toISOString(),
       });
     }),
@@ -1406,7 +1486,7 @@ export function registerGerman(
         allowedLevels.has(w.level as CefrLevel),
       );
 
-      const { tasks: reinforcementTasks, targetDirection } =
+      const { tasks: rawReinforcementTasks, targetDirection } =
         buildReinforcementActivities({
           parentTasks,
           parentResults,
@@ -1415,6 +1495,11 @@ export function registerGerman(
           distractorUniverse: distractorUniverse.length ? distractorUniverse : scopedWords,
           limit: Math.min(12, Math.max(scopedWords.length, 6)),
         });
+
+      const disabledSet = await getDisabledFingerprints(db);
+      const reinforcementTasks = rawReinforcementTasks.filter(
+        (t) => !disabledSet.has(t.fingerprint),
+      );
 
       if (!reinforcementTasks.length) {
         return res.status(409).json({
@@ -1591,11 +1676,33 @@ export function registerGerman(
           suggestedAnswer: formattedSuggested,
           pending: false,
         };
+      } else if (t.module === "Schreiben") {
+        try {
+          result = await evaluateGoetheSchreibenWithAI(db, {
+            task: t,
+            studentText: answer,
+            userId: user,
+          });
+        } catch {
+          result = {
+            score: null,
+            pending: true,
+            feedback: "AI değerlendirmesi bekliyor. Yanıtın kaydedildi.",
+          };
+        }
       } else {
         try {
-          const out = await germanAI(
-            'Grade fairly. Accept correct synonyms and word order variants. Identify substantive meaning/grammar errors, not stylistic differences. Return {"score":number from 0 to 1,"confidence":number,"feedback":Turkish string,"suggestedAnswer":string,"errorTypes":string[],"criteria":object}. For Schreiben use Erfüllung,Kohärenz,Wortschatz,Strukturen with evidence; estimated unofficial practice only. For Sprechen evaluate typed transcript only, exclude pronunciation and fluency scoring. Do not invent spoken observations.',
+          const out = await runGermanAI<any>(
+            'Grade fairly. Accept correct synonyms and word order variants. Identify substantive meaning/grammar errors, not stylistic differences. Return {"score":number from 0 to 1,"confidence":number,"feedback":Turkish string,"suggestedAnswer":string,"errorTypes":string[],"criteria":object}. For Sprechen evaluate typed transcript only, exclude pronunciation and fluency scoring. Do not invent spoken observations.',
             { task: t, answer },
+            {
+              queue: "default",
+              feature: "sprechen_review",
+              sourceId: t.id,
+              userId: user,
+              maxTokens: 1200,
+              db,
+            },
           );
           const v = out.value;
           if (
@@ -1742,6 +1849,533 @@ export function registerGerman(
   const timer = setInterval(() => void tick(), 60000);
   timer.unref();
   void tick();
+
+  // ==================== NEW AI & LEARNING UPGRADE ROUTES ====================
+
+  router.post(
+    "/ai/explain",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const { sessionId, taskId, answer, detailed = false } = req.body ?? {};
+      if (typeof sessionId !== "string" || typeof taskId !== "string") {
+        return res.status(400).json({ error: "Oturum veya soru bilgisi eksik." });
+      }
+      const s = await owned(sessionId, user);
+      if (!s) return res.sendStatus(404);
+      const tasks = JSON.parse(String(s.tasks ?? "[]")) as Task[];
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return res.sendStatus(404);
+
+      const storedAnswers = JSON.parse(String(s.answers ?? "{}"));
+      const storedResults = JSON.parse(String(s.results ?? "{}"));
+      const studentAnswer =
+        typeof answer === "string" ? answer : String(storedAnswers[taskId] ?? "");
+      const taskRes = storedResults[taskId];
+      const isCorrect =
+        typeof req.body?.isCorrect === "boolean"
+          ? req.body.isCorrect
+          : taskRes && taskRes.score !== null
+            ? Number(taskRes.score) >= 0.8
+            : false;
+
+      const { uniqueWords } = await loadDeduplicatedWordsWithMastery(db, user, false);
+      const primaryWord =
+        uniqueWords.find((w) => task.vocabularyIds?.includes(w.id)) ?? null;
+
+      const explanation = await explainAttemptWithAI(db, {
+        userId: user,
+        task,
+        studentAnswer,
+        isCorrect,
+        detailed: Boolean(detailed),
+        wordMeta: primaryWord,
+      });
+      res.json(explanation);
+    }),
+  );
+
+  router.post(
+    "/ai/session-review",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const { sessionId, forceRefresh = false } = req.body ?? {};
+      if (typeof sessionId !== "string") {
+        return res.status(400).json({ error: "Geçerli bir oturum kimliği gerekli." });
+      }
+      const review = await generateSessionPerformanceReview(db, {
+        userId: user,
+        sessionId,
+        forceRefresh: Boolean(forceRefresh),
+      });
+      res.json(review);
+    }),
+  );
+
+  router.post(
+    "/ai/reinforcement",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const {
+        levels = ["A1"],
+        direction = "mixed",
+        includeMasteredReview = false,
+        parentSessionId,
+      } = req.body ?? {};
+      if (
+        !Array.isArray(levels) ||
+        !levels.length ||
+        !levels.every((l) => isCefrLevel(l))
+      ) {
+        return res.status(400).json({ error: "En az bir geçerli CEFR seviyesi seç." });
+      }
+      const validDir: StudyDirection =
+        direction === "de_tr" || direction === "tr_de" || direction === "mixed"
+          ? direction
+          : "mixed";
+      const created = await generatePersonalizedReinforcement(db, {
+        userId: user,
+        levels,
+        direction: validDir,
+        includeMasteredReview: Boolean(includeMasteredReview),
+        parentSessionId: typeof parentSessionId === "string" ? parentSessionId : undefined,
+      });
+      res.json(created);
+    }),
+  );
+
+  router.post(
+    "/ai/schreiben-review",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const {
+        sessionId,
+        taskId,
+        level = "B1",
+        part = 1,
+        prompt = "",
+        passage = "",
+        text,
+        bypassCache = false,
+      } = req.body ?? {};
+      if (typeof text !== "string" || text.trim().length < 3 || text.length > 12000) {
+        return res.status(422).json({
+          error: "Değerlendirme için en az kısa bir Almanca metin yazmalısın.",
+        });
+      }
+
+      let taskObj: Pick<Task, "id" | "level" | "part" | "type" | "prompt" | "passage"> = {
+        id: typeof taskId === "string" && taskId ? taskId : randomUUID(),
+        level: isCefrLevel(level) ? level : "B1",
+        part: Number.isSafeInteger(part) ? Number(part) : 1,
+        type: "schreiben",
+        prompt: String(prompt || "Goethe Schreiben Pratik Görevi").slice(0, 1200),
+        passage: String(passage || "").slice(0, 2000),
+      };
+
+      if (typeof sessionId === "string" && typeof taskId === "string") {
+        const s = await owned(sessionId, user);
+        if (s) {
+          const tasks = JSON.parse(String(s.tasks ?? "[]")) as Task[];
+          const found = tasks.find((t) => t.id === taskId);
+          if (found) taskObj = found;
+        }
+      }
+
+      const evaluation = await evaluateGoetheSchreibenWithAI(db, {
+        task: taskObj,
+        studentText: text,
+        userId: user,
+        bypassCache: Boolean(bypassCache),
+      });
+      res.json(evaluation);
+    }),
+  );
+
+  router.get(
+    "/vocabulary/:id/card",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const { uniqueWords } = await loadDeduplicatedWordsWithMastery(db, user, false);
+      const word = uniqueWords.find((w) => w.id === req.params.id);
+      if (!word) return res.sendStatus(404);
+      const card = await getOrEnrichVocabularyCard(db, { userId: user, word });
+      res.json(card);
+    }),
+  );
+
+  router.post(
+    "/vocabulary/:id/card/example",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const { uniqueWords } = await loadDeduplicatedWordsWithMastery(db, user, false);
+      const word = uniqueWords.find((w) => w.id === req.params.id);
+      if (!word) return res.sendStatus(404);
+      const card = await getOrEnrichVocabularyCard(db, {
+        userId: user,
+        word,
+        requestAnotherExample: true,
+      });
+      res.json(card);
+    }),
+  );
+
+  router.get(
+    "/vocabulary/:id/pronunciation",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const { uniqueWords } = await loadDeduplicatedWordsWithMastery(db, user, false);
+      const word = uniqueWords.find((w) => w.id === req.params.id);
+      if (!word) return res.sendStatus(404);
+      res.json(word.pronunciation ?? resolvePronunciation(word.de));
+    }),
+  );
+
+  router.post(
+    "/vocabulary/:id/pronunciation/suggest",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const { uniqueWords } = await loadDeduplicatedWordsWithMastery(db, user, false);
+      const word = uniqueWords.find((w) => w.id === req.params.id);
+      if (!word) return res.sendStatus(404);
+      const current = word.pronunciation ?? resolvePronunciation(word.de);
+      if (current.verified) {
+        return res.json(current);
+      }
+
+      try {
+        const aiPron = await runGermanAI<{
+          ipa: string;
+          turkishApprox: string;
+          syllables: string[];
+          stressSyllable: number;
+          notesTr: string;
+        }>(
+          'Provide IPA and beginner-friendly Turkish phonetic approximation for this German vocabulary word. Return ONLY JSON: {"ipa":string,"turkishApprox":string,"syllables":string[],"stressSyllable":number,"notesTr":string}.',
+          { de: word.de, tr: word.tr, level: word.level },
+          {
+            queue: "pronunciation",
+            feature: "pronunciation_suggest",
+            sourceId: word.id,
+            userId: user,
+            maxTokens: 450,
+            db,
+            validate: (raw: any) => {
+              if (!raw || typeof raw !== "object") return null;
+              if (typeof raw.turkishApprox !== "string" || !raw.turkishApprox.trim()) return null;
+              return {
+                ipa: typeof raw.ipa === "string" ? raw.ipa.slice(0, 120) : "",
+                turkishApprox: raw.turkishApprox.trim().slice(0, 160),
+                syllables: Array.isArray(raw.syllables)
+                  ? raw.syllables.map(String).slice(0, 16)
+                  : [],
+                stressSyllable: Number.isFinite(raw.stressSyllable)
+                  ? Math.max(0, Number(raw.stressSyllable))
+                  : 0,
+                notesTr: typeof raw.notesTr === "string" ? raw.notesTr.slice(0, 260) : "",
+              };
+            },
+          },
+        );
+        const guide = {
+          ...aiPron.value,
+          source: "ai_needs_review" as const,
+          verified: false,
+        };
+        await db.execute({
+          sql: `INSERT INTO german_pronunciation(
+                  word_id, canonical_key, ipa, turkish_approx, syllables_json,
+                  stress_syllable, notes_tr, source, verified, updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,0,?)
+                ON CONFLICT(word_id) DO UPDATE SET
+                  ipa=excluded.ipa,
+                  turkish_approx=excluded.turkish_approx,
+                  syllables_json=excluded.syllables_json,
+                  stress_syllable=excluded.stress_syllable,
+                  notes_tr=excluded.notes_tr,
+                  source='ai_needs_review',
+                  verified=0,
+                  updated_at=excluded.updated_at`,
+          args: [
+            word.id,
+            word.canonicalKey,
+            guide.ipa,
+            guide.turkishApprox,
+            JSON.stringify(guide.syllables),
+            guide.stressSyllable,
+            guide.notesTr,
+            "ai_needs_review",
+            new Date().toISOString(),
+          ],
+        });
+        res.json(guide);
+      } catch {
+        res.json(current);
+      }
+    }),
+  );
+
+  router.post(
+    "/questions/report",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const { sessionId, taskId, reason, comment = "", studentAnswer } = req.body ?? {};
+      if (typeof sessionId !== "string" || typeof taskId !== "string") {
+        return res.status(400).json({ error: "Oturum ve soru kimliği gerekli." });
+      }
+      if (!REPORT_REASONS.some((r) => r.id === reason)) {
+        return res.status(400).json({ error: "Geçersiz hata nedeni seçildi." });
+      }
+      const s = await owned(sessionId, user);
+      if (!s) return res.sendStatus(404);
+      const tasks = JSON.parse(String(s.tasks ?? "[]")) as Task[];
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return res.sendStatus(404);
+
+      const storedAnswers = JSON.parse(String(s.answers ?? "{}"));
+      const result = await submitQuestionReport(db, {
+        userId: user,
+        sessionId,
+        task,
+        reason: reason as ReportReasonId,
+        comment: typeof comment === "string" ? comment : "",
+        studentAnswer:
+          typeof studentAnswer === "string"
+            ? studentAnswer
+            : String(storedAnswers[taskId] ?? ""),
+      });
+      res.status(201).json(result);
+    }),
+  );
+
+  router.get(
+    "/questions/reports",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const rows = await db.execute({
+        sql: `SELECT id, task_id, level, exercise_type, reason, comment, status, admin_note, created_at, reviewed_at
+              FROM german_question_reports
+              WHERE user_id=?
+              ORDER BY created_at DESC LIMIT 40`,
+        args: [user],
+      });
+      res.json(rows.rows);
+    }),
+  );
+
+  router.get(
+    "/admin/ai-status",
+    admin,
+    wrap(async (_req, res) => {
+      res.json(await getGermanAIStatus());
+    }),
+  );
+
+  router.get(
+    "/admin/reports",
+    admin,
+    wrap(async (req, res) => {
+      const statusFilter =
+        typeof req.query.status === "string" ? req.query.status : "open";
+      const whereClause =
+        statusFilter === "all"
+          ? ""
+          : statusFilter === "resolved"
+            ? "WHERE r.status IN ('resolved_corrected','resolved_disabled','rejected')"
+            : "WHERE r.status IN ('pending_review','ai_flagged_issue')";
+      const rows = await db.execute(
+        `SELECT r.*, u.username
+         FROM german_question_reports r
+         LEFT JOIN users u ON u.id = r.user_id
+         ${whereClause}
+         ORDER BY r.created_at DESC
+         LIMIT 80`,
+      );
+      res.json(
+        rows.rows.map((r) => ({
+          id: String(r.id),
+          taskFingerprint: String(r.task_fingerprint),
+          taskId: String(r.task_id),
+          wordId: String(r.word_id),
+          exerciseType: String(r.exercise_type),
+          level: String(r.level),
+          sessionId: String(r.session_id),
+          userId: Number(r.user_id),
+          username: r.username ? String(r.username) : `Kullanıcı #${r.user_id}`,
+          reason: String(r.reason),
+          comment: String(r.comment ?? ""),
+          taskSnapshot: JSON.parse(String(r.task_snapshot ?? "{}")),
+          currentAnswer: String(r.current_answer ?? ""),
+          studentAnswer: String(r.student_answer ?? ""),
+          status: String(r.status),
+          aiReview: r.ai_review_json ? JSON.parse(String(r.ai_review_json)) : null,
+          adminNote: r.admin_note ? String(r.admin_note) : null,
+          createdAt: String(r.created_at),
+          reviewedAt: r.reviewed_at ? String(r.reviewed_at) : null,
+        })),
+      );
+    }),
+  );
+
+  router.post(
+    "/admin/reports/:id/resolve",
+    admin,
+    wrap(async (req, res) => {
+      const adminUserId = res.locals.germanUser;
+      const {
+        action,
+        adminNote,
+        correctedAnswer,
+        correctedPrompt,
+        correctedOptions,
+        correctedExplanation,
+        regradeWrongAttempts,
+      } = req.body ?? {};
+      if (!["approve_correction", "disable", "reject"].includes(action)) {
+        return res.status(400).json({ error: "Geçersiz çözüm işlemi." });
+      }
+      const out = await resolveReportOrAudit(db, adminUserId, {
+        reportId: req.params.id,
+        action,
+        adminNote,
+        correctedAnswer,
+        correctedPrompt,
+        correctedOptions,
+        correctedExplanation,
+        regradeWrongAttempts: Boolean(regradeWrongAttempts),
+      });
+      res.json(out);
+    }),
+  );
+
+  router.get(
+    "/admin/questions/audit",
+    admin,
+    wrap(async (_req, res) => {
+      const [summaryRows, auditRows] = await Promise.all([
+        db.execute(
+          "SELECT audit_status, COUNT(*) AS c FROM german_question_audits GROUP BY audit_status",
+        ),
+        db.execute(
+          "SELECT * FROM german_question_audits ORDER BY CASE audit_status WHEN 'rejected' THEN 0 WHEN 'needs_review' THEN 1 ELSE 2 END, audited_at DESC LIMIT 60",
+        ),
+      ]);
+      const summary: Record<string, number> = { approved: 0, needs_review: 0, rejected: 0 };
+      for (const r of summaryRows.rows) {
+        summary[String(r.audit_status)] = Number(r.c ?? 0);
+      }
+      res.json({
+        summary,
+        items: auditRows.rows.map((r) => ({
+          taskFingerprint: String(r.task_fingerprint),
+          taskId: String(r.task_id),
+          module: String(r.module),
+          level: String(r.level),
+          auditStatus: String(r.audit_status),
+          deterministicIssues: JSON.parse(String(r.deterministic_issues_json ?? "[]")),
+          aiReview: r.ai_review_json ? JSON.parse(String(r.ai_review_json)) : null,
+          suggestedCorrection: r.suggested_correction_json
+            ? JSON.parse(String(r.suggested_correction_json))
+            : null,
+          taskSnapshot: r.task_snapshot ? JSON.parse(String(r.task_snapshot)) : null,
+          auditedAt: String(r.audited_at),
+          reviewedAt: r.reviewed_at ? String(r.reviewed_at) : null,
+        })),
+      });
+    }),
+  );
+
+  router.post(
+    "/admin/questions/audit",
+    admin,
+    wrap(async (req, res) => {
+      const adminUserId = res.locals.germanUser;
+      const { limit = 12, useAI = true, includeGeneratedSample = true } = req.body ?? {};
+      const out = await runAdminQualityScanBatch(db, {
+        limit: Number(limit) || 12,
+        useAI: Boolean(useAI),
+        includeGeneratedSample: Boolean(includeGeneratedSample),
+        userId: adminUserId,
+      });
+      res.json(out);
+    }),
+  );
+
+  router.post(
+    "/admin/questions/audit/resolve",
+    admin,
+    wrap(async (req, res) => {
+      const adminUserId = res.locals.germanUser;
+      const {
+        taskFingerprint,
+        action,
+        adminNote,
+        correctedAnswer,
+        correctedPrompt,
+        correctedOptions,
+        correctedExplanation,
+      } = req.body ?? {};
+      if (
+        typeof taskFingerprint !== "string" ||
+        !["approve_correction", "disable", "reject"].includes(action)
+      ) {
+        return res.status(400).json({ error: "Geçersiz denetim çözüm parametresi." });
+      }
+      const out = await resolveReportOrAudit(db, adminUserId, {
+        taskFingerprint,
+        action,
+        adminNote,
+        correctedAnswer,
+        correctedPrompt,
+        correctedOptions,
+        correctedExplanation,
+      });
+      res.json(out);
+    }),
+  );
+
+  router.post(
+    "/admin/pronunciation/:wordId/verify",
+    admin,
+    wrap(async (req, res) => {
+      const { ipa = "", turkishApprox, syllables = [], stressSyllable = 0, notesTr = "", verified = true } = req.body ?? {};
+      if (typeof turkishApprox !== "string" || !turkishApprox.trim()) {
+        return res.status(400).json({ error: "Türkçe okunuş metni zorunludur." });
+      }
+      const wordRow = await db.execute({
+        sql: "SELECT id, canonical_key, data FROM german_words WHERE id=?",
+        args: [req.params.wordId],
+      });
+      if (!wordRow.rows[0]) return res.sendStatus(404);
+      const parsed = JSON.parse(String(wordRow.rows[0].data)) as Vocabulary;
+      await db.execute({
+        sql: `INSERT INTO german_pronunciation(
+                word_id, canonical_key, ipa, turkish_approx, syllables_json,
+                stress_syllable, notes_tr, source, verified, updated_at
+              ) VALUES(?,?,?,?,?,?,?,'admin',?,?)
+              ON CONFLICT(word_id) DO UPDATE SET
+                ipa=excluded.ipa,
+                turkish_approx=excluded.turkish_approx,
+                syllables_json=excluded.syllables_json,
+                stress_syllable=excluded.stress_syllable,
+                notes_tr=excluded.notes_tr,
+                source='admin',
+                verified=excluded.verified,
+                updated_at=excluded.updated_at`,
+        args: [
+          req.params.wordId,
+          String(wordRow.rows[0].canonical_key || canonicalWordKey(parsed.de)),
+          String(ipa).slice(0, 120),
+          turkishApprox.trim().slice(0, 160),
+          JSON.stringify(Array.isArray(syllables) ? syllables.map(String).slice(0, 16) : []),
+          Math.max(0, Number(stressSyllable) || 0),
+          String(notesTr).slice(0, 260),
+          verified ? 1 : 0,
+          new Date().toISOString(),
+        ],
+      });
+      res.json({ ok: true });
+    }),
+  );
 
   router.use(((error, _req, res, _next) =>
     res

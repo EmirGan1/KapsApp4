@@ -1,4 +1,5 @@
-import { Play } from "lucide-react";
+import { useState } from "react";
+import { Play, Sparkles } from "lucide-react";
 import {
   activities,
   type CefrLevel,
@@ -14,6 +15,7 @@ export function PracticeHubView({
   onChangeLevels,
   onChangeDirection,
   onStartSession,
+  onStartPersonalizedReinforcement,
   busy,
 }: {
   overview: OverviewResponse;
@@ -27,8 +29,15 @@ export function PracticeHubView({
     activity?: string;
     levels?: CefrLevel[];
   }) => void;
+  onStartPersonalizedReinforcement?: (opts: {
+    levels: CefrLevel[];
+    direction: StudyDirection;
+    includeMasteredReview: boolean;
+  }) => void;
   busy: boolean;
 }) {
+  const [includeMasteredReview, setIncludeMasteredReview] = useState(false);
+
   const selectedTotal = overview.progressByLevel
     .filter((p) => selectedLevels.includes(p.level))
     .reduce((s, p) => s + p.total, 0);
@@ -79,6 +88,48 @@ export function PracticeHubView({
         </div>
       </div>
 
+      {/* Personalized AI Reinforcement */}
+      {onStartPersonalizedReinforcement && (
+        <section className="kg-reinforce-card" style={{ marginTop: 0 }} aria-label="Bana Özel Pekiştirme">
+          <div className="kg-reinforce-head">
+            <span className="kg-badge-soft">
+              <Sparkles size={13} /> Kişiselleştirilmiş AI Pekiştirme
+            </span>
+            <span className="kg-reinforce-dir tabular-nums">
+              Seviyeler: {selectedLevels.join(", ")}
+            </span>
+          </div>
+          <h2>Zayıf kelimelerine ve sık yaptığın hatalara özel çalışma oluştur.</h2>
+          <p>
+            Yalnızca seçili CEFR seviyelerindeki geçmiş hatalarını, 4/5 ustalaşmaya yakın kelimelerini ve zayıf kaldığın alıştırma türlerini önceliklendirir.
+          </p>
+          <div className="kg-reinforce-actions" style={{ alignItems: "center", justifyContent: "space-between" }}>
+            <label className="kg-toggle-chip">
+              <input
+                type="checkbox"
+                checked={includeMasteredReview}
+                onChange={(e) => setIncludeMasteredReview(e.target.checked)}
+              />
+              <span>5/5 ustalaşılanları da aralıklı tekrara dahil et</span>
+            </label>
+            <button
+              type="button"
+              disabled={busy || selectedTotal === 0}
+              className="kg-btn kg-btn-blue"
+              onClick={() =>
+                onStartPersonalizedReinforcement({
+                  levels: selectedLevels,
+                  direction,
+                  includeMasteredReview,
+                })
+              }
+            >
+              <Sparkles size={16} /> ✨ Bana Özel Pekiştirme Oluştur
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* 11 Interactive Exercise Types */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <h2 className="kg-section-title">Alıştırma Türleri</h2>
@@ -116,9 +167,9 @@ export function PracticeHubView({
       {/* Goethe B1 Exam Modules */}
       <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
-          <h2 className="kg-section-title">Goethe B1 Sınav Hazırlık</h2>
+          <h2 className="kg-section-title">Goethe Sınav Hazırlık</h2>
           <p className="kg-section-sub">
-            Gerçek B1 formatında okuma, yazma ve konuşma pratiği yapabilirsin.
+            Gerçek Goethe formatında okuma, AI ön değerlendirmeli yazma ve konuşma pratiği yapabilirsin.
           </p>
         </div>
         <div className="kg-practice-grid">
@@ -126,7 +177,7 @@ export function PracticeHubView({
             <div
               key={mod}
               style={{
-                border: "2px solid var(--kg-border)",
+                border: "1.5px solid var(--kg-border)",
                 borderRadius: 16,
                 padding: 15,
                 display: "flex",
@@ -141,7 +192,7 @@ export function PracticeHubView({
                   {mod === "Lesen"
                     ? "Metin anlama ve kanıt tabanlı çoktan seçmeli görevler."
                     : mod === "Schreiben"
-                      ? "Kişisel ve resmî Almanca e-posta / görüş yazımı."
+                      ? "Goethe kriterlerine göre resmî olmayan AI ön değerlendirmesi ve kelime farkı düzeltme görünümü."
                       : "Ortak planlama, sunum ve soru-yanıt diyaloğu."}
                 </p>
               </div>
