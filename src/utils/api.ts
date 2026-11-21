@@ -17,11 +17,18 @@ export const API_BASE_URL = (
 export const BASE_URL = API_BASE_URL;
 export const BACKEND_URL = API_BASE_URL;
 
-// Socket.IO Server Address Guarantee
+// Keep a single authenticated Socket.IO connection for chat, calls and KapsStrike.
+// On production web origins, bypass the Cloudflare-proxied page host for real-time traffic.
+// Native shells and local/dev hosts keep their original behavior.
+const isProductionWebHost = typeof window !== "undefined" &&
+  !isNativeApp &&
+  (window.location.hostname === "kapsapp.online" || window.location.hostname === "www.kapsapp.online");
 export const SOCKET_URL = (
-  (typeof window !== "undefined" && isNativeApp)
-    ? "https://kapsapp.online"
-    : (API_BASE_URL || (typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://kapsapp.online"))
+  isProductionWebHost
+    ? "https://ws.kapsapp.online"
+    : (isNativeApp
+      ? "https://kapsapp.online"
+      : (API_BASE_URL || (typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://kapsapp.online")))
 ).replace(/\/$/, "");
 
 /**
