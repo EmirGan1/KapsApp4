@@ -100,10 +100,23 @@ test("all supported activity types are built cleanly with internally consistent 
         assert.ok(task.options.includes(task.answer), `Missing answer in options for ${type}`);
       }
       if (task.interaction?.tiles) {
-        assert.deepEqual(
-          [...task.interaction.tiles].sort(),
-          task.answer.split(" ").sort(),
-        );
+        const isConstructBank =
+          (task as any).satzbauMode === "construct_bank" ||
+          task.interaction.satzbauMode === "construct_bank";
+        if (isConstructBank) {
+          for (const tok of task.answer.split(" ")) {
+            assert.ok(
+              task.interaction.tiles.includes(tok),
+              `Missing token "${tok}" in construct_bank tiles`,
+            );
+          }
+          assert.ok(task.interaction.tiles.length > task.answer.split(" ").length);
+        } else {
+          assert.deepEqual(
+            [...task.interaction.tiles].sort(),
+            task.answer.split(" ").sort(),
+          );
+        }
       }
       if (task.type === "matching") {
         assert.deepEqual(

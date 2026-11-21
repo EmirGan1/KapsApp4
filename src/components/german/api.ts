@@ -1,13 +1,20 @@
 import { getApiUrl, getAuthHeaders } from "../../utils/api";
-import type { CefrLevel, StudyDirection } from "../../shared/germanActivities";
+import type {
+  CefrLevel,
+  DistractorDifficulty,
+  SatzbauMode,
+  StudyDirection,
+} from "../../shared/germanActivities";
 import type {
   ActiveSession,
   CheckTaskResponse,
+  LevelAudioPackManifest,
   MistakeExplanationResponse,
   OverviewResponse,
   PronunciationGuide,
   QuestionAuditItem,
   QuestionReportItem,
+  SatzbauReviewResult,
   SchreibenEvaluationResult,
   SessionPerformanceReview,
   VocabularyCardDetail,
@@ -67,6 +74,8 @@ export function fetchVocabulary(params: {
   level?: string;
   status?: string;
   topic?: string;
+  categoryId?: string;
+  unitId?: string;
   q?: string;
   mistakesOnly?: boolean;
   page?: number;
@@ -76,6 +85,8 @@ export function fetchVocabulary(params: {
   if (params.level) qs.set("level", params.level);
   if (params.status) qs.set("status", params.status);
   if (params.topic) qs.set("topic", params.topic);
+  if (params.categoryId) qs.set("categoryId", params.categoryId);
+  if (params.unitId) qs.set("unitId", params.unitId);
   if (params.q) qs.set("q", params.q);
   if (params.mistakesOnly) qs.set("mistakesOnly", "1");
   if (params.page) qs.set("page", String(params.page));
@@ -86,6 +97,7 @@ export function fetchVocabulary(params: {
 export function saveStudyPreferences(prefs: {
   selectedLevels?: CefrLevel[];
   preferredDirection?: StudyDirection;
+  distractorDifficulty?: DistractorDifficulty;
   dailyGoalXp?: number;
   showTurkishPronunciation?: boolean;
   autoSessionReview?: boolean;
@@ -100,6 +112,10 @@ export function startStudySession(payload: {
   direction?: StudyDirection;
   levels?: CefrLevel[];
   topic?: string;
+  categoryId?: string;
+  unitId?: string;
+  difficulty?: DistractorDifficulty;
+  satzbauMode?: SatzbauMode;
   wordIds?: string[];
   reviewMode?: boolean;
 }): Promise<{ id: string }> {
@@ -159,7 +175,7 @@ export function resetGermanProgress(): Promise<{ ok: boolean }> {
   return germanRequest("/progress/reset", { confirm: "RESET_MY_PROGRESS" });
 }
 
-// ==================== NEW AI & STUDY CARD ENDPOINTS ====================
+// ==================== NEW AI, SATZBAU & STUDY CARD ENDPOINTS ====================
 
 export function explainMistake(payload: {
   sessionId: string;
@@ -169,6 +185,31 @@ export function explainMistake(payload: {
   detailed?: boolean;
 }): Promise<MistakeExplanationResponse> {
   return germanRequest("/ai/explain", payload, { timeoutMs: 45000 });
+}
+
+export function reviewSatzbauSentence(payload: {
+  sessionId?: string;
+  taskId?: string;
+  userSentence: string;
+  expectedSentence?: string;
+  turkishPrompt?: string;
+  targetWordDe?: string;
+  targetWordTr?: string;
+  mode?: SatzbauMode;
+  level?: string;
+}): Promise<SatzbauReviewResult> {
+  return germanRequest("/ai/satzbau-review", payload, { timeoutMs: 30000 });
+}
+
+export function fetchLevelAudioPack(level: CefrLevel): Promise<LevelAudioPackManifest> {
+  return germanRequest(`/audio/pack?level=${encodeURIComponent(level)}`);
+}
+
+export function warmLevelAudioPackOnServer(
+  level: CefrLevel,
+  limit = 20,
+): Promise<{ ok: boolean; level: CefrLevel; warmed: number }> {
+  return germanRequest("/audio/warm", { level, limit });
 }
 
 export function requestSessionReview(payload: {
@@ -305,13 +346,16 @@ export function resolveAdminAudit(payload: {
   return germanRequest("/admin/questions/audit/resolve", payload);
 }
 
-// ==================== STRICT NATIVE GERMAN TTS ENGINE ====================
+// ==================== LAYERED SERVER-HOSTED + CACHE API GERMAN AUDIO ENGINE ====================
+
+export const GERMAN_AUDIO_CACHE_NAME = "kaps-german-audio-v1";
 
 export interface GermanVoiceStatus {
   supported: boolean;
   status: "ready" | "loading" | "no-german-voice" | "unsupported";
   voiceName?: string;
   lang?: string;
+  serverHosted: boolean;
 }
 
 export interface SpeakGermanResult {
@@ -319,10 +363,11 @@ export interface SpeakGermanResult {
   reason?: "unsupported" | "no-german-voice" | "empty" | "error";
   voiceName?: string;
   lang?: string;
+  source?: "cache_api" | "server_audio" | "browser_de_voice";
 }
 
 export function isSpeechSupported(): boolean {
-  return typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+  return typeof window !== "undefined";
 }
 
 /**
@@ -358,32 +403,10 @@ export function selectGermanVoice<
 }
 
 const voiceListeners = new Set<() => void>();
-let voiceRegistryReady = false;
-let voicesInitializedAt = 0;
-
-function ensureVoiceListener() {
-  if (voiceRegistryReady || !isSpeechSupported()) return;
-  voiceRegistryReady = true;
-  voicesInitializedAt = Date.now();
-  try {
-    const synth = window.speechSynthesis;
-    const notify = () => {
-      voiceListeners.forEach((cb) => {
-        try {
-          cb();
-        } catch {}
-      });
-    };
-    if (typeof synth.addEventListener === "function") {
-      synth.addEventListener("voiceschanged", notify);
-    } else if ("onvoiceschanged" in synth) {
-      synth.onvoiceschanged = notify;
-    }
-  } catch {}
-}
+let activeHtmlAudio: HTMLAudioElement | null = null;
+let activeObjectUrl: string | null = null;
 
 export function subscribeGermanVoiceStatus(listener: () => void): () => void {
-  ensureVoiceListener();
   voiceListeners.add(listener);
   return () => {
     voiceListeners.delete(listener);
@@ -391,86 +414,174 @@ export function subscribeGermanVoiceStatus(listener: () => void): () => void {
 }
 
 export function getGermanVoiceStatus(): GermanVoiceStatus {
-  if (!isSpeechSupported()) {
-    return { supported: false, status: "unsupported" };
-  }
-  ensureVoiceListener();
+  // Server-hosted Standard German (`de-DE`) audio is always ready on every device!
+  let browserDeName = "KapsApp Sunucu Ses Motoru (de-DE)";
   try {
-    const voices = window.speechSynthesis.getVoices();
-    const deVoice = selectGermanVoice(voices);
-    if (deVoice) {
-      return {
-        supported: true,
-        status: "ready",
-        voiceName: deVoice.name,
-        lang: deVoice.lang,
-      };
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      const deVoice = selectGermanVoice(window.speechSynthesis.getVoices());
+      if (deVoice?.name) {
+        browserDeName = `Sunucu (de-DE) + ${deVoice.name}`;
+      }
     }
-    if (voices.length === 0 && Date.now() - voicesInitializedAt < 1200) {
-      return { supported: true, status: "loading" };
-    }
-    return { supported: true, status: "no-german-voice" };
-  } catch {
-    return { supported: false, status: "unsupported" };
-  }
+  } catch {}
+  return {
+    supported: true,
+    status: "ready",
+    voiceName: browserDeName,
+    lang: "de-DE",
+    serverHosted: true,
+  };
 }
 
 export function stopGermanSpeech(): void {
-  if (!isSpeechSupported()) return;
   try {
-    window.speechSynthesis.cancel();
+    if (activeHtmlAudio) {
+      activeHtmlAudio.pause();
+      activeHtmlAudio.currentTime = 0;
+      activeHtmlAudio = null;
+    }
+    if (activeObjectUrl) {
+      URL.revokeObjectURL(activeObjectUrl);
+      activeObjectUrl = null;
+    }
+  } catch {}
+  try {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
   } catch {}
 }
 
+export function buildServerGermanAudioUrl(text: string, rateMode: "normal" | "slow"): string {
+  return getApiUrl(
+    `/api/kaps-german/audio?text=${encodeURIComponent(text.trim())}&rate=${rateMode}`,
+  );
+}
+
+async function resolveGermanAudioBlobUrl(
+  text: string,
+  rateMode: "normal" | "slow",
+): Promise<{ blobUrl: string; source: "cache_api" | "server_audio" }> {
+  const url = buildServerGermanAudioUrl(text, rateMode);
+  const canUseCache = typeof window !== "undefined" && "caches" in window;
+
+  if (canUseCache) {
+    try {
+      const cache = await window.caches.open(GERMAN_AUDIO_CACHE_NAME);
+      const cachedRes = await cache.match(url);
+      if (cachedRes && cachedRes.ok) {
+        const blob = await cachedRes.blob();
+        if (blob.size > 128) {
+          return { blobUrl: URL.createObjectURL(blob), source: "cache_api" };
+        }
+      }
+    } catch {}
+  }
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error("Sunucu ses dosyası alınamadı.");
+  }
+  const cloned = res.clone();
+  const blob = await res.blob();
+  if (blob.size <= 128) {
+    throw new Error("Geçersiz ses verisi.");
+  }
+
+  if (canUseCache) {
+    try {
+      const cache = await window.caches.open(GERMAN_AUDIO_CACHE_NAME);
+      await cache.put(url, cloned);
+    } catch {}
+  }
+
+  return { blobUrl: URL.createObjectURL(blob), source: "server_audio" };
+}
+
+/**
+ * Layered German Speech Player:
+ * Layer 1: Persistent Browser Cache API (`kaps-german-audio-v1`)
+ * Layer 2: Server-Hosted Standard German (`de-DE`) Audio Endpoint (`/api/kaps-german/audio`)
+ * Layer 3: Verified Browser `de-*` SpeechSynthesis voice (ONLY if offline and a real `de-*` voice is installed — NEVER Turkish or English)
+ */
 export function speakGermanWithStatus(
   text: string,
   options?: number | { rate?: number; onEnd?: () => void; onError?: (reason: string) => void },
 ): SpeakGermanResult {
-  const clean = text.trim();
+  const clean = (text || "").trim();
   if (!clean) return { ok: false, reason: "empty" };
-  if (!isSpeechSupported()) {
-    if (typeof options === "object") options.onError?.("unsupported");
-    return { ok: false, reason: "unsupported" };
-  }
-  ensureVoiceListener();
-  const rate =
+
+  const numericRate =
     typeof options === "number"
       ? options
       : Math.max(0.5, Math.min(1.3, options?.rate ?? 0.95));
+  const rateMode: "normal" | "slow" = numericRate <= 0.78 ? "slow" : "normal";
+  const onEnd = typeof options === "object" ? options?.onEnd : undefined;
+  const onError = typeof options === "object" ? options?.onError : undefined;
 
-  try {
-    const voices = window.speechSynthesis.getVoices();
-    const deVoice = selectGermanVoice(voices);
+  stopGermanSpeech();
 
-    // CRITICAL: If browser reports loaded voices and NONE of them is German (de-*),
-    // NEVER allow browser to read German text using Turkish/English default voice!
-    if (voices.length > 0 && !deVoice) {
-      if (typeof options === "object") options.onError?.("no-german-voice");
-      return { ok: false, reason: "no-german-voice" };
+  void (async () => {
+    try {
+      const { blobUrl } = await resolveGermanAudioBlobUrl(clean, rateMode);
+      stopGermanSpeech();
+      activeObjectUrl = blobUrl;
+      const audio = new Audio(blobUrl);
+      activeHtmlAudio = audio;
+      audio.onended = () => {
+        if (activeObjectUrl === blobUrl) {
+          URL.revokeObjectURL(blobUrl);
+          activeObjectUrl = null;
+        }
+        if (activeHtmlAudio === audio) {
+          activeHtmlAudio = null;
+        }
+        onEnd?.();
+      };
+      audio.onerror = () => {
+        if (activeObjectUrl === blobUrl) {
+          URL.revokeObjectURL(blobUrl);
+          activeObjectUrl = null;
+        }
+        onError?.("error");
+      };
+      await audio.play();
+    } catch {
+      // Offline fallback ONLY if browser has an actual verified German (`de-*`) voice
+      try {
+        if (
+          typeof window !== "undefined" &&
+          "speechSynthesis" in window &&
+          typeof SpeechSynthesisUtterance !== "undefined"
+        ) {
+          const voices = window.speechSynthesis.getVoices();
+          const deVoice = selectGermanVoice(voices);
+          if (deVoice) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(clean);
+            utterance.lang = deVoice.lang || "de-DE";
+            utterance.voice = deVoice;
+            utterance.rate = numericRate;
+            if (onEnd) utterance.onend = onEnd;
+            utterance.onerror = () => onError?.("error");
+            window.speechSynthesis.speak(utterance);
+            return;
+          }
+        }
+      } catch {}
+      onError?.("error");
     }
+  })();
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.lang = deVoice?.lang || "de-DE";
-    utterance.rate = rate;
-    utterance.pitch = 1.0;
-    if (deVoice) {
-      utterance.voice = deVoice;
-    }
-    if (typeof options === "object") {
-      if (options.onEnd) utterance.onend = options.onEnd;
-      utterance.onerror = () => options.onError?.("error");
-    }
-    window.speechSynthesis.speak(utterance);
-    return {
-      ok: true,
-      voiceName: deVoice?.name,
-      lang: utterance.lang,
-    };
-  } catch {
-    if (typeof options === "object") options.onError?.("error");
-    return { ok: false, reason: "error" };
-  }
+  return {
+    ok: true,
+    voiceName: "KapsApp Sunucu Ses Motoru (de-DE)",
+    lang: "de-DE",
+    source: "server_audio",
+  };
 }
 
 export function speakGerman(
@@ -479,3 +590,78 @@ export function speakGerman(
 ): boolean {
   return speakGermanWithStatus(text, options).ok;
 }
+
+/**
+ * Downloads and caches a CEFR level's German audio pack into the browser's persistent Cache API
+ * (`kaps-german-audio-v1`) so pronunciation works instantaneously and offline.
+ */
+export async function downloadLevelAudioPackToBrowserCache(
+  level: CefrLevel,
+  onProgress?: (progress: { completed: number; total: number; bytesDownloaded: number }) => void,
+  signal?: AbortSignal,
+): Promise<{ cachedTotal: number; bytesDownloaded: number }> {
+  if (typeof navigator !== "undefined" && navigator.storage && typeof navigator.storage.persist === "function") {
+    try {
+      await navigator.storage.persist();
+    } catch {}
+  }
+
+  const manifest = await fetchLevelAudioPack(level);
+  const canUseCache = typeof window !== "undefined" && "caches" in window;
+  const cache = canUseCache ? await window.caches.open(GERMAN_AUDIO_CACHE_NAME) : null;
+
+  let completed = 0;
+  let bytesDownloaded = 0;
+  const total = manifest.items.length;
+
+  for (const item of manifest.items) {
+    if (signal?.aborted) break;
+    const fullUrl = getApiUrl(item.normalUrl);
+    try {
+      if (cache) {
+        const existing = await cache.match(fullUrl);
+        if (existing && existing.ok) {
+          const b = await existing.blob();
+          bytesDownloaded += b.size;
+          completed++;
+          onProgress?.({ completed, total, bytesDownloaded });
+          continue;
+        }
+      }
+      const res = await fetch(fullUrl, { headers: getAuthHeaders(), signal });
+      if (res.ok) {
+        const clone = res.clone();
+        const blob = await res.blob();
+        bytesDownloaded += blob.size;
+        if (cache && blob.size > 128) {
+          await cache.put(fullUrl, clone);
+        }
+      }
+    } catch {}
+    completed++;
+    onProgress?.({ completed, total, bytesDownloaded });
+  }
+
+  return { cachedTotal: completed, bytesDownloaded };
+}
+
+export async function getBrowserCachedAudioStats(): Promise<{ entryCount: number }> {
+  if (typeof window === "undefined" || !("caches" in window)) {
+    return { entryCount: 0 };
+  }
+  try {
+    const cache = await window.caches.open(GERMAN_AUDIO_CACHE_NAME);
+    const keys = await cache.keys();
+    return { entryCount: keys.length };
+  } catch {
+    return { entryCount: 0 };
+  }
+}
+
+export async function clearBrowserCachedGermanAudio(): Promise<void> {
+  if (typeof window === "undefined" || !("caches" in window)) return;
+  try {
+    await window.caches.delete(GERMAN_AUDIO_CACHE_NAME);
+  } catch {}
+}
+

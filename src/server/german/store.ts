@@ -7,9 +7,17 @@ import {
   isCefrLevel,
   studyLevels,
   type CefrLevel,
+  type DistractorDifficulty,
   type MasteryStatus,
 } from "../../shared/germanActivities";
 import { BUILTIN_CURRICULUM } from "./curriculum";
+import {
+  GERMAN_CURRICULUM_CATEGORIES,
+  buildHierarchicalCurriculum,
+  classifyWordIntoHierarchy,
+  isCorruptedTopicLabel,
+  sanitizeLegacyTopic,
+} from "./curriculumHierarchy";
 import {
   canonicalWordKey,
   classifyVocabularyEntry,
@@ -245,6 +253,42 @@ export async function initGermanSchema(db: Client) {
         updated_at TEXT NOT NULL
       )`,
       "CREATE INDEX IF NOT EXISTS german_pronunciation_key ON german_pronunciation(canonical_key)",
+      `CREATE TABLE IF NOT EXISTS german_curriculum_categories(
+        id TEXT PRIMARY KEY,
+        sort_order INTEGER NOT NULL,
+        title_tr TEXT NOT NULL,
+        title_de TEXT NOT NULL,
+        icon TEXT NOT NULL,
+        description_tr TEXT NOT NULL,
+        objectives_json TEXT NOT NULL DEFAULT '[]',
+        levels_json TEXT NOT NULL DEFAULT '[]'
+      )`,
+      `CREATE TABLE IF NOT EXISTS german_curriculum_units(
+        id TEXT PRIMARY KEY,
+        level TEXT NOT NULL,
+        category_id TEXT NOT NULL,
+        unit_number INTEGER NOT NULL,
+        title_tr TEXT NOT NULL,
+        title_de TEXT NOT NULL,
+        objective_tr TEXT NOT NULL,
+        word_count INTEGER NOT NULL DEFAULT 0,
+        word_ids_json TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL
+      )`,
+      "CREATE INDEX IF NOT EXISTS german_curriculum_units_lvl_cat ON german_curriculum_units(level, category_id, unit_number)",
+      `CREATE TABLE IF NOT EXISTS german_audio_cache(
+        audio_hash TEXT PRIMARY KEY,
+        normalized_text TEXT NOT NULL,
+        rate TEXT NOT NULL,
+        voice_version TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        byte_size INTEGER NOT NULL DEFAULT 0,
+        engine TEXT NOT NULL DEFAULT 'server',
+        is_public INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+      )`,
+      "CREATE INDEX IF NOT EXISTS german_audio_cache_lookup ON german_audio_cache(normalized_text, rate, is_public)",
     ],
     "write",
   );
@@ -252,16 +296,22 @@ export async function initGermanSchema(db: Client) {
   await safeAlter(db, "ALTER TABLE german_words ADD COLUMN cefr_level TEXT NOT NULL DEFAULT 'UNCLASSIFIED'");
   await safeAlter(db, "ALTER TABLE german_words ADD COLUMN canonical_key TEXT NOT NULL DEFAULT ''");
   await safeAlter(db, "ALTER TABLE german_words ADD COLUMN topic TEXT NOT NULL DEFAULT ''");
+  await safeAlter(db, "ALTER TABLE german_words ADD COLUMN category_id TEXT NOT NULL DEFAULT ''");
+  await safeAlter(db, "ALTER TABLE german_words ADD COLUMN unit_id TEXT NOT NULL DEFAULT ''");
+  await safeAlter(db, "ALTER TABLE german_words ADD COLUMN subtopic TEXT NOT NULL DEFAULT ''");
+  await safeAlter(db, "ALTER TABLE german_words ADD COLUMN semantic_tags TEXT NOT NULL DEFAULT '[]'");
   await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN filters TEXT NOT NULL DEFAULT '{}'");
   await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN parent_session_id TEXT DEFAULT NULL");
   await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN reinforcement_direction TEXT DEFAULT NULL");
   await safeAlter(db, "ALTER TABLE german_user_stats ADD COLUMN show_turkish_pronunciation INTEGER NOT NULL DEFAULT 1");
   await safeAlter(db, "ALTER TABLE german_user_stats ADD COLUMN auto_session_review INTEGER NOT NULL DEFAULT 0");
+  await safeAlter(db, "ALTER TABLE german_user_stats ADD COLUMN distractor_difficulty TEXT NOT NULL DEFAULT 'adaptive'");
 
   await db.batch(
     [
       "CREATE INDEX IF NOT EXISTS german_words_level_active ON german_words(active, cefr_level)",
       "CREATE INDEX IF NOT EXISTS german_words_canonical ON german_words(canonical_key)",
+      "CREATE INDEX IF NOT EXISTS german_words_category ON german_words(active, cefr_level, category_id, unit_id)",
       "CREATE INDEX IF NOT EXISTS german_sessions_parent ON german_sessions(user_id, parent_session_id, state)",
     ],
     "write",
@@ -296,16 +346,43 @@ export async function getRecentSessionWordIds(
 
 export async function migrateLegacyGermanData(db: Client) {
   const wordsRows = await db.execute(
-    "SELECT id, data, cefr_level, canonical_key, topic FROM german_words",
+    "SELECT id, data, cefr_level, canonical_key, topic, category_id, subtopic FROM german_words",
   );
 
   const wordLevelMap = new Map<string, string>();
   const tx = await db.transaction("write");
   try {
+    // Seed canonical category definitions table
+    for (const cat of GERMAN_CURRICULUM_CATEGORIES) {
+      await tx.execute({
+        sql: `INSERT INTO german_curriculum_categories(id, sort_order, title_tr, title_de, icon, description_tr, objectives_json, levels_json)
+              VALUES(?,?,?,?,?,?,?,?)
+              ON CONFLICT(id) DO UPDATE SET
+                sort_order=excluded.sort_order,
+                title_tr=excluded.title_tr,
+                title_de=excluded.title_de,
+                icon=excluded.icon,
+                description_tr=excluded.description_tr,
+                objectives_json=excluded.objectives_json,
+                levels_json=excluded.levels_json`,
+        args: [
+          cat.id,
+          cat.order,
+          cat.titleTr,
+          cat.titleDe,
+          cat.icon,
+          cat.descriptionTr,
+          JSON.stringify(cat.objectivesTr),
+          JSON.stringify(cat.levels),
+        ],
+      });
+    }
+
     for (const r of wordsRows.rows) {
       const id = String(r.id);
       const parsed = JSON.parse(String(r.data)) as Partial<Vocabulary>;
       const de = String(parsed.de ?? "");
+      const tr = String(parsed.tr ?? "");
       const cKey = parsed.canonicalKey || canonicalWordKey(de);
       const existingSource = parsed.cefrSource;
 
@@ -335,28 +412,66 @@ export async function migrateLegacyGermanData(db: Client) {
         nextSource = res.source;
       }
 
-      const nextTopic = String(parsed.topic || r.topic || "Genel");
+      const rawTopic = String(parsed.topic || r.topic || "");
+      const hierarchy = classifyWordIntoHierarchy({
+        de,
+        tr,
+        level: nextLevel,
+        topic: rawTopic,
+        pos: parsed.pos,
+        article: parsed.article ?? "",
+        grammar: parsed.grammar ?? "",
+        exampleDe: parsed.exampleDe,
+        exampleTr: parsed.exampleTr,
+      });
+
+      const nextTopic = isCorruptedTopicLabel(rawTopic)
+        ? hierarchy.cleanTopic
+        : rawTopic || hierarchy.cleanTopic;
+
       wordLevelMap.set(id, nextLevel);
 
       if (
         String(r.cefr_level) !== nextLevel ||
         String(r.canonical_key) !== cKey ||
         String(r.topic) !== nextTopic ||
+        String(r.category_id ?? "") !== hierarchy.categoryId ||
+        String(r.subtopic ?? "") !== hierarchy.subtopicTr ||
         parsed.level !== nextLevel ||
         parsed.canonicalKey !== cKey ||
-        parsed.cefrSource !== nextSource
+        parsed.cefrSource !== nextSource ||
+        parsed.categoryId !== hierarchy.categoryId ||
+        parsed.topic !== nextTopic
       ) {
-        const updated = {
-          ...parsed,
+        const updated: Vocabulary = {
+          ...(parsed as Vocabulary),
           id,
+          de,
+          tr,
+          raw: parsed.raw || `${de} — ${tr}`,
+          article: parsed.article ?? "",
+          grammar: parsed.grammar ?? "",
           canonicalKey: cKey,
           level: nextLevel,
-          cefrSource: nextSource,
+          cefrSource: nextSource ?? "unclassified",
           topic: nextTopic,
+          categoryId: hierarchy.categoryId,
+          subtopic: hierarchy.subtopicTr,
+          semanticTags: hierarchy.semanticTags,
+          pos: parsed.pos || hierarchy.inferredPos,
         };
         await tx.execute({
-          sql: "UPDATE german_words SET data=?, cefr_level=?, canonical_key=?, topic=? WHERE id=?",
-          args: [JSON.stringify(updated), nextLevel, cKey, nextTopic, id],
+          sql: "UPDATE german_words SET data=?, cefr_level=?, canonical_key=?, topic=?, category_id=?, subtopic=?, semantic_tags=? WHERE id=?",
+          args: [
+            JSON.stringify(updated),
+            nextLevel,
+            cKey,
+            nextTopic,
+            hierarchy.categoryId,
+            hierarchy.subtopicTr,
+            JSON.stringify(hierarchy.semanticTags),
+            id,
+          ],
         });
       }
     }
@@ -418,6 +533,16 @@ export async function seedBuiltinCurriculum(db: Client): Promise<{ inserted: num
     for (const entry of BUILTIN_CURRICULUM) {
       const ck = canonicalWordKey(entry.de);
       const existing = byCanonical.get(ck);
+      const hierarchy = classifyWordIntoHierarchy({
+        de: entry.de,
+        tr: entry.tr,
+        topic: entry.topic,
+        pos: entry.pos,
+        level: entry.level,
+        grammar: entry.grammar,
+        exampleDe: entry.exampleDe,
+        exampleTr: entry.exampleTr,
+      });
       if (!existing) {
         const vocab: Vocabulary = {
           id: entry.id,
@@ -426,10 +551,13 @@ export async function seedBuiltinCurriculum(db: Client): Promise<{ inserted: num
           tr: entry.tr,
           alternatives: entry.alternatives,
           raw: `${entry.de} — ${entry.tr}`,
-          topic: entry.topic,
+          topic: hierarchy.cleanTopic,
+          categoryId: hierarchy.categoryId,
+          subtopic: hierarchy.subtopicTr,
+          semanticTags: hierarchy.semanticTags,
           level: entry.level,
           cefrSource: "builtin",
-          article: entry.article,
+          article: entry.article ?? "",
           plural: entry.plural,
           pos: entry.pos,
           grammar: entry.grammar,
@@ -439,8 +567,18 @@ export async function seedBuiltinCurriculum(db: Client): Promise<{ inserted: num
           completion: entry.completion,
         };
         await tx.execute({
-          sql: "INSERT OR IGNORE INTO german_words(id, data, active, imported_at, cefr_level, canonical_key, topic) VALUES(?,?,1,?,?,?,?)",
-          args: [vocab.id, JSON.stringify(vocab), nowIso, vocab.level, ck, vocab.topic],
+          sql: "INSERT OR IGNORE INTO german_words(id, data, active, imported_at, cefr_level, canonical_key, topic, category_id, subtopic, semantic_tags) VALUES(?,?,1,?,?,?,?,?,?,?)",
+          args: [
+            vocab.id,
+            JSON.stringify(vocab),
+            nowIso,
+            vocab.level,
+            ck,
+            vocab.topic,
+            hierarchy.categoryId,
+            hierarchy.subtopicTr,
+            JSON.stringify(hierarchy.semanticTags),
+          ],
         });
         byCanonical.set(ck, { id: vocab.id, data: vocab });
         inserted++;
@@ -450,6 +588,7 @@ export async function seedBuiltinCurriculum(db: Client): Promise<{ inserted: num
         const needsUpdate =
           prev.cefrSource === "builtin" ||
           prev.level === "UNCLASSIFIED" ||
+          !prev.categoryId ||
           !prev.exampleDe ||
           (entry.conjugation && !prev.conjugation) ||
           (entry.completion && !prev.completion);
@@ -462,6 +601,18 @@ export async function seedBuiltinCurriculum(db: Client): Promise<{ inserted: num
             prev.cefrSource === "manual" || prev.cefrSource === "heading"
               ? prev.cefrSource
               : "builtin";
+          const nextTopic =
+            prev.topic && prev.topic !== "Genel" ? sanitizeLegacyTopic(prev.topic) : entry.topic;
+          const mergedHierarchy = classifyWordIntoHierarchy({
+            de: prev.de || entry.de,
+            tr: prev.tr || entry.tr,
+            topic: nextTopic,
+            pos: prev.pos || entry.pos,
+            level: nextLevel,
+            grammar: prev.grammar || entry.grammar,
+            exampleDe: prev.exampleDe || entry.exampleDe,
+            exampleTr: prev.exampleTr || entry.exampleTr,
+          });
           const updated: Vocabulary = {
             ...prev,
             id: existing.id,
@@ -469,7 +620,10 @@ export async function seedBuiltinCurriculum(db: Client): Promise<{ inserted: num
             alternatives: prev.alternatives?.length ? prev.alternatives : entry.alternatives,
             level: nextLevel,
             cefrSource: nextSource,
-            topic: prev.topic && prev.topic !== "Genel" ? prev.topic : entry.topic,
+            topic: mergedHierarchy.cleanTopic,
+            categoryId: mergedHierarchy.categoryId,
+            subtopic: mergedHierarchy.subtopicTr,
+            semanticTags: mergedHierarchy.semanticTags,
             article: prev.article || entry.article,
             plural: prev.plural || entry.plural,
             pos: prev.pos || entry.pos,
@@ -480,12 +634,15 @@ export async function seedBuiltinCurriculum(db: Client): Promise<{ inserted: num
             completion: prev.completion || entry.completion,
           };
           await tx.execute({
-            sql: "UPDATE german_words SET data=?, cefr_level=?, canonical_key=?, topic=? WHERE id=?",
+            sql: "UPDATE german_words SET data=?, cefr_level=?, canonical_key=?, topic=?, category_id=?, subtopic=?, semantic_tags=? WHERE id=?",
             args: [
               JSON.stringify(updated),
               updated.level,
               ck,
               updated.topic,
+              mergedHierarchy.categoryId,
+              mergedHierarchy.subtopicTr,
+              JSON.stringify(mergedHierarchy.semanticTags),
               existing.id,
             ],
           });
@@ -611,7 +768,8 @@ export interface WordWithMastery extends Vocabulary {
 }
 
 /**
- * Loads active vocabulary deduplicated by canonicalKey so duplicate DB records never inflate progress.
+ * Loads active vocabulary deduplicated by canonicalKey so duplicate DB records never inflate progress,
+ * and computes deterministic hierarchical Topic Categories + consolidated Learning Units (`Ünite 1..N`).
  */
 export async function loadDeduplicatedWordsWithMastery(
   db: Client,
@@ -621,6 +779,7 @@ export async function loadDeduplicatedWordsWithMastery(
   uniqueWords: WordWithMastery[];
   rawWords: WordWithMastery[];
   unclassifiedCount: number;
+  curriculumHierarchy: ReturnType<typeof buildHierarchicalCurriculum>["hierarchyByLevel"];
 }> {
   const [wordRes, masteryMap, pronMap] = await Promise.all([
     db.execute(
@@ -642,10 +801,25 @@ export async function loadDeduplicatedWordsWithMastery(
     const ck = parsed.canonicalKey || canonicalWordKey(parsed.de);
     const mastery = masteryMap.get(id) ?? newMastery(id, parsed.level);
     const pronunciation = resolvePronunciation(parsed.de, pronMap.get(id) ?? null);
+    const hierarchy = classifyWordIntoHierarchy({
+      de: parsed.de,
+      tr: parsed.tr,
+      topic: parsed.topic,
+      pos: parsed.pos,
+      level: parsed.level,
+      grammar: parsed.grammar,
+      exampleDe: parsed.exampleDe,
+      exampleTr: parsed.exampleTr,
+    });
     const full: WordWithMastery = {
       ...parsed,
       id,
       canonicalKey: ck,
+      topic: hierarchy.cleanTopic,
+      categoryId: parsed.categoryId || hierarchy.categoryId,
+      subtopic: parsed.subtopic || hierarchy.subtopicTr,
+      semanticTags: parsed.semanticTags?.length ? parsed.semanticTags : hierarchy.semanticTags,
+      pos: parsed.pos || hierarchy.inferredPos,
       pronunciation,
       active: !!r.active,
       importedAt: String(r.imported_at),
@@ -702,10 +876,35 @@ export async function loadDeduplicatedWordsWithMastery(
     }
   }
 
+  const uniqueWords = [...byCanonical.values()];
+  const hierarchyBuilt = buildHierarchicalCurriculum(uniqueWords);
+
+  for (const w of uniqueWords) {
+    const placement = hierarchyBuilt.wordUnitAssignment.get(w.id);
+    if (placement) {
+      w.categoryId = placement.categoryId;
+      w.unitId = placement.unitId;
+      w.subtopic = placement.subtopicTr;
+      w.semanticTags = placement.semanticTags;
+      w.topic = placement.subtopicTr;
+    }
+  }
+  for (const rw of rawWords) {
+    const placement = hierarchyBuilt.wordUnitAssignment.get(rw.id);
+    if (placement) {
+      rw.categoryId = placement.categoryId;
+      rw.unitId = placement.unitId;
+      rw.subtopic = placement.subtopicTr;
+      rw.semanticTags = placement.semanticTags;
+      rw.topic = placement.subtopicTr;
+    }
+  }
+
   return {
-    uniqueWords: [...byCanonical.values()],
+    uniqueWords,
     rawWords,
     unclassifiedCount,
+    curriculumHierarchy: hierarchyBuilt.hierarchyByLevel,
   };
 }
 
@@ -1050,27 +1249,33 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
   const today = localDayKey();
   const yesterday = previousDayKey(today);
 
-  const [{ uniqueWords, rawWords, unclassifiedCount }, statsRes, dailyRes, achRes, sessRes, jobRes] =
-    await Promise.all([
-      loadDeduplicatedWordsWithMastery(db, userId, true),
-      db.execute({
-        sql: "SELECT * FROM german_user_stats WHERE user_id=?",
-        args: [userId],
-      }),
-      db.execute({
-        sql: "SELECT * FROM german_daily_activity WHERE user_id=? AND day_key=?",
-        args: [userId, today],
-      }),
-      db.execute({
-        sql: "SELECT achievement_id, unlocked_at FROM german_achievements WHERE user_id=?",
-        args: [userId],
-      }),
-      db.execute({
-        sql: "SELECT id, module, mode, state, started_at, deadline, results, filters, parent_session_id, reinforcement_direction FROM german_sessions WHERE user_id=? ORDER BY started_at DESC LIMIT 40",
-        args: [userId],
-      }),
-      db.execute("SELECT * FROM german_jobs ORDER BY started_at DESC LIMIT 10"),
-    ]);
+  const [
+    { uniqueWords, rawWords, unclassifiedCount, curriculumHierarchy },
+    statsRes,
+    dailyRes,
+    achRes,
+    sessRes,
+    jobRes,
+  ] = await Promise.all([
+    loadDeduplicatedWordsWithMastery(db, userId, true),
+    db.execute({
+      sql: "SELECT * FROM german_user_stats WHERE user_id=?",
+      args: [userId],
+    }),
+    db.execute({
+      sql: "SELECT * FROM german_daily_activity WHERE user_id=? AND day_key=?",
+      args: [userId, today],
+    }),
+    db.execute({
+      sql: "SELECT achievement_id, unlocked_at FROM german_achievements WHERE user_id=?",
+      args: [userId],
+    }),
+    db.execute({
+      sql: "SELECT id, module, mode, state, started_at, deadline, results, filters, parent_session_id, reinforcement_direction FROM german_sessions WHERE user_id=? ORDER BY started_at DESC LIMIT 40",
+      args: [userId],
+    }),
+    db.execute("SELECT * FROM german_jobs ORDER BY started_at DESC LIMIT 10"),
+  ]);
 
   const progressByLevel = studyLevels.map((lvl) => {
     const items = uniqueWords.filter((w) => w.level === lvl);
@@ -1092,6 +1297,11 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
       else statusText = "Başlamaya hazır";
     }
 
+    const levelHierarchy = curriculumHierarchy.find((h) => h.level === lvl);
+    const categories = levelHierarchy?.categories ?? [];
+    const totalUnits = categories.reduce((s: number, c: any) => s + c.totalUnits, 0);
+    const completedUnits = categories.reduce((s: number, c: any) => s + c.completedUnits, 0);
+
     return {
       level: lvl,
       trName: CEFR_META[lvl].trName,
@@ -1107,6 +1317,9 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
       remaining,
       percent,
       statusText,
+      totalCategories: categories.length,
+      totalUnits,
+      completedUnits,
     };
   });
 
@@ -1136,6 +1349,13 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
   } catch {}
 
   const dailyRow = dailyRes.rows[0];
+  const rawDifficulty = String(statsRow?.distractor_difficulty ?? "adaptive");
+  const distractorDifficulty = (
+    ["adaptive", "easy", "normal", "challenging"].includes(rawDifficulty)
+      ? rawDifficulty
+      : "adaptive"
+  ) as "adaptive" | "easy" | "normal" | "challenging";
+
   const stats = {
     totalXp: Number(statsRow?.total_xp ?? 0),
     currentStreak: effectiveStreak,
@@ -1149,6 +1369,7 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
     todayTotal: Number(dailyRow?.answers_total ?? 0),
     selectedLevels,
     preferredDirection: String(statsRow?.preferred_direction ?? "tr_de"),
+    distractorDifficulty,
     perfectLessons: Number(statsRow?.perfect_lessons ?? 0),
     showTurkishPronunciation:
       statsRow?.show_turkish_pronunciation === undefined || statsRow?.show_turkish_pronunciation === null
@@ -1179,44 +1400,55 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
     };
   });
 
-  // Build interactive CEFR Learning Path per level & topic
+  // Build consolidated CEFR Learning Path per level from hierarchical units (never 473 fragmented single-word nodes)
   const learningPath = studyLevels.map((lvl) => {
-    const lvlWords = uniqueWords.filter((w) => w.level === lvl);
-    const topicsMap = new Map<string, WordWithMastery[]>();
-    for (const w of lvlWords) {
-      const t = w.topic || "Temel Kelimeler";
-      topicsMap.set(t, [...(topicsMap.get(t) ?? []), w]);
-    }
+    const levelHierarchy = curriculumHierarchy.find((h) => h.level === lvl);
+    const categories = levelHierarchy?.categories ?? [];
+    const nodes: Array<{
+      id: string;
+      level: CefrLevel;
+      order: number;
+      topic: string;
+      categoryId: string;
+      unitId: string;
+      totalWords: number;
+      masteredWords: number;
+      percent: number;
+      status: "completed" | "current" | "available" | "review";
+    }> = [];
+    let order = 1;
     let foundCurrent = false;
-    const nodes = [...topicsMap.entries()].map(([topic, items], idx) => {
-      const total = items.length;
-      const mastered = items.filter((i) => i.mastery.masteryStatus === "mastered").length;
-      const inProgress = items.some((i) => i.mastery.totalCorrect > 0 || i.mastery.totalIncorrect > 0);
-      let status: "completed" | "current" | "available" | "review" = "available";
-      if (total > 0 && mastered === total) {
-        status = "completed";
-      } else if (!foundCurrent && (inProgress || idx === 0)) {
-        status = "current";
-        foundCurrent = true;
-      } else if (items.some((i) => i.mastery.totalIncorrect > 0)) {
-        status = "review";
+    for (const cat of categories) {
+      for (const unit of cat.units) {
+        let status: "completed" | "current" | "available" | "review" = "available";
+        if (unit.status === "completed") {
+          status = "completed";
+        } else if (!foundCurrent && (unit.status === "current" || order === 1)) {
+          status = "current";
+          foundCurrent = true;
+        } else if (unit.mistakeWords > 0) {
+          status = "review";
+        }
+        nodes.push({
+          id: unit.id,
+          level: lvl,
+          order: order++,
+          topic: `${cat.titleTr} • ${unit.titleTr}`,
+          categoryId: cat.id,
+          unitId: unit.id,
+          totalWords: unit.totalWords,
+          masteredWords: unit.masteredWords,
+          percent: unit.percent,
+          status,
+        });
       }
-      return {
-        id: `${lvl}:${normalizeText(topic)}`,
-        level: lvl,
-        order: idx + 1,
-        topic,
-        totalWords: total,
-        masteredWords: mastered,
-        percent: total > 0 ? Math.round((mastered / total) * 100) : 0,
-        status,
-      };
-    });
+    }
     return { level: lvl, nodes };
   });
 
   return {
     progressByLevel,
+    curriculumHierarchy,
     overall: {
       totalValidated,
       totalMastered,

@@ -32,6 +32,7 @@ import {
   reportQuestion,
   requestSessionReview,
   retrySessionGrading,
+  reviewSatzbauSentence,
   reviewSchreiben,
   saveSessionDraft,
   startReinforcementSession,
@@ -42,6 +43,7 @@ import type {
   GermanTask,
   MasteryRecord,
   MistakeExplanationResponse,
+  SatzbauReviewResult,
   SchreibenEvaluationResult,
   SessionPerformanceReview,
   TaskResult,
@@ -306,6 +308,8 @@ export function ExerciseRunner({
   const [reviewLoading, setReviewLoading] = useState(false);
   const [liveSchreibenEval, setLiveSchreibenEval] = useState<Record<string, SchreibenEvaluationResult>>({});
   const [schreibenBusy, setSchreibenBusy] = useState(false);
+  const [satzbauReviews, setSatzbauReviews] = useState<Record<string, SatzbauReviewResult>>({});
+  const [satzbauBusy, setSatzbauBusy] = useState<string | null>(null);
 
   const [reportTask, setReportTask] = useState<GermanTask | null>(null);
   const [reportReason, setReportReason] = useState<string>("correct_answer_wrong");
@@ -337,6 +341,8 @@ export function ExerciseRunner({
     setSessionReview(null);
     setReviewLoading(false);
     setLiveSchreibenEval({});
+    setSatzbauReviews({});
+    setSatzbauBusy(null);
     setReportTask(null);
     setReportBanner("");
     examExpiredRef.current = false;
@@ -725,6 +731,25 @@ export function ExerciseRunner({
       setError(e?.message || "Yazma ön değerlendirmesi tamamlanamadı.");
     } finally {
       setSchreibenBusy(false);
+    }
+  };
+
+  const handleSatzbauReview = async (t: GermanTask) => {
+    const ans = (answers[t.id] ?? "").trim();
+    if (!ans || satzbauBusy === t.id) return;
+    setSatzbauBusy(t.id);
+    setError("");
+    try {
+      const res = await reviewSatzbauSentence({
+        sessionId: session.id,
+        taskId: t.id,
+        userSentence: ans,
+      });
+      setSatzbauReviews((prev) => ({ ...prev, [t.id]: res }));
+    } catch (e: any) {
+      setError(e?.message || "Cümle incelemesi şu an hazırlanamadı.");
+    } finally {
+      setSatzbauBusy(null);
     }
   };
 
@@ -1422,6 +1447,88 @@ export function ExerciseRunner({
                       result={currentLiveSchreiben}
                       studentText={currentAnswer}
                     />
+                  )}
+                </div>
+              )}
+
+              {/* Satzbau (Sentence Building) AI Grammar & Word-Order Review */}
+              {task.type === "satzbau" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      type="button"
+                      disabled={satzbauBusy === task.id || currentAnswer.trim().length < 2}
+                      className="kg-btn kg-btn-blue kg-btn-sm"
+                      onClick={() => void handleSatzbauReview(task)}
+                    >
+                      <Sparkles size={15} />
+                      {satzbauBusy === task.id
+                        ? "AI İnceliyor…"
+                        : "✨ Cümlemi AI ile İncele"}
+                    </button>
+                    {isChecked && task.answer && (
+                      <GermanSpeakButtons text={task.answer} compact />
+                    )}
+                  </div>
+
+                  {satzbauReviews[task.id] && (
+                    <div className="kg-satzbau-ai-card" role="region" aria-label="AI Cümle İncelemesi">
+                      <div className="kg-section-head">
+                        <span className="kg-badge-soft">
+                          <Sparkles size={13} /> AI Cümle Kurma (Satzbau) İncelemesi
+                        </span>
+                        <span
+                          className={
+                            satzbauReviews[task.id].isCorrect
+                              ? "kg-badge-accent"
+                              : "kg-badge-warn"
+                          }
+                        >
+                          {satzbauReviews[task.id].isCorrect
+                            ? "Dilbilgisi Uygun"
+                            : "Düzeltme Önerisi Var"}
+                        </span>
+                      </div>
+
+                      <p className="kg-ai-summary">
+                        {satzbauReviews[task.id].feedbackTr}
+                      </p>
+
+                      <div className="kg-corrected-box">
+                        <div className="kg-section-head">
+                          <strong style={{ fontSize: 13 }}>Önerilen Doğru Almanca Cümle:</strong>
+                          <GermanSpeakButtons
+                            text={satzbauReviews[task.id].correctedDe || satzbauReviews[task.id].correctedSentenceDe || ""}
+                            compact
+                          />
+                        </div>
+                        <p lang="de" style={{ margin: 0, fontWeight: 800 }}>
+                          {satzbauReviews[task.id].correctedDe || satzbauReviews[task.id].correctedSentenceDe || ""}
+                        </p>
+                      </div>
+
+                      {satzbauReviews[task.id].alternativeDe && (
+                        <div className="kg-corrected-box">
+                          <div className="kg-section-head">
+                            <strong style={{ fontSize: 13 }}>Alternatif Doğal Sözdizimi:</strong>
+                            <GermanSpeakButtons
+                              text={satzbauReviews[task.id].alternativeDe!}
+                              compact
+                            />
+                          </div>
+                          <p lang="de" style={{ margin: 0, fontWeight: 700 }}>
+                            {satzbauReviews[task.id].alternativeDe}
+                          </p>
+                        </div>
+                      )}
+
+                      <p style={{ margin: 0, fontSize: 13 }}>
+                        <strong>Dilbilgisi Notu:</strong> {satzbauReviews[task.id].grammarExplanationTr}
+                      </p>
+                      <p style={{ margin: 0, fontSize: 13 }}>
+                        <strong>Kural:</strong> {satzbauReviews[task.id].ruleTipTr}
+                      </p>
+                    </div>
                   )}
                 </div>
               )}

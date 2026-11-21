@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
-import { Snail, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, Download, Loader2, Snail, Square, Trash2, Volume2 } from "lucide-react";
+import type { CefrLevel } from "../../shared/germanActivities";
 import {
+  clearBrowserCachedGermanAudio,
+  downloadLevelAudioPackToBrowserCache,
+  fetchLevelAudioPack,
+  getBrowserCachedAudioStats,
   getGermanVoiceStatus,
   speakGermanWithStatus,
+  stopGermanSpeech,
   subscribeGermanVoiceStatus,
   type GermanVoiceStatus,
 } from "./api";
@@ -15,12 +21,8 @@ export function useGermanVoiceStatus(): GermanVoiceStatus {
     const unsub = subscribeGermanVoiceStatus(() => {
       setStatus(getGermanVoiceStatus());
     });
-    const timer = setTimeout(() => {
-      setStatus(getGermanVoiceStatus());
-    }, 1250);
     return () => {
       unsub();
-      clearTimeout(timer);
     };
   }, []);
   return status;
@@ -35,22 +37,30 @@ export function GermanSpeakButtons({
   compact?: boolean;
   onUnavailable?: () => void;
 }) {
-  const voiceStatus = useGermanVoiceStatus();
+  const [playingMode, setPlayingMode] = useState<"idle" | "normal" | "slow">("idle");
   const [notice, setNotice] = useState("");
 
-  const play = (rate: number) => {
+  const play = (rate: number, mode: "normal" | "slow") => {
     setNotice("");
-    const res = speakGermanWithStatus(text, rate);
-    if (!res.ok) {
-      if (res.reason === "no-german-voice" || res.reason === "unsupported") {
-        setNotice(
-          "Bu cihazda yerel Almanca (de-DE) ses paketi bulunamadı. Aşağıdaki Türkçe okunuş rehberini kullanabilirsin.",
-        );
+    setPlayingMode(mode);
+    const res = speakGermanWithStatus(text, {
+      rate,
+      onEnd: () => setPlayingMode("idle"),
+      onError: () => {
+        setPlayingMode("idle");
+        setNotice("Ses şu an çalınamıyor. Aşağıdaki Türkçe okunuş rehberini kullanabilirsin.");
         onUnavailable?.();
-      } else {
-        setNotice("Ses şu an çalınamıyor.");
-      }
+      },
+    });
+    if (!res.ok) {
+      setPlayingMode("idle");
+      setNotice("Ses şu an çalınamıyor.");
     }
+  };
+
+  const handleStop = () => {
+    stopGermanSpeech();
+    setPlayingMode("idle");
   };
 
   return (
@@ -58,39 +68,189 @@ export function GermanSpeakButtons({
       <div className="kg-speak-btns">
         <button
           type="button"
-          className={compact ? "kg-audio-btn" : "kg-btn kg-btn-blue kg-btn-sm"}
+          className={`${compact ? "kg-audio-btn" : "kg-btn kg-btn-blue kg-btn-sm"} ${
+            playingMode === "normal" ? "is-playing" : ""
+          }`}
           aria-label={`${text} normal hızda Almanca dinle`}
-          title={
-            voiceStatus.status === "no-german-voice"
-              ? "Almanca ses paketi bulunamadı"
-              : "Dinle (Almanca)"
-          }
-          onClick={() => play(0.95)}
+          title="Dinle (Standart Almanca de-DE)"
+          onClick={() => play(0.95, "normal")}
         >
-          {voiceStatus.status === "no-german-voice" || !voiceStatus.supported ? (
-            <VolumeX size={16} />
-          ) : (
-            <Volume2 size={16} />
-          )}
-          {!compact && <span>Dinle</span>}
+          <Volume2 size={16} />
+          {!compact && <span>{playingMode === "normal" ? "Çalıyor..." : "Dinle"}</span>}
         </button>
 
         <button
           type="button"
-          className={compact ? "kg-audio-btn" : "kg-btn kg-btn-sm"}
+          className={`${compact ? "kg-audio-btn" : "kg-btn kg-btn-sm"} ${
+            playingMode === "slow" ? "is-playing" : ""
+          }`}
           aria-label={`${text} yavaş hızda Almanca dinle`}
           title="Yavaş Dinle (0.68x)"
-          onClick={() => play(0.68)}
+          onClick={() => play(0.68, "slow")}
         >
           <Snail size={15} />
-          {!compact && <span>Yavaş Dinle</span>}
+          {!compact && <span>{playingMode === "slow" ? "Yavaş..." : "Yavaş Dinle"}</span>}
         </button>
+
+        {playingMode !== "idle" && !compact && (
+          <button
+            type="button"
+            className="kg-btn kg-btn-sm"
+            aria-label="Sesi durdur"
+            title="Sesi Durdur"
+            onClick={handleStop}
+          >
+            <Square size={14} />
+          </button>
+        )}
       </div>
       {notice && (
         <div className="kg-voice-notice" role="status">
           {notice}
         </div>
       )}
+    </div>
+  );
+}
+
+export function GermanLevelAudioPackCard({
+  level,
+  compact = false,
+}: {
+  level: CefrLevel;
+  compact?: boolean;
+}) {
+  const [manifestInfo, setManifestInfo] = useState<{
+    totalWords: number;
+    estimatedBytes: number;
+  } | null>(null);
+  const [cachedEntries, setCachedEntries] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState<{
+    completed: number;
+    total: number;
+    bytesDownloaded: number;
+  } | null>(null);
+  const [readyOffline, setReadyOffline] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    void Promise.all([fetchLevelAudioPack(level), getBrowserCachedAudioStats()])
+      .then(([m, st]) => {
+        if (!mounted) return;
+        setManifestInfo({
+          totalWords: m.totalWords,
+          estimatedBytes: m.estimatedBytes,
+        });
+        setCachedEntries(st.entryCount);
+        setReadyOffline(m.totalWords > 0 && st.entryCount >= m.totalWords);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+      abortRef.current?.abort();
+    };
+  }, [level]);
+
+  const formatMb = (bytes: number) => {
+    const mb = bytes / (1024 * 1024);
+    return mb < 0.1 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${mb.toFixed(1)} MB`;
+  };
+
+  const handleDownload = async () => {
+    if (downloading) {
+      abortRef.current?.abort();
+      setDownloading(false);
+      return;
+    }
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setDownloading(true);
+    setProgress({ completed: 0, total: manifestInfo?.totalWords ?? 1, bytesDownloaded: 0 });
+    try {
+      await downloadLevelAudioPackToBrowserCache(
+        level,
+        (p) => setProgress({ ...p }),
+        ctrl.signal,
+      );
+      const st = await getBrowserCachedAudioStats();
+      setCachedEntries(st.entryCount);
+      if (!ctrl.signal.aborted) {
+        setReadyOffline(true);
+      }
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleClear = async () => {
+    await clearBrowserCachedGermanAudio();
+    setCachedEntries(0);
+    setReadyOffline(false);
+    setProgress(null);
+  };
+
+  const percent =
+    progress && progress.total > 0
+      ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
+      : readyOffline
+        ? 100
+        : 0;
+
+  return (
+    <div className={`kg-audio-pack-bar ${compact ? "is-compact" : ""}`}>
+      <div className="kg-audio-pack-info">
+        <span className="kg-audio-pack-badge">de-DE Sunucu Ses Paketi</span>
+        <strong>
+          {level} Almanca Telaffuz Paketi{" "}
+          {manifestInfo ? `(${manifestInfo.totalWords} kelime • ~${formatMb(manifestInfo.estimatedBytes)})` : ""}
+        </strong>
+        <span className="kg-audio-pack-sub">
+          {readyOffline
+            ? "Çevrimdışı kullanıma hazır • Cihaz önbelleğine kaydedildi"
+            : "Cihazında Almanca ses paketi olmasa bile sunucu üzerinden doğal Almanca telaffuz çalar."}
+        </span>
+      </div>
+
+      <div className="kg-audio-pack-actions">
+        {readyOffline ? (
+          <span className="kg-pill kg-pill-emerald">
+            <CheckCircle2 size={14} /> Çevrimdışı Hazır ({cachedEntries})
+          </span>
+        ) : null}
+
+        <button
+          type="button"
+          className="kg-btn kg-btn-sm kg-btn-blue"
+          onClick={() => void handleDownload()}
+        >
+          {downloading ? (
+            <>
+              <Loader2 size={14} className="kg-spin" />
+              <span>
+                İndiriliyor %{percent} ({progress?.completed ?? 0}/{progress?.total ?? 0})
+              </span>
+            </>
+          ) : (
+            <>
+              <Download size={14} />
+              <span>{readyOffline ? `${level} Paketini Güncelle` : "Almanca Ses Paketini İndir"}</span>
+            </>
+          )}
+        </button>
+
+        {cachedEntries > 0 && !downloading && (
+          <button
+            type="button"
+            className="kg-btn kg-btn-sm"
+            title="İndirilen ses önbelleğini temizle"
+            onClick={() => void handleClear()}
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

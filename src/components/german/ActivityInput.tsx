@@ -36,8 +36,10 @@ export default function ActivityInput({
   result?: TaskResult;
   showTurkishPronunciation?: boolean;
 }) {
-  const tiles = task.interaction?.tiles;
+  const tiles = task.interaction?.tiles ?? task.wordBank;
   const isSpelling = task.type === "spelling";
+  const isSatzbau = task.type === "satzbau";
+  const satzbauMode = task.satzbauMode;
   const [selectedTiles, setSelectedTiles] = useState<number[]>(() =>
     tiles ? reconstructTileIndices(tiles, value, isSpelling) : [],
   );
@@ -63,6 +65,34 @@ export default function ActivityInput({
     setSelectedTiles(next);
     onChange(next.map((i) => tiles[i]).join(isSpelling ? "" : " "));
   };
+
+  const satzbauContextBanner = isSatzbau ? (
+    <div className="kg-satzbau-context-box">
+      {task.subPrompt && <div className="kg-satzbau-mode-tag">{task.subPrompt}</div>}
+      {task.targetWordDe && (
+        <div className="kg-satzbau-target-row">
+          <span className="kg-satzbau-label">Hedef Kelime:</span>
+          <strong lang="de">{task.targetWordDe}</strong>
+          {task.targetWordTr && <span>({task.targetWordTr})</span>}
+          <button
+            type="button"
+            className="kg-btn kg-btn-sm"
+            onClick={() => speakGermanWithStatus(task.targetWordDe!, 0.95)}
+            title="Hedef kelimeyi dinle"
+          >
+            <Volume2 size={14} /> Dinle
+          </button>
+        </div>
+      )}
+      {satzbauMode === "correct_sentence" && task.flawedSentenceDe && (
+        <div className="kg-satzbau-flawed-box">
+          <span>Hatalı Cümle:</span>
+          <code lang="de">{task.flawedSentenceDe}</code>
+        </div>
+      )}
+      {task.hint && <p className="kg-satzbau-hint">{task.hint}</p>}
+    </div>
+  ) : null;
 
   // Matching (tap-to-pair interactive cards)
   if (task.type === "matching" && task.interaction?.left && task.interaction?.right) {
@@ -180,10 +210,11 @@ export default function ActivityInput({
     );
   }
 
-  // Tile ordering / spelling
+  // Tile ordering / spelling / Satzbau Mode A (arrange) & Mode B (construct_bank)
   if (tiles && tiles.length > 0) {
     return (
       <div className="kg-activity-input">
+        {satzbauContextBanner}
         <div
           className="kg-tile-answer"
           aria-label="Oluşturduğun yanıt"
@@ -195,7 +226,7 @@ export default function ActivityInput({
                 key={`${tileIdx}-${orderIdx}`}
                 type="button"
                 disabled={disabled}
-                className="kg-tile-btn"
+                className="kg-tile-btn is-placed"
                 aria-label={`${tiles[tileIdx] === " " ? "Boşluk" : tiles[tileIdx]} taşını kaldır`}
                 onClick={() =>
                   selectTiles(selectedTiles.filter((_, j) => j !== orderIdx))
@@ -206,7 +237,9 @@ export default function ActivityInput({
             ))
           ) : (
             <span className="kg-section-sub" style={{ margin: 0 }}>
-              Aşağıdaki taşlara dokunarak cümleyi oluştur
+              {satzbauMode === "construct_bank"
+                ? "Kelime havuzundan doğru taşları seçerek cümleyi kur (fazladan çeldiricilere dikkat et)"
+                : "Aşağıdaki taşlara dokunarak Almanca cümleyi doğru sırayla oluştur"}
             </span>
           )}
         </div>
@@ -226,14 +259,14 @@ export default function ActivityInput({
         </div>
 
         {!disabled && (
-          <div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
               type="button"
-              className="kg-btn kg-btn-ghost kg-btn-sm"
+              className="kg-btn kg-btn-sm"
               onClick={() => selectTiles([])}
               disabled={selectedTiles.length === 0}
             >
-              <RotateCcw size={14} /> Temizle
+              <RotateCcw size={14} /> Cümleyi Sıfırla
             </button>
           </div>
         )}
@@ -375,6 +408,7 @@ export default function ActivityInput({
 
   return (
     <div className="kg-activity-input">
+      {satzbauContextBanner}
       {listeningControls}
       {expectsGermanText && (
         <div className="kg-umlaut-bar" role="group" aria-label="Almanca özel karakterler">
@@ -401,21 +435,38 @@ export default function ActivityInput({
         value={value}
         disabled={disabled}
         placeholder={
-          task.module === "vocabulary"
-            ? expectsGermanText
-              ? "Almanca karşılığını buraya yaz…"
-              : "Türkçe anlamını buraya yaz…"
-            : "Almanca yanıtını buraya yaz…"
+          isSatzbau
+            ? satzbauMode === "correct_sentence"
+              ? "Hatalı cümlenin düzeltilmiş Almanca hâlini buraya yaz…"
+              : satzbauMode === "create_own"
+                ? `“${task.targetWordDe ?? ""}” kelimesini içeren kendi Almanca cümleni yaz…`
+                : "Almanca cümleyi buraya yaz…"
+            : task.module === "vocabulary"
+              ? expectsGermanText
+                ? "Almanca karşılığını buraya yaz…"
+                : "Türkçe anlamını buraya yaz…"
+              : "Almanca yanıtını buraya yaz…"
         }
         autoCapitalize="off"
         spellCheck={false}
         onChange={(e) => onChange(e.target.value)}
       />
-      <p className="kg-section-sub" style={{ margin: 0 }}>
-        {expectsGermanText
-          ? "Büyük/küçük harf ve son noktalama esnek değerlendirilir; umlaut (ä, ö, ü) ve ß harflerine dikkat et."
-          : "Büyük/küçük harf ve son noktalama esnek değerlendirilir."}
-      </p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <p className="kg-section-sub" style={{ margin: 0 }}>
+          {expectsGermanText
+            ? "Büyük/küçük harf ve son noktalama esnek değerlendirilir; umlaut (ä, ö, ü) ve ß harflerine dikkat et."
+            : "Büyük/küçük harf ve son noktalama esnek değerlendirilir."}
+        </p>
+        {!disabled && value.trim().length > 0 && (
+          <button
+            type="button"
+            className="kg-btn kg-btn-ghost kg-btn-sm"
+            onClick={() => onChange("")}
+          >
+            <RotateCcw size={14} /> Temizle
+          </button>
+        )}
+      </div>
     </div>
   );
 }

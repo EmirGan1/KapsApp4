@@ -2,7 +2,10 @@ import { useState } from "react";
 import { Play, Sparkles } from "lucide-react";
 import {
   activities,
+  SATZBAU_MODE_LABELS,
   type CefrLevel,
+  type DistractorDifficulty,
+  type SatzbauMode,
   type StudyDirection,
 } from "../../shared/germanActivities";
 import { CefrLevelSelector } from "./CefrLevelSelector";
@@ -12,8 +15,10 @@ export function PracticeHubView({
   overview,
   selectedLevels,
   direction,
+  difficulty = "adaptive",
   onChangeLevels,
   onChangeDirection,
+  onChangeDifficulty,
   onStartSession,
   onStartPersonalizedReinforcement,
   busy,
@@ -21,13 +26,19 @@ export function PracticeHubView({
   overview: OverviewResponse;
   selectedLevels: CefrLevel[];
   direction: StudyDirection;
+  difficulty?: DistractorDifficulty;
   onChangeLevels: (next: CefrLevel[]) => void;
   onChangeDirection: (next: StudyDirection) => void;
+  onChangeDifficulty?: (next: DistractorDifficulty) => void;
   onStartSession: (opts: {
     module?: string;
     mode?: "practice" | "exam";
     activity?: string;
     levels?: CefrLevel[];
+    categoryId?: string;
+    unitId?: string;
+    difficulty?: DistractorDifficulty;
+    satzbauMode?: SatzbauMode | "mixed";
   }) => void;
   onStartPersonalizedReinforcement?: (opts: {
     levels: CefrLevel[];
@@ -37,10 +48,34 @@ export function PracticeHubView({
   busy: boolean;
 }) {
   const [includeMasteredReview, setIncludeMasteredReview] = useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
+  const [satzbauMode, setSatzbauMode] = useState<SatzbauMode | "mixed">("mixed");
 
   const selectedTotal = overview.progressByLevel
     .filter((p) => selectedLevels.includes(p.level))
     .reduce((s, p) => s + p.total, 0);
+
+  const availableCategories = (() => {
+    const map = new Map<string, string>();
+    for (const lvl of selectedLevels) {
+      for (const cat of (overview.curriculumHierarchy as any)?.[lvl] ?? []) {
+        if (!map.has(cat.categoryId)) {
+          map.set(cat.categoryId, `${cat.icon} ${cat.titleTr} (${cat.titleDe})`);
+        }
+      }
+    }
+    return [...map.entries()];
+  })();
+
+  const startWithFilters = (activity: string) => {
+    onStartSession({
+      activity,
+      levels: selectedLevels,
+      categoryId: selectedCategoryId !== "all" ? selectedCategoryId : undefined,
+      difficulty,
+      satzbauMode: activity === "satzbau" ? satzbauMode : undefined,
+    });
+  };
 
   return (
     <div className="kg-container">
@@ -51,14 +86,14 @@ export function PracticeHubView({
               Pratik Merkezi
             </h1>
             <p className="kg-section-sub">
-              Seviye ve soru yönünü seç; seçili seviye dışından tek bir kelime bile gelmez.
+              Seviye, konu kategorisi, çeldirici zorluğu ve soru yönünü seç; seçili seviye dışından tek bir kelime bile gelmez.
             </p>
           </div>
           <button
             type="button"
             disabled={busy || selectedTotal === 0}
             className="kg-btn kg-btn-primary"
-            onClick={() => onStartSession({ activity: "mixed", levels: selectedLevels })}
+            onClick={() => startWithFilters("mixed")}
           >
             <Play size={17} /> Karışık Akıllı Ders Başlat
           </button>
@@ -66,25 +101,94 @@ export function PracticeHubView({
 
         <CefrLevelSelector
           selected={selectedLevels}
-          onChange={onChangeLevels}
+          onChange={(lvls) => {
+            setSelectedCategoryId("all");
+            onChangeLevels(lvls);
+          }}
           progressByLevel={overview.progressByLevel}
         />
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <label htmlFor="kg-direction-select" style={{ fontSize: 13, fontWeight: 800 }}>
-            Soru yönü:
-          </label>
-          <select
-            id="kg-direction-select"
-            aria-label="Soru yönü"
-            className="kg-select"
-            value={direction}
-            onChange={(e) => onChangeDirection(e.target.value as StudyDirection)}
-          >
-            <option value="tr_de">Türkçe → Almanca</option>
-            <option value="de_tr">Almanca → Türkçe</option>
-            <option value="mixed">Karışık Çift Yönlü</option>
-          </select>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label htmlFor="kg-direction-select" style={{ fontSize: 13, fontWeight: 800 }}>
+              Soru yönü:
+            </label>
+            <select
+              id="kg-direction-select"
+              aria-label="Soru yönü"
+              className="kg-select"
+              value={direction}
+              onChange={(e) => onChangeDirection(e.target.value as StudyDirection)}
+            >
+              <option value="tr_de">Türkçe → Almanca</option>
+              <option value="de_tr">Almanca → Türkçe</option>
+              <option value="mixed">Karışık Çift Yönlü</option>
+            </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label htmlFor="kg-difficulty-select" style={{ fontSize: 13, fontWeight: 800 }}>
+              Çeldirici zorluğu:
+            </label>
+            <select
+              id="kg-difficulty-select"
+              aria-label="Çeldirici zorluğu"
+              className="kg-select"
+              value={difficulty}
+              onChange={(e) =>
+                onChangeDifficulty?.(e.target.value as DistractorDifficulty)
+              }
+            >
+              <option value="adaptive">Adaptif (Ustalığa Göre Otomatik)</option>
+              <option value="easy">Kolay (Açık Anlamsal Fark)</option>
+              <option value="normal">Normal (Aynı Konu ve Sözcük Türü)</option>
+              <option value="challenging">Zorlayıcı (Yakın Bağlam & Gramer)</option>
+            </select>
+          </div>
+
+          {availableCategories.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <label htmlFor="kg-practice-cat-select" style={{ fontSize: 13, fontWeight: 800 }}>
+                Konu Kategorisi:
+              </label>
+              <select
+                id="kg-practice-cat-select"
+                aria-label="Konu Kategorisi"
+                className="kg-select"
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+              >
+                <option value="all">Tüm Kategoriler</option>
+                {availableCategories.map(([catId, label]) => (
+                  <option key={catId} value={catId}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label htmlFor="kg-satzbau-mode-select" style={{ fontSize: 13, fontWeight: 800 }}>
+              Cümle Kurma (Satzbau) Modu:
+            </label>
+            <select
+              id="kg-satzbau-mode-select"
+              aria-label="Cümle Kurma Modu"
+              className="kg-select"
+              value={satzbauMode}
+              onChange={(e) => setSatzbauMode(e.target.value as SatzbauMode | "mixed")}
+            >
+              <option value="mixed">Karışık (Seviyeye Uygun 5 Mod)</option>
+              {(Object.entries(SATZBAU_MODE_LABELS) as Array<[SatzbauMode, string]>).map(
+                ([m, label]) => (
+                  <option key={m} value={m}>
+                    {label}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -130,7 +234,7 @@ export function PracticeHubView({
         </section>
       )}
 
-      {/* 11 Interactive Exercise Types */}
+      {/* 12 Interactive Exercise Types (Including Cümle Kurma — Satzbau) */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <h2 className="kg-section-title">Alıştırma Türleri</h2>
         <div className="kg-practice-grid">
@@ -143,9 +247,7 @@ export function PracticeHubView({
                 type="button"
                 disabled={busy || selectedTotal === 0 || noMistakes}
                 className="kg-practice-card"
-                onClick={() =>
-                  onStartSession({ activity: type, levels: selectedLevels })
-                }
+                onClick={() => startWithFilters(type)}
               >
                 <div className="kg-practice-card-head">
                   <span className="kg-practice-icon" aria-hidden="true">

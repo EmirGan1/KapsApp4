@@ -112,7 +112,7 @@ function parseChat(body: unknown): { messages: ChatMessage[]; source?: ChatSourc
     if (message.image !== undefined && (message.role !== "user" || !(
       typeof message.image === "string" ? parseKapsAiImage(message.image)
       : Array.isArray(message.image) && message.image.length > 0 && message.image.length <= AI_MAX_IMAGES
-        && message.image.every(item => Boolean(parseKapsAiImage(item)))
+        && message.image.every((item: any) => Boolean(parseKapsAiImage(item)))
     ))) return;
     validated.push({ role: message.role, content: message.content.trim(), image: message.image });
 

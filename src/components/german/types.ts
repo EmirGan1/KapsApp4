@@ -1,6 +1,8 @@
 import type {
   CefrLevel,
+  DistractorDifficulty,
   MasteryStatus,
+  SatzbauMode,
   StoredCefrLevel,
   StudyDirection,
 } from "../../shared/germanActivities";
@@ -28,6 +30,44 @@ export interface MasteryRecord {
   masteredAt: string | null;
 }
 
+export interface CurriculumUnitNode {
+  id: string;
+  categoryId: string;
+  level: CefrLevel;
+  unitNumber: number;
+  titleTr: string;
+  titleDe: string;
+  objectiveTr: string;
+  estimatedMinutes: number;
+  wordIds: string[];
+  totalWords: number;
+  masteredWords: number;
+  learningWords: number;
+  mistakeWords: number;
+  percent: number;
+  status: "completed" | "in_progress" | "not_started";
+}
+
+export interface CurriculumCategoryNode {
+  id: string;
+  level: CefrLevel;
+  order: number;
+  titleTr: string;
+  titleDe: string;
+  descriptionTr: string;
+  icon: string;
+  accentColor: string;
+  totalWords: number;
+  masteredWords: number;
+  learningWords: number;
+  mistakeWords: number;
+  percent: number;
+  totalUnits: number;
+  completedUnits: number;
+  status: "completed" | "in_progress" | "not_started";
+  units: CurriculumUnitNode[];
+}
+
 export interface ProgressByLevelItem {
   level: CefrLevel;
   trName: string;
@@ -43,6 +83,9 @@ export interface ProgressByLevelItem {
   remaining: number;
   percent: number;
   statusText: string;
+  totalCategories?: number;
+  totalUnits?: number;
+  completedUnits?: number;
 }
 
 export interface GermanStats {
@@ -58,6 +101,7 @@ export interface GermanStats {
   todayTotal: number;
   selectedLevels: CefrLevel[];
   preferredDirection: StudyDirection;
+  distractorDifficulty?: DistractorDifficulty;
   perfectLessons: number;
   showTurkishPronunciation?: boolean;
   autoSessionReview?: boolean;
@@ -91,6 +135,8 @@ export interface LearningPathNode {
   level: CefrLevel;
   order: number;
   topic: string;
+  categoryId?: string;
+  unitId?: string;
   totalWords: number;
   masteredWords: number;
   percent: number;
@@ -117,6 +163,10 @@ export interface SessionSummaryRow {
     activity?: string;
     direction?: StudyDirection;
     topic?: string;
+    categoryId?: string;
+    unitId?: string;
+    difficulty?: DistractorDifficulty;
+    satzbauMode?: SatzbauMode;
     reviewMode?: boolean;
     parentSessionId?: string;
     reinforcementDirection?: StudyDirection;
@@ -138,6 +188,7 @@ export interface ReportReasonOption {
 
 export interface OverviewResponse {
   progressByLevel: ProgressByLevelItem[];
+  curriculumHierarchy?: Record<CefrLevel, CurriculumCategoryNode[]>;
   overall: OverallSummary;
   stats: GermanStats;
   achievements: AchievementItem[];
@@ -157,6 +208,10 @@ export interface VocabItem {
   level: StoredCefrLevel;
   cefrSource: string;
   topic: string;
+  categoryId?: string;
+  unitId?: string;
+  subtopic?: string;
+  semanticTags?: string[];
   article?: string;
   plural?: string;
   pos?: string;
@@ -174,6 +229,7 @@ export interface VocabularyResponse {
   limit: number;
   totalPages: number;
   topics: string[];
+  categories?: Array<{ categoryId: string; titleTr: string; count: number }>;
 }
 
 export interface VocabularyCardDetail {
@@ -196,10 +252,47 @@ export interface VocabularyCardDetail {
   enrichedByAI: boolean;
 }
 
+export interface SatzbauReviewResult {
+  isValid: boolean;
+  score: number;
+  feedbackTr: string;
+  correctedSentenceDe: string;
+  alternativeSentenceDe: string;
+  grammarRuleTr: string;
+  targetWordUsed: boolean;
+  wordOrderValid: boolean;
+  source: "deterministic" | "ai" | "cache";
+  isCorrect?: boolean;
+  correctedDe?: string;
+  alternativeDe?: string;
+  grammarExplanationTr?: string;
+  ruleTipTr?: string;
+}
+
+export interface LevelAudioPackItem {
+  wordId: string;
+  de: string;
+  tr: string;
+  normalUrl: string;
+  slowUrl: string;
+  cachedNormal: boolean;
+  cachedSlow: boolean;
+  byteSizeNormal: number;
+}
+
+export interface LevelAudioPackManifest {
+  level: CefrLevel;
+  totalWords: number;
+  cachedCount: number;
+  estimatedBytes: number;
+  items: LevelAudioPackItem[];
+}
+
 export interface GermanTask {
   id: string;
   module: string;
   type: string;
+  activity?: string;
   part: number;
   level: string;
   topic?: string;
@@ -208,13 +301,27 @@ export interface GermanTask {
   isMistakeReview?: boolean;
   pairVocabularyIds?: string[];
   prompt: string;
+  subPrompt?: string;
+  hint?: string;
   passage: string;
   options: string[];
   answer?: string;
+  expected?: string;
   alternatives?: string[];
   explanation?: string;
   vocabularyIds: string[];
   evidence?: string;
+  satzbauMode?: SatzbauMode;
+  wordBank?: string[];
+  distractorWords?: string[];
+  targetWordDe?: string;
+  targetWordTr?: string;
+  turkishPromptSentence?: string;
+  flawedSentenceDe?: string;
+  grammarExplanationTr?: string;
+  grammarFocus?: string;
+  audioText?: string;
+  pronunciation?: PronunciationGuide;
   interaction?: {
     tiles?: string[];
     left?: string[];

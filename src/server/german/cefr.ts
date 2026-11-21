@@ -1,5 +1,12 @@
 import { BUILTIN_CURRICULUM } from "./curriculum";
-import { isCefrLevel, type CefrLevel, type StoredCefrLevel } from "../../shared/germanActivities";
+import {
+  isCefrLevel,
+  studyLevels,
+  type CefrLevel,
+  type StoredCefrLevel,
+} from "../../shared/germanActivities";
+
+export { isCefrLevel, studyLevels, type CefrLevel, type StoredCefrLevel };
 
 export const normalizeText = (value: string) =>
   value.normalize("NFC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("de");
@@ -312,6 +319,8 @@ export function gradeAnswer(input: {
   hasOptions?: boolean;
   hasInteraction?: boolean;
   direction?: "de_tr" | "tr_de" | "de_only";
+  satzbauMode?: string;
+  targetWordDe?: string;
   userAnswer: string;
 }): boolean {
   const userRaw = input.userAnswer ?? "";
@@ -344,9 +353,47 @@ export function gradeAnswer(input: {
     return cleanForCompare(input.answer) === cleanForCompare(userRaw);
   }
 
+  if (input.type === "satzbau") {
+    const acceptedSatzbau = [input.answer, ...(input.alternatives ?? [])];
+    const userFolded = cleanForCompare(userRaw, true);
+    for (const cand of acceptedSatzbau) {
+      if (cleanForCompare(cand, true) === userFolded) return true;
+    }
+
+    const targetRaw = (input.targetWordDe || "").replace(/^(der|die|das)\s+/iu, "").trim();
+    const targetFolded = cleanForCompare(targetRaw, true);
+    const stem = targetFolded.replace(/(en|eln|ern|n)$/iu, "").slice(0, Math.max(3, targetFolded.length - 2));
+    const hasTarget =
+      Boolean(targetFolded && userFolded.includes(targetFolded)) ||
+      Boolean(stem.length >= 3 && userFolded.includes(stem));
+
+    if (input.satzbauMode === "create_own") {
+      const tokens = userRaw.trim().split(/\s+/).filter(Boolean);
+      const hasVerbSignal =
+        /\b(bin|bist|ist|sind|seid|habe|hast|hat|haben|habt|werde|wird|werden|kann|muss|möchte|will|soll|darf|gehe|geht|kaufe|kauft|sehe|sieht|finde|findet|brauche|braucht|mache|macht|arbeite|arbeitet|lerne|lernt|spreche|spricht|wohne|wohnt|esse|isst|trinke|trinkt|komme|kommt|fahre|fährt|nehme|nimmt|gebe|gibt)\b/iu.test(
+          userRaw,
+        ) || tokens.some((w) => /(e|st|t|en)$/iu.test(w.replace(/[.!?]/g, "")) && w.length >= 3);
+      return hasTarget && tokens.length >= 3 && userFolded !== targetFolded && hasVerbSignal;
+    }
+
+    if (input.satzbauMode === "free_translation") {
+      const expTokens = cleanForCompare(input.answer, true).split(" ").filter(Boolean);
+      const usrTokens = userFolded.split(" ").filter(Boolean);
+      const matched = expTokens.filter((t) => usrTokens.includes(t)).length;
+      const ratio = expTokens.length > 0 ? matched / expTokens.length : 0;
+      if (hasTarget && ratio >= 0.75 && Math.abs(usrTokens.length - expTokens.length) <= 2) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   if (input.hasInteraction) {
-    // Tiles / ordering / spelling: preserve word/character sequence while tolerating trailing punctuation
-    return cleanForCompare(input.answer, true) === cleanForCompare(userRaw, true);
+    // Tiles / ordering / spelling: preserve word/character sequence while tolerating trailing punctuation and valid alternatives
+    const accepted = [input.answer, ...(input.alternatives ?? [])];
+    const userFolded = cleanForCompare(userRaw, true);
+    return accepted.some((cand) => cleanForCompare(cand, true) === userFolded);
   }
 
   // Sentence translation NEVER splits on "/" unless explicit alternative is listed,

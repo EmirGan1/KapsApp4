@@ -55,6 +55,16 @@ import {
   type ReportReasonId,
 } from "./auditor";
 import { evaluateGoetheSchreibenWithAI } from "./schreiben";
+import {
+  checkGermanAudioRateLimit,
+  getLevelAudioPackManifest,
+  getOrGenerateGermanAudio,
+  warmLevelAudioCacheBatch,
+  type GermanAudioRate,
+} from "./audio";
+import { reviewSatzbauWithAi } from "./satzbau";
+import { classifyWordIntoHierarchy } from "./curriculumHierarchy";
+import type { DistractorDifficulty, SatzbauMode } from "../../shared/germanActivities";
 
 export { seedBuiltinCurriculum };
 
@@ -91,6 +101,40 @@ export function registerGerman(
 
   const router = express.Router();
   const rates = new Map<number, { at: number; n: number }>();
+
+  // Layered Server-Hosted & Cached German Audio Endpoint (supports both <audio src="/api/kaps-german/audio?..."> and fetch with Bearer token)
+  app.get("/api/kaps-german/audio", async (req, res) => {
+    try {
+      await ready;
+      if (schemaError) return void res.sendStatus(503);
+      const rawText = typeof req.query.text === "string" ? req.query.text : "";
+      const rawRate = req.query.rate === "slow" ? "slow" : "normal";
+      if (!rawText.trim()) {
+        return void res.status(400).json({ error: "Seslendirilecek Almanca metin gerekli." });
+      }
+      const user = await authenticate(req).catch(() => null);
+      const rateKey = user ? `u:${user.id}` : `ip:${req.ip || "local"}`;
+      if (!checkGermanAudioRateLimit(rateKey, Boolean(user))) {
+        return void res.status(429).json({ error: "Ses isteği sınırına ulaşıldı." });
+      }
+      const payload = await getOrGenerateGermanAudio(db, {
+        text: rawText,
+        rate: rawRate as GermanAudioRate,
+      });
+      res.set({
+        "Content-Type": payload.mimeType,
+        "Content-Length": String(payload.buffer.byteLength),
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "X-German-Audio-Source": payload.source,
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.send(payload.buffer);
+    } catch (e) {
+      res.status(400).json({
+        error: e instanceof Error ? e.message : "Almanca ses dosyası oluşturulamadı.",
+      });
+    }
+  });
 
   app.use(
     "/api/kaps-german",
@@ -193,6 +237,8 @@ export function registerGerman(
       const level = typeof req.query.level === "string" ? req.query.level : "ALL";
       const status = typeof req.query.status === "string" ? req.query.status : "all";
       const topic = typeof req.query.topic === "string" ? req.query.topic : "all";
+      const categoryId = typeof req.query.categoryId === "string" ? req.query.categoryId : "all";
+      const unitId = typeof req.query.unitId === "string" ? req.query.unitId : "all";
       const q = typeof req.query.q === "string" ? req.query.q.slice(0, 120).trim() : "";
       const mistakesOnly = req.query.mistakesOnly === "1";
       const page = Math.max(1, Number(req.query.page ?? 1) || 1);
@@ -224,6 +270,12 @@ export function registerGerman(
         if (topic !== "all" && w.topic !== topic) {
           return false;
         }
+        if (categoryId !== "all" && w.categoryId !== categoryId) {
+          return false;
+        }
+        if (unitId !== "all" && w.unitId !== unitId) {
+          return false;
+        }
         if (status !== "all" && w.mastery.masteryStatus !== status) {
           return false;
         }
@@ -231,7 +283,7 @@ export function registerGerman(
           return false;
         }
         if (qLower) {
-          const hay = `${w.de} ${w.tr} ${w.topic} ${w.exampleDe ?? ""} ${w.exampleTr ?? ""}`.toLocaleLowerCase("tr");
+          const hay = `${w.de} ${w.tr} ${w.topic} ${w.subtopic ?? ""} ${w.exampleDe ?? ""} ${w.exampleTr ?? ""}`.toLocaleLowerCase("tr");
           if (!hay.includes(qLower)) return false;
         }
         return true;
@@ -248,6 +300,10 @@ export function registerGerman(
         level: w.level,
         cefrSource: w.cefrSource,
         topic: w.topic,
+        categoryId: w.categoryId,
+        unitId: w.unitId,
+        subtopic: w.subtopic,
+        semanticTags: w.semanticTags,
         article: w.article,
         plural: w.plural,
         pos: w.pos,
@@ -276,6 +332,7 @@ export function registerGerman(
       const {
         selectedLevels,
         preferredDirection,
+        distractorDifficulty,
         dailyGoalXp,
         showTurkishPronunciation,
         autoSessionReview,
@@ -289,6 +346,11 @@ export function registerGerman(
       const nextDir =
         preferredDirection && ["de_tr", "tr_de", "mixed"].includes(String(preferredDirection))
           ? String(preferredDirection)
+          : undefined;
+      const nextDiff =
+        distractorDifficulty &&
+        ["adaptive", "easy", "normal", "challenging"].includes(String(distractorDifficulty))
+          ? String(distractorDifficulty)
           : undefined;
       const nextGoal =
         Number.isSafeInteger(dailyGoalXp) && dailyGoalXp >= 10 && dailyGoalXp <= 500
@@ -304,11 +366,12 @@ export function registerGerman(
           : null;
 
       await db.execute({
-        sql: `INSERT INTO german_user_stats(user_id, selected_levels, preferred_direction, daily_goal_xp, show_turkish_pronunciation, auto_session_review)
-              VALUES(?,?,?,?,?,?)
+        sql: `INSERT INTO german_user_stats(user_id, selected_levels, preferred_direction, distractor_difficulty, daily_goal_xp, show_turkish_pronunciation, auto_session_review)
+              VALUES(?,?,?,?,?,?,?)
               ON CONFLICT(user_id) DO UPDATE SET
                 selected_levels=COALESCE(?, german_user_stats.selected_levels),
                 preferred_direction=COALESCE(?, german_user_stats.preferred_direction),
+                distractor_difficulty=COALESCE(?, german_user_stats.distractor_difficulty),
                 daily_goal_xp=COALESCE(?, german_user_stats.daily_goal_xp),
                 show_turkish_pronunciation=COALESCE(?, german_user_stats.show_turkish_pronunciation),
                 auto_session_review=COALESCE(?, german_user_stats.auto_session_review)`,
@@ -316,11 +379,13 @@ export function registerGerman(
           user,
           JSON.stringify(nextLevels ?? ["A1"]),
           nextDir ?? "tr_de",
+          nextDiff ?? "adaptive",
           nextGoal ?? 50,
           nextShowPron ?? 1,
           nextAutoReview ?? 0,
           nextLevels ? JSON.stringify(nextLevels) : null,
           nextDir ?? null,
+          nextDiff ?? null,
           nextGoal ?? null,
           nextShowPron,
           nextAutoReview,
@@ -613,6 +678,17 @@ export function registerGerman(
                 });
 
           const ck = canonicalWordKey(entry.de);
+          const hierarchy = classifyWordIntoHierarchy({
+            de: entry.de,
+            tr: entry.tr,
+            topic: entry.topic || previous?.topic || "",
+            pos: entry.pos || previous?.pos,
+            level: resolvedCefr.level,
+            article: entry.article || previous?.article || "",
+            grammar: entry.grammar || previous?.grammar || "",
+            exampleDe: entry.exampleDe || previous?.exampleDe,
+            exampleTr: entry.exampleTr || previous?.exampleTr,
+          });
           const data: Vocabulary = {
             ...previous,
             ...entry,
@@ -620,6 +696,11 @@ export function registerGerman(
             canonicalKey: ck,
             level: resolvedCefr.level,
             cefrSource: resolvedCefr.source,
+            topic: hierarchy.cleanTopic,
+            categoryId: hierarchy.categoryId,
+            subtopic: hierarchy.subtopicTr,
+            semanticTags: hierarchy.semanticTags,
+            pos: entry.pos || previous?.pos || hierarchy.inferredPos,
           };
 
           if (
@@ -634,14 +715,17 @@ export function registerGerman(
           }
           if (!oldIds.has(identity)) added++;
           await tx.execute({
-            sql: `INSERT INTO german_words(id,data,active,imported_at,cefr_level,canonical_key,topic)
-                  VALUES(?,?,1,?,?,?,?)
+            sql: `INSERT INTO german_words(id,data,active,imported_at,cefr_level,canonical_key,topic,category_id,subtopic,semantic_tags)
+                  VALUES(?,?,1,?,?,?,?,?,?,?)
                   ON CONFLICT(id) DO UPDATE SET
                     data=excluded.data,
                     active=1,
                     cefr_level=excluded.cefr_level,
                     canonical_key=excluded.canonical_key,
-                    topic=excluded.topic`,
+                    topic=excluded.topic,
+                    category_id=excluded.category_id,
+                    subtopic=excluded.subtopic,
+                    semantic_tags=excluded.semantic_tags`,
             args: [
               identity,
               JSON.stringify(data),
@@ -649,6 +733,9 @@ export function registerGerman(
               data.level,
               ck,
               data.topic,
+              hierarchy.categoryId,
+              hierarchy.subtopicTr,
+              JSON.stringify(hierarchy.semanticTags),
             ],
           });
         }
@@ -714,6 +801,10 @@ export function registerGerman(
         direction = "tr_de",
         levels = [...studyLevels],
         topic = "",
+        categoryId = "",
+        unitId = "",
+        difficulty = "adaptive",
+        satzbauMode,
         wordIds = [],
         reviewMode = false,
       } = req.body ?? {};
@@ -731,6 +822,7 @@ export function registerGerman(
       }
       const allowedExtraActivities = [
         "mixed",
+        "satzbau",
         "sentence_ordering",
         "sentence_gap",
         "spelling",
@@ -755,6 +847,18 @@ export function registerGerman(
 
       const normalizedLevels = [...new Set(levels as CefrLevel[])].sort();
       const normalizedTopic = typeof topic === "string" ? topic.trim().slice(0, 120) : "";
+      const normalizedCategoryId = typeof categoryId === "string" ? categoryId.trim().slice(0, 80) : "";
+      const normalizedUnitId = typeof unitId === "string" ? unitId.trim().slice(0, 120) : "";
+      const normalizedDifficulty: DistractorDifficulty =
+        ["adaptive", "easy", "normal", "challenging"].includes(String(difficulty))
+          ? (String(difficulty) as DistractorDifficulty)
+          : "adaptive";
+      const normalizedSatzbauMode: SatzbauMode | undefined =
+        ["arrange", "construct_bank", "free_translation", "create_own", "correct_sentence"].includes(
+          String(satzbauMode),
+        )
+          ? (String(satzbauMode) as SatzbauMode)
+          : undefined;
       const normalizedWordIds = Array.isArray(wordIds)
         ? [...new Set(wordIds.filter((x) => typeof x === "string").slice(0, 40))].sort()
         : [];
@@ -763,6 +867,10 @@ export function registerGerman(
         activity,
         direction,
         topic: normalizedTopic,
+        categoryId: normalizedCategoryId,
+        unitId: normalizedUnitId,
+        difficulty: normalizedDifficulty,
+        satzbauMode: normalizedSatzbauMode,
         wordIds: normalizedWordIds,
         reviewMode: !!reviewMode,
       };
@@ -795,8 +903,17 @@ export function registerGerman(
       );
 
       let scopedWords = levelFilteredWords;
-      if (normalizedTopic) {
-        scopedWords = scopedWords.filter((w) => w.topic === normalizedTopic);
+      if (normalizedUnitId) {
+        scopedWords = scopedWords.filter((w) => w.unitId === normalizedUnitId);
+      } else if (normalizedCategoryId) {
+        scopedWords = scopedWords.filter((w) => w.categoryId === normalizedCategoryId);
+      } else if (normalizedTopic) {
+        scopedWords = scopedWords.filter(
+          (w) =>
+            w.topic === normalizedTopic ||
+            w.unitId === normalizedTopic ||
+            w.categoryId === normalizedTopic,
+        );
       }
       if (normalizedWordIds.length > 0) {
         scopedWords = scopedWords.filter((w) => normalizedWordIds.includes(w.id));
@@ -863,6 +980,9 @@ export function registerGerman(
         }
 
         const recentWordIds = await getRecentSessionWordIds(db, userId, 3);
+        const masteryStreakByWordId = new Map<string, number>(
+          studyPool.map((w) => [w.id, w.mastery.consecutiveCorrect]),
+        );
         const generatedGames = buildActivities(
           studyPool,
           activity,
@@ -872,6 +992,9 @@ export function registerGerman(
             recentWordIds,
             distractorWords: levelFilteredWords,
             reviewMode: !!reviewMode,
+            difficulty: normalizedDifficulty,
+            masteryStreakByWordId,
+            satzbauMode: normalizedSatzbauMode,
             limit: 12,
           },
         );
@@ -1183,6 +1306,8 @@ export function registerGerman(
             hasOptions: task.options.length > 0,
             hasInteraction,
             direction: task.direction,
+            satzbauMode: task.satzbauMode,
+            targetWordDe: task.targetWordDe,
             userAnswer: answer,
           }))
       ) {
@@ -1193,6 +1318,8 @@ export function registerGerman(
           hasOptions: task.options.length > 0,
           hasInteraction,
           direction: task.direction,
+          satzbauMode: task.satzbauMode,
+          targetWordDe: task.targetWordDe,
           userAnswer: answer,
         });
         return res.json({
@@ -1319,6 +1446,8 @@ export function registerGerman(
                 hasOptions: task.options.length > 0,
                 hasInteraction: Boolean(task.interaction?.tiles || task.interaction?.left),
                 direction: task.direction,
+                satzbauMode: task.satzbauMode,
+                targetWordDe: task.targetWordDe,
                 userAnswer: answer,
               });
 
@@ -1654,6 +1783,8 @@ export function registerGerman(
               hasOptions: t.options.length > 0,
               hasInteraction: Boolean(t.interaction?.tiles || t.interaction?.left),
               direction: t.direction,
+              satzbauMode: t.satzbauMode,
+              targetWordDe: t.targetWordDe,
               userAnswer: answer,
             });
 
@@ -2374,6 +2505,115 @@ export function registerGerman(
         ],
       });
       res.json({ ok: true });
+    }),
+  );
+
+  // ==================== AUDIO PACK & SATZBAU AI REVIEW ROUTES ====================
+
+  router.get(
+    "/audio/pack",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const rawLevel = typeof req.query.level === "string" ? req.query.level : "A1";
+      const level: CefrLevel = isCefrLevel(rawLevel) ? rawLevel : "A1";
+      const { uniqueWords } = await loadDeduplicatedWordsWithMastery(db, user, false);
+      const manifest = await getLevelAudioPackManifest(db, level, uniqueWords);
+      res.json(manifest);
+    }),
+  );
+
+  router.post(
+    "/audio/warm",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const rawLevel = typeof req.body?.level === "string" ? req.body.level : "A1";
+      const level: CefrLevel = isCefrLevel(rawLevel) ? rawLevel : "A1";
+      const limit = Math.min(40, Math.max(1, Number(req.body?.limit ?? 15) || 15));
+      const { uniqueWords } = await loadDeduplicatedWordsWithMastery(db, user, false);
+      const levelWords = uniqueWords.filter((w) => w.level === level);
+      const result = await warmLevelAudioCacheBatch(db, levelWords, limit);
+      res.json({ ok: true, level, ...result });
+    }),
+  );
+
+  router.post(
+    "/ai/satzbau-review",
+    wrap(async (req, res) => {
+      const user = res.locals.germanUser;
+      const {
+        sessionId,
+        taskId,
+        answer = "",
+        userSentence = "",
+        expectedSentence = "",
+        turkishPrompt = "",
+        targetWordDe = "",
+        targetWordTr = "",
+        mode = "arrange",
+        level = "A1",
+      } = req.body ?? {};
+
+      const studentText = String(userSentence || answer || "").slice(0, 800);
+      let resolvedExpected = String(expectedSentence || "");
+      let resolvedTrPrompt = String(turkishPrompt || "");
+      let resolvedTargetDe = String(targetWordDe || "");
+      let resolvedTargetTr = String(targetWordTr || "");
+      let resolvedMode: SatzbauMode =
+        ["arrange", "construct_bank", "free_translation", "create_own", "correct_sentence"].includes(
+          String(mode),
+        )
+          ? (String(mode) as SatzbauMode)
+          : "arrange";
+      let resolvedLevel = String(level || "A1");
+      let resolvedExplanation = "";
+
+      if (typeof sessionId === "string" && typeof taskId === "string") {
+        const s = await owned(sessionId, user);
+        if (s) {
+          const tasks = JSON.parse(String(s.tasks ?? "[]")) as any[];
+          const found = tasks.find((t) => t.id === taskId);
+          if (found) {
+            resolvedExpected = resolvedExpected || found.answer || found.expected || "";
+            resolvedTrPrompt = resolvedTrPrompt || found.turkishPromptSentence || found.prompt || "";
+            resolvedTargetDe =
+              resolvedTargetDe ||
+              found.targetWordDe ||
+              found.interaction?.targetWordDe ||
+              found.interaction?.wordMeta?.de ||
+              "";
+            resolvedTargetTr =
+              resolvedTargetTr ||
+              found.targetWordTr ||
+              found.interaction?.targetWordTr ||
+              found.interaction?.wordMeta?.tr ||
+              "";
+            const foundMode = found.satzbauMode || found.interaction?.satzbauMode;
+            if (foundMode) resolvedMode = foundMode;
+            if (found.level) resolvedLevel = found.level;
+            resolvedExplanation = found.grammarExplanationTr || found.explanation || "";
+          }
+        }
+      }
+
+      const review = await reviewSatzbauWithAi(db, {
+        userSentence: studentText,
+        expectedSentence: resolvedExpected,
+        turkishPrompt: resolvedTrPrompt,
+        targetWordDe: resolvedTargetDe,
+        targetWordTr: resolvedTargetTr,
+        mode: resolvedMode,
+        level: resolvedLevel,
+        grammarExplanationTr: resolvedExplanation,
+      });
+
+      res.json({
+        ...review,
+        isCorrect: review.isValid,
+        correctedDe: review.correctedSentenceDe,
+        alternativeDe: review.alternativeSentenceDe,
+        grammarExplanationTr: review.grammarRuleTr,
+        ruleTipTr: review.grammarRuleTr,
+      });
     }),
   );
 

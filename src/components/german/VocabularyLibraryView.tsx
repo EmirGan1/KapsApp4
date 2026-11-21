@@ -20,7 +20,11 @@ import {
   suggestWordPronunciation,
 } from "./api";
 import { CefrTag, MasteryPips } from "./MasteryPips";
-import { GermanSpeakButtons, PronunciationGuideBox } from "./PronunciationGuideBox";
+import {
+  GermanLevelAudioPackCard,
+  GermanSpeakButtons,
+  PronunciationGuideBox,
+} from "./PronunciationGuideBox";
 import type { VocabItem, VocabularyCardDetail, VocabularyResponse } from "./types";
 
 const POS_LABELS: Record<string, string> = {
@@ -49,6 +53,7 @@ export function VocabularyLibraryView({
 }) {
   const [level, setLevel] = useState<string>(initialLevel);
   const [status, setStatus] = useState<string>("all");
+  const [categoryId, setCategoryId] = useState<string>("all");
   const [topic, setTopic] = useState<string>("all");
   const [q, setQ] = useState<string>("");
   const [mistakesOnly, setMistakesOnly] = useState(false);
@@ -72,6 +77,7 @@ export function VocabularyLibraryView({
       const data = await fetchVocabulary({
         level,
         status,
+        categoryId,
         topic,
         q,
         mistakesOnly,
@@ -91,7 +97,7 @@ export function VocabularyLibraryView({
       void load();
     }, 150);
     return () => clearTimeout(t);
-  }, [level, status, topic, q, mistakesOnly, page]);
+  }, [level, status, categoryId, topic, q, mistakesOnly, page]);
 
   const toggleSelect = (item: VocabItem) => {
     if (!studyLevels.includes(item.level as CefrLevel)) return;
@@ -233,6 +239,7 @@ export function VocabularyLibraryView({
               className={`kg-level-chip ${level === code ? "is-active" : ""}`}
               onClick={() => {
                 setLevel(code);
+                setCategoryId("all");
                 setTopic("all");
                 setPage(1);
               }}
@@ -286,7 +293,25 @@ export function VocabularyLibraryView({
           </select>
 
           <select
-            aria-label="Konu filtresi"
+            aria-label="Konu kategorisi filtresi"
+            className="kg-select"
+            value={categoryId}
+            onChange={(e) => {
+              setCategoryId(e.target.value);
+              setTopic("all");
+              setPage(1);
+            }}
+          >
+            <option value="all">Tüm Ana Kategoriler</option>
+            {(res?.categories ?? []).map((c: any) => (
+              <option key={c.categoryId} value={c.categoryId}>
+                {c.titleTr} ({c.count})
+              </option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Alt konu filtresi"
             className="kg-select"
             value={topic}
             onChange={(e) => {
@@ -294,7 +319,7 @@ export function VocabularyLibraryView({
               setPage(1);
             }}
           >
-            <option value="all">Tüm Konular</option>
+            <option value="all">Tüm Alt Konular</option>
             {(res?.topics ?? []).map((t) => (
               <option key={t} value={t}>
                 {t}
@@ -314,6 +339,11 @@ export function VocabularyLibraryView({
             Sadece Hatalılar
           </button>
         </div>
+
+        <GermanLevelAudioPackCard
+          level={studyLevels.includes(level as CefrLevel) ? (level as CefrLevel) : "A1"}
+          compact
+        />
       </div>
 
       {error && (

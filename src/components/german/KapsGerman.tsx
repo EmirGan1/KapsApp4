@@ -10,7 +10,12 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
-import { type CefrLevel, type StudyDirection } from "../../shared/germanActivities";
+import {
+  type CefrLevel,
+  type DistractorDifficulty,
+  type SatzbauMode,
+  type StudyDirection,
+} from "../../shared/germanActivities";
 import {
   createPersonalizedReinforcement,
   fetchAccess,
@@ -65,6 +70,7 @@ export default function KapsGerman() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [selectedLevels, setSelectedLevels] = useState<CefrLevel[]>(["A1"]);
   const [direction, setDirection] = useState<StudyDirection>("tr_de");
+  const [difficulty, setDifficulty] = useState<DistractorDifficulty>("adaptive");
   const [dailyGoalXp, setDailyGoalXp] = useState<number>(50);
   const [showTurkishPronunciation, setShowTurkishPronunciation] = useState<boolean>(true);
   const [autoSessionReview, setAutoSessionReview] = useState<boolean>(false);
@@ -82,6 +88,9 @@ export default function KapsGerman() {
       }
       if (data.stats.preferredDirection) {
         setDirection(data.stats.preferredDirection);
+      }
+      if (data.stats.distractorDifficulty) {
+        setDifficulty(data.stats.distractorDifficulty);
       }
       if (data.stats.dailyGoalXp) {
         setDailyGoalXp(data.stats.dailyGoalXp);
@@ -127,6 +136,11 @@ export default function KapsGerman() {
     void saveStudyPreferences({ preferredDirection: next }).catch(() => {});
   };
 
+  const handleChangeDifficulty = (next: DistractorDifficulty) => {
+    setDifficulty(next);
+    void saveStudyPreferences({ distractorDifficulty: next }).catch(() => {});
+  };
+
   const handleChangeDailyGoal = (xp: number) => {
     setDailyGoalXp(xp);
     void saveStudyPreferences({ dailyGoalXp: xp })
@@ -150,6 +164,10 @@ export default function KapsGerman() {
     activity?: string;
     levels?: CefrLevel[];
     topic?: string;
+    categoryId?: string;
+    unitId?: string;
+    difficulty?: DistractorDifficulty;
+    satzbauMode?: SatzbauMode | "mixed";
     wordIds?: string[];
     reviewMode?: boolean;
   }) => {
@@ -164,6 +182,10 @@ export default function KapsGerman() {
         direction,
         levels: opts.levels ?? selectedLevels,
         topic: opts.topic,
+        categoryId: opts.categoryId,
+        unitId: opts.unitId,
+        difficulty: opts.difficulty ?? difficulty,
+        satzbauMode: opts.satzbauMode === "mixed" ? undefined : opts.satzbauMode,
         wordIds: opts.wordIds,
         reviewMode: opts.reviewMode,
       });
@@ -234,12 +256,16 @@ export default function KapsGerman() {
           onOpenSession={(sid) => {
             navigate(`/dersler/kaps-german?tab=${activeTab}&session=${encodeURIComponent(sid)}`);
           }}
-          onRestartSimilar={(filters, mod) => {
+          onRestartSimilar={(filters: any, mod) => {
             void handleStartSession({
               module: mod,
               activity: filters?.activity ?? "mixed",
               levels: filters?.levels?.length ? filters.levels : selectedLevels,
               topic: filters?.topic,
+              categoryId: filters?.categoryId,
+              unitId: filters?.unitId,
+              difficulty: filters?.difficulty ?? difficulty,
+              satzbauMode: filters?.satzbauMode,
               reviewMode: filters?.reviewMode,
             });
           }}
@@ -336,8 +362,10 @@ export default function KapsGerman() {
                 overview={overview}
                 selectedLevels={selectedLevels}
                 direction={direction}
+                difficulty={difficulty}
                 onChangeLevels={handleChangeLevels}
                 onChangeDirection={handleChangeDirection}
+                onChangeDifficulty={handleChangeDifficulty}
                 onStartSession={(opts) => void handleStartSession(opts)}
                 onStartPersonalizedReinforcement={(opts) =>
                   void handleStartPersonalizedReinforcement(opts)

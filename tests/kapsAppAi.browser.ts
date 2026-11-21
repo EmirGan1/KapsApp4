@@ -11,7 +11,7 @@ import { createClient } from "@libsql/client";
 import { chromium, devices, webkit } from "playwright";
 import { KAPSAPP_AI_MODEL, KAPSAPP_AI_SYSTEM_PROMPT } from "../src/server/kapsAppAi";
 import { KAPSAPP_AI_PATH, KAPSAPP_AI_CONVERSATIONS_PATH, KAPSAPP_AI_TURNS_PATH, KAPSAPP_AI_PREFERENCE_PATH, KAPSAPP_AI_PHOTO_PATH, KAPSAPP_AI_VISION_MODEL, normalizeMathMarkdown, readJsonLines } from "../src/shared/kapsAppAi";
-import type { ChatEvent, ChatMessage, ChatSource, KapsAiModel, SavedChatTurn } from "../src/shared/kapsAppAi";
+import type { ChatEvent, ChatMessage, ChatSource, KapsAiModel, StoredKapsAiModel, SavedChatTurn } from "../src/shared/kapsAppAi";
 
 const live = process.env.KAPSAPP_AI_LIVE_TEST === "1";
 const continuousTest = process.env.KAPSAPP_AI_CONTINUOUS_TEST === "1";
@@ -19,9 +19,9 @@ const engine = process.env.KAPSAPP_AI_BROWSER === "webkit" ? webkit : chromium;
 const answerFixture = "**Örnek yanıt** ve $x^2$.\n\n```js\nconsole.log('test');\n```\n\n<img src=https://example.com/private> ![görsel](https://example.com/private)";
 const mathAnswerFixture = "İntegral ve limit çözümü:\n\\[ \\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} \\]\nve türev: \\( \\frac{d}{dx}\\sin(x) = \\cos(x) \\) ayrıca $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$";
 
-const granite: KapsAiModel = "granite4.1:3b-q4_K_M";
-const gemma: KapsAiModel = "gemma4:e2b-it-qat";
-const fast: KapsAiModel = "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m";
+const granite: any = "granite4.1:3b-q4_K_M";
+const gemma: any = "gemma4:e2b-it-qat";
+const fast: any = "LiquidAI/lfm2.5-1.2b-instruct:q4_k_m";
 const percentagePrompt = "A product costs 100 TL. Its price increases by 20%, then the increased price is discounted by 20%. What is the final price? Show the calculation.";
 let warmedModel: string | undefined = KAPSAPP_AI_MODEL;
 let simulateColdModel = false;

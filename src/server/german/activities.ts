@@ -3,10 +3,15 @@ import {
   activities,
   isCefrLevel,
   oppositeStudyDirection,
+  SATZBAU_MODE_LABELS,
   type CefrLevel,
+  type DistractorDifficulty,
+  type SatzbauMode,
   type StudyDirection,
 } from "../../shared/germanActivities";
 import { gradeAnswer } from "./cefr";
+import { selectSemanticDistractors } from "./distractors";
+import { buildSatzbauSpecForWord, chooseSatzbauModeForWord } from "./satzbau";
 import {
   normalize,
   validateTask,
@@ -316,6 +321,9 @@ export interface BuildActivityOptions {
   avoidTypesByWordId?: Map<string, Set<string>>;
   isMistakeReview?: boolean;
   distractorWords?: Vocabulary[];
+  difficulty?: DistractorDifficulty;
+  masteryStreakByWordId?: Map<string, number>;
+  satzbauMode?: SatzbauMode;
 }
 
 export function buildActivities(
@@ -395,12 +403,25 @@ export function buildActivities(
       passage?: string;
       vocabularyIds?: string[];
       pairVocabularyIds?: string[];
+      satzbauMode?: SatzbauMode;
+      subPrompt?: string;
+      hint?: string;
+      wordBank?: string[];
+      distractorWords?: string[];
+      targetWordDe?: string;
+      targetWordTr?: string;
+      turkishPromptSentence?: string;
+      flawedSentenceDe?: string;
+      grammarExplanationTr?: string;
+      grammarFocus?: string;
+      audioText?: string;
     },
   ) => {
     const task: Task = {
       id: randomUUID(),
       module: "vocabulary",
       type,
+      activity: type,
       part: 1,
       level: w.level,
       topic: w.topic,
@@ -409,14 +430,28 @@ export function buildActivities(
       isMistakeReview: isMistakeSession || undefined,
       pairVocabularyIds: taskMeta.pairVocabularyIds,
       prompt,
+      subPrompt: taskMeta.subPrompt,
+      hint: taskMeta.hint,
       passage: taskMeta.passage ?? "",
       options: opts,
       answer,
+      expected: answer,
       alternatives: (taskMeta.alternatives ?? []).filter(Boolean),
       explanation: taskMeta.explanation || `${w.de} — ${w.tr}`,
       vocabularyIds: taskMeta.vocabularyIds ?? [w.id],
       evidence: "",
       fingerprint: randomUUID(),
+      satzbauMode: taskMeta.satzbauMode,
+      wordBank: taskMeta.wordBank,
+      distractorWords: taskMeta.distractorWords,
+      targetWordDe: taskMeta.targetWordDe,
+      targetWordTr: taskMeta.targetWordTr,
+      turkishPromptSentence: taskMeta.turkishPromptSentence,
+      flawedSentenceDe: taskMeta.flawedSentenceDe,
+      grammarExplanationTr: taskMeta.grammarExplanationTr,
+      grammarFocus: taskMeta.grammarFocus,
+      audioText: taskMeta.audioText,
+      pronunciation: w.pronunciation,
       interaction: {
         ...taskMeta.interaction,
         wordMeta: makeWordMeta(w),
@@ -430,7 +465,8 @@ export function buildActivities(
     byWordAndType.set(w.id, wordMap);
   };
 
-  for (const w of candidates) {
+  for (let candIdx = 0; candIdx < candidates.length; candIdx++) {
+    const w = candidates[candIdx];
     const forcedDir = options.forceDirectionByWordId?.get(w.id);
     const reverse = forcedDir
       ? forcedDir === "tr_de"
@@ -443,14 +479,35 @@ export function buildActivities(
     const meanings = w.tr.split(/\s*\/\s*/u).filter(Boolean);
     const other = selectCompatibleDistractors(w, distractorPool);
 
-    // 1. Multiple-choice translation
-    if (other.length >= 2) {
-      const choiceDistractors: string[] = [];
+    // 1. Context-Aware Multiple-Choice Translation (10-step semantic & grammatical distractor pipeline)
+    const semanticChoice = selectSemanticDistractors({
+      target: w,
+      pool: distractorPool,
+      direction: taskDir,
+      difficulty: options.difficulty ?? "adaptive",
+      masteryStreak: options.masteryStreakByWordId?.get(w.id) ?? 0,
+      count: 3,
+      seed: `${w.id}:${candIdx}:${taskDir}`,
+    });
+
+    const filteredSemanticDistractors = semanticChoice.distractors.filter(
+      (opt) =>
+        opt !== target &&
+        !gradeAnswer({
+          type: "choice",
+          answer: target,
+          alternatives: reverse ? [] : w.alternatives,
+          hasOptions: true,
+          userAnswer: opt,
+        }),
+    );
+
+    if (filteredSemanticDistractors.length < 3 && other.length >= 2) {
       for (const cand of other) {
         const opt = reverse ? cand.de : cand.tr;
         if (
           opt !== target &&
-          !choiceDistractors.includes(opt) &&
+          !filteredSemanticDistractors.includes(opt) &&
           !gradeAnswer({
             type: "choice",
             answer: target,
@@ -459,32 +516,37 @@ export function buildActivities(
             userAnswer: opt,
           })
         ) {
-          choiceDistractors.push(opt);
+          filteredSemanticDistractors.push(opt);
         }
-        if (choiceDistractors.length >= 3) break;
+        if (filteredSemanticDistractors.length >= 3) break;
       }
-      const uniqueOpts = [...new Set([target, ...choiceDistractors])];
-      if (uniqueOpts.length >= 3) {
-        const nounOrPhraseLabel =
-          cat === "sentence"
-            ? "cümlesinin"
-            : cat === "adv_phrase"
-              ? "ifadesinin"
-              : "kelimesinin";
-        pushTask(
-          w,
-          "choice",
-          reverse
-            ? `“${source}” ${cat === "sentence" ? "cümlesinin" : "ifadesinin"} Almanca karşılığı hangisidir?`
-            : `“${source}” Almanca ${nounOrPhraseLabel} Türkçe anlamı nedir?`,
-          target,
-          shuffle(uniqueOpts),
-          {
-            direction: taskDir,
-            objective: reverse ? "production" : "meaning",
-          },
-        );
-      }
+    }
+
+    const uniqueOpts = [...new Set([target, ...filteredSemanticDistractors.slice(0, 3)])];
+    if (uniqueOpts.length >= 3) {
+      const nounOrPhraseLabel =
+        cat === "sentence"
+          ? "cümlesinin"
+          : cat === "adv_phrase"
+            ? "ifadesinin"
+            : "kelimesinin";
+      pushTask(
+        w,
+        "choice",
+        reverse
+          ? `“${source}” ${cat === "sentence" ? "cümlesinin" : "ifadesinin"} Almanca karşılığı hangisidir?`
+          : `“${source}” Almanca ${nounOrPhraseLabel} Türkçe anlamı nedir?`,
+        target,
+        shuffle(uniqueOpts),
+        {
+          direction: taskDir,
+          objective: reverse ? "production" : "meaning",
+          passage: semanticChoice.contextHint || w.topic || "",
+        },
+      );
+    }
+
+    if (other.length >= 2) {
 
       // 2. Interactive Vocabulary Matching (3 unambiguous pairs, direction-aware!)
       const matchGroup: Vocabulary[] = [w];
@@ -702,6 +764,169 @@ export function buildActivities(
           );
         }
       }
+    }
+
+    // 7B. AI-Assisted German Sentence Building ("satzbau" / "Cümle Kurma — Satzbau") across Modes A–E
+    const sbMode = chooseSatzbauModeForWord(w, candIdx, options.satzbauMode);
+    const sbSpec = buildSatzbauSpecForWord(w, other);
+    const sbMeta = SATZBAU_MODE_LABELS[sbMode];
+    if (sbMode === "arrange") {
+      let sbTiles = shuffle(sbSpec.tokens);
+      if (sbTiles.join(" ") === sbSpec.tokens.join(" ") && sbTiles.length > 1) {
+        sbTiles = [...sbTiles.slice(1), sbTiles[0]];
+      }
+      pushTask(
+        w,
+        "satzbau",
+        `Cümleyi kur: “${sbSpec.sentenceTr}”`,
+        sbSpec.sentenceDe,
+        [],
+        {
+          direction: "tr_de",
+          objective: "ordering",
+          satzbauMode: "arrange",
+          subPrompt: `${sbMeta} • Kelimelere dokunarak doğru Almanca cümleyi oluştur.`,
+          hint: `Hedef kelime: ${w.de} (${w.tr}) • ${sbSpec.grammarFocus}`,
+          passage: `${sbMeta} • Hedef: ${w.de}`,
+          alternatives: sbSpec.alternativesDe,
+          explanation: `${sbSpec.sentenceDe} — ${sbSpec.sentenceTr} · ${sbSpec.grammarExplanationTr}`,
+          wordBank: sbTiles,
+          targetWordDe: w.de,
+          targetWordTr: w.tr,
+          turkishPromptSentence: sbSpec.sentenceTr,
+          grammarExplanationTr: sbSpec.grammarExplanationTr,
+          grammarFocus: sbSpec.grammarFocus,
+          audioText: sbSpec.sentenceDe,
+          interaction: {
+            tiles: sbTiles,
+            audioText: sbSpec.sentenceDe,
+            audioLang: "de-DE",
+            hintTr: sbSpec.grammarFocus,
+          },
+        },
+      );
+    } else if (sbMode === "construct_bank") {
+      const bankTiles = shuffle([...sbSpec.tokens, ...sbSpec.distractorTokens]);
+      pushTask(
+        w,
+        "satzbau",
+        `Çeldiricili kelime havuzundan cümleyi kur: “${sbSpec.sentenceTr}”`,
+        sbSpec.sentenceDe,
+        [],
+        {
+          direction: "tr_de",
+          objective: "ordering",
+          satzbauMode: "construct_bank",
+          subPrompt: `${sbMeta} • Havuzdaki ${sbSpec.distractorTokens.length} fazladan çeldirici kelimeye dikkat et.`,
+          hint: `Hedef kelime: ${w.de} (${w.tr}) • ${sbSpec.grammarFocus}`,
+          passage: `${sbMeta} • Hedef: ${w.de}`,
+          alternatives: sbSpec.alternativesDe,
+          explanation: `${sbSpec.sentenceDe} — ${sbSpec.sentenceTr} · ${sbSpec.grammarExplanationTr}`,
+          wordBank: bankTiles,
+          distractorWords: sbSpec.distractorTokens,
+          targetWordDe: w.de,
+          targetWordTr: w.tr,
+          turkishPromptSentence: sbSpec.sentenceTr,
+          grammarExplanationTr: sbSpec.grammarExplanationTr,
+          grammarFocus: sbSpec.grammarFocus,
+          audioText: sbSpec.sentenceDe,
+          interaction: {
+            tiles: bankTiles,
+            audioText: sbSpec.sentenceDe,
+            audioLang: "de-DE",
+            hintTr: sbSpec.grammarFocus,
+          },
+        },
+      );
+    } else if (sbMode === "free_translation") {
+      pushTask(
+        w,
+        "satzbau",
+        `Serbest Almanca cümle kur: “${sbSpec.sentenceTr}”`,
+        sbSpec.sentenceDe,
+        [],
+        {
+          direction: "tr_de",
+          objective: "production",
+          satzbauMode: "free_translation",
+          subPrompt: `${sbMeta} • Kelime havuzu olmadan cümleyi Almancaya çevir.`,
+          hint: `İpucu: "${w.de}" (${w.tr}) kelimesini kullan.`,
+          passage: `${sbMeta} • Anahtar kelime: ${w.de} (${w.tr})`,
+          alternatives: sbSpec.alternativesDe,
+          explanation: `${sbSpec.sentenceDe} — ${sbSpec.sentenceTr} · ${sbSpec.grammarExplanationTr}`,
+          targetWordDe: w.de,
+          targetWordTr: w.tr,
+          turkishPromptSentence: sbSpec.sentenceTr,
+          grammarExplanationTr: sbSpec.grammarExplanationTr,
+          grammarFocus: sbSpec.grammarFocus,
+          audioText: sbSpec.sentenceDe,
+          interaction: {
+            audioText: sbSpec.sentenceDe,
+            audioLang: "de-DE",
+            hintTr: sbSpec.grammarFocus,
+          },
+        },
+      );
+    } else if (sbMode === "correct_sentence") {
+      pushTask(
+        w,
+        "satzbau",
+        `Hatalı cümleyi düzelt: “${sbSpec.flawedSentenceDe}”`,
+        sbSpec.sentenceDe,
+        [],
+        {
+          direction: "de_only",
+          objective: "production",
+          satzbauMode: "correct_sentence",
+          subPrompt: `${sbMeta} • Kelime sırası veya gramer hatasını düzelterek doğru Almanca cümleyi yaz.`,
+          hint: `Anlamı: "${sbSpec.sentenceTr}" • Odak: ${sbSpec.grammarFocus}`,
+          passage: `${sbMeta} • Anlamı: ${sbSpec.sentenceTr}`,
+          alternatives: sbSpec.alternativesDe,
+          explanation: `${sbSpec.sentenceDe} — ${sbSpec.grammarExplanationTr}`,
+          flawedSentenceDe: sbSpec.flawedSentenceDe,
+          targetWordDe: w.de,
+          targetWordTr: w.tr,
+          turkishPromptSentence: sbSpec.sentenceTr,
+          grammarExplanationTr: sbSpec.grammarExplanationTr,
+          grammarFocus: sbSpec.grammarFocus,
+          audioText: sbSpec.sentenceDe,
+          interaction: {
+            audioText: sbSpec.sentenceDe,
+            audioLang: "de-DE",
+            hintTr: sbSpec.grammarFocus,
+          },
+        },
+      );
+    } else {
+      // create_own
+      pushTask(
+        w,
+        "satzbau",
+        `“${w.de}” (${w.tr}) kelimesiyle özgün bir Almanca cümle kur`,
+        sbSpec.sentenceDe,
+        [],
+        {
+          direction: "tr_de",
+          objective: "production",
+          satzbauMode: "create_own",
+          subPrompt: `${sbMeta} • Bu kelimeyi kullanarak en az 3 kelimelik anlamlı bir Almanca cümle yaz.`,
+          hint: `Örnek model: "${sbSpec.sentenceDe}" (${sbSpec.sentenceTr})`,
+          passage: `${sbMeta} • Örnek anlam: ${sbSpec.sentenceTr}`,
+          alternatives: sbSpec.alternativesDe,
+          explanation: `Örnek cümle: ${sbSpec.sentenceDe} — ${sbSpec.sentenceTr}`,
+          targetWordDe: w.de,
+          targetWordTr: w.tr,
+          turkishPromptSentence: sbSpec.sentenceTr,
+          grammarExplanationTr: sbSpec.grammarExplanationTr,
+          grammarFocus: sbSpec.grammarFocus,
+          audioText: sbSpec.sentenceDe,
+          interaction: {
+            audioText: sbSpec.sentenceDe,
+            audioLang: "de-DE",
+            hintTr: sbSpec.grammarFocus,
+          },
+        },
+      );
     }
 
     // 8. Sentence Completion

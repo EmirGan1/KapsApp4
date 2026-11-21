@@ -134,7 +134,8 @@ export const ACHIEVEMENT_DEFS = [
 ] as const;
 
 export const activities = [
-  ["choice", "Çoktan Seçmeli Çeviri", "Doğru Almanca veya Türkçe anlamı seç.", "◎"],
+  ["choice", "Çoktan Seçmeli Çeviri", "Bağlama uygun Almanca veya Türkçe anlamı seç.", "◎"],
+  ["satzbau", "Cümle Kurma — Satzbau", "Kelime havuzu, çeviri, özgün cümle ve hata düzeltme ile Almanca cümle kur.", "❖"],
   ["matching", "Kelime Eşleştirme", "Almanca kelimeleri Türkçe anlamlarıyla eşle.", "⇄"],
   ["article", "Artikel Çalışması", "İsmin doğru artikelini seç: der, die veya das.", "◈"],
   ["conjugation", "Fiil Çekimi", "Seviyeye uygun fiil çekimini tamamla.", "⚡"],
@@ -150,6 +151,23 @@ export const activities = [
 export type ActivityType = (typeof activities)[number][0] | "mixed" | string;
 
 export type StudyDirection = "de_tr" | "tr_de" | "mixed";
+
+export type DistractorDifficulty = "adaptive" | "easy" | "normal" | "challenging";
+
+export type SatzbauMode =
+  | "arrange"
+  | "construct_bank"
+  | "free_translation"
+  | "create_own"
+  | "correct_sentence";
+
+export const SATZBAU_MODE_LABELS: Record<SatzbauMode, string> = {
+  arrange: "Mod A · Kelime Sıralama",
+  construct_bank: "Mod B · Kelime Havuzundan Cümle Kurma",
+  free_translation: "Mod C · Serbest Cümle Çevirisi",
+  create_own: "Mod D · Hedef Kelimeyle Özgün Cümle",
+  correct_sentence: "Mod E · Hatalı Cümleyi Düzeltme",
+};
 
 export function oppositeStudyDirection(dir: StudyDirection): StudyDirection {
   if (dir === "tr_de") return "de_tr";
@@ -181,6 +199,7 @@ export const activityLabel = (type: string): string => {
   const found = activities.find((a) => a[0] === type);
   if (found) return found[1];
   const legacy: Record<string, string> = {
+    satzbau: "Cümle Kurma — Satzbau",
     sentence_ordering: "Kelime Sıralama",
     sentence_gap: "Boşluk Doldurma",
     spelling: "Harf Atölyesi",
@@ -194,3 +213,4 @@ export const activityLabel = (type: string): string => {
   };
   return legacy[type] ?? type;
 };
+

@@ -5,6 +5,7 @@ import {
   masteryStatusFromStreak,
   type CefrLevel,
   type MasteryStatus,
+  type SatzbauMode,
   type StoredCefrLevel,
 } from "../../shared/germanActivities";
 import {
@@ -15,9 +16,15 @@ import {
   type CefrSource,
 } from "./cefr";
 import type { CurriculumEntry, PartOfSpeech } from "./curriculum";
+import {
+  classifyWordIntoHierarchy,
+  isCorruptedTopicLabel,
+  sanitizeLegacyTopic,
+} from "./curriculumHierarchy";
 import type { PronunciationGuide } from "./pronunciation";
 
 export const normalize = normalizeText;
+export { normalizeText };
 
 export const fingerprint = (value: string) =>
   createHash("sha256").update(value.normalize("NFC")).digest("hex");
@@ -30,6 +37,10 @@ export type Vocabulary = {
   alternatives?: string[];
   raw: string;
   topic: string;
+  categoryId?: string;
+  unitId?: string;
+  subtopic?: string;
+  semanticTags?: string[];
   level: StoredCefrLevel;
   cefrSource: CefrSource;
   article: string;
@@ -126,8 +137,28 @@ export function parseDocument(doc: any) {
 
       const match = line.match(/^(.{1,300}?)\s+(?:—|–|->|=|-)\s+(.{1,600})$/u);
       if (!match) {
-        if (line.length < 100 && !/[—=]/u.test(line)) {
-          topic = line;
+        // Attach `TR: ...` or `DE: ...` or `Örnek: ...` lines to the preceding vocabulary item instead of corrupting `topic`!
+        const trExampleMatch = line.match(/^(?:tr|türkçe|turkce)\s*[:\-]\s*(.+)$/iu);
+        if (trExampleMatch && entries.length > 0) {
+          const prev = entries[entries.length - 1];
+          const cleanedEx = trExampleMatch[1].replace(/^[„“"']+|[„“"']+$/gu, "").trim();
+          if (cleanedEx && !prev.exampleTr) {
+            prev.exampleTr = cleanedEx;
+          }
+          continue;
+        }
+        const deExampleMatch = line.match(/^(?:de|almanca|örnek|ornek|bsp|beispiel)\s*[:\-]\s*(.+)$/iu);
+        if (deExampleMatch && entries.length > 0) {
+          const prev = entries[entries.length - 1];
+          const cleanedEx = deExampleMatch[1].replace(/^[„“"']+|[„“"']+$/gu, "").trim();
+          if (cleanedEx && !prev.exampleDe) {
+            prev.exampleDe = cleanedEx;
+          }
+          continue;
+        }
+
+        if (line.length < 52 && !/[—=]/u.test(line) && !isCorruptedTopicLabel(line)) {
+          topic = sanitizeLegacyTopic(line);
         }
         warnings.push(raw.slice(0, 600));
         continue;
@@ -147,6 +178,19 @@ export function parseDocument(doc: any) {
         de,
         headingLevel,
       });
+      const article = de.match(/^(der|die|das)\s/u)?.[1] ?? "";
+      const grammar =
+        de
+          .match(/(?:Akk\.|Dat\.|Gen\.|sich|für|mit|auf|von|zu)/gu)
+          ?.join(" ") ?? "";
+      const hierarchy = classifyWordIntoHierarchy({
+        de,
+        tr,
+        level: classified.level,
+        topic: topic || "Genel",
+        article,
+        grammar,
+      });
 
       entries.push({
         id: fingerprint(normalize(de) + "\0" + normalize(tr)),
@@ -154,14 +198,15 @@ export function parseDocument(doc: any) {
         de,
         tr,
         raw,
-        topic: topic || "Genel",
+        topic: hierarchy.cleanTopic,
+        categoryId: hierarchy.categoryId,
+        subtopic: hierarchy.subtopicTr,
+        semanticTags: hierarchy.semanticTags,
+        pos: hierarchy.inferredPos,
         level: classified.level,
         cefrSource: classified.source,
-        article: de.match(/^(der|die|das)\s/u)?.[1] ?? "",
-        grammar:
-          de
-            .match(/(?:Akk\.|Dat\.|Gen\.|sich|für|mit|auf|von|zu)/gu)
-            ?.join(" ") ?? "",
+        article,
+        grammar,
       });
     }
   }
@@ -403,11 +448,24 @@ export type TaskObjective =
   | "conjugation"
   | "cloze"
   | "ordering"
+  | "satzbau"
   | "listening"
   | "matching"
   | "exam";
 
 export type Task = {
+  activity?: string;
+  satzbauMode?: SatzbauMode;
+  subPrompt?: string;
+  hint?: string;
+  expected?: string;
+  targetWordDe?: string;
+  targetWordTr?: string;
+  turkishPromptSentence?: string;
+  grammarExplanationTr?: string;
+  grammarFocus?: string;
+  audioText?: string;
+  pronunciation?: PronunciationGuide;
   interaction?: {
     tiles?: string[];
     left?: string[];
@@ -415,11 +473,19 @@ export type Task = {
     audioText?: string;
     audioLang?: string;
     hintTr?: string;
+    satzbauMode?: SatzbauMode;
+    flawedSentenceDe?: string;
+    errorHintTr?: string;
+    targetWordDe?: string;
+    targetWordTr?: string;
+    grammarFocusTr?: string;
     wordMeta?: {
       de: string;
       tr: string;
       article?: string;
       topic?: string;
+      categoryId?: string;
+      unitId?: string;
       grammar?: string;
       exampleDe?: string;
       exampleTr?: string;
@@ -432,6 +498,8 @@ export type Task = {
   part: number;
   level: string;
   topic?: string;
+  categoryId?: string;
+  unitId?: string;
   direction?: TaskDirection;
   objective?: TaskObjective;
   isMistakeReview?: boolean;
@@ -445,6 +513,10 @@ export type Task = {
   vocabularyIds: string[];
   evidence: string;
   fingerprint: string;
+  wordBank?: string[];
+  distractorWords?: string[];
+  flawedSentenceDe?: string;
+  difficulty?: string;
 };
 
 const BARE_OPTION_LABEL_RE = /^(?:\(?[A-E]\)[.:]?|[A-E][.)]?|[1-5][.)]?)$/iu;
@@ -537,6 +609,10 @@ export function validateTask(value: any, words: Vocabulary[]): Task | null {
       value.prompt,
       value.answer,
       value.interaction?.audioText ?? "",
+      value.interaction?.flawedSentenceDe ?? "",
+      value.interaction?.targetWordDe ?? "",
+      value.interaction?.targetWordTr ?? "",
+      ...(Array.isArray(value.interaction?.tiles) ? value.interaction.tiles : []),
       ...(Array.isArray(value.interaction?.left) ? value.interaction.left : []),
       ...(Array.isArray(value.interaction?.right) ? value.interaction.right : []),
     ].join(" "),
@@ -625,6 +701,29 @@ export function validateTask(value: any, words: Vocabulary[]): Task | null {
     }
   }
 
+  if (value.type === "satzbau") {
+    const mode = value.interaction?.satzbauMode;
+    if (mode === "arrange" || mode === "construct_bank") {
+      const tiles = value.interaction?.tiles;
+      if (!Array.isArray(tiles) || tiles.length < 3) return null;
+      const cleanToken = (s: string) =>
+        normalize(s).replace(/[.!?,;:…]+$/gu, "").trim();
+      const expectedTokens = value.answer
+        .trim()
+        .split(/\s+/u)
+        .map(cleanToken)
+        .filter(Boolean);
+      const tilePool = tiles.map((t: unknown) => cleanToken(String(t)));
+      // Every expected word must be constructible from the tile pool
+      const remaining = [...tilePool];
+      for (const tok of expectedTokens) {
+        const idx = remaining.indexOf(tok);
+        if (idx === -1) return null;
+        remaining.splice(idx, 1);
+      }
+    }
+  }
+
   if (value.type === "listening" && !value.interaction?.audioText?.trim()) {
     return null;
   }
@@ -642,6 +741,7 @@ export function validateTask(value: any, words: Vocabulary[]): Task | null {
   const allowedVocabTypes = [
     "multiple_choice",
     "choice",
+    "satzbau",
     "matching",
     "gap",
     "article",
