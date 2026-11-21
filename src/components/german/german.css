@@ -2577,3 +2577,23 @@
   color: var(--kg-blue-ink);
 }
 
+
+/* A native modal makes the whole app inert while the server prepares a session. */
+.kg.kg-preparation-dialog {
+  position: fixed; inset: 0; margin: auto; width: min(440px, calc(100vw - 32px));
+  height: fit-content; flex: none; min-height: 0; max-height: calc(100dvh - 40px); overflow-y: auto;
+  padding: 30px; border: 1px solid var(--kg-border); border-radius: 24px;
+  background: var(--kg-surface); color: var(--kg-ink); box-shadow: var(--kg-shadow-md);
+  display: flex; flex-direction: column; gap: 16px; text-align: center;
+}
+.kg-preparation-dialog::backdrop { background: rgb(7 6 18 / 78%); backdrop-filter: blur(5px); }
+.kg-preparation-spinner { align-self: center; color: var(--kg-purple); animation: kg-preparation-spin 1s linear infinite; }
+.kg-preparation-dialog h2 { font-size: 22px; }
+.kg-preparation-dialog p, .kg-preparation-dialog small { margin: 0; }
+.kg-preparation-dialog small { color: var(--kg-ink-muted); }
+.kg-preparation-track { width: 100%; height: 10px; border-radius: 10px; overflow: hidden; background: var(--kg-surface-soft); }
+.kg-preparation-track > div { height: 100%; background: var(--kg-purple); border-radius: inherit; transition: width 200ms ease; }
+.kg-preparation-timing { display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; font-size: 12px; }
+.kg-preparation-eta { font-size: 14px; font-weight: 700; }
+@keyframes kg-preparation-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .kg-preparation-spinner { animation: none; } .kg-preparation-track > div { transition: none; } }

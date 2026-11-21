@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { SessionPreparationProvider, useSessionPreparation } from './SessionPreparation';
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -60,6 +61,10 @@ const NAV_ITEMS: Array<{ id: GermanTab; label: string; icon: any }> = [
 ];
 
 export default function KapsGerman() {
+  return <SessionPreparationProvider><KapsGermanContent /></SessionPreparationProvider>;
+}
+function KapsGermanContent() {
+  const preparation = useSessionPreparation();
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
@@ -74,7 +79,7 @@ export default function KapsGerman() {
   const [dailyGoalXp, setDailyGoalXp] = useState<number>(50);
   const [showTurkishPronunciation, setShowTurkishPronunciation] = useState<boolean>(true);
   const [autoSessionReview, setAutoSessionReview] = useState<boolean>(false);
-  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const prefsLoaded = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [vocabLevelFilter, setVocabLevelFilter] = useState<string>("ALL");
@@ -82,7 +87,7 @@ export default function KapsGerman() {
   const refreshOverview = useCallback(async () => {
     const data = await fetchOverview(true);
     setOverview(data);
-    if (!prefsLoaded && data.stats) {
+    if (!prefsLoaded.current && data.stats) {
       if (data.stats.selectedLevels?.length) {
         setSelectedLevels(data.stats.selectedLevels);
       }
@@ -101,9 +106,9 @@ export default function KapsGerman() {
       if (typeof data.stats.autoSessionReview === "boolean") {
         setAutoSessionReview(data.stats.autoSessionReview);
       }
-      setPrefsLoaded(true);
+      prefsLoaded.current = true;
     }
-  }, [prefsLoaded]);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -162,6 +167,7 @@ export default function KapsGerman() {
     module?: string;
     mode?: "practice" | "exam";
     activity?: string;
+    direction?: StudyDirection;
     levels?: CefrLevel[];
     topic?: string;
     categoryId?: string;
@@ -171,15 +177,15 @@ export default function KapsGerman() {
     wordIds?: string[];
     reviewMode?: boolean;
   }) => {
-    if (busy) return;
+    if (busy || preparation.active) return;
     setBusy(true);
     setError("");
     try {
-      const created = await startStudySession({
+      const created = await preparation.run(progress => startStudySession({
         module: opts.module ?? "vocabulary",
         mode: opts.mode ?? "practice",
         activity: opts.activity ?? "mixed",
-        direction,
+        direction: opts.direction ?? direction,
         levels: opts.levels ?? selectedLevels,
         topic: opts.topic,
         categoryId: opts.categoryId,
@@ -188,7 +194,8 @@ export default function KapsGerman() {
         satzbauMode: opts.satzbauMode === "mixed" ? undefined : opts.satzbauMode,
         wordIds: opts.wordIds,
         reviewMode: opts.reviewMode,
-      });
+      }, progress));
+      if (!created) return;
       navigate(`/dersler/kaps-german?tab=${activeTab}&session=${encodeURIComponent(created.id)}`);
     } catch (e: any) {
       setError(e?.message || "Oturum başlatılamadı.");
@@ -202,15 +209,16 @@ export default function KapsGerman() {
     direction: StudyDirection;
     includeMasteredReview: boolean;
   }) => {
-    if (busy) return;
+    if (busy || preparation.active) return;
     setBusy(true);
     setError("");
     try {
-      const created = await createPersonalizedReinforcement({
+      const created = await preparation.run(progress => createPersonalizedReinforcement({
         levels: opts.levels,
         direction: opts.direction,
         includeMasteredReview: opts.includeMasteredReview,
-      });
+      }, progress), "ai");
+      if (!created) return;
       navigate(
         `/dersler/kaps-german?tab=${activeTab}&session=${encodeURIComponent(created.sessionId)}`,
       );
@@ -260,6 +268,7 @@ export default function KapsGerman() {
             void handleStartSession({
               module: mod,
               activity: filters?.activity ?? "mixed",
+              direction: filters?.direction,
               levels: filters?.levels?.length ? filters.levels : selectedLevels,
               topic: filters?.topic,
               categoryId: filters?.categoryId,

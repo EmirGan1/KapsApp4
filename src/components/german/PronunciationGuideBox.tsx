@@ -124,6 +124,7 @@ export function GermanLevelAudioPackCard({
     totalWords: number;
     estimatedBytes: number;
   } | null>(null);
+  const [downloadError, setDownloadError] = useState("");
   const [cachedEntries, setCachedEntries] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<{
@@ -136,7 +137,8 @@ export function GermanLevelAudioPackCard({
 
   useEffect(() => {
     let mounted = true;
-    void Promise.all([fetchLevelAudioPack(level), getBrowserCachedAudioStats()])
+    setManifestInfo(null); setReadyOffline(false); setDownloadError(''); setProgress(null);
+    void fetchLevelAudioPack(level).then(async m => [m, await getBrowserCachedAudioStats(m)] as const)
       .then(([m, st]) => {
         if (!mounted) return;
         setManifestInfo({
@@ -146,7 +148,7 @@ export function GermanLevelAudioPackCard({
         setCachedEntries(st.entryCount);
         setReadyOffline(m.totalWords > 0 && st.entryCount >= m.totalWords);
       })
-      .catch(() => {});
+      .catch(() => { if (mounted) setDownloadError("Ses paketi bilgisi alınamadı. Birazdan yeniden deneyebilirsin."); });
     return () => {
       mounted = false;
       abortRef.current?.abort();
@@ -167,6 +169,7 @@ export function GermanLevelAudioPackCard({
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setDownloading(true);
+    setDownloadError("");
     setProgress({ completed: 0, total: manifestInfo?.totalWords ?? 1, bytesDownloaded: 0 });
     try {
       await downloadLevelAudioPackToBrowserCache(
@@ -174,11 +177,15 @@ export function GermanLevelAudioPackCard({
         (p) => setProgress({ ...p }),
         ctrl.signal,
       );
-      const st = await getBrowserCachedAudioStats();
+      const manifest = await fetchLevelAudioPack(level);
+      const st = await getBrowserCachedAudioStats(manifest);
       setCachedEntries(st.entryCount);
-      if (!ctrl.signal.aborted) {
-        setReadyOffline(true);
-      }
+      const ready = manifest.totalWords > 0 && st.entryCount >= manifest.totalWords;
+      setReadyOffline(ready);
+      if (!ctrl.signal.aborted && !ready) setDownloadError('Paketin tamamı kaydedilemedi. Bağlantını ve cihazındaki boş alanı kontrol edip yeniden dene.');
+    } catch (error) {
+      setReadyOffline(false);
+      if (!ctrl.signal.aborted) setDownloadError(error instanceof Error ? error.message : 'Ses paketi indirilemedi.');
     } finally {
       setDownloading(false);
     }
@@ -209,10 +216,11 @@ export function GermanLevelAudioPackCard({
         <span className="kg-audio-pack-sub">
           {readyOffline
             ? "Çevrimdışı kullanıma hazır • Cihaz önbelleğine kaydedildi"
-            : "Cihazında Almanca ses paketi olmasa bile sunucu üzerinden doğal Almanca telaffuz çalar."}
+            : "Almanca sesleri sunucudan dinleyebilir, bu seviyenin paketini çevrimdışı kullanım için kaydedebilirsin."}
         </span>
       </div>
 
+      {downloadError && <p className="kg-voice-notice" role="status">{downloadError}</p>}
       <div className="kg-audio-pack-actions">
         {readyOffline ? (
           <span className="kg-pill kg-pill-emerald">

@@ -1,3 +1,4 @@
+import { initGermanSchema } from '../src/server/german/store';
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createClient } from "@libsql/client";
@@ -253,19 +254,7 @@ test("4. Satzbau (German Sentence Building) supports all 5 modes across A1-C1 an
 
 test("5. Server-hosted German audio generator & disk/SQLite cache produces valid audio for normal and slow rates", async () => {
   const db = createClient({ url: "file::memory:" });
-  await db.execute(`
-    CREATE TABLE german_audio_cache (
-      cache_key TEXT PRIMARY KEY,
-      normalized_text TEXT NOT NULL,
-      rate TEXT NOT NULL,
-      file_name TEXT NOT NULL,
-      mime_type TEXT NOT NULL,
-      byte_size INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      last_accessed_at TEXT NOT NULL,
-      hit_count INTEGER NOT NULL DEFAULT 1
-    )
-  `);
+  await initGermanSchema(db);
 
   // Verify pure-Node deterministic German WAV synthesizer
   const wavBuf = synthesizeDeterministicGermanWav("die Tiefkühltruhe", "normal");

@@ -18,6 +18,7 @@ export interface SatzbauItemSpec {
 }
 
 export interface SatzbauReviewResult {
+  needsReview?: boolean;
   isValid: boolean;
   score: number;
   feedbackTr: string;
@@ -617,67 +618,14 @@ export function evaluateSatzbauDeterministic(
 
   const words = trimmed.split(/\s+/).filter(Boolean);
 
-  if (mode === "create_own") {
-    const hasMinWords = words.length >= 3;
-    const notJustTarget = normalizeText(trimmed) !== normalizeText(targetRaw) && normalizeText(trimmed) !== normalizeText(bare);
-    const hasCommonGermanVerbOrAux =
-      /\b(bin|bist|ist|sind|seid|habe|hast|hat|haben|habt|werde|wird|werden|kann|muss|möchte|will|soll|darf|gehe|geht|kaufe|kauft|sehe|sieht|finde|findet|brauche|braucht|mache|macht|arbeite|arbeitet|lerne|lernt|spreche|spricht|wohne|wohnt|esse|isst|trinke|trinkt|komme|kommt|fahre|fährt|nehme|nimmt|gebe|gibt)\b/i.test(
-        trimmed,
-      ) || words.some((w) => /(e|st|t|en)$/i.test(w.replace(/[.!?]/g, "")) && w.length >= 3);
-
-    if (targetUsed && hasMinWords && notJustTarget && hasCommonGermanVerbOrAux) {
-      return {
-        isValid: true,
-        score: 92,
-        feedbackTr: `"${task.targetWordDe}" kelimesini anlamlı bir cümle içinde başarıyla kullandın.`,
-        correctedSentenceDe: trimmed.endsWith(".") || trimmed.endsWith("?") || trimmed.endsWith("!") ? trimmed : `${trimmed}.`,
-        alternativeSentenceDe: expectedDe,
-        grammarRuleTr:
-          explanationTr ||
-          "Özgün cümlede hedef kelime doğru bağlamda kullanıldı ve temel fiil dizilimi korundu.",
-        targetWordUsed: true,
-        wordOrderValid: true,
-        source: "deterministic",
-      };
-    }
-
+  if (mode === "create_own" || mode === "free_translation") {
     return {
-      isValid: false,
-      score: targetUsed ? 45 : 20,
-      feedbackTr: !targetUsed
-        ? `Cümlende hedef kelimeyi ("${task.targetWordDe}") kullanmalısın.`
-        : "Cümlen çok kısa veya çekimli bir fiil içermiyor. En az 3 kelimelik tam bir Almanca cümle kur.",
-      correctedSentenceDe: expectedDe,
-      alternativeSentenceDe: task.alternatives?.[0] ?? expectedDe,
-      grammarRuleTr:
-        explanationTr ||
-        `Örnek doğru kullanım: "${expectedDe}" (${task.turkishPromptSentence || ""})`,
-      targetWordUsed: targetUsed,
-      wordOrderValid: false,
-      source: "deterministic",
+      needsReview: true, isValid: false, score: 0,
+      feedbackTr: "Bu serbest cümle örnek çözümlerden farklı. Kelime benzerliği tek başına dilbilgisi ve anlam doğruluğunu göstermez; kesin değerlendirme için AI incelemesi gerekir.",
+      correctedSentenceDe: expectedDe, alternativeSentenceDe: task.alternatives?.[0] ?? expectedDe,
+      grammarRuleTr: explanationTr || "Aşağıdaki cümle tek geçerli yanıt değil, bir örnektir.",
+      targetWordUsed: targetUsed, wordOrderValid: false, source: "deterministic",
     };
-  }
-
-  if (mode === "free_translation") {
-    // Allow minor synonym/word-order variation if target word + key tokens match (>= 75% token overlap)
-    const expTokens = tokenizeGermanSentence(normExpected);
-    const userTokens = tokenizeGermanSentence(normUser);
-    const matchedCount = expTokens.filter((t) => userTokens.includes(t)).length;
-    const ratio = expTokens.length > 0 ? matchedCount / expTokens.length : 0;
-
-    if (targetUsed && ratio >= 0.75 && Math.abs(userTokens.length - expTokens.length) <= 2) {
-      return {
-        isValid: true,
-        score: 88,
-        feedbackTr: "Çevirin anlam ve hedef kelime kullanımı açısından doğru!",
-        correctedSentenceDe: expectedDe,
-        alternativeSentenceDe: task.alternatives?.[0] ?? expectedDe,
-        grammarRuleTr: explanationTr || "Örnek standart dizilim: " + expectedDe,
-        targetWordUsed: true,
-        wordOrderValid: true,
-        source: "deterministic",
-      };
-    }
   }
 
   return {
@@ -740,7 +688,7 @@ export async function reviewSatzbauWithAi(
   };
 
   const det = evaluateSatzbauDeterministic(syntheticTask, input.userSentence);
-  const cacheKey = `satzbau:v1:${input.mode}:${normalizeText(input.targetWordDe)}:${normalizeGermanSentenceForComparison(input.userSentence)}`;
+  const cacheKey = `satzbau:v2:${input.mode}:${normalizeText(input.targetWordDe)}:${normalizeGermanSentenceForComparison(input.userSentence)}`;
 
   try {
     const cached = await db.execute({

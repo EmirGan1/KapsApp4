@@ -448,6 +448,7 @@ export async function generatePersonalizedReinforcement(
     includeMasteredReview?: boolean;
     parentSessionId?: string;
     limit?: number;
+    onProgress?: (stage: string, percent: number) => Promise<void>;
   },
 ): Promise<{
   sessionId: string;
@@ -461,6 +462,7 @@ export async function generatePersonalizedReinforcement(
   const targetDir: StudyDirection = input.direction ?? "mixed";
   const limit = Math.min(12, Math.max(6, input.limit ?? 10));
 
+  await input.onProgress?.("loading_vocabulary", 25);
   const [{ uniqueWords }, disabledSet, attRows] = await Promise.all([
     loadDeduplicatedWordsWithMastery(db, input.userId, false),
     getDisabledFingerprints(db),
@@ -529,6 +531,7 @@ export async function generatePersonalizedReinforcement(
       .map((e) => e[0])
       .slice(0, 3);
 
+    await input.onProgress?.("generating_ai", 45);
     const aiRes = await runGermanAI<{ tasks: any[] }>(
       `Create up to 4 personalized German reinforcement tasks strictly within CEFR ${targetLevels.join(", ")} using ONLY the provided targetWords (exact IDs required). Target direction: ${directionLabelTr(targetDir)}. Prioritize weak exercise types: ${weakTypes.join(", ") || "choice, gap, article, translation"}. Return ONLY JSON: {"tasks":[{"module":"vocabulary","type":"choice"|"gap"|"article"|"translation"|"sentence_translation","part":1,"level":"${targetLevels[0]}","direction":"de_tr"|"tr_de"|"de_only","prompt":string,"passage":string,"options":string[],"answer":string,"alternatives":string[],"explanation":string,"vocabularyIds":[string],"evidence":""}]}. NEVER return bare A/B/1 labels as answer or options. For multiple-choice, options must be unique and contain the exact answer string.`,
       {
@@ -563,6 +566,7 @@ export async function generatePersonalizedReinforcement(
       },
     );
 
+    await input.onProgress?.("validating_questions", 70);
     const seenPrompts = new Set<string>();
     const targetWordMap = new Map(topTargetWords.map((w) => [w.id, w]));
 
@@ -673,6 +677,7 @@ export async function generatePersonalizedReinforcement(
     parentSessionId: input.parentSessionId ?? undefined,
   };
 
+  await input.onProgress?.("saving_session", 90);
   await db.execute({
     sql: `INSERT INTO german_sessions(
             id, user_id, module, mode, tasks, started_at, deadline, filters, parent_session_id, reinforcement_direction

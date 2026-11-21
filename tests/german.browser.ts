@@ -53,6 +53,8 @@ const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
 });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+page.on("pageerror", error => console.error("PAGE ERROR:", error.message));
+page.on("response", response => { if (response.status() >= 400) console.error("HTTP ERROR:", response.status(), response.url()); });
 
 try {
   await page.goto(base + "/dersler/kaps-german");
@@ -63,6 +65,31 @@ try {
     ),
     "Home learn view must fit mobile viewport without horizontal overflow",
   );
+
+  // Consume the real server's array-shaped hierarchy and launch a scoped unit.
+  await page.locator('.kg-category-card-main').first().waitFor();
+  assert.ok(await page.locator('.kg-category-card').count() > 0);
+  await page.locator('.kg-category-card-main').first().click();
+  await page.locator('.kg-unit-card').first().waitFor();
+  let releasePreparation!: () => void;
+  const preparationGate = new Promise<void>(resolve => { releasePreparation = resolve; });
+  await page.route('**/api/kaps-german/sessions', async route => { await preparationGate; await route.continue(); });
+  await page.locator('.kg-unit-card').first().getByRole('button', { name: /^(Üniteyi Çalış|Devam Et)$/ }).click();
+  const preparationDialog = page.getByRole('dialog', { name: 'Testin oluşturuluyor' });
+  await preparationDialog.waitFor();
+  await preparationDialog.getByRole('progressbar', { name: 'Test hazırlama aşamaları' }).waitFor();
+  assert.match(await preparationDialog.innerText(), /Tahmini kalan süre/);
+  assert.equal(await preparationDialog.evaluate((dialog: HTMLDialogElement) => dialog.matches(':modal')), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await preparationDialog.isVisible(), true);
+  assert.ok((await preparationDialog.boundingBox())!.height < 500, 'Preparation card must fit its content rather than stretch across the screen');
+  await page.screenshot({ path: '/workspace/scratch/eb4732f1954e/german-preparation-mobile.png' });
+  releasePreparation();
+  await page.locator('.kg-task-card').waitFor();
+  assert.equal(await preparationDialog.count(), 0);
+  await page.unroute('**/api/kaps-german/sessions');
+  console.log('PASS real categories, nested units, scoped start and blocking progress/ETA dialog');
+  await page.goto(base + '/dersler/kaps-german');
 
   // Navigate to Progress tab and verify 5 independent CEFR cards (A1-C1)
   await page.getByRole("button", { name: "İlerleme", exact: true }).click();
@@ -100,6 +127,11 @@ try {
     const task = tasks[0];
     assert.equal(task.level, "A1", `Expected strict A1 level for ${type}`);
     assert.equal(task.type, type, `Expected task type ${type}`);
+
+    if (type === 'article' || type === 'gap' || type === 'conjugation' || type === 'ordering' || type === 'satzbau') {
+      assert.equal(await page.locator('.kg-task-card .kg-pron-box').count(), 0, `${type} must not reveal its pronunciation/answer`);
+      assert.equal(await page.locator('.kg-task-meta .kg-speak-btns').count(), 0);
+    }
 
     // Ensure session NEVER jumps to results before answering
     assert.equal(
@@ -286,7 +318,56 @@ try {
     ),
     "Desktop profile & admin views must have zero horizontal overflow",
   );
+  // Also exercise the actual desktop curriculum screen and modal, not just its CSS.
+  await page.goto(base + '/dersler/kaps-german');
+  await page.locator('.kg-category-card-main').first().click();
+  await page.locator('.kg-unit-card').first().waitFor();
+  let releaseDesktop!: () => void;
+  const desktopGate = new Promise<void>(resolve => { releaseDesktop = resolve; });
+  await page.route('**/api/kaps-german/sessions', async route => { await desktopGate; await route.continue(); });
+  await page.locator('.kg-unit-card').first().getByRole('button', { name: /^(Üniteyi Çalış|Devam Et)$/ }).click();
+  await preparationDialog.waitFor();
+  assert.ok((await preparationDialog.boundingBox())!.height < 500);
+  assert.match(await preparationDialog.innerText(), /Tahmini kalan süre/);
+  await page.screenshot({ path: '/workspace/scratch/eb4732f1954e/german-preparation-desktop.png' });
+  releaseDesktop();
+  await page.locator('.kg-task-card').waitFor();
+  await page.unroute('**/api/kaps-german/sessions');
+  console.log('PASS desktop units and scoped test creation with modal/ETA');
+
+  // Offline readiness is scoped to the selected level, and failed downloads do not count as cached.
+  const qaManifest = { level: 'A2', totalWords: 1, cachedCount: 0, estimatedBytes: 200, items: [{ wordId: 'qa-a2', de: 'qa', tr: 'test', normalUrl: '/api/kaps-german/audio?text=qa-missing-test&rate=normal', slowUrl: '', cachedNormal: false, cachedSlow: false, byteSizeNormal: 200 }] };
+  await page.route('**/api/kaps-german/audio/pack?level=A2', route => route.fulfill({ json: qaManifest }));
+  await page.route('**/api/kaps-german/audio?text=qa-missing-test*', route => route.abort('failed'));
+  const offlineResult = await page.evaluate(async ({ modulePath, manifest }) => {
+    const api = await import(modulePath);
+    await api.clearBrowserCachedGermanAudio();
+    const cache = await caches.open(api.GERMAN_AUDIO_CACHE_NAME);
+    await cache.put('/api/kaps-german/audio?text=qa-a1-only&rate=normal', new Response(new Uint8Array(256), { headers: { 'Content-Type': 'audio/mpeg' } }));
+    const before = await api.getBrowserCachedAudioStats(manifest);
+    const download = await api.downloadLevelAudioPackToBrowserCache('A2');
+    const after = await api.getBrowserCachedAudioStats(manifest);
+    return { before, after, download };
+  }, { modulePath: '/src/components/german/api.ts', manifest: qaManifest });
+  assert.equal(offlineResult.before.entryCount, 0);
+  assert.equal(offlineResult.after.entryCount, 0);
+  assert.equal(offlineResult.download.cachedTotal, 0);
+  await page.unroute('**/api/kaps-german/audio/pack?level=A2');
+  await page.unroute('**/api/kaps-german/audio?text=qa-missing-test*');
+  console.log('PASS offline package status does not count failed downloads or another level');
+
+  // A failed creation must release the modal and restore the current page.
+  await page.goto(base + '/dersler/kaps-german?tab=practice');
+  await page.route('**/api/kaps-german/sessions', route => route.abort('failed'));
+  await page.getByRole('button', { name: /Çoktan Seçmeli/ }).click();
+  await page.getByRole('alert').filter({ hasText: /Bağlantı kurulamadı/ }).waitFor();
+  assert.equal(await page.getByRole('dialog', { name: 'Testin oluşturuluyor' }).count(), 0);
+  await page.unroute('**/api/kaps-german/sessions');
+  console.log('PASS failed preparation unlocks the page without losing context');
   console.log("PASS desktop layout and full Kaps German AI & Pronunciation browser suite");
+} catch (error) {
+  console.error((await page.locator("body").innerText()).slice(0, 4000));
+  throw error;
 } finally {
   await browser.close();
   await vite.close();

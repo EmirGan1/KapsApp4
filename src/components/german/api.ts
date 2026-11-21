@@ -1,3 +1,5 @@
+import type { PreparationProgress } from '../../shared/germanPreparation';
+import { normalizeOverview } from './overview';
 import { getApiUrl, getAuthHeaders } from "../../utils/api";
 import type {
   CefrLevel,
@@ -24,7 +26,7 @@ import type {
 export async function germanRequest<T = any>(
   path: string,
   data?: unknown,
-  options?: { signal?: AbortSignal; timeoutMs?: number },
+  options?: { signal?: AbortSignal; timeoutMs?: number; headers?: Record<string, string> },
 ): Promise<T> {
   let response: Response;
   const timeoutSignal = AbortSignal.timeout(options?.timeoutMs ?? 45000);
@@ -32,12 +34,12 @@ export async function germanRequest<T = any>(
     ? AbortSignal.any([options.signal, timeoutSignal])
     : timeoutSignal;
 
+  const requestHeaders = getAuthHeaders(data === undefined ? undefined : { "Content-Type": "application/json" });
+  for (const [key, value] of Object.entries(options?.headers || {})) requestHeaders.set(key, value);
   try {
     response = await fetch(getApiUrl("/api/kaps-german" + path), {
       method: data === undefined ? "GET" : "POST",
-      headers: getAuthHeaders(
-        data === undefined ? undefined : { "Content-Type": "application/json" },
-      ),
+      headers: requestHeaders,
       body: data === undefined ? undefined : JSON.stringify(data),
       cache: "no-store",
       keepalive: data !== undefined,
@@ -47,6 +49,7 @@ export async function germanRequest<T = any>(
     if (err?.name === "AbortError") {
       throw err;
     }
+    if (err?.name === "TimeoutError") throw new Error("Hazırlık beklenenden uzun sürdü. Yeniden başlamadan önce Profil bölümündeki oturumlarını kontrol et.");
     throw new Error("Bağlantı kurulamadı. Taslağın güvende, birazdan tekrar dene.");
   }
 
@@ -67,7 +70,7 @@ export function fetchAccess(): Promise<{ admin: boolean }> {
 }
 
 export function fetchOverview(compact = true): Promise<OverviewResponse> {
-  return germanRequest(`/overview${compact ? "?compact=1" : ""}`);
+  return germanRequest<OverviewResponse>(`/overview${compact ? "?compact=1" : ""}`).then(normalizeOverview);
 }
 
 export function fetchVocabulary(params: {
@@ -105,6 +108,32 @@ export function saveStudyPreferences(prefs: {
   return germanRequest("/preferences", prefs);
 }
 
+export type OnPreparationProgress = (progress: PreparationProgress) => void;
+
+async function preparedRequest<T>(path: string, payload: unknown, onProgress?: OnPreparationProgress, timeoutMs = 45000): Promise<T> {
+  if (!onProgress) return germanRequest<T>(path, payload, { timeoutMs });
+  const id = crypto.randomUUID();
+  let active = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const pollController = new AbortController();
+  onProgress({ stage: 'accepted', percent: 0, status: 'working', estimateMs: path === '/ai/reinforcement' ? 40000 : 6000, elapsedMs: 0 });
+  const poll = async () => {
+    try {
+      const progress = await germanRequest<PreparationProgress>(`/preparations/${id}`, undefined, { signal: pollController.signal, timeoutMs: 5000 });
+      if (active) onProgress(progress);
+    } catch { /* A late or failed status poll must never interrupt session creation. */ }
+    if (active) timer = setTimeout(poll, 1200);
+  };
+  timer = setTimeout(poll, 150);
+  try {
+    return await germanRequest<T>(path, payload, { timeoutMs, headers: { 'X-German-Preparation-Id': id } });
+  } finally {
+    active = false;
+    clearTimeout(timer);
+    pollController.abort();
+  }
+}
+
 export function startStudySession(payload: {
   module?: string;
   mode?: "practice" | "exam";
@@ -118,8 +147,8 @@ export function startStudySession(payload: {
   satzbauMode?: SatzbauMode;
   wordIds?: string[];
   reviewMode?: boolean;
-}): Promise<{ id: string }> {
-  return germanRequest("/sessions", payload);
+}, onProgress?: OnPreparationProgress): Promise<{ id: string }> {
+  return preparedRequest("/sessions", payload, onProgress);
 }
 
 export function fetchSession(sessionId: string): Promise<ActiveSession> {
@@ -162,13 +191,13 @@ export function retrySessionGrading(sessionId: string): Promise<{ ok: boolean }>
   return germanRequest(`/sessions/${encodeURIComponent(sessionId)}/retry`, {});
 }
 
-export function startReinforcementSession(sessionId: string): Promise<{
+export function startReinforcementSession(sessionId: string, onProgress?: OnPreparationProgress): Promise<{
   id: string;
   existing?: boolean;
   alreadyCompleted?: boolean;
   reinforcementDirection: StudyDirection;
 }> {
-  return germanRequest(`/sessions/${encodeURIComponent(sessionId)}/reinforce`, {});
+  return preparedRequest(`/sessions/${encodeURIComponent(sessionId)}/reinforce`, {}, onProgress);
 }
 
 export function resetGermanProgress(): Promise<{ ok: boolean }> {
@@ -224,14 +253,14 @@ export function createPersonalizedReinforcement(payload: {
   direction?: StudyDirection;
   includeMasteredReview?: boolean;
   parentSessionId?: string;
-}): Promise<{
+}, onProgress?: OnPreparationProgress): Promise<{
   sessionId: string;
   taskCount: number;
   aiGeneratedCount: number;
   fallbackUsed: boolean;
   focusSummaryTr: string;
 }> {
-  return germanRequest("/ai/reinforcement", payload, { timeoutMs: 50000 });
+  return preparedRequest("/ai/reinforcement", payload, onProgress, 90000);
 }
 
 export function reviewSchreiben(payload: {
@@ -611,6 +640,7 @@ export async function downloadLevelAudioPackToBrowserCache(
   const cache = canUseCache ? await window.caches.open(GERMAN_AUDIO_CACHE_NAME) : null;
 
   let completed = 0;
+  let cachedTotal = 0;
   let bytesDownloaded = 0;
   const total = manifest.items.length;
 
@@ -620,10 +650,11 @@ export async function downloadLevelAudioPackToBrowserCache(
     try {
       if (cache) {
         const existing = await cache.match(fullUrl);
-        if (existing && existing.ok) {
+        if (existing && existing.ok && Number(existing.headers.get("Content-Length") || 129) > 128) {
           const b = await existing.blob();
           bytesDownloaded += b.size;
           completed++;
+          cachedTotal++;
           onProgress?.({ completed, total, bytesDownloaded });
           continue;
         }
@@ -635,6 +666,7 @@ export async function downloadLevelAudioPackToBrowserCache(
         bytesDownloaded += blob.size;
         if (cache && blob.size > 128) {
           await cache.put(fullUrl, clone);
+          cachedTotal++;
         }
       }
     } catch {}
@@ -642,17 +674,19 @@ export async function downloadLevelAudioPackToBrowserCache(
     onProgress?.({ completed, total, bytesDownloaded });
   }
 
-  return { cachedTotal: completed, bytesDownloaded };
+  return { cachedTotal, bytesDownloaded };
 }
 
-export async function getBrowserCachedAudioStats(): Promise<{ entryCount: number }> {
+export async function getBrowserCachedAudioStats(manifest?: LevelAudioPackManifest): Promise<{ entryCount: number }> {
   if (typeof window === "undefined" || !("caches" in window)) {
     return { entryCount: 0 };
   }
   try {
     const cache = await window.caches.open(GERMAN_AUDIO_CACHE_NAME);
     const keys = await cache.keys();
-    return { entryCount: keys.length };
+    if (!manifest) return { entryCount: keys.length };
+    const urls = new Set(keys.map(key => key.url));
+    return { entryCount: manifest.items.filter(item => urls.has(new URL(getApiUrl(item.normalUrl), window.location.href).href)).length };
   } catch {
     return { entryCount: 0 };
   }

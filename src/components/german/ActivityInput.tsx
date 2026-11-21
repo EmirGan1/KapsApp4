@@ -66,6 +66,9 @@ export default function ActivityInput({
     onChange(next.map((i) => tiles[i]).join(isSpelling ? "" : " "));
   };
 
+  const answerReviewed = result && !result.pending && !result.skipped && result.score !== null;
+  const modelAnswers = [task.answer, task.expected, task.interaction?.audioText, task.audioText].filter((s): s is string => Boolean(s && s.length > 3));
+  const hintRevealsModel = Boolean(task.hint && (/örnek model:/iu.test(task.hint) || modelAnswers.some(answer => task.hint!.includes(answer))));
   const satzbauContextBanner = isSatzbau ? (
     <div className="kg-satzbau-context-box">
       {task.subPrompt && <div className="kg-satzbau-mode-tag">{task.subPrompt}</div>}
@@ -90,7 +93,7 @@ export default function ActivityInput({
           <code lang="de">{task.flawedSentenceDe}</code>
         </div>
       )}
-      {task.hint && <p className="kg-satzbau-hint">{task.hint}</p>}
+      {task.hint && (!hintRevealsModel || answerReviewed) && <p className="kg-satzbau-hint">{task.hint}</p>}
     </div>
   ) : null;
 

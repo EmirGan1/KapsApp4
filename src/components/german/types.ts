@@ -253,6 +253,7 @@ export interface VocabularyCardDetail {
 }
 
 export interface SatzbauReviewResult {
+  needsReview?: boolean;
   isValid: boolean;
   score: number;
   feedbackTr: string;

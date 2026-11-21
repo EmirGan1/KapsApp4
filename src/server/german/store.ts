@@ -1,3 +1,4 @@
+import { initPreparationSchema } from './preparation';
 import type { Client, Transaction } from "@libsql/client";
 import {
   ACHIEVEMENT_DEFS,
@@ -70,6 +71,7 @@ async function safeAlter(db: Client, sql: string) {
 }
 
 export async function initGermanSchema(db: Client) {
+  await initPreparationSchema(db);
   await db.batch(
     [
       "CREATE TABLE IF NOT EXISTS german_permissions(user_id INTEGER PRIMARY KEY,enabled INTEGER NOT NULL)",

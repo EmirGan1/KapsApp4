@@ -1,3 +1,5 @@
+import { gradeOpenSentence, needsSentenceReview } from './sentenceGrading';
+import { preparationStep, registerPreparationProgress } from './preparation';
 import express from "express";
 import type { Express, Request, RequestHandler } from "express";
 import type { Client } from "@libsql/client";
@@ -179,6 +181,7 @@ export function registerGerman(
   );
 
   router.use(express.json({ limit: "128kb", inflate: false }));
+  registerPreparationProgress(router, db);
 
   const wrap =
     (
@@ -891,6 +894,7 @@ export function registerGerman(
         }
       }
 
+      await preparationStep(db, res, "loading_vocabulary", 25);
       const { uniqueWords } = await loadDeduplicatedWordsWithMastery(
         db,
         userId,
@@ -983,6 +987,7 @@ export function registerGerman(
         const masteryStreakByWordId = new Map<string, number>(
           studyPool.map((w) => [w.id, w.mastery.consecutiveCorrect]),
         );
+        await preparationStep(db, res, "building_questions", 45);
         const generatedGames = buildActivities(
           studyPool,
           activity,
@@ -1025,7 +1030,7 @@ export function registerGerman(
         tasks = tasks.filter(
           (t) =>
             normalizedLevels.includes(t.level as CefrLevel) &&
-            t.vocabularyIds.every((id) => levelFilteredWords.some((w) => w.id === id)),
+            t.vocabularyIds.every((id) => allowedWordIds.has(id)),
         );
       } else {
         // Exam modules (Lesen, Schreiben, Sprechen)
@@ -1044,6 +1049,7 @@ export function registerGerman(
           );
       }
 
+      await preparationStep(db, res, "validating_questions", 70);
       const [disabledSet, correctionRows] = await Promise.all([
         getDisabledFingerprints(db),
         db.execute("SELECT task_fingerprint, corrected_task_json FROM german_question_corrections"),
@@ -1055,6 +1061,11 @@ export function registerGerman(
         .filter((t) => !disabledSet.has(t.fingerprint))
         .map((t) => correctionsMap.get(t.fingerprint) ?? t);
 
+      // Admin corrections cannot change a unit test into another unit's content.
+      if (module === 'vocabulary') {
+        const scopeIds = new Set(scopedWords.map(w => w.id));
+        tasks = tasks.filter(t => t.vocabularyIds.every(id => scopeIds.has(id)));
+      }
       if (mode === "exam" && module !== "vocabulary") {
         const config = EXAM_STRUCTURE[module as keyof typeof EXAM_STRUCTURE];
         const selected: Task[] = [];
@@ -1086,6 +1097,7 @@ export function registerGerman(
           ? 20
           : EXAM_STRUCTURE[module as keyof typeof EXAM_STRUCTURE].minutes;
 
+      await preparationStep(db, res, "saving_session", 90);
       const tx = await db.transaction("write");
       try {
         // Guard against concurrent double-click root session creation with same filters
@@ -1349,6 +1361,17 @@ export function registerGerman(
         return res.sendStatus(400);
       }
 
+      // Do remote evaluation before opening the SQLite write transaction.
+      let openSentenceResult: Awaited<ReturnType<typeof gradeOpenSentence>> | undefined;
+      if (!skip && answer.trim()) {
+        const snapshot = await owned(req.params.id, user);
+        if (!snapshot) return res.sendStatus(404);
+        const previous = JSON.parse(String(snapshot.results || '{}'))[taskId];
+        const candidate = (JSON.parse(String(snapshot.tasks)) as Task[]).find(t => t.id === taskId);
+        if (snapshot.state === 'active' && candidate && (!previous || previous.pending) && needsSentenceReview(candidate, answer)) {
+          openSentenceResult = await gradeOpenSentence(db, candidate, answer, user);
+        }
+      }
       const wordList = await activeWordsList();
       const wordMap = new Map(wordList.map((w) => [w.id, w]));
 
@@ -1436,7 +1459,7 @@ export function registerGerman(
 
         const pairChecks =
           task.type === "matching" ? evaluateMatchingPairs(task.answer, answer) : null;
-        const isCorrect =
+        const isCorrect = openSentenceResult ? openSentenceResult.score === 1 :
           task.type === "matching"
             ? pairChecks !== null && pairChecks.every(Boolean)
             : gradeAnswer({
@@ -1458,7 +1481,7 @@ export function registerGerman(
               ? 1
               : 0;
 
-        const resultObj = {
+        const resultObj = openSentenceResult ?? {
           score: numericScore,
           feedback: task.explanation,
           suggestedAnswer: formattedSuggested,
@@ -1472,7 +1495,7 @@ export function registerGerman(
           alreadyApplied: false,
         };
 
-        if (s.module === "vocabulary") {
+        if (s.module === "vocabulary" && !resultObj.pending && resultObj.score !== null) {
           const vocabIdsForMastery =
             task.type === "matching" && task.pairVocabularyIds?.length
               ? task.pairVocabularyIds
@@ -1540,6 +1563,7 @@ export function registerGerman(
     "/sessions/:id/reinforce",
     wrap(async (req, res) => {
       const user = res.locals.germanUser;
+      await preparationStep(db, res, "loading_vocabulary", 25);
       const s = await owned(req.params.id, user);
       if (!s) return res.sendStatus(404);
       if (s.module !== "vocabulary") {
@@ -1636,6 +1660,7 @@ export function registerGerman(
         });
       }
 
+      await preparationStep(db, res, "validating_questions", 70);
       const childId = randomUUID();
       const start = new Date();
       const childFilter = JSON.stringify({
@@ -1649,6 +1674,7 @@ export function registerGerman(
         reinforcementDirection: targetDirection,
       });
 
+      await preparationStep(db, res, "saving_session", 90);
       const tx = await db.transaction("write");
       try {
         const concurrent = await tx.execute({
@@ -1794,6 +1820,8 @@ export function registerGerman(
           s.mode === "practice"
             ? { score: null, skipped: true, feedback: "Yanıtlanmadı.", suggestedAnswer: formattedSuggested, pending: false }
             : { score: 0, feedback: "Yanıt verilmedi.", suggestedAnswer: formattedSuggested, pending: false };
+      } else if (needsSentenceReview(t, answer)) {
+        result = await gradeOpenSentence(db, t, answer, user);
       } else if (t.options.length || t.interaction || exact || t.module === "vocabulary") {
         const numericScore =
           t.type === "matching" && pairChecks
@@ -2065,6 +2093,7 @@ export function registerGerman(
           : "mixed";
       const created = await generatePersonalizedReinforcement(db, {
         userId: user,
+        onProgress: (stage, percent) => preparationStep(db, res, stage, percent),
         levels,
         direction: validDir,
         includeMasteredReview: Boolean(includeMasteredReview),

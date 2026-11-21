@@ -1,3 +1,5 @@
+import { useSessionPreparation } from './SessionPreparation';
+import { taskHelpPolicy } from '../../shared/germanTaskHelp';
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -284,6 +286,7 @@ export function ExerciseRunner({
   onRestartSimilar: (filters: ActiveSession["filters"], module: string) => void;
   onOpenSession?: (sessionId: string) => void;
 }) {
+  const preparation = useSessionPreparation();
   const [session, setSession] = useState<ActiveSession | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [index, setIndex] = useState(0);
@@ -632,11 +635,12 @@ export function ExerciseRunner({
   };
 
   const handleStartReinforcement = async () => {
-    if (!session || reinforcing) return;
+    if (!session || reinforcing || preparation.active) return;
     setReinforcing(true);
     setError("");
     try {
-      const created = await startReinforcementSession(session.id);
+      const created = await preparation.run(progress => startReinforcementSession(session.id, progress));
+      if (!created) return;
       onOverviewChanged();
       if (onOpenSession) {
         onOpenSession(created.id);
@@ -651,17 +655,18 @@ export function ExerciseRunner({
   };
 
   const handleStartPersonalizedReinforcement = async () => {
-    if (!session || aiReinforcing) return;
+    if (!session || aiReinforcing || preparation.active) return;
     setAiReinforcing(true);
     setError("");
     try {
       const lvls = (session.filters?.levels?.length ? session.filters.levels : ["A1"]) as CefrLevel[];
       const targetDir = oppositeStudyDirection(session.filters?.direction ?? "tr_de");
-      const created = await createPersonalizedReinforcement({
+      const created = await preparation.run(progress => createPersonalizedReinforcement({
         levels: lvls,
         direction: targetDir,
         parentSessionId: session.id,
-      });
+      }, progress), "ai");
+      if (!created) return;
       onOverviewChanged();
       if (onOpenSession) {
         onOpenSession(created.sessionId);
@@ -1278,17 +1283,10 @@ export function ExerciseRunner({
     ? Math.round(((index + (isChecked ? 1 : 0)) / tasks.length) * 100)
     : 0;
   const isPractice = session.mode === "practice";
-  const rawAudioHint = task?.interaction?.audioText || task?.interaction?.wordMeta?.de;
-  const isRecallFromTurkish =
-    (task?.direction === "tr_de" ||
-      (!task?.direction && Boolean(task?.prompt?.includes("Almanca karşılığı")))) &&
-    !task?.passage;
-  const audioHint =
-    rawAudioHint && (!isRecallFromTurkish || isChecked) ? rawAudioHint : undefined;
-  const canShowWordPronunciation =
-    Boolean(task?.interaction?.wordMeta?.pronunciation) &&
-    showTurkishPronunciation &&
-    (!isRecallFromTurkish || isChecked);
+  const help = taskHelpPolicy(task, Boolean(isPractice && isChecked));
+  const audioHint = help.audioText;
+  const canShowWordPronunciation = help.wordPronunciation && showTurkishPronunciation &&
+    Boolean(task?.interaction?.wordMeta?.pronunciation);
   const currentExplanation = task ? explanations[task.id] : undefined;
   const currentLiveSchreiben = task ? liveSchreibenEval[task.id] : undefined;
 
@@ -1428,6 +1426,11 @@ export function ExerciseRunner({
                 }}
               />
 
+              {currentResult?.pending && <div className="kg-voice-notice" role="status">
+                <p>{currentResult.feedback}</p>
+                <button type="button" className="kg-btn kg-btn-sm" disabled={busy} onClick={() => void handleNext()}>Yanıtım kaydedildi, devam et</button>
+              </div>}
+
               {/* Live AI Preliminary Check for Goethe Schreiben in Practice Mode */}
               {isPractice && task.module === "Schreiben" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1484,7 +1487,9 @@ export function ExerciseRunner({
                               : "kg-badge-warn"
                           }
                         >
-                          {satzbauReviews[task.id].isCorrect
+                          {satzbauReviews[task.id].needsReview
+                            ? "Değerlendirme Bekliyor"
+                            : satzbauReviews[task.id].isCorrect
                             ? "Dilbilgisi Uygun"
                             : "Düzeltme Önerisi Var"}
                         </span>

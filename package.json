@@ -52,7 +52,9 @@
     "test:strike:presence": "node --import tsx tests/kapsstrike.presence.browser.ts",
     "test:kapsapp-ai": "node --import tsx tests/kapsAppAi.browser.ts",
     "test:dm": "node --import tsx --test tests/directMessages.test.ts tests/dmPush.test.ts",
-    "test:dm:browser": "node --import tsx tests/directMessages.browser.ts"
+    "test:dm:browser": "node --import tsx tests/directMessages.browser.ts",
+    "test:german": "node --import tsx --test tests/german*.test.ts",
+    "test:german:browser": "node --import tsx tests/german.browser.ts"
   },
   "dependencies": {
     "web-push": "^3.6.7",

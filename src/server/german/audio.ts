@@ -227,21 +227,15 @@ export async function getOrGenerateGermanAudio(
     // 1. Check SQLite + disk cache first
     try {
       const rowRes = await db.execute({
-        sql: "SELECT file_name, mime_type FROM german_audio_cache WHERE cache_key=?",
+        sql: "SELECT file_path, mime_type FROM german_audio_cache WHERE audio_hash=?",
         args: [cacheKey],
       });
-      if (rowRes.rows[0]?.file_name) {
-        const fileName = String(rowRes.rows[0].file_name);
+      if (rowRes.rows[0]?.file_path) {
+        const fileName = String(rowRes.rows[0].file_path);
         const mimeType = String(rowRes.rows[0].mime_type || "audio/mpeg");
         const diskPath = path.join(CACHE_DIR, path.basename(fileName));
         const buf = await fs.readFile(diskPath);
         if (buf.byteLength > 128) {
-          await db
-            .execute({
-              sql: "UPDATE german_audio_cache SET last_accessed_at=?, hit_count=hit_count+1 WHERE cache_key=?",
-              args: [new Date().toISOString(), cacheKey],
-            })
-            .catch(() => {});
           return {
             cacheKey,
             normalizedText: cleanText,
@@ -264,9 +258,9 @@ export async function getOrGenerateGermanAudio(
         const nowIso = new Date().toISOString();
         await db
           .execute({
-            sql: `INSERT OR REPLACE INTO german_audio_cache(cache_key, normalized_text, rate, file_name, mime_type, byte_size, created_at, last_accessed_at, hit_count)
-                  VALUES(?,?,?,?,?,?,?,?,1)`,
-            args: [cacheKey, cleanText.toLowerCase(), rate, mp3Name, "audio/mpeg", diskBuf.byteLength, nowIso, nowIso],
+            sql: `INSERT OR REPLACE INTO german_audio_cache(audio_hash, normalized_text, rate, file_path, mime_type, byte_size, created_at, voice_version, engine, is_public)
+                  VALUES(?,?,?,?,?,?,?,'de-DE-v1','server',1)`,
+            args: [cacheKey, cleanText.toLowerCase(), rate, mp3Name, "audio/mpeg", diskBuf.byteLength, nowIso],
           })
           .catch(() => {});
         return {
@@ -307,9 +301,9 @@ export async function getOrGenerateGermanAudio(
       const nowIso = new Date().toISOString();
       await db
         .execute({
-          sql: `INSERT OR REPLACE INTO german_audio_cache(cache_key, normalized_text, rate, file_name, mime_type, byte_size, created_at, last_accessed_at, hit_count)
-                VALUES(?,?,?,?,?,?,?,?,1)`,
-          args: [cacheKey, cleanText.toLowerCase(), rate, mp3Name, "audio/mpeg", remoteMp3.byteLength, nowIso, nowIso],
+          sql: `INSERT OR REPLACE INTO german_audio_cache(audio_hash, normalized_text, rate, file_path, mime_type, byte_size, created_at, voice_version, engine, is_public)
+                VALUES(?,?,?,?,?,?,?,'de-DE-v1','remote_tts',1)`,
+          args: [cacheKey, cleanText.toLowerCase(), rate, mp3Name, "audio/mpeg", remoteMp3.byteLength, nowIso],
         })
         .catch(() => {});
       return {
@@ -353,10 +347,10 @@ export async function getLevelAudioPackManifest(
   words: Vocabulary[],
 ): Promise<LevelAudioPackManifest> {
   const levelWords = words.filter((w) => w.level === level);
-  const cacheRows = await db.execute("SELECT cache_key, byte_size FROM german_audio_cache");
+  const cacheRows = await db.execute("SELECT audio_hash, byte_size FROM german_audio_cache WHERE is_public=1");
   const sizeByKey = new Map<string, number>();
   for (const r of cacheRows.rows) {
-    sizeByKey.set(String(r.cache_key), Number(r.byte_size ?? 0));
+    sizeByKey.set(String(r.audio_hash), Number(r.byte_size ?? 0));
   }
 
   let cachedCount = 0;

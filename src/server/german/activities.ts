@@ -550,7 +550,9 @@ export function buildActivities(
 
       // 2. Interactive Vocabulary Matching (3 unambiguous pairs, direction-aware!)
       const matchGroup: Vocabulary[] = [w];
-      for (const cand of other) {
+      // Every matching pair is tested and credited, unlike a mere choice distractor.
+      // Keep all pairs inside the selected learning pool and the target CEFR level.
+      for (const cand of selectCompatibleDistractors(w, words.filter(v => v.level === w.level))) {
         if (matchGroup.some((m) => wordsOverlap(m, cand))) continue;
         // Prefer comparable word length / non-sentence items in matching cards
         if (wordCategory(cand) === "sentence" && cat !== "sentence") continue;
@@ -910,7 +912,7 @@ export function buildActivities(
           objective: "production",
           satzbauMode: "create_own",
           subPrompt: `${sbMeta} • Bu kelimeyi kullanarak en az 3 kelimelik anlamlı bir Almanca cümle yaz.`,
-          hint: `Örnek model: "${sbSpec.sentenceDe}" (${sbSpec.sentenceTr})`,
+          hint: `Hedef kelimeyi kullanarak kendi cümleni kur. Odak: ${sbSpec.grammarFocus}. Örnek çözüm yanıtından sonra gösterilecek.`,
           passage: `${sbMeta} • Örnek anlam: ${sbSpec.sentenceTr}`,
           alternatives: sbSpec.alternativesDe,
           explanation: `Örnek cümle: ${sbSpec.sentenceDe} — ${sbSpec.sentenceTr}`,

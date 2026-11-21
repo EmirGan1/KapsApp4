@@ -525,11 +525,12 @@ export function HomeLearnView({
                       className="kg-category-card-main"
                       role="button"
                       tabIndex={0}
-                      onClick={() => setSelectedCategoryId(cat.id)}
+                      onClick={() => { setSelectedCategoryId(cat.id); setSearchQuery(""); }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
                           setSelectedCategoryId(cat.id);
+                          setSearchQuery("");
                         }
                       }}
                     >
@@ -566,7 +567,7 @@ export function HomeLearnView({
                       <button
                         type="button"
                         className="kg-btn kg-btn-sm kg-btn-blue"
-                        onClick={() => setSelectedCategoryId(cat.id)}
+                        onClick={() => { setSelectedCategoryId(cat.id); setSearchQuery(""); }}
                       >
                         Üniteleri Aç ({cat.totalUnits})
                       </button>

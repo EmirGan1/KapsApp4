@@ -360,31 +360,8 @@ export function gradeAnswer(input: {
       if (cleanForCompare(cand, true) === userFolded) return true;
     }
 
-    const targetRaw = (input.targetWordDe || "").replace(/^(der|die|das)\s+/iu, "").trim();
-    const targetFolded = cleanForCompare(targetRaw, true);
-    const stem = targetFolded.replace(/(en|eln|ern|n)$/iu, "").slice(0, Math.max(3, targetFolded.length - 2));
-    const hasTarget =
-      Boolean(targetFolded && userFolded.includes(targetFolded)) ||
-      Boolean(stem.length >= 3 && userFolded.includes(stem));
-
-    if (input.satzbauMode === "create_own") {
-      const tokens = userRaw.trim().split(/\s+/).filter(Boolean);
-      const hasVerbSignal =
-        /\b(bin|bist|ist|sind|seid|habe|hast|hat|haben|habt|werde|wird|werden|kann|muss|möchte|will|soll|darf|gehe|geht|kaufe|kauft|sehe|sieht|finde|findet|brauche|braucht|mache|macht|arbeite|arbeitet|lerne|lernt|spreche|spricht|wohne|wohnt|esse|isst|trinke|trinkt|komme|kommt|fahre|fährt|nehme|nimmt|gebe|gibt)\b/iu.test(
-          userRaw,
-        ) || tokens.some((w) => /(e|st|t|en)$/iu.test(w.replace(/[.!?]/g, "")) && w.length >= 3);
-      return hasTarget && tokens.length >= 3 && userFolded !== targetFolded && hasVerbSignal;
-    }
-
-    if (input.satzbauMode === "free_translation") {
-      const expTokens = cleanForCompare(input.answer, true).split(" ").filter(Boolean);
-      const usrTokens = userFolded.split(" ").filter(Boolean);
-      const matched = expTokens.filter((t) => usrTokens.includes(t)).length;
-      const ratio = expTokens.length > 0 ? matched / expTokens.length : 0;
-      if (hasTarget && ratio >= 0.75 && Math.abs(usrTokens.length - expTokens.length) <= 2) {
-        return true;
-      }
-    }
+    // Token overlap and a target word do not establish grammar or meaning.
+    // Unknown free-form sentences are evaluated separately, with pending fallback.
 
     return false;
   }
