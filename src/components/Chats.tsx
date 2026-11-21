@@ -1,3 +1,5 @@
+import DmEmojiPicker from "./DmEmojiPicker";
+import { isDmForeground } from "../utils/dmVisibility";
 import { getUploadError } from "../utils/uploadErrors";
 import { formatMessageDate } from "../utils/messageDate";
 import { useState, useEffect, useRef } from "react";
@@ -194,6 +196,25 @@ export default function Chats({
   const [manageGroupSearch, setManageGroupSearch] = useState("");
 
   const [replyTo, setReplyTo] = useState<any>(null);
+  const [reactionTarget, setReactionTarget] = useState<number | null>(null);
+  const composerRef = useRef<HTMLInputElement>(null);
+  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelLongPress = () => { if (longPressRef.current) clearTimeout(longPressRef.current); longPressRef.current = null; };
+  useEffect(() => { setReplyTo(null); setReactionTarget(null); return cancelLongPress; }, [activeChat?.id, activeTab]);
+  const jumpToOriginal = (id: number) => {
+    const scroll = () => {
+      const el = chatContainerRef.current?.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el?.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 900 });
+    };
+    if (messages.some(m => Number(m.id) === id)) return scroll();
+    if (activeTab !== 'friends' || !activeChat) return;
+    socket?.emit('dm:original', { partnerId: activeChat.id, id }, (message: any) => {
+      if (message?.error) { alert(message.error); return; }
+      setMessages(prev => prev.some(m => m.id === message.id) ? prev : [...prev, message].sort((a, b) => Number(a.id) - Number(b.id)));
+      requestAnimationFrame(() => requestAnimationFrame(scroll));
+    });
+  };
   const [typingUsers, setTypingUsers] = useState<number[]>([]);
   const typingTimersRef = useRef<Map<number, NodeJS.Timeout>>(new Map());
   const lastTypingSentRef = useRef<number>(0);
@@ -268,7 +289,7 @@ export default function Chats({
 
         return prev.map(f => {
           if (f.id === otherId) {
-            const isCurrentlyChatting = activeChatRef.current?.id === otherId && activeTabRef.current === "friends";
+            const isCurrentlyChatting = activeChatRef.current?.id === otherId && activeTabRef.current === "friends" && isDmForeground();
             const isFromOther = msg.sender !== currentUserId;
             return {
               ...f,
@@ -350,18 +371,31 @@ export default function Chats({
     
     const roomId = activeTab === "friends" ? `dm_${Math.min(currentUserId, activeChat.id)}_${Math.max(currentUserId, activeChat.id)}` : `group_${activeChat.id}`;
     
+    setMessages([]);
     setHasMore(true);
     setIsLoadingOlder(false);
     isInitialScrollRef.current = true;
 
-    if (activeTab === "friends") {
+    let pendingHistory: any[] = [];
+    let historyLoading = false;
+    const loadDmHistory = () => {
+      pendingHistory = [];
+      historyLoading = true;
       socket.emit("get_messages", { friendId: activeChat.id, limit: 50 }, (data: any[]) => {
-        const list = Array.isArray(data) ? data : [];
-        setMessages(list);
-        if (list.length < 50) setHasMore(false);
+        if (activeChatRef.current?.id !== activeChat.id || activeTabRef.current !== 'friends') return;
+        if (!Array.isArray(data)) return;
+        const byId = new Map([...data, ...pendingHistory].map(message => [message.id, message]));
+        setMessages([...byId.values()].sort((a, b) => Number(a.id) - Number(b.id)));
+        pendingHistory = [];
+        historyLoading = false;
+        if (data.length < 50) setHasMore(false);
       });
+    };
+    if (activeTab === "friends") {
+      loadDmHistory();
     } else {
       socket.emit("get_group_messages", { groupId: activeChat.id, limit: 50 }, (data: any[]) => {
+        if (activeChatRef.current?.id !== activeChat.id || activeTabRef.current !== activeTab) return;
         const list = Array.isArray(data) ? data : [];
         setMessages(list);
         if (list.length < 50) setHasMore(false);
@@ -385,8 +419,9 @@ export default function Chats({
       if (activeTab === "friends") {
         if ((msg.sender === activeChat.id && msg.receiver === currentUserId) || 
             (msg.sender === currentUserId && msg.receiver === activeChat.id)) {
+          if (historyLoading) pendingHistory.push(msg);
           setMessages(prev => {
-            const optIdx = prev.findIndex(m => m._tempId && m.sender === msg.sender && m.content === msg.content);
+            const optIdx = prev.findIndex(m => m._tempId && m.sender === msg.sender && (msg.client_id ? m._tempId === msg.client_id : m.content === msg.content));
             if (optIdx !== -1) {
               const updated = [...prev];
               updated[optIdx] = msg;
@@ -403,7 +438,7 @@ export default function Chats({
       } else {
         if (msg.group_id === activeChat.id) {
           setMessages(prev => {
-            const optIdx = prev.findIndex(m => m._tempId && m.sender === msg.sender && m.content === msg.content);
+            const optIdx = prev.findIndex(m => m._tempId && m.sender === msg.sender && (msg.client_id ? m._tempId === msg.client_id : m.content === msg.content));
             if (optIdx !== -1) {
               const updated = [...prev];
               updated[optIdx] = msg;
@@ -477,15 +512,12 @@ export default function Chats({
       }
     };
 
-    const handleDmMessagesRead = (data: any) => {
-      if (activeTab === "friends" && activeChat) {
-        const pId = (activeChat as Friend).id;
-        if (data?.readerId === pId || data?.partnerId === pId || data?.chatId === roomId) {
-          setMessages(prev => prev.map(m => m.sender === currentUserId ? { ...m, status: 'read', is_read: 1 } : m));
-        }
-      }
+    const handleDmReceipt = (data: any) => {
+      if (activeTab !== 'friends' || data.chatId !== roomId || ![currentUserId, activeChat.id].includes(Number(data.readerId))) return;
+      setMessages(prev => prev.map(m => data.messageIds.includes(Number(m.id)) && Number(m.receiver) === Number(data.readerId)
+        ? { ...m, status: m.status === 'read' ? 'read' : data.status,
+            is_read: m.is_read || (data.status === 'read' ? 1 : 0), read_at: m.read_at || data.readAt } : m));
     };
-    
     socket.on(activeTab === "friends" ? "new_message" : "new_group_message", handleNewMsg);
     socket.on("message_reacted", onReacted);
     socket.on("message_deleted", onMessageDeleted);
@@ -493,13 +525,12 @@ export default function Chats({
     socket.on("user_typing", onTyping);
     socket.on("user_stop_typing", onStopTyping);
     socket.on("chat_read_update", handleReadUpdate);
-    socket.on("dm:messages_read", handleDmMessagesRead);
-    socket.on("dm:mark_read", handleDmMessagesRead);
+    socket.on("dm:receipt", handleDmReceipt);
 
     // Enter DM chat Presence tracking
     const syncDmPresence = () => {
       if (activeTab !== "friends" || !activeChat || !socket.connected) return;
-      if (document.visibilityState === "visible" && document.hasFocus()) {
+      if (isDmForeground()) {
         socket.emit("dm:enter_chat", { partnerId: activeChat.id });
       } else {
         socket.emit("dm:leave_chat");
@@ -509,13 +540,24 @@ export default function Chats({
     document.addEventListener("visibilitychange", syncDmPresence);
     window.addEventListener("focus", syncDmPresence);
     window.addEventListener("blur", syncDmPresence);
-    socket.on("connect", syncDmPresence);
+    const onReconnect = () => {
+      syncDmPresence();
+      if (activeTab === 'friends') loadDmHistory();
+    };
+    const heartbeat = window.setInterval(syncDmPresence, 15000);
+    const hideDm = () => { if (activeTab === 'friends') socket.emit('dm:leave_chat'); };
+    window.addEventListener('pagehide', hideDm);
+    window.addEventListener('pageshow', syncDmPresence);
+    socket.on("connect", onReconnect);
 
     return () => {
       document.removeEventListener("visibilitychange", syncDmPresence);
       window.removeEventListener("focus", syncDmPresence);
       window.removeEventListener("blur", syncDmPresence);
-      socket.off("connect", syncDmPresence);
+      clearInterval(heartbeat);
+      window.removeEventListener('pagehide', hideDm);
+      window.removeEventListener('pageshow', syncDmPresence);
+      socket.off("connect", onReconnect);
       if (activeTab === "friends") {
         socket.emit("dm:leave_chat");
       }
@@ -526,8 +568,7 @@ export default function Chats({
       socket.off("user_typing", onTyping);
       socket.off("user_stop_typing", onStopTyping);
       socket.off("chat_read_update", handleReadUpdate);
-      socket.off("dm:messages_read", handleDmMessagesRead);
-      socket.off("dm:mark_read", handleDmMessagesRead);
+      socket.off("dm:receipt", handleDmReceipt);
 
       // Clean up all typing timeouts
       typingTimersRef.current.forEach(t => clearTimeout(t));
@@ -542,11 +583,36 @@ export default function Chats({
       if (chatContainerRef.current) chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
       isInitialScrollRef.current = false;
     }
-    if (messages.length > 0 && socket && activeChat) {
-      const roomId = activeTab === "friends" ? `dm_${Math.min(currentUserId, activeChat.id)}_${Math.max(currentUserId, activeChat.id)}` : `group_${activeChat.id}`;
+    if (messages.length > 0 && socket && activeChat && activeTab === "groups" && isDmForeground()) {
+      const roomId = `group_${activeChat.id}`;
       socket.emit("mark_chat_read", roomId, messages[messages.length - 1].id);
     }
   }, [messages, socket, activeChat, activeTab, currentUserId]);
+
+  // A receipt describes the exact persisted messages that actually intersect the viewport.
+  useEffect(() => {
+    if (activeTab !== 'friends' || !socket || !activeChat) return;
+    const incoming = messages.filter(m => m.sender === activeChat.id && Number.isSafeInteger(Number(m.id)));
+    const undelivered = incoming.filter(m => m.status !== 'read' && m.status !== 'delivered' && !m.is_read);
+    if (undelivered.length) socket.emit('dm:delivered', { partnerId: activeChat.id, messageIds: undelivered.map(m => m.id) });
+    const check = () => {
+      if (!isDmForeground()) return;
+      const container = chatContainerRef.current;
+      if (!container) return;
+      const bounds = container.getBoundingClientRect();
+      const ids = incoming.filter(m => !m.is_read && m.status !== 'read').filter(m => {
+        const rect = container.querySelector(`[data-message-id="${m.id}"]`)?.getBoundingClientRect();
+        return rect && rect.bottom > bounds.top && rect.top < bounds.bottom;
+      }).map(m => m.id);
+      if (ids.length) socket.emit('dm:mark_read', { partnerId: activeChat.id, messageIds: ids });
+    };
+    const observer = new IntersectionObserver(check, { root: chatContainerRef.current, threshold: [0, 0.1, 1] });
+    chatContainerRef.current?.querySelectorAll('[data-message-id]').forEach(el => observer.observe(el));
+    const frame = requestAnimationFrame(check);
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check); };
+  }, [messages, socket, activeChat, activeTab]);
 
   // Load older messages on scroll near top
   const handleScroll = () => {
@@ -666,7 +732,9 @@ export default function Chats({
     setMessages(prev => [...prev, optimisticMsg]);
 
     if (activeTab === "friends") {
-      socket.emit("send_message", { receiver: activeChat.id, type: "text", content: trimmed, reply_to: replyTo?.id });
+      socket.timeout(15000).emit("send_message", { receiver: activeChat.id, type: "text", content: trimmed, reply_to: replyTo?.id, client_id: tempId }, (error: any, result: any) => {
+        if (error || result?.error) setMessages(prev => prev.map(m => m._tempId === tempId ? { ...m, status: "failed" } : m));
+      });
     } else {
       socket.emit("send_group_message", { group_id: activeChat.id, type: "text", content: trimmed, reply_to: replyTo?.id });
     }
@@ -916,6 +984,7 @@ export default function Chats({
 
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden bg-white dark:bg-slate-950 transition-colors duration-200">
+      {reactionTarget !== null && <DmEmojiPicker onClose={() => setReactionTarget(null)} onSelect={emoji => { handleReact(reactionTarget, emoji); setReactionTarget(null); }} />}
       {/* Sidebar */}
       <div className={`w-full lg:w-80 border-r border-slate-100 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900 transition-colors duration-200 ${activeChat ? 'hidden lg:flex' : 'flex'}`}>
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm z-10 flex flex-col gap-3 transition-colors duration-200">
@@ -1157,7 +1226,11 @@ export default function Chats({
                 const isLast = idx === messages.length - 1;
                 const readers = isLast ? Object.entries(readReceipts).filter(([uid, mid]) => Number(uid) !== currentUserId && mid === msg.id).map(([uid]) => users.find(u => u.id === Number(uid))).filter(Boolean) : [];
                 return (
-                  <div key={msg.id || idx} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} mb-1 w-full min-w-0`}>
+                  <div key={msg.id || idx} data-message-id={msg.id}
+                    onPointerDown={e => { if (activeTab === 'friends' && e.pointerType === 'touch' && !(e.target as HTMLElement).closest('button,input,a,audio,video')) longPressRef.current = setTimeout(() => { if (Number.isSafeInteger(Number(msg.id))) setReactionTarget(Number(msg.id)); }, 550); }}
+                    onPointerUp={cancelLongPress} onPointerMove={cancelLongPress} onPointerCancel={cancelLongPress}
+                    onContextMenu={e => { if (activeTab === 'friends' && longPressRef.current) e.preventDefault(); }}
+                    className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} mb-1 w-full min-w-0`}>
                     <div className={`flex items-center gap-1.5 sm:gap-2 ${isMine ? 'flex-row-reverse' : 'flex-row'} w-full min-w-0 relative`}>
                       {/* Explicit Çöp Kutusu Button right beside the message bubble */}
                       {canDelete && (
@@ -1185,9 +1258,9 @@ export default function Chats({
                         
                         {/* Reply Context */}
                         {msg.reply_message && (
-                          <div className={`mb-2 p-2 rounded-lg text-sm border-l-4 min-w-0 max-w-full overflow-hidden ${isMine ? 'bg-green-700/20 border-green-600 text-green-900 dark:text-green-100' : 'bg-slate-100 dark:bg-slate-700 border-blue-500 text-slate-600 dark:text-slate-300'}`}>
+                          <div role="button" tabIndex={0} onClick={() => jumpToOriginal(Number(msg.reply_to))} onKeyDown={e => { if (e.key === "Enter") jumpToOriginal(Number(msg.reply_to)); }} className={`cursor-pointer mb-2 p-2 rounded-lg text-sm border-l-4 min-w-0 max-w-full overflow-hidden ${isMine ? 'bg-green-700/20 border-green-600 text-green-900 dark:text-green-100' : 'bg-slate-100 dark:bg-slate-700 border-blue-500 text-slate-600 dark:text-slate-300'}`}>
                             <div className="font-semibold text-xs mb-1 truncate">{msg.reply_message.sender_name}</div>
-                            {msg.reply_message.type === 'text' ? <p className="truncate text-xs">{msg.reply_message.content}</p> : <span className="italic text-xs">Medya</span>}
+                            {msg.reply_message.type === 'text' ? <p className="truncate text-xs">{msg.reply_message.content}</p> : <span className="italic text-xs">{msg.reply_message.file_name || (msg.reply_message.type === "image" ? "📷 Fotoğraf" : msg.reply_message.type === "voice" ? "🎤 Ses kaydı" : msg.reply_message.type === "video" ? "🎬 Video" : "📎 Ek")}</span>}
                           </div>
                         )}
 
@@ -1245,9 +1318,9 @@ export default function Chats({
                                acc[r.emoji] = (acc[r.emoji] || 0) + 1;
                                return acc;
                             }, {})).map(([emoji, count]: any) => (
-                              <div key={emoji} className={`border text-[10px] rounded-full px-1.5 py-0.5 shadow-sm cursor-pointer ${isMine ? 'bg-[#DCF8C6] dark:bg-[#005C4B] border-green-300 dark:border-green-700 text-green-800 dark:text-green-100' : 'bg-slate-50 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200'}`} onClick={() => handleReact(msg.id, emoji)}>
+                              <button type="button" aria-pressed={msg.reactions.some((r: any) => r.user_id === currentUserId && r.emoji === emoji)} key={emoji} className={`border text-[10px] ${msg.reactions.some((r: any) => r.user_id === currentUserId && r.emoji === emoji) ? "ring-1 ring-blue-500" : ""} rounded-full px-1.5 py-0.5 shadow-sm cursor-pointer ${isMine ? 'bg-[#DCF8C6] dark:bg-[#005C4B] border-green-300 dark:border-green-700 text-green-800 dark:text-green-100' : 'bg-slate-50 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200'}`} onClick={() => handleReact(msg.id, emoji)}>
                                 {emoji} {count > 1 && count}
-                              </div>
+                              </button>
                             ))}
                           </div>
                         )}
@@ -1260,14 +1333,16 @@ export default function Chats({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (activeTab === 'friends' && (!Number.isSafeInteger(Number(msg.id)) || msg.status === 'sending' || msg.status === 'failed')) return;
                               setReplyTo(msg);
+                              composerRef.current?.focus();
                             }}
                             className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                               isMine 
                                 ? "text-green-950 dark:text-green-100 hover:bg-green-700/20 active:bg-green-700/30" 
                                 : "text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 active:bg-slate-200"
                             }`}
-                            title="Yanıtla"
+                            disabled={activeTab === "friends" && (!Number.isSafeInteger(Number(msg.id)) || msg.status === "sending" || msg.status === "failed")} title="Yanıtla"
                           >
                             <Reply size={13} className="shrink-0" />
                             <span>Yanıtla</span>
@@ -1277,17 +1352,18 @@ export default function Chats({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleReact(msg.id, "❤️");
+                              if (activeTab === "groups") handleReact(msg.id, "❤️");
+                              else if (Number.isSafeInteger(Number(msg.id))) setReactionTarget(Number(msg.id));
                             }}
                             className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                               isMine 
                                 ? "text-green-950 dark:text-green-100 hover:bg-green-700/20 active:bg-green-700/30" 
                                 : "text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 active:bg-slate-200"
                             }`}
-                            title="Beğen"
+                            title="Tepki ekle"
                           >
                             <Smile size={13} className="shrink-0" />
-                            <span>❤️</span>
+                            <span>Tepki</span>
                           </button>
 
                           {canDelete && (
@@ -1317,9 +1393,9 @@ export default function Chats({
                             const isRead = 
                               msg.status === 'read' || 
                               msg.is_read === 1 || 
-                              !!msg.read_at || 
-                              (partnerId && readReceipts[partnerId] && (typeof msg.id === 'number' && readReceipts[partnerId] >= msg.id));
-                            const isDelivered = msg.status === 'delivered' || isRead || onlineUsers.includes(partnerId);
+                              !!msg.read_at;
+                            const isDelivered = msg.status === 'delivered' || isRead;
+                            if (msg.status === 'sending' || msg.status === 'failed') return <span title={msg.status === 'failed' ? 'Gönderilemedi' : 'Gönderiliyor'}>{msg.status === 'failed' ? '⚠' : '◷'}</span>;
 
                             if (isRead) {
                               return (
@@ -1344,7 +1420,7 @@ export default function Chats({
                         </div>
                       </div>
                     </div>
-                    {isLast && readers.length > 0 && (
+                    {activeTab === "groups" && isLast && readers.length > 0 && (
                       <div className={`flex gap-1 mt-1 items-center px-1 ${isMine ? 'justify-end w-full' : ''}`}>
                         {readers.slice(0, 5).map((r: any) => (
                           <div key={r.id} title={r.username} className="cursor-pointer" onClick={() => onUserClick && onUserClick(r.id)}>
@@ -1386,8 +1462,8 @@ export default function Chats({
             <div className="bg-[#f0f2f5] dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 kaps-chat-composer relative pb-safe shrink-0 z-10">
               {replyTo && (
                 <div className="absolute bottom-full left-0 w-full bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-2 px-3 sm:px-4 flex justify-between items-center text-xs sm:text-sm shadow-md">
-                   <div className="truncate pr-2"><span className="font-semibold text-blue-600 dark:text-blue-400">{replyTo.sender_name || (activeTab === 'friends' ? (activeChat as Friend).username : 'Biri')}</span> kişisine yanıtlanıyor: <span className="text-slate-500 dark:text-slate-400 truncate max-w-[150px] sm:max-w-xs inline-block align-bottom">{replyTo.type === 'text' ? replyTo.content : 'Medya'}</span></div>
-                   <button onClick={() => setReplyTo(null)} className="text-slate-400 hover:text-red-500 font-bold px-2 text-base shrink-0">&times;</button>
+                   <div className="truncate pr-2"><span className="font-semibold text-blue-600 dark:text-blue-400">{replyTo.sender_name || (replyTo.sender === currentUserId ? currentUsername : activeTab === 'friends' ? (activeChat as Friend).username : 'Biri')}</span> kişisine yanıtlanıyor: <span className="text-slate-500 dark:text-slate-400 truncate max-w-[150px] sm:max-w-xs inline-block align-bottom">{replyTo.type === 'text' ? replyTo.content : replyTo.file_name || (replyTo.type === 'image' ? '📷 Fotoğraf' : replyTo.type === 'voice' ? '🎤 Ses kaydı' : '📎 Ek')}</span></div>
+                   <button type="button" aria-label="Yanıtı iptal et" onClick={() => setReplyTo(null)} className="text-slate-400 hover:text-red-500 font-bold px-2 text-base shrink-0">&times;</button>
                 </div>
               )}
               <div className="p-2 sm:p-3 flex items-center gap-1 sm:gap-1.5 max-w-4xl mx-auto">
@@ -1412,7 +1488,7 @@ export default function Chats({
                   ) : (
                     <form onSubmit={handleSendText}>
                       <input 
-                        type="text" data-chat-composer enterKeyHint="send" 
+                        ref={composerRef} type="text" data-chat-composer enterKeyHint="send"
                         placeholder="Mesaj yazın... (maks 1000)" 
                         maxLength={1000}
                         className="w-full bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl shadow-sm text-base sm:text-[15px]"

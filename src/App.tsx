@@ -575,15 +575,20 @@ export default function App() {
     activeTabRef.current = activeTab;
     const currentActiveDmId = activeTab === "chats" ? activeDmChatUserId : null;
     activeDmChatUserIdRef.current = currentActiveDmId;
+  }, [activeTab, activeDmChatUserId]);
 
-    if (socket) {
-      if (currentActiveDmId) {
-        socket.emit("dm:enter_chat", { partnerId: currentActiveDmId });
-      } else {
-        socket.emit("dm:leave_chat");
-      }
-    }
-  }, [activeTab, activeDmChatUserId, socket]);
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handleDmPushQuery = (event: MessageEvent) => {
+      if (event.data?.type !== 'kaps:dm_visibility' || !event.ports[0]) return;
+      const active = document.visibilityState === 'visible' && document.hasFocus() &&
+        Number(localStorage.getItem('lan_user_id')) === Number(event.data.recipientId) &&
+        activeTabRef.current === 'chats' && activeDmChatUserIdRef.current === Number(event.data.partnerId);
+      event.ports[0].postMessage({ active });
+    };
+    navigator.serviceWorker.addEventListener('message', handleDmPushQuery);
+    return () => navigator.serviceWorker.removeEventListener('message', handleDmPushQuery);
+  }, []);
 
   const [currentTheme, setCurrentTheme] = useState<ThemeId>(() => getStoredTheme());
   const darkMode = currentTheme !== "light";
@@ -798,6 +803,7 @@ export default function App() {
       newSocket.on("new_message", (msg: any) => {
         const senderId = Number(msg?.sender);
         if (!senderId || senderId === Number(localStorage.getItem("lan_user_id"))) return;
+        newSocket.emit('dm:delivered', { partnerId: senderId, messageIds: [msg.id] });
         if (document.visibilityState === "visible" && document.hasFocus() &&
           activeTabRef.current === 'chats' && activeDmChatUserIdRef.current === senderId) {
           return; // Suppress unread count for current open DM

@@ -2,6 +2,7 @@ import React from 'react';
 import { useCall } from '../context/CallContext';
 import { Mic, MicOff, Volume2, VolumeX, Volume1, Video, VideoOff, PhoneOff, Maximize2, Minimize2 } from 'lucide-react';
 import Avatar from './Avatar';
+import CallAudioOutput from './CallAudioOutput';
 
 const ActiveCallPanel: React.FC = () => {
   const {
@@ -153,7 +154,7 @@ const ActiveCallPanel: React.FC = () => {
           {/* Center Call Panel */}
           <div className="flex-1 py-10 flex flex-col items-center justify-center relative px-6">
             {remoteStream?.getVideoTracks().length ? (
-              <video autoPlay playsInline ref={element => { if (element && element.srcObject !== remoteStream) element.srcObject = remoteStream; }} className="w-full max-h-52 rounded-xl object-contain mb-4 bg-black" />
+              <video autoPlay muted playsInline ref={element => { if (element && element.srcObject !== remoteStream) element.srcObject = remoteStream; }} className="w-full max-h-52 rounded-xl object-contain mb-4 bg-black" />
             ) : null}
             {isCameraOn && localStream?.getVideoTracks().length ? (
               <video autoPlay muted playsInline ref={element => { if (element && element.srcObject !== localStream) element.srcObject = localStream; }} className="w-24 h-32 object-cover rounded-xl mb-3" />
@@ -273,10 +274,7 @@ const ActiveCallPanel: React.FC = () => {
                 {isCameraOn ? <Video size={22} /> : <VideoOff size={22} />}
                 <span className="text-[10px]">Kamera</span>
               </button>
-              <button onClick={() => void toggleAudioOutput()} className="p-3 rounded-2xl border border-slate-800 bg-slate-900 text-slate-300 flex flex-col items-center gap-1">
-                {audioOutputMode === 'speaker' ? <Volume2 size={22} /> : <Volume1 size={22} />}
-                <span className="text-[10px]">{audioOutputMode === 'speaker' ? 'Hoparlör' : 'Ahize'}</span>
-              </button>
+              <CallAudioOutput />
 
               {/* Local Voice Indicator Preview */}
               <div className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-1.5 border bg-slate-900 text-slate-400 border-slate-800 ${

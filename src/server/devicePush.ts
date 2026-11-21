@@ -23,7 +23,7 @@ export function validSubscription(value: unknown): value is webpush.PushSubscrip
 
 export type PushAlert = {
   title: string; body: string; tag: string; url: string;
-  avatar?: string; expiresAt: number;
+  avatar?: string; expiresAt: number; recipientId?: number;
   callType?: "direct" | "voice_room";
   callId?: string;
   callerId?: number;

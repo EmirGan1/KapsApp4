@@ -1,3 +1,4 @@
+import { applyAudioOutput } from '../utils/audioOutput';
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import { callSoundEngine } from '../utils/callSoundEngine';
@@ -43,7 +44,11 @@ interface CallContextType {
   toggleDeafen: () => void;
   isCameraOn: boolean;
   toggleCamera: () => Promise<void>;
-  audioOutputMode: 'speaker' | 'earpiece';
+  audioOutputMode: 'speaker' | 'earpiece' | 'system' | 'device';
+  audioOutputs: MediaDeviceInfo[];
+  audioOutputId: string;
+  audioOutputLabel: string;
+  selectAudioOutput: (id: string) => Promise<void>;
   toggleAudioOutput: () => Promise<void>;
 }
 
@@ -67,7 +72,61 @@ export const CallProvider: React.FC<{
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
-  const [audioOutputMode, setAudioOutputMode] = useState<'speaker' | 'earpiece'>('speaker');
+  const [audioOutputMode, setAudioOutputMode] = useState<'speaker' | 'earpiece' | 'system' | 'device'>('system');
+  const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [audioOutputId, setAudioOutputId] = useState('');
+  const [audioOutputLabel, setAudioOutputLabel] = useState('Sistem ses çıkışı');
+  const selectedOutputRef = useRef('');
+  const outputBusyRef = useRef(false);
+  const ensureRemoteAudio = () => {
+    if (!remoteAudioRef.current) {
+      const audio = document.createElement('audio');
+      audio.autoplay = true;
+      audio.setAttribute('playsinline', '');
+      document.body.appendChild(audio);
+      remoteAudioRef.current = audio;
+    }
+    return remoteAudioRef.current;
+  };
+  const selectAudioOutput = async (id: string, deviceLabel?: string) => {
+    if (outputBusyRef.current) return;
+    outputBusyRef.current = true;
+    try {
+      const audio = ensureRemoteAudio();
+      await applyAudioOutput([audio], id);
+      const device = audioOutputs.find(d => d.deviceId === id);
+      const label = deviceLabel || device?.label;
+      selectedOutputRef.current = audio.sinkId;
+      setAudioOutputId(audio.sinkId);
+      setAudioOutputLabel(!id || id === 'default' ? 'Sistem ses çıkışı' : label || 'Seçili ses cihazı');
+      setAudioOutputMode(!id || id === 'default' ? 'system' : /earpiece|receiver|ahize/i.test(label || '') ? 'earpiece' : /speaker|hoparlör/i.test(label || '') ? 'speaker' : 'device');
+    } catch (error) {
+      onShowToast?.(error instanceof Error ? error.message : 'Ses çıkışı değiştirilemedi.', 'error');
+    } finally { outputBusyRef.current = false; }
+  };
+  useEffect(() => {
+    let disposed = false;
+    const refresh = async () => {
+      const devices = await navigator.mediaDevices?.enumerateDevices?.().catch(() => []);
+      if (disposed) return;
+      const outputs = devices?.filter(d => d.kind === 'audiooutput') || [];
+      setAudioOutputs(outputs);
+      const id = selectedOutputRef.current;
+      if (id && id !== 'default' && !outputs.some(d => d.deviceId === id)) {
+        let resetVerified = false;
+        try {
+          if (remoteAudioRef.current?.setSinkId) { await applyAudioOutput([remoteAudioRef.current], ''); resetVerified = true; }
+        } catch {}
+        selectedOutputRef.current = resetVerified ? '' : remoteAudioRef.current?.sinkId || '';
+        setAudioOutputId(selectedOutputRef.current); setAudioOutputMode('system');
+        setAudioOutputLabel(resetVerified ? 'Sistem ses çıkışı' : 'Ses çıkışı doğrulanamadı');
+        onShowToast?.('Ses cihazı bağlantısı kesildi. Sistem ses çıkışını kontrol edin.', 'info');
+      }
+    };
+    void refresh();
+    navigator.mediaDevices?.addEventListener('devicechange', refresh);
+    return () => { disposed = true; navigator.mediaDevices?.removeEventListener('devicechange', refresh); };
+  }, [callState]);
   
   const [isSpeakingLocal, setIsSpeakingLocal] = useState(false);
   const [isSpeakingRemote, setIsSpeakingRemote] = useState(false);
@@ -107,14 +166,7 @@ export const CallProvider: React.FC<{
     }
     remoteStreamRef.current = stream;
     setupSpeakingDetection(stream, false);
-    let audio = remoteAudioRef.current;
-    if (!audio) {
-      audio = document.createElement('audio');
-      audio.autoplay = true;
-      audio.setAttribute('playsinline', '');
-      document.body.appendChild(audio);
-      remoteAudioRef.current = audio;
-    }
+    const audio = ensureRemoteAudio();
     audio.srcObject = new MediaStream([event.track]);
     audio.muted = isDeafenedRef.current;
     void audio.play().catch(error => console.warn('Arama sesi başlatılamadı:', error));
@@ -213,6 +265,7 @@ export const CallProvider: React.FC<{
       remoteAudioRef.current.srcObject = null;
       remoteAudioRef.current.remove();
       remoteAudioRef.current = null;
+      selectedOutputRef.current = ''; setAudioOutputId(''); setAudioOutputMode('system'); setAudioOutputLabel('Sistem ses çıkışı');
     }
     pendingIceRef.current = [];
     videoSenderRef.current = null;
@@ -722,21 +775,21 @@ export const CallProvider: React.FC<{
   };
 
   const toggleAudioOutput = async () => {
-    const next = audioOutputMode === 'speaker' ? 'earpiece' : 'speaker';
-    const audio = remoteAudioRef.current;
-    const outputs = await navigator.mediaDevices?.enumerateDevices?.().catch(() => []);
-    const target = outputs?.find(device => device.kind === 'audiooutput' && (
-      next === 'earpiece' ? /earpiece|receiver|ahize/i.test(device.label) : /speaker|hoparlör/i.test(device.label)
-    ));
-    if (!audio?.setSinkId || !target) {
-      onShowToast?.('Bu tarayıcı ahize/hoparlör seçimini sunmuyor. Telefonun ses ayarlarını kullanın.', 'info');
+    const devices = navigator.mediaDevices as MediaDevices & { selectAudioOutput?: () => Promise<MediaDeviceInfo> };
+    if (!ensureRemoteAudio().setSinkId) {
+      onShowToast?.('Bu tarayıcı ses çıkışını seçtirmiyor. Ahize, hoparlör veya Bluetooth için telefonun sistem ses menüsünü kullanın.', 'info');
       return;
     }
     try {
-      await audio.setSinkId(target.deviceId);
-      setAudioOutputMode(next);
-    } catch {
-      onShowToast?.('Ses çıkışı değiştirilemedi.', 'error');
+      if (devices?.selectAudioOutput) {
+        const selected = await devices.selectAudioOutput();
+        setAudioOutputs(previous => [...previous.filter(d => d.deviceId !== selected.deviceId), selected]);
+        await selectAudioOutput(selected.deviceId, selected.label);
+      } else {
+        onShowToast?.('Ses çıkışı listesinden izin verilen cihazı seçin. Listelenmeyen ahize veya Bluetooth için sistem ses menüsünü kullanın.', 'info');
+      }
+    } catch (error) {
+      if ((error as DOMException).name !== 'NotAllowedError') onShowToast?.('Ses cihazı seçilemedi. Sistem ses çıkışı menüsünü kullanın.', 'info');
     }
   };
 
@@ -763,6 +816,7 @@ export const CallProvider: React.FC<{
         isCameraOn,
         toggleCamera,
         audioOutputMode,
+        audioOutputs, audioOutputId, audioOutputLabel, selectAudioOutput,
         toggleAudioOutput,
       }}
     >

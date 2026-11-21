@@ -6,6 +6,18 @@ self.addEventListener("push", event => {
     if (!event.data) return;
     const alert = event.data.json();
     if (!alert.title || !alert.expiresAt || alert.expiresAt <= Date.now()) return;
+    const dmMatch = /^dm-(\d+)$/.exec(String(alert.tag || ''));
+    if (dmMatch && alert.recipientId) {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const viewing = await Promise.all(windows.filter(client => client.visibilityState === 'visible' && client.focused).map(client => new Promise(resolve => {
+        const channel = new MessageChannel();
+        const finish = active => { clearTimeout(timer); channel.port1.close(); resolve(active); };
+        const timer = setTimeout(() => finish(false), 500);
+        channel.port1.onmessage = event => finish(event.data?.active === true);
+        client.postMessage({ type: 'kaps:dm_visibility', partnerId: Number(dmMatch[1]), recipientId: alert.recipientId }, [channel.port2]);
+      })));
+      if (viewing.some(Boolean)) return;
+    }
     const isIncomingCall = String(alert.tag || "").startsWith("call_");
 
     if (isIncomingCall) {

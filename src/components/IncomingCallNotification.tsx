@@ -2,6 +2,7 @@ import React from 'react';
 import { useCall } from '../context/CallContext';
 import { Phone, PhoneOff, ShieldCheck } from 'lucide-react';
 import Avatar from './Avatar';
+import CallAudioOutput from './CallAudioOutput';
 
 const IncomingCallNotification: React.FC = () => {
   const { callState, currentCall, acceptCall, rejectCall } = useCall();
@@ -57,6 +58,7 @@ const IncomingCallNotification: React.FC = () => {
           </span>
         </div>
 
+        <CallAudioOutput />
         {/* Center Caller Profile & Sonar Rings */}
         <div className="flex flex-col lg:flex-row items-center gap-6 lg:gap-4 my-auto lg:my-0 lg:w-full">
           <div className="relative flex items-center justify-center shrink-0">

@@ -1,3 +1,4 @@
+import { DmPresence, registerDirectMessages } from './src/server/directMessages';
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -2719,7 +2720,7 @@ async function startServer() {
 
   // Socket Online Tracking with Reconnection Grace Period (Graceful disconnect for mobile networks)
   const onlineUsers = new Map<number, string>();
-  const activeChatMap = new Map<number, number>(); // userId -> activePartnerId (for smart notification suppression & instant read)
+  const dmPresence = new DmPresence(); // userId -> activePartnerId (for smart notification suppression & instant read)
   const disconnectTimers = new Map<number, NodeJS.Timeout>();
   const globalRead = new Map<number, number>();
   const chatRead = new Map<string | number, Map<number, number>>();
@@ -6756,95 +6757,11 @@ async function startServer() {
     });
 
     socket.on("mark_chat_read", async (chatId, messageId) => {
+      if (typeof chatId === "string" && chatId.startsWith("dm_")) return;
       if(!chatRead.has(chatId)) chatRead.set(chatId, new Map());
       chatRead.get(chatId)!.set(Number(user.id), messageId);
       io.emit("chat_read_update", chatId, Array.from(chatRead.get(chatId)!.entries()));
 
-      if (typeof chatId === "string" && chatId.startsWith("dm_")) {
-        const parts = chatId.split("_");
-        if (parts.length === 3) {
-          const u1 = Number(parts[1]);
-          const u2 = Number(parts[2]);
-          const partnerId = u1 === Number(user.id) ? u2 : u1;
-          if (partnerId) {
-            const nowIso = new Date().toISOString();
-            client.execute({
-              sql: "UPDATE messages SET status = 'read', is_read = 1, read_at = ? WHERE sender = ? AND receiver = ? AND (is_read = 0 OR status != 'read')",
-              args: [nowIso, partnerId, user.id]
-            }).catch(() => {});
-            
-            const partnerSocket = onlineUsers.get(partnerId);
-            if (partnerSocket) {
-              io.to(partnerSocket).emit("dm:messages_read", { chatId, readerId: user.id, readAt: nowIso });
-              io.to(partnerSocket).emit("dm:mark_read", { chatId, readerId: user.id, readAt: nowIso });
-            }
-          }
-        }
-      }
-    });
-
-    socket.on("dm:enter_chat", async (data: any) => {
-      const partnerId = Number(data?.partnerId || data?.friendId || (typeof data === 'number' ? data : 0));
-      if (!partnerId) return;
-      activeChatMap.set(user.id, partnerId);
-      
-      const nowIso = new Date().toISOString();
-      const roomKey = `dm_${Math.min(user.id, partnerId)}_${Math.max(user.id, partnerId)}`;
-
-      try {
-        await client.execute({
-          sql: "UPDATE messages SET status = 'read', is_read = 1, read_at = ? WHERE sender = ? AND receiver = ? AND (is_read = 0 OR status != 'read')",
-          args: [nowIso, partnerId, user.id]
-        });
-        await client.execute({
-          sql: "UPDATE notifications SET read = 1 WHERE user_id = ? AND sender_id = ? AND (type = 'new_message' OR type = 'dm')",
-          args: [user.id, partnerId]
-        });
-      } catch (e) {}
-
-      const cached = messageRamCache.get(roomKey);
-      if (cached && Array.isArray(cached)) {
-        cached.forEach(m => {
-          if (m.sender === partnerId && m.receiver === user.id) {
-            m.status = 'read';
-            m.is_read = 1;
-            m.read_at = nowIso;
-          }
-        });
-      }
-
-      const partnerSocket = onlineUsers.get(partnerId);
-      if (partnerSocket) {
-        io.to(partnerSocket).emit("dm:messages_read", { chatId: roomKey, readerId: user.id, readAt: nowIso });
-        io.to(partnerSocket).emit("dm:mark_read", { chatId: roomKey, readerId: user.id, readAt: nowIso });
-        io.to(partnerSocket).emit("chat_read_update", roomKey, [[user.id, Date.now()]]);
-      }
-    });
-
-    socket.on("dm:leave_chat", () => {
-      if (activeChatMap.get(user.id)) {
-        activeChatMap.delete(user.id);
-      }
-    });
-
-    socket.on("dm:mark_read", async (data: any) => {
-      const partnerId = Number(data?.partnerId || data?.readerId || (typeof data === 'number' ? data : 0));
-      if (!partnerId) return;
-      const nowIso = new Date().toISOString();
-      const roomKey = `dm_${Math.min(user.id, partnerId)}_${Math.max(user.id, partnerId)}`;
-
-      try {
-        await client.execute({
-          sql: "UPDATE messages SET status = 'read', is_read = 1, read_at = ? WHERE sender = ? AND receiver = ? AND (is_read = 0 OR status != 'read')",
-          args: [nowIso, partnerId, user.id]
-        });
-      } catch (e) {}
-
-      const partnerSocket = onlineUsers.get(partnerId);
-      if (partnerSocket) {
-        io.to(partnerSocket).emit("dm:messages_read", { chatId: roomKey, readerId: user.id, readAt: nowIso });
-        io.to(partnerSocket).emit("dm:mark_read", { chatId: roomKey, readerId: user.id, readAt: nowIso });
-      }
     });
 
     socket.on("get_chat_read", (chatId, cb) => {
@@ -7542,7 +7459,7 @@ async function startServer() {
     const addNotification = async (userId: number, type: string, content: string, senderId?: number, targetId?: number) => {
       if (userId === user.id) return;
       // Smart Notification Suppression: If receiver is actively in DM with sender, suppress notification!
-      if ((type === "new_message" || type === "dm") && senderId && activeChatMap.get(userId) === senderId) {
+      if ((type === "new_message" || type === "dm") && senderId && dmPresence.viewing(Number(userId), Number(senderId))) {
         return;
       }
       const res = await client.execute({
@@ -7550,11 +7467,8 @@ async function startServer() {
         args: [userId, type, content, senderId || null, targetId || null, new Date().toISOString()]
       });
       const newNotifRes = await client.execute({ sql: "SELECT id, user_id, type, content, read, sender_id, target_id, created_at FROM notifications WHERE id = ?", args: [Number(res.lastInsertRowid)] });
-      const s = onlineUsers.get(userId);
-      if (s) {
-        io.to(s).emit("new_notification", newNotifRes.rows[0]);
-        io.to(s).emit("notifications_updated");
-      }
+      io.to(`dm-user:${Number(userId)}`).emit("new_notification", newNotifRes.rows[0]);
+      io.to(`dm-user:${Number(userId)}`).emit("notifications_updated");
     };
 
     socket.on("get_notifications", async (cb) => {
@@ -7611,15 +7525,11 @@ async function startServer() {
               else lastMessageText = (lm.content as string) || "";
             }
 
-            const roomId = `dm_${Math.min(user.id, otherId)}_${Math.max(user.id, otherId)}`;
-            const lastReadId = chatRead.get(roomId)?.get(Number(user.id)) || 0;
-            if (lastReadId > 0) {
-              const unreadRes = await client.execute({
-                sql: "SELECT COUNT(*) as cnt FROM messages WHERE sender = ? AND receiver = ? AND id > ?",
-                args: [otherId, user.id, lastReadId]
-              });
-              unreadCount = Number(unreadRes.rows[0]?.cnt || 0);
-            }
+            const unreadRes = await client.execute({
+              sql: "SELECT COUNT(*) as cnt FROM messages WHERE sender=? AND receiver=? AND COALESCE(is_read,0)=0 AND COALESCE(status,'sent')!='read'",
+              args: [otherId, user.id]
+            });
+            unreadCount = Number(unreadRes.rows[0]?.cnt || 0);
           } catch (e) {}
         }
 
@@ -8845,178 +8755,8 @@ async function startServer() {
     });
 
     // Chat with In-Memory RAM Cache & Dynamic Pagination (Zero message loss, full history persistence)
-    socket.on("get_messages", async (dataOrFriendId, cb) => {
-      let friendId: number = 0;
-      let beforeId: number | null = null;
-      let limit = 50;
-      let callback = cb;
-
-      if (typeof dataOrFriendId === "function") {
-        callback = dataOrFriendId;
-      } else if (typeof dataOrFriendId === "number" || typeof dataOrFriendId === "string") {
-        friendId = Number(dataOrFriendId);
-      } else if (dataOrFriendId && typeof dataOrFriendId === "object") {
-        friendId = Number(dataOrFriendId.friendId || dataOrFriendId.userId || dataOrFriendId.id);
-        if (dataOrFriendId.beforeId) beforeId = Number(dataOrFriendId.beforeId);
-        if (dataOrFriendId.limit) limit = Math.max(1, Math.min(100, Number(dataOrFriendId.limit)));
-      }
-
-      if (!friendId) {
-        if (typeof callback === "function") callback([]);
-        return;
-      }
-
-      const roomKey = `dm_${Math.min(user.id, friendId)}_${Math.max(user.id, friendId)}`;
-      if (!beforeId) {
-        const cached = messageRamCache.get(roomKey);
-        if (cached && cached.length > 0) {
-          if (typeof callback === "function") callback(cached);
-          return;
-        }
-      }
-
-      try {
-        let msgRes;
-        if (beforeId && !isNaN(beforeId)) {
-          msgRes = await client.execute({
-            sql: "SELECT id, sender, receiver, type, content, reply_to, reactions, file_name, file_size, status, is_read, read_at, created_at FROM messages WHERE ((sender = ? AND receiver = ?) OR (sender = ? AND receiver = ?)) AND id < ? ORDER BY id DESC LIMIT ?",
-            args: [user.id, friendId, friendId, user.id, beforeId, limit]
-          });
-        } else {
-          msgRes = await client.execute({
-            sql: "SELECT id, sender, receiver, type, content, reply_to, reactions, file_name, file_size, status, is_read, read_at, created_at FROM messages WHERE (sender = ? AND receiver = ?) OR (sender = ? AND receiver = ?) ORDER BY id DESC LIMIT ?",
-            args: [user.id, friendId, friendId, user.id, limit]
-          });
-        }
-
-        const rows = [...msgRes.rows].reverse();
-        const populated = await Promise.all(rows.map(async (r: any) => {
-          let replyMsg = null;
-          if (r.reply_to) {
-            const refRes = await client.execute({ sql: "SELECT id, sender, type, content, file_name, file_size FROM messages WHERE id = ? AND (sender = ? OR receiver = ?)", args: [r.reply_to, user.id, user.id] });
-            if (refRes.rows.length > 0) {
-              const refUser = await getUser(refRes.rows[0].sender as number);
-              replyMsg = { ...refRes.rows[0], sender_name: refUser?.username };
-            }
-          }
-          return { 
-            ...r, 
-            status: r.status || (r.is_read ? 'read' : 'delivered'),
-            is_read: r.is_read || 0,
-            reactions: JSON.parse(r.reactions as string || "[]"),
-            reply_message: replyMsg,
-            file_name: r.file_name,
-            file_size: r.file_size
-          };
-        }));
-
-        if (!beforeId) {
-          messageRamCache.set(roomKey, populated);
-        }
-        if (typeof callback === "function") callback(populated);
-      } catch (err) {
-        if (typeof callback === "function") callback([]);
-      }
-    });
-
-    socket.on("send_message", async (data) => {
-      let { receiver, type, content, reply_to, file_name, file_size } = data;
-      if (type === "text") {
-        if (!content || typeof content !== "string" || !content.trim()) return;
-        content = content.trim();
-        if (content.length > 1000) {
-          content = content.slice(0, 1000);
-        }
-      }
-      
-      const sUser = await getUser(user.id);
-      const receiverIdNum = Number(receiver);
-      const roomKey = `dm_${Math.min(user.id, receiverIdNum)}_${Math.max(user.id, receiverIdNum)}`;
-      const nowIso = new Date().toISOString();
-      const tempMsgId = `m_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-
-      // Check if receiver is in active chat with user (Smart Notification & WhatsApp-style Read status)
-      const isReceiverInActiveChat = activeChatMap.get(receiverIdNum) === Number(user.id);
-      const isReceiverOnline = !!onlineUsers.get(receiverIdNum);
-      const initialStatus = isReceiverInActiveChat ? 'read' : (isReceiverOnline ? 'delivered' : 'sent');
-      const isReadVal = isReceiverInActiveChat ? 1 : 0;
-      const readAtVal = isReceiverInActiveChat ? nowIso : null;
-
-      let replyMsg = null;
-      if (reply_to) {
-        const cachedList = messageRamCache.get(roomKey);
-        const refCached = cachedList?.find(m => String(m.id) === String(reply_to));
-        if (refCached) {
-          replyMsg = { id: refCached.id, sender: refCached.sender, type: refCached.type, content: refCached.content, sender_name: refCached.sender_name };
-        } else {
-          try {
-            const refRes = await client.execute({ sql: "SELECT id, sender, type, content, file_name, file_size FROM messages WHERE id = ? AND (sender = ? OR receiver = ?)", args: [reply_to, user.id, user.id] });
-            if (refRes.rows.length > 0) {
-              const refUser = await getUser(refRes.rows[0].sender as number);
-              replyMsg = { ...refRes.rows[0], sender_name: refUser?.username };
-            }
-          } catch(e) {}
-        }
-      }
-
-      const newMsg: any = {
-        id: tempMsgId,
-        sender: user.id,
-        receiver: receiverIdNum,
-        type,
-        content,
-        reply_to: reply_to || null,
-        reactions: [],
-        sender_name: sUser?.username,
-        sender_avatar: sUser?.avatar,
-        sender_color: sUser?.color,
-        reply_message: replyMsg,
-        file_name: file_name || null,
-        file_size: file_size || null,
-        created_at: nowIso,
-        room_id: roomKey,
-        status: initialStatus,
-        is_read: isReadVal,
-        read_at: readAtVal
-      };
-
-      // 1. Instant RAM Cache write (zero delay)
-      messageRamCache.push(roomKey, newMsg);
-
-      // 2. Real-time delivery to peer & local echo
-      const targetSocket = onlineUsers.get(receiverIdNum);
-      if (targetSocket) io.to(targetSocket).emit("new_message", newMsg);
-      socket.emit("new_message", newMsg);
-
-      // 3. Asynchronously persist to Turso DB & send notification (background non-blocking)
-      client.execute({
-        sql: "INSERT INTO messages (sender, receiver, type, content, reply_to, reactions, file_name, file_size, room_id, status, is_read, read_at, created_at) VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?)",
-        args: [user.id, receiverIdNum, type, content, reply_to || null, file_name || null, file_size || null, roomKey, initialStatus, isReadVal, readAtVal, nowIso]
-      }).then(res => {
-        newMsg.id = Number(res.lastInsertRowid);
-      }).catch(err => {
-        console.error("Async DM persist error:", err);
-      });
-
-      void devicePush.deliver(receiverIdNum, {
-        title: String(sUser?.username || user.username),
-        body: type === "text" ? String(content).slice(0, 120) :
-          type === "image" ? "📷 Fotoğraf" : type === "voice" ? "🎤 Ses kaydı" : "📎 Yeni ek",
-        avatar: typeof sUser?.avatar === "string" && sUser.avatar.length <= 250 ? sUser.avatar : undefined,
-        tag: `dm-${userIdNum}`, url: `/?pushDm=${userIdNum}`,
-        expiresAt: Date.now() + 3600_000,
-      }).catch(() => {});
-
-      // 4. Suppress notification if receiver is already actively inside this DM chat
-      if (!isReceiverInActiveChat) {
-        let notifPreview = content;
-        if (type === "image") notifPreview = "📷 Fotoğraf";
-        else if (type === "voice") notifPreview = "🎤 Ses kaydı";
-        else if (type === "file") notifPreview = `📎 ${file_name || "Dosya"}`;
-        else if (typeof notifPreview === "string" && notifPreview.length > 80) notifPreview = notifPreview.slice(0, 80) + "...";
-        addNotification(receiverIdNum, "new_message", `${user.username}: ${notifPreview}`, user.id).catch(() => {});
-      }
-    });
+    registerDirectMessages({ io, socket, db: client, presence: dmPresence, getUser,
+      notify: addNotification, push: devicePush });
 
     const populateMessage = async (m: any, type: "global" | "group") => {
       const sUser = await getUser(m.sender);
@@ -9549,6 +9289,7 @@ async function startServer() {
     });
 
     socket.on("react_message", async (data) => {
+       if (data?.type === "private") return;
        let table = "";
        if (data.type === 'private') table = "messages";
        else if (data.type === 'group') table = "group_messages";

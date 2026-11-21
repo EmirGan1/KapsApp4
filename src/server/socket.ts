@@ -6,13 +6,13 @@ import { Server, Socket } from "socket.io";
 export function setupChatSocketHandlers(io: Server, socket: Socket, user: any, client: any, messageRamCache: any, getUser: any) {
   // 1. Oda abonelikleri (general, global)
   socket.on("join_room", (room: string) => {
-    if (room && typeof room === "string") {
+    if (room && typeof room === "string" && !room.startsWith("dm-user:")) {
       socket.join(room);
     }
   });
 
   socket.on("leave_room", (room: string) => {
-    if (room && typeof room === "string") {
+    if (room && typeof room === "string" && !room.startsWith("dm-user:")) {
       socket.leave(room);
     }
   });
