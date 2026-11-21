@@ -393,6 +393,18 @@ export const EXAM_STRUCTURE = {
   },
 };
 
+export type TaskDirection = "de_tr" | "tr_de" | "de_only";
+export type TaskObjective =
+  | "meaning"
+  | "production"
+  | "article"
+  | "conjugation"
+  | "cloze"
+  | "ordering"
+  | "listening"
+  | "matching"
+  | "exam";
+
 export type Task = {
   interaction?: {
     tiles?: string[];
@@ -417,6 +429,10 @@ export type Task = {
   part: number;
   level: string;
   topic?: string;
+  direction?: TaskDirection;
+  objective?: TaskObjective;
+  isMistakeReview?: boolean;
+  pairVocabularyIds?: string[];
   prompt: string;
   passage: string;
   options: string[];
@@ -428,6 +444,35 @@ export type Task = {
   fingerprint: string;
 };
 
+const BARE_OPTION_LABEL_RE = /^(?:\(?[A-E]\)[.:]?|[A-E][.)]?|[1-5][.)]?)$/iu;
+
+function extractMatchableTokens(w: Vocabulary): string[] {
+  const bareDe = normalize(w.de).replace(/^(?:der|die|das)\s+/u, "").trim();
+  const tokens: string[] = [];
+  if (bareDe) tokens.push(bareDe);
+  if (w.plural) {
+    const barePlural = normalize(w.plural).replace(/^(?:die)\s+/u, "").trim();
+    if (barePlural) tokens.push(barePlural);
+  }
+  for (const part of w.tr.split(/\s*\/\s*/u)) {
+    const cleanTr = normalize(part).replace(/\([^)]*\)/gu, "").trim();
+    if (cleanTr.length >= 2) tokens.push(cleanTr);
+  }
+  if (w.exampleDe) tokens.push(normalize(w.exampleDe));
+  if (w.exampleTr) tokens.push(normalize(w.exampleTr));
+  if (w.conjugation?.answer) tokens.push(normalize(w.conjugation.answer));
+  if (w.completion?.answer) tokens.push(normalize(w.completion.answer));
+  // Verb / adjective stem prefix (>= 4 chars) to allow valid German inflected stems like "kauf" or "neu"
+  if ((w.pos === "verb" || w.pos === "adj") && bareDe.length >= 4) {
+    const stem =
+      w.pos === "verb"
+        ? bareDe.replace(/^sich\s+/u, "").replace(/(?:en|n)$/u, "")
+        : bareDe;
+    if (stem.length >= 3) tokens.push(stem);
+  }
+  return [...new Set(tokens)].filter((t) => t.length >= 2);
+}
+
 export function validateTask(value: any, words: Vocabulary[]): Task | null {
   if (!value || typeof value !== "object") return null;
   for (const field of [
@@ -436,96 +481,204 @@ export function validateTask(value: any, words: Vocabulary[]): Task | null {
     "answer",
     "explanation",
     "evidence",
-  ])
+  ]) {
     if (typeof value[field] !== "string" || value[field].length > 15000)
       return null;
+  }
   if (
     !value.prompt.trim() ||
     !value.explanation.trim() ||
     !["vocabulary", ...Object.keys(EXAM_STRUCTURE)].includes(value.module) ||
     !Array.isArray(value.options) ||
     value.options.length > 12 ||
-    value.options.some((s: any) => typeof s !== "string" || s.length > 500)
-  )
+    value.options.some((s: any) => typeof s !== "string" || !s.trim() || s.length > 500)
+  ) {
     return null;
+  }
   if (
     !Array.isArray(value.alternatives) ||
     value.alternatives.length > 20 ||
     value.alternatives.some(
       (s: any) => typeof s !== "string" || s.length > 3000,
     )
-  )
+  ) {
     return null;
+  }
   if (
     !Array.isArray(value.vocabularyIds) ||
     !value.vocabularyIds.length ||
     value.vocabularyIds.length > 8
-  )
+  ) {
     return null;
+  }
+
   const matchedWords = value.vocabularyIds
     .map((id: any) => words.find((w) => w.id === id))
     .filter(Boolean) as Vocabulary[];
   if (matchedWords.length !== value.vocabularyIds.length) return null;
   // Never validate unclassified vocabulary into level-restricted tasks
   if (matchedWords.some((w) => !isCefrLevel(w.level))) return null;
-  const context = normalize(value.passage + " " + value.prompt);
+
+  // Reject bare option labels like "A", "(B)", "1)" as canonical answers!
   if (
-    !matchedWords.some((w) =>
-      context.includes(normalize(w.de).replace(/^(der|die|das) /u, "")),
-    )
-  )
+    value.answer.trim() &&
+    BARE_OPTION_LABEL_RE.test(value.answer.trim()) &&
+    value.type !== "missing"
+  ) {
     return null;
+  }
+
+  const context = normalize(
+    [
+      value.passage,
+      value.prompt,
+      value.answer,
+      value.interaction?.audioText ?? "",
+      ...(Array.isArray(value.interaction?.left) ? value.interaction.left : []),
+      ...(Array.isArray(value.interaction?.right) ? value.interaction.right : []),
+    ].join(" "),
+  );
+  if (
+    !matchedWords.every((w) =>
+      extractMatchableTokens(w).some((tok) => context.includes(tok)),
+    )
+  ) {
+    return null;
+  }
+
   if (!Number.isInteger(value.part) || value.part < 1 || value.part > 5)
     return null;
+
   if (value.module !== "vocabulary") {
     const config = EXAM_STRUCTURE[value.module as keyof typeof EXAM_STRUCTURE];
     if (
       value.part > config.parts.length ||
       value.type !== config.formats[value.part - 1]
-    )
+    ) {
       return null;
+    }
   }
+
   if (
     value.options.length &&
+    value.type !== "multi" &&
     (new Set(value.options.map(normalize)).size !== value.options.length ||
       !value.options.includes(value.answer))
-  )
+  ) {
     return null;
+  }
+
+  if (value.type === "multi") {
+    const expParts = value.answer.split(" | ").map((s: string) => s.trim()).filter(Boolean);
+    if (
+      expParts.length < 2 ||
+      new Set(value.options.map(normalize)).size !== value.options.length ||
+      !expParts.every((p: string) => value.options.includes(p))
+    ) {
+      return null;
+    }
+  }
+
+  if (value.type === "matching") {
+    const left = value.interaction?.left;
+    const right = value.interaction?.right;
+    if (
+      !Array.isArray(left) ||
+      !Array.isArray(right) ||
+      left.length < 2 ||
+      left.length !== right.length ||
+      matchedWords.length !== left.length
+    ) {
+      return null;
+    }
+    let parsedAns: unknown;
+    try {
+      parsedAns = JSON.parse(value.answer);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(parsedAns) || parsedAns.length !== left.length) return null;
+    const sortedRight = [...right].map((x) => normalize(String(x))).sort();
+    const sortedAns = [...parsedAns].map((x) => normalize(String(x))).sort();
+    if (sortedRight.some((val, i) => val !== sortedAns[i])) return null;
+    if (new Set(left.map((x: unknown) => normalize(String(x)))).size !== left.length) {
+      return null;
+    }
+    if (new Set(right.map((x: unknown) => normalize(String(x)))).size !== right.length) {
+      return null;
+    }
+  }
+
+  if (value.type === "ordering" || value.type === "sentence_ordering") {
+    const tiles = value.interaction?.tiles;
+    if (!Array.isArray(tiles) || tiles.length < 2) return null;
+    const expectedTokens = value.answer.trim().split(/\s+/u).filter(Boolean).map(normalize).sort();
+    const tileTokens = tiles.map((t: unknown) => normalize(String(t))).sort();
+    if (
+      expectedTokens.length !== tileTokens.length ||
+      expectedTokens.some((tok: string, i: number) => tok !== tileTokens[i])
+    ) {
+      return null;
+    }
+  }
+
+  if (value.type === "listening" && !value.interaction?.audioText?.trim()) {
+    return null;
+  }
+
   if (
     value.module === "Lesen" &&
     (!value.passage ||
       !value.evidence ||
       !value.passage.includes(value.evidence) ||
       !value.answer)
-  )
+  ) {
     return null;
+  }
+
+  const allowedVocabTypes = [
+    "multiple_choice",
+    "choice",
+    "matching",
+    "gap",
+    "article",
+    "conjugation",
+    "cases",
+    "correction",
+    "ordering",
+    "sentence_ordering",
+    "sentence_gap",
+    "sentence_translation",
+    "sentence_completion",
+    "listening",
+    "translation",
+    "translation_de_tr",
+    "translation_tr_de",
+    "true_false",
+    "intruder",
+    "multi",
+    "spelling",
+    "missing",
+  ];
   if (
     value.module === "vocabulary" &&
-    (!value.answer.trim() ||
-      ![
-        "multiple_choice",
-        "choice",
-        "gap",
-        "article",
-        "conjugation",
-        "cases",
-        "correction",
-        "sentence_completion",
-        "translation",
-        "translation_de_tr",
-        "translation_tr_de",
-      ].includes(value.type))
-  )
+    (!value.answer.trim() || !allowedVocabTypes.includes(value.type))
+  ) {
     return null;
+  }
   if (value.module === "Hören") return null;
 
   const taskLevel = isCefrLevel(value.level) ? value.level : matchedWords[0].level;
   return {
     ...value,
-    id: fingerprint(
-      JSON.stringify([value.module, value.prompt, value.passage]),
-    ),
+    id:
+      typeof value.id === "string" && value.id.length > 0
+        ? value.id
+        : fingerprint(JSON.stringify([value.module, value.prompt, value.passage])),
     level: taskLevel,
-    fingerprint: fingerprint(normalize(value.prompt + " " + value.passage)),
+    fingerprint:
+      typeof value.fingerprint === "string" && value.fingerprint.length > 0
+        ? value.fingerprint
+        : fingerprint(normalize(value.prompt + " " + value.passage)),
   };
 }

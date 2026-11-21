@@ -132,16 +132,43 @@ export async function initGermanSchema(db: Client) {
   await safeAlter(db, "ALTER TABLE german_words ADD COLUMN canonical_key TEXT NOT NULL DEFAULT ''");
   await safeAlter(db, "ALTER TABLE german_words ADD COLUMN topic TEXT NOT NULL DEFAULT ''");
   await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN filters TEXT NOT NULL DEFAULT '{}'");
+  await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN parent_session_id TEXT DEFAULT NULL");
+  await safeAlter(db, "ALTER TABLE german_sessions ADD COLUMN reinforcement_direction TEXT DEFAULT NULL");
 
   await db.batch(
     [
       "CREATE INDEX IF NOT EXISTS german_words_level_active ON german_words(active, cefr_level)",
       "CREATE INDEX IF NOT EXISTS german_words_canonical ON german_words(canonical_key)",
+      "CREATE INDEX IF NOT EXISTS german_sessions_parent ON german_sessions(user_id, parent_session_id, state)",
     ],
     "write",
   );
 
   await migrateLegacyGermanData(db);
+}
+
+export async function getRecentSessionWordIds(
+  db: Client,
+  userId: number,
+  limitSessions = 3,
+): Promise<Set<string>> {
+  const rows = await db.execute({
+    sql: "SELECT tasks FROM german_sessions WHERE user_id=? ORDER BY started_at DESC LIMIT ?",
+    args: [userId, limitSessions],
+  });
+  const ids = new Set<string>();
+  for (const r of rows.rows) {
+    try {
+      const tasks = JSON.parse(String(r.tasks ?? "[]")) as Array<{ vocabularyIds?: string[] }>;
+      if (!Array.isArray(tasks)) continue;
+      for (const t of tasks) {
+        for (const wid of t.vocabularyIds ?? []) {
+          if (typeof wid === "string" && wid) ids.add(wid);
+        }
+      }
+    } catch {}
+  }
+  return ids;
 }
 
 export async function migrateLegacyGermanData(db: Client) {
@@ -486,6 +513,7 @@ export async function recordAttemptAndApplyMastery(
     taskId: string;
     exerciseType: string;
     vocabularyIds: string[];
+    pairResults?: boolean[];
     userAnswer: string;
     isCorrect: boolean;
     isReview: boolean;
@@ -502,11 +530,19 @@ export async function recordAttemptAndApplyMastery(
   const nowIso = now.toISOString();
   const day = localDayKey(now);
   let xpAwarded = 0;
-  let alreadyApplied = false;
+  let insertedCount = 0;
+  let taskXpAwarded = false;
   const newlyMastered: Array<{ wordId: string; de: string; tr: string; level: string }> = [];
   const masteryUpdates: Record<string, MasteryRecord> = {};
 
-  for (const wordId of input.vocabularyIds) {
+  const hasPerPair =
+    input.exerciseType === "matching" &&
+    Array.isArray(input.pairResults) &&
+    input.pairResults.length === input.vocabularyIds.length;
+
+  for (let idx = 0; idx < input.vocabularyIds.length; idx++) {
+    const wordId = input.vocabularyIds[idx];
+    const itemCorrect = hasPerPair ? Boolean(input.pairResults![idx]) : input.isCorrect;
     const attemptKey = `${input.userId}:${input.sessionId}:${input.taskId}:${wordId}`;
     const w = input.wordLevels.get(wordId);
     const level = w?.level ?? "UNCLASSIFIED";
@@ -524,7 +560,7 @@ export async function recordAttemptAndApplyMastery(
         input.exerciseType,
         level,
         input.userAnswer.slice(0, 2000),
-        input.isCorrect ? 1 : 0,
+        itemCorrect ? 1 : 0,
         input.isReview ? 1 : 0,
         0,
         nowIso,
@@ -532,9 +568,9 @@ export async function recordAttemptAndApplyMastery(
     });
 
     if (!ins.rows.length) {
-      alreadyApplied = true;
       continue;
     }
+    insertedCount++;
 
     // Load authoritative current mastery
     const oldRow = await tx.execute({
@@ -559,7 +595,7 @@ export async function recordAttemptAndApplyMastery(
       : newMastery(wordId, level as any);
 
     const wasMastered = oldMastery.masteryStatus === "mastered";
-    const nextMastery = applyMasteryAttempt(oldMastery, input.isCorrect, {
+    const nextMastery = applyMasteryAttempt(oldMastery, itemCorrect, {
       isReview: input.isReview,
       now,
     });
@@ -598,7 +634,11 @@ export async function recordAttemptAndApplyMastery(
 
     masteryUpdates[wordId] = nextMastery;
 
-    let itemXp = input.isCorrect ? XP_RULES.CORRECT_ANSWER : 0;
+    let itemXp = 0;
+    if (input.isCorrect && !taskXpAwarded) {
+      itemXp += XP_RULES.CORRECT_ANSWER;
+      taskXpAwarded = true;
+    }
     if (becameMasteredNow) {
       itemXp += XP_RULES.NEW_MASTERY;
       newlyMastered.push({
@@ -616,6 +656,7 @@ export async function recordAttemptAndApplyMastery(
     });
   }
 
+  const alreadyApplied = insertedCount === 0;
   if (!alreadyApplied) {
     // Update user daily activity and streak cleanly inside the same transaction
     await tx.execute({
@@ -688,7 +729,7 @@ export async function awardLessonCompletionAndAchievements(
   const ins = await tx.execute({
     sql: `INSERT OR IGNORE INTO german_attempts(
       attempt_key, user_id, session_id, task_id, word_id, exercise_type, cefr_level, user_answer, is_correct, is_review, xp_awarded, created_at
-    ) VALUES(?,?,'__session','__lesson_complete','__lesson','lesson','ALL','',1,0,?,?) RETURNING attempt_key`,
+    ) VALUES(?,?,?,'__lesson_complete','__lesson','lesson','ALL','',1,0,?,?) RETURNING attempt_key`,
     args: [completionKey, userId, sessionId, XP_RULES.COMPLETED_LESSON, nowIso],
   });
 
@@ -821,7 +862,7 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
         args: [userId],
       }),
       db.execute({
-        sql: "SELECT id, module, mode, state, started_at, deadline, results, filters FROM german_sessions WHERE user_id=? ORDER BY started_at DESC LIMIT 40",
+        sql: "SELECT id, module, mode, state, started_at, deadline, results, filters, parent_session_id, reinforcement_direction FROM german_sessions WHERE user_id=? ORDER BY started_at DESC LIMIT 40",
         args: [userId],
       }),
       db.execute("SELECT * FROM german_jobs ORDER BY started_at DESC LIMIT 10"),
@@ -929,7 +970,7 @@ export async function buildDashboardSummary(db: Client, userId: number, includeW
     };
   });
 
-  // Build interactive Duolingo-style Learning Path per CEFR level & topic
+  // Build interactive CEFR Learning Path per level & topic
   const learningPath = studyLevels.map((lvl) => {
     const lvlWords = uniqueWords.filter((w) => w.level === lvl);
     const topicsMap = new Map<string, WordWithMastery[]>();

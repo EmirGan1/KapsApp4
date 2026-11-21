@@ -109,10 +109,17 @@ export default function ActivityInput({
       }
     };
 
+    const isReverseMatch = task.direction === "tr_de";
+    const leftAriaLabel = isReverseMatch ? "Türkçe ifadeler" : "Almanca kelimeler";
+    const rightAriaLabel = isReverseMatch ? "Almanca karşılıklar" : "Türkçe karşılıklar";
+    const matchingHint = isReverseMatch
+      ? "Önce soldan bir Türkçe ifade seç, ardından sağdaki Almanca karşılığına dokun."
+      : "Önce soldan bir Almanca kart seç, ardından sağdaki Türkçe karşılığına dokun.";
+
     return (
       <div className="kg-activity-input">
         <div className="kg-matching-grid">
-          <div className="kg-matching-col" aria-label="Almanca kelimeler">
+          <div className="kg-matching-col" aria-label={leftAriaLabel}>
             {leftItems.map((left, idx) => {
               const pairedWith = pairs[idx];
               const isSelected = activeLeftIdx === idx;
@@ -124,13 +131,13 @@ export default function ActivityInput({
                   onClick={() => handleLeftClick(idx)}
                   className={`kg-pair-card ${isSelected ? "is-selected" : ""} ${pairedWith ? "is-paired" : ""}`}
                 >
-                  <span lang="de">{left}</span>
+                  <span lang={isReverseMatch ? "tr" : "de"}>{left}</span>
                   {pairedWith && <span className="kg-pair-badge">{idx + 1}</span>}
                 </button>
               );
             })}
           </div>
-          <div className="kg-matching-col" aria-label="Türkçe karşılıklar">
+          <div className="kg-matching-col" aria-label={rightAriaLabel}>
             {rightItems.map((right, rIdx) => {
               const ownerIdx = pairs.findIndex((p) => p === right);
               const isPaired = ownerIdx >= 0;
@@ -142,7 +149,7 @@ export default function ActivityInput({
                   onClick={() => handleRightClick(right)}
                   className={`kg-pair-card ${isPaired ? "is-paired" : ""}`}
                 >
-                  <span>{right}</span>
+                  <span lang={isReverseMatch ? "de" : "tr"}>{right}</span>
                   {isPaired && <span className="kg-pair-badge">{ownerIdx + 1}</span>}
                 </button>
               );
@@ -151,7 +158,7 @@ export default function ActivityInput({
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <p className="kg-section-sub" style={{ margin: 0 }}>
-            Önce soldan bir Almanca kart seç, ardından sağdaki Türkçe anlamına dokun.
+            {matchingHint}
           </p>
           {!disabled && pairs.some(Boolean) && (
             <button
@@ -341,24 +348,29 @@ export default function ActivityInput({
     });
   };
 
+  const expectsGermanText = task.direction !== "de_tr";
+
   return (
     <div className="kg-activity-input">
       {listeningControls}
-      <div className="kg-umlaut-bar" role="group" aria-label="Almanca özel karakterler">
-        {GERMAN_CHARS.map((ch) => (
-          <button
-            key={ch}
-            type="button"
-            disabled={disabled}
-            className="kg-umlaut-key"
-            onClick={() => insertChar(ch)}
-          >
-            {ch}
-          </button>
-        ))}
-      </div>
+      {expectsGermanText && (
+        <div className="kg-umlaut-bar" role="group" aria-label="Almanca özel karakterler">
+          {GERMAN_CHARS.map((ch) => (
+            <button
+              key={ch}
+              type="button"
+              disabled={disabled}
+              className="kg-umlaut-key"
+              onClick={() => insertChar(ch)}
+            >
+              {ch}
+            </button>
+          ))}
+        </div>
+      )}
       <textarea
         ref={textareaRef}
+        lang={expectsGermanText ? "de" : "tr"}
         aria-label="Yanıtın"
         className="kg-textarea"
         rows={task.module === "vocabulary" ? 3 : 7}
@@ -367,7 +379,9 @@ export default function ActivityInput({
         disabled={disabled}
         placeholder={
           task.module === "vocabulary"
-            ? `${activityLabel(task.type)} yanıtını buraya yaz…`
+            ? expectsGermanText
+              ? "Almanca karşılığını buraya yaz…"
+              : "Türkçe anlamını buraya yaz…"
             : "Almanca yanıtını buraya yaz…"
         }
         autoCapitalize="off"
@@ -375,7 +389,9 @@ export default function ActivityInput({
         onChange={(e) => onChange(e.target.value)}
       />
       <p className="kg-section-sub" style={{ margin: 0 }}>
-        Büyük/küçük harf ve son noktalama esnek değerlendirilir; umlaut (ä, ö, ü) harflerine dikkat et.
+        {expectsGermanText
+          ? "Büyük/küçük harf ve son noktalama esnek değerlendirilir; umlaut (ä, ö, ü) ve ß harflerine dikkat et."
+          : "Büyük/küçük harf ve son noktalama esnek değerlendirilir."}
       </p>
     </div>
   );

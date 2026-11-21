@@ -281,12 +281,37 @@ export function expandAcceptableAnswers(
   return [...set];
 }
 
+export function evaluateMatchingPairs(
+  answerJson: string,
+  userJson: string,
+): boolean[] | null {
+  try {
+    const exp = JSON.parse(answerJson);
+    const usr = JSON.parse(userJson);
+    if (
+      !Array.isArray(exp) ||
+      !Array.isArray(usr) ||
+      exp.length === 0 ||
+      exp.length !== usr.length
+    ) {
+      return null;
+    }
+    return exp.map(
+      (val: unknown, idx: number) =>
+        cleanForCompare(String(val ?? "")) === cleanForCompare(String(usr[idx] ?? "")),
+    );
+  } catch {
+    return null;
+  }
+}
+
 export function gradeAnswer(input: {
   type: string;
   answer: string;
   alternatives?: string[];
   hasOptions?: boolean;
   hasInteraction?: boolean;
+  direction?: "de_tr" | "tr_de" | "de_only";
   userAnswer: string;
 }): boolean {
   const userRaw = input.userAnswer ?? "";
@@ -311,18 +336,8 @@ export function gradeAnswer(input: {
   }
 
   if (input.type === "matching") {
-    try {
-      const exp = JSON.parse(input.answer);
-      const usr = JSON.parse(userRaw);
-      if (!Array.isArray(exp) || !Array.isArray(usr) || exp.length !== usr.length)
-        return false;
-      return exp.every(
-        (val: string, idx: number) =>
-          cleanForCompare(String(val)) === cleanForCompare(String(usr[idx] ?? "")),
-      );
-    } catch {
-      return false;
-    }
+    const pairChecks = evaluateMatchingPairs(input.answer, userRaw);
+    return pairChecks !== null && pairChecks.every(Boolean);
   }
 
   if (input.hasOptions) {
@@ -330,29 +345,38 @@ export function gradeAnswer(input: {
   }
 
   if (input.hasInteraction) {
-    // Tiles / ordering: tolerate trailing punctuation differences only if identical words
+    // Tiles / ordering / spelling: preserve word/character sequence while tolerating trailing punctuation
     return cleanForCompare(input.answer, true) === cleanForCompare(userRaw, true);
   }
 
-  // Free text / translation / sentence translation / gap typing / listening typing:
+  // Sentence translation NEVER splits on "/" unless explicit alternative is listed,
+  // preventing single-word or fragmented substring false positives.
+  const isSentence = input.type === "sentence_translation";
   const userStrict = cleanForCompare(userRaw, false);
   const userFolded = cleanForCompare(userRaw, true);
-  const allowSlash = true;
   const accepted = expandAcceptableAnswers(
     input.answer,
     input.alternatives ?? [],
-    allowSlash,
+    !isSentence,
   );
 
   for (const cand of accepted) {
     if (cleanForCompare(cand, false) === userStrict) return true;
-    // Allow ß <-> ss equivalence if all umlauts still strictly match
+    // Allow ß <-> ss equivalence when all umlauts still strictly match
     if (cleanForCompare(cand, true) === userFolded) return true;
   }
 
-  // Optional article forgiveness on single German noun translation? Only if alternative included or user provided exact noun with/without article when article wasn't the specific objective:
-  if (input.type === "translation" && /^(?:der|die|das)\s+/iu.test(input.answer)) {
-    const bareExpected = cleanForCompare(input.answer.replace(/^(?:der|die|das)\s+/iu, ""), true);
+  // Optional bare-noun forgiveness ONLY for word translation in German-production direction
+  // (wrong article like "die Apfel" for "der Apfel" MUST remain false!)
+  if (
+    (input.type === "translation" || input.type === "translation_tr_de") &&
+    input.direction !== "de_tr" &&
+    /^(?:der|die|das)\s+/iu.test(input.answer)
+  ) {
+    const bareExpected = cleanForCompare(
+      input.answer.replace(/^(?:der|die|das)\s+/iu, ""),
+      true,
+    );
     if (bareExpected && bareExpected === userFolded) return true;
   }
 

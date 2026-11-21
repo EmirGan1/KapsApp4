@@ -186,6 +186,7 @@ export function ProfileAdminView({
             {overview.sessions.slice(0, 12).map((s) => {
               const lvls = s.filters?.levels?.join(", ") || "CEFR";
               const act = s.filters?.activity ? activityLabel(s.filters.activity) : s.module;
+              const isReinforcement = Boolean(s.parent_session_id || s.filters?.parentSessionId);
               return (
                 <div
                   key={s.id}
@@ -197,13 +198,14 @@ export function ProfileAdminView({
                     flexWrap: "wrap",
                     padding: "11px 13px",
                     borderRadius: 14,
-                    border: "2px solid var(--kg-border)",
+                    border: "1.5px solid var(--kg-border)",
                     background: "var(--kg-surface-soft)",
                   }}
                 >
                   <div>
                     <strong style={{ fontSize: 14 }}>
                       {lvls} · {act}
+                      {isReinforcement ? " · Ters Yön Pekiştirmesi" : ""}
                     </strong>
                     <div className="kg-section-sub" style={{ margin: 0 }}>
                       {new Date(s.started_at).toLocaleString("tr-TR")} ·{" "}

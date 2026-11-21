@@ -137,6 +137,15 @@ export function retrySessionGrading(sessionId: string): Promise<{ ok: boolean }>
   return germanRequest(`/sessions/${encodeURIComponent(sessionId)}/retry`, {});
 }
 
+export function startReinforcementSession(sessionId: string): Promise<{
+  id: string;
+  existing?: boolean;
+  alreadyCompleted?: boolean;
+  reinforcementDirection: StudyDirection;
+}> {
+  return germanRequest(`/sessions/${encodeURIComponent(sessionId)}/reinforce`, {});
+}
+
 export function resetGermanProgress(): Promise<{ ok: boolean }> {
   return germanRequest("/progress/reset", { confirm: "RESET_MY_PROGRESS" });
 }

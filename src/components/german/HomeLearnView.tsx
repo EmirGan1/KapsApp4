@@ -108,12 +108,7 @@ export function HomeLearnView({
             </button>
             <button
               type="button"
-              className="kg-btn"
-              style={{
-                background: "rgba(255,255,255,0.16)",
-                borderColor: "rgba(255,255,255,0.4)",
-                color: "#ffffff",
-              }}
+              className="kg-btn kg-hero-secondary"
               onClick={onOpenProgress}
             >
               Tüm Seviyeler (A1–C1)
@@ -278,7 +273,7 @@ export function HomeLearnView({
         </button>
       </div>
 
-      {/* Duolingo-style Interactive Learning Path */}
+      {/* Interactive Topic Learning Path */}
       <div className="kg-card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div className="kg-section-head">
           <div>

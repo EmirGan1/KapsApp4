@@ -97,6 +97,8 @@ export interface SessionSummaryRow {
   state: "active" | "grading" | "done";
   started_at: string;
   deadline: string;
+  parent_session_id?: string | null;
+  reinforcement_direction?: string | null;
   results: Record<string, TaskResult>;
   filters: {
     levels?: CefrLevel[];
@@ -104,6 +106,8 @@ export interface SessionSummaryRow {
     direction?: StudyDirection;
     topic?: string;
     reviewMode?: boolean;
+    parentSessionId?: string;
+    reinforcementDirection?: StudyDirection;
   };
 }
 
@@ -160,6 +164,10 @@ export interface GermanTask {
   part: number;
   level: string;
   topic?: string;
+  direction?: "de_tr" | "tr_de" | "de_only";
+  objective?: string;
+  isMistakeReview?: boolean;
+  pairVocabularyIds?: string[];
   prompt: string;
   passage: string;
   options: string[];
@@ -205,6 +213,13 @@ export interface ActiveSession {
   deadline: string;
   version: number;
   position: number;
+  parentSessionId?: string | null;
+  reinforcementDirection?: StudyDirection | null;
+  reinforcementSession?: {
+    id: string;
+    state: "active" | "grading" | "done";
+    direction: StudyDirection | null;
+  } | null;
   filters: {
     levels?: CefrLevel[];
     activity?: string;
@@ -212,6 +227,8 @@ export interface ActiveSession {
     topic?: string;
     wordIds?: string[];
     reviewMode?: boolean;
+    parentSessionId?: string;
+    reinforcementDirection?: StudyDirection;
   };
   tasks: GermanTask[];
   answers: Record<string, string>;

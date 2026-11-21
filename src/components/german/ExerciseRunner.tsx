@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  ArrowLeftRight,
   ArrowRight,
   Award,
   CheckCircle2,
@@ -11,7 +12,11 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { activityLabel } from "../../shared/germanActivities";
+import {
+  activityLabel,
+  directionLabelTr,
+  oppositeStudyDirection,
+} from "../../shared/germanActivities";
 import ActivityInput from "./ActivityInput";
 import { CefrTag, MasteryPips } from "./MasteryPips";
 import {
@@ -20,6 +25,7 @@ import {
   retrySessionGrading,
   saveSessionDraft,
   speakGerman,
+  startReinforcementSession,
   submitSession,
 } from "./api";
 import type {
@@ -40,17 +46,20 @@ export function ExerciseRunner({
   onExit,
   onOverviewChanged,
   onRestartSimilar,
+  onOpenSession,
 }: {
   sessionId: string;
   onExit: () => void;
   onOverviewChanged: () => void;
   onRestartSimilar: (filters: ActiveSession["filters"], module: string) => void;
+  onOpenSession?: (sessionId: string) => void;
 }) {
   const [session, setSession] = useState<ActiveSession | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [index, setIndex] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reinforcing, setReinforcing] = useState(false);
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [sessionXp, setSessionXp] = useState(0);
   const [lastXpGain, setLastXpGain] = useState(0);
@@ -73,6 +82,7 @@ export function ExerciseRunner({
     setAnswers({});
     setIndex(0);
     setError("");
+    setReinforcing(false);
     setConfirmFinish(false);
     setSessionXp(0);
     setLastXpGain(0);
@@ -80,39 +90,50 @@ export function ExerciseRunner({
     setUnlockedAchievements([]);
     examExpiredRef.current = false;
 
-    const load = async (initial: boolean) => {
+    const loadInitial = async () => {
       try {
         const s = await fetchSession(sessionId);
         if (!alive) return;
         setSession(s);
         versionRef.current = s.version;
         setClockOffset(Date.parse(s.serverNow) - Date.now());
-        if (initial) {
-          setAnswers(s.answers ?? {});
-          setIndex(Math.min(Math.max(0, s.position ?? 0), Math.max(0, s.tasks.length - 1)));
-          const initialKey = JSON.stringify({
-            answers: s.answers ?? {},
-            position: s.position ?? 0,
-          });
-          lastSavedJson.current = initialKey;
-        }
+        setAnswers(s.answers ?? {});
+        setIndex(Math.min(Math.max(0, s.position ?? 0), Math.max(0, s.tasks.length - 1)));
+        lastSavedJson.current = JSON.stringify({
+          answers: s.answers ?? {},
+          position: s.position ?? 0,
+        });
       } catch (e: any) {
         if (alive) setError(e?.message || "Oturum açılamadı.");
       }
     };
 
-    void load(true);
-    const poll = setInterval(() => {
-      if (!document.hidden && session?.state === "grading") {
-        void load(false);
-      }
-    }, 2200);
+    void loadInitial();
 
+    return () => {
+      alive = false;
+    };
+  }, [sessionId]);
+
+  // Reactive poll ONLY while session is actively grading (prevents stale closure bug)
+  useEffect(() => {
+    if (session?.state !== "grading") return;
+    let alive = true;
+    const poll = setInterval(() => {
+      if (document.hidden) return;
+      void fetchSession(sessionId)
+        .then((s) => {
+          if (!alive) return;
+          setSession(s);
+          versionRef.current = s.version;
+        })
+        .catch(() => {});
+    }, 2200);
     return () => {
       alive = false;
       clearInterval(poll);
     };
-  }, [sessionId]);
+  }, [sessionId, session?.state]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -336,6 +357,25 @@ export function ExerciseRunner({
     }
   };
 
+  const handleStartReinforcement = async () => {
+    if (!session || reinforcing) return;
+    setReinforcing(true);
+    setError("");
+    try {
+      const created = await startReinforcementSession(session.id);
+      onOverviewChanged();
+      if (onOpenSession) {
+        onOpenSession(created.id);
+      } else {
+        onRestartSimilar(session.filters, session.module);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Ters yön pekiştirme oturumu başlatılamadı.");
+    } finally {
+      setReinforcing(false);
+    }
+  };
+
   // ---------------- Completion Screen (ONLY when session.state === "done") ----------------
   if (session.state === "done") {
     const evaluated = tasks.filter(
@@ -351,25 +391,28 @@ export function ExerciseRunner({
       : 0;
     const hasPending = Object.values(session.results).some((r) => r?.pending);
 
+    const coveredWordCount = new Set(tasks.flatMap((t) => t.vocabularyIds ?? [])).size;
+    const parentDirection = session.filters?.direction ?? "tr_de";
+    const targetReinforceDir = oppositeStudyDirection(parentDirection);
+    const reinforceDirLabel = directionLabelTr(targetReinforceDir);
+    const existingChild = session.reinforcementSession;
+    const canOfferReinforcement =
+      session.module === "vocabulary" && !session.parentSessionId && coveredWordCount > 0;
+
     return (
       <div className="kg-scroll">
         <div className="kg-container" style={{ maxWidth: 740 }}>
           <div className="kg-card" style={{ textAlign: "center", padding: 28 }}>
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 20,
-                background: "var(--kg-green-soft)",
-                color: "var(--kg-green-ink)",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 12px",
-              }}
-            >
-              <Award size={32} />
+            <div className="kg-complete-emblem">
+              <Award size={30} />
             </div>
+            {session.parentSessionId && (
+              <div style={{ marginBottom: 8 }}>
+                <span className="kg-badge-soft">
+                  <ArrowLeftRight size={13} /> Ters Yön Pekiştirmesi Tamamlandı
+                </span>
+              </div>
+            )}
             <h1 style={{ fontSize: 26, fontWeight: 800 }}>Oturum Tamamlandı!</h1>
             <p className="kg-section-sub" style={{ marginTop: 6 }}>
               {session.module === "vocabulary"
@@ -446,14 +489,67 @@ export function ExerciseRunner({
               </div>
             )}
 
+            {error && (
+              <div className="kg-alert" role="alert" style={{ marginTop: 14 }}>
+                <span>{error}</span>
+              </div>
+            )}
+
+            {canOfferReinforcement && (
+              <section className="kg-reinforce-card" aria-label="Ters Yön Pekiştirmesi">
+                <div className="kg-reinforce-head">
+                  <span className="kg-badge-accent">
+                    <ArrowLeftRight size={13} /> Önerilen Sonraki Adım
+                  </span>
+                  <span className="kg-reinforce-dir tabular-nums">
+                    {coveredWordCount} kelime · {reinforceDirLabel}
+                  </span>
+                </div>
+                <h2>Bu kelimeleri ters yönde de pekiştir.</h2>
+                <p>
+                  {existingChild?.state === "done"
+                    ? "Bu oturumun ters yön pekiştirmesini tamamladın. Dilersen sonuçlarını yeniden inceleyebilirsin."
+                    : existingChild
+                      ? "Başlattığın ters yön pekiştirmesi seni bekliyor. Kaldığın yerden devam ederek kalıcılığı artır."
+                      : `Az önce çalıştığın ${coveredWordCount} kelimeyi şimdi ${reinforceDirLabel} yönünde tekrar ederek aktif hatırlamayı kalıcılaştır. Zorlandığın kelimeler önceliklendirilir.`}
+                </p>
+                <div className="kg-reinforce-actions">
+                  <button
+                    type="button"
+                    disabled={reinforcing}
+                    className="kg-btn kg-btn-primary"
+                    onClick={() => void handleStartReinforcement()}
+                  >
+                    <ArrowLeftRight size={17} />
+                    {reinforcing
+                      ? "Pekiştirme Hazırlanıyor…"
+                      : existingChild?.state === "done"
+                        ? "Ters Yön Sonuçlarını Gör"
+                        : existingChild
+                          ? "Pekiştirmeye Devam Et"
+                          : "Pekiştirmeye Başla"}
+                  </button>
+                </div>
+              </section>
+            )}
+
             <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 10, marginTop: 22 }}>
               <button
                 type="button"
-                className="kg-btn kg-btn-primary"
+                className={`kg-btn ${canOfferReinforcement && !existingChild ? "" : "kg-btn-primary"}`}
                 onClick={onExit}
               >
                 Öğrenmeye Dön
               </button>
+              {session.parentSessionId && onOpenSession && (
+                <button
+                  type="button"
+                  className="kg-btn"
+                  onClick={() => onOpenSession(session.parentSessionId!)}
+                >
+                  Ana Oturumu Gör
+                </button>
+              )}
               <button
                 type="button"
                 className="kg-btn kg-btn-blue"
@@ -534,7 +630,9 @@ export function ExerciseRunner({
   const isPractice = session.mode === "practice";
   const rawAudioHint = task?.interaction?.audioText || task?.interaction?.wordMeta?.de;
   const isRecallFromTurkish =
-    Boolean(task?.prompt?.includes("Almanca karşılığı")) && !task?.passage;
+    (task?.direction === "tr_de" ||
+      (!task?.direction && Boolean(task?.prompt?.includes("Almanca karşılığı")))) &&
+    !task?.passage;
   const audioHint =
     rawAudioHint && (!isRecallFromTurkish || isChecked) ? rawAudioHint : undefined;
 
@@ -561,15 +659,17 @@ export function ExerciseRunner({
           </span>
         </div>
 
-        {isPractice ? (
-          <span className="kg-stat-chip is-xp tabular-nums">
-            +{sessionXp} XP
-          </span>
-        ) : (
-          <span className="kg-stat-chip tabular-nums">
-            <Clock size={14} /> {formatClock(remainingMs)}
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {isPractice ? (
+            <span className="kg-stat-chip is-xp tabular-nums">
+              +{sessionXp} XP
+            </span>
+          ) : (
+            <span className="kg-stat-chip tabular-nums">
+              <Clock size={14} /> {formatClock(remainingMs)}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Scrollable Stage */}
@@ -596,6 +696,14 @@ export function ExerciseRunner({
                     {activityLabel(task.type)}
                     {task.topic ? ` · ${task.topic}` : ""}
                   </span>
+                  {session.parentSessionId && (
+                    <span className="kg-badge-soft">
+                      <ArrowLeftRight size={13} /> Ters Yön Pekiştirmesi
+                    </span>
+                  )}
+                  {task.isMistakeReview && (
+                    <span className="kg-badge-warn">Hata Tekrarı</span>
+                  )}
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

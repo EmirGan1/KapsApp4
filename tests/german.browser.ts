@@ -123,8 +123,13 @@ try {
       }
     } else if (type === "matching") {
       const answers: string[] = JSON.parse(task.answer);
-      const leftCol = input.locator('[aria-label="Almanca kelimeler"] button');
-      const rightCol = input.locator('[aria-label="Türkçe karşılıklar"] button');
+      const isTrDe = task.direction === "tr_de";
+      const leftCol = input.locator(
+        `[aria-label="${isTrDe ? "Türkçe ifadeler" : "Almanca kelimeler"}"] button`,
+      );
+      const rightCol = input.locator(
+        `[aria-label="${isTrDe ? "Almanca karşılıklar" : "Türkçe karşılıklar"}"] button`,
+      );
       for (let i = 0; i < answers.length; i++) {
         await leftCol.nth(i).click();
         await rightCol
@@ -172,6 +177,46 @@ try {
       await page.getByRole("heading", { name: "Oturum Tamamlandı!" }).count(),
       0,
     );
+
+    // Advance through remaining questions to finish the session cleanly
+    for (let step = 0; step < 15; step++) {
+      if ((await page.getByRole("heading", { name: "Oturum Tamamlandı!" }).count()) > 0) break;
+      const finishBtn = page.getByRole("button", { name: "Oturumu Tamamla", exact: true });
+      if ((await finishBtn.count()) > 0) {
+        await finishBtn.click();
+        break;
+      }
+      const nextBtn = page.getByRole("button", { name: "Devam Et", exact: true });
+      if ((await nextBtn.count()) > 0) {
+        await nextBtn.click();
+        continue;
+      }
+      const skipBtn = page.getByRole("button", { name: "Atla", exact: true });
+      if ((await skipBtn.count()) > 0) {
+        await page.waitForFunction(() => {
+          const b = Array.from(document.querySelectorAll("button")).find(
+            (x) => x.textContent?.trim() === "Atla",
+          );
+          return b && !b.disabled;
+        });
+        await skipBtn.click();
+        await page.waitForTimeout(80);
+        continue;
+      }
+      await page.waitForTimeout(100);
+    }
+    await page.getByRole("heading", { name: "Oturum Tamamlandı!" }).waitFor();
+    await page.getByText("Bu kelimeleri ters yönde de pekiştir.").waitFor();
+    await page.getByRole("button", { name: "Pekiştirmeye Başla", exact: true }).click();
+    await page.getByText("Ters Yön Pekiştirmesi").waitFor();
+    const reinSid = new URL(page.url()).searchParams.get("session");
+    assert.ok(reinSid && reinSid !== activeSid);
+    const reinRow = (
+      await db.execute({ sql: "SELECT parent_session_id, reinforcement_direction FROM german_sessions WHERE id=?", args: [reinSid!] })
+    ).rows[0];
+    assert.equal(String(reinRow.parent_session_id), activeSid);
+    assert.equal(String(reinRow.reinforcement_direction), "de_tr");
+    console.log("PASS reverse-direction reinforcement UI launch");
   }
 
   // Desktop viewport layout check

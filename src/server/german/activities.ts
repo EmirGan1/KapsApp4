@@ -2,9 +2,19 @@ import { randomInt, randomUUID } from "node:crypto";
 import {
   activities,
   isCefrLevel,
+  oppositeStudyDirection,
+  type CefrLevel,
   type StudyDirection,
 } from "../../shared/germanActivities";
-import { normalize, type Task, type Vocabulary } from "./learning";
+import { gradeAnswer } from "./cefr";
+import {
+  normalize,
+  validateTask,
+  type Task,
+  type TaskDirection,
+  type TaskObjective,
+  type Vocabulary,
+} from "./learning";
 
 export function shuffle<T>(items: T[]): T[] {
   const a = [...items];
@@ -58,10 +68,38 @@ function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-function maskTargetInSentence(sentence: string, target: string): { masked: string; answer: string } | null {
-  const cleanTarget = target.replace(/^(?:der|die|das)\s+/iu, "").trim();
-  if (cleanTarget.length >= 2) {
-    const wordRegex = new RegExp(`(?<![\\p{L}])(${escapeRegExp(cleanTarget)})(?![\\p{L}])`, "iu");
+function isSeparableVerb(de: string): boolean {
+  return /^(?:ab|an|auf|aus|bei|ein|fest|fern|heran|hervor|hin|los|mit|nach|teil|um|vor|weg|weiter|zu|zurück)[a-zäöüß]{3,}$/iu.test(
+    de.trim(),
+  );
+}
+
+/**
+ * Matches ONLY an authentic grammatical form of `word` inside `sentence`.
+ * Never falls back to masking an arbitrary neighboring token!
+ */
+export function matchWordFormInSentence(
+  sentence: string,
+  word: Vocabulary,
+): { masked: string; answer: string } | null {
+  const bare = word.de.replace(/^(?:der|die|das)\s+/iu, "").trim();
+  const candidates: string[] = [];
+
+  if (bare.length >= 2) candidates.push(bare);
+  if (word.plural) {
+    const barePlural = word.plural.replace(/^die\s+/iu, "").trim();
+    if (barePlural.length >= 2) candidates.push(barePlural);
+  }
+  if (word.conjugation?.answer) {
+    candidates.push(word.conjugation.answer.trim());
+  }
+
+  // Direct exact word-boundary check first
+  for (const cand of [...new Set(candidates)]) {
+    const wordRegex = new RegExp(
+      `(?<![\\p{L}])(${escapeRegExp(cand)})(?![\\p{L}])`,
+      "iu",
+    );
     const m = sentence.match(wordRegex);
     if (m && m[1]) {
       return {
@@ -70,20 +108,213 @@ function maskTargetInSentence(sentence: string, target: string): { masked: strin
       };
     }
   }
-  const tokens = sentence.split(/\s+/u);
-  const idx = tokens.findIndex((tok, i) => i > 0 && /^[\p{L}]{3,}[.!?]?$/u.test(tok));
-  if (idx < 0) return null;
-  const rawTok = tokens[idx].replace(/[.!?,;:]+$/u, "");
-  const punct = tokens[idx].slice(rawTok.length);
-  const maskedTokens = [...tokens];
-  maskedTokens[idx] = "_____" + punct;
-  return { masked: maskedTokens.join(" "), answer: rawTok };
+
+  // Adjective inflections (e.g., neu -> neues, nachhaltig -> nachhaltige, stichhaltig -> stichhaltigen)
+  if (word.pos === "adj" && bare.length >= 3) {
+    const adjRegex = new RegExp(
+      `(?<![\\p{L}])(${escapeRegExp(bare)}(?:e|en|em|er|es)?)(?![\\p{L}])`,
+      "iu",
+    );
+    const m = sentence.match(adjRegex);
+    if (m && m[1]) {
+      return {
+        masked: sentence.replace(adjRegex, "_____"),
+        answer: m[1],
+      };
+    }
+  }
+
+  // Noun regular case/plural suffixes (only when bare noun doesn't end in e/n)
+  if (word.pos === "noun" && bare.length >= 3) {
+    const nounRegex = new RegExp(
+      `(?<![\\p{L}])(${escapeRegExp(bare)}(?:s|es|n|en|e)?)(?![\\p{L}])`,
+      "iu",
+    );
+    const m = sentence.match(nounRegex);
+    if (m && m[1]) {
+      return {
+        masked: sentence.replace(nounRegex, "_____"),
+        answer: m[1],
+      };
+    }
+  }
+
+  // Verb inflections ONLY for non-separable verbs (separable verbs split across the clause
+  // and cannot be faithfully replaced by a single blank without corrupting the sentence meaning)
+  if (word.pos === "verb") {
+    const rawVerb = bare.replace(/^sich\s+/iu, "").trim();
+    if (!isSeparableVerb(rawVerb) && rawVerb.length >= 4) {
+      const stem = rawVerb.replace(/(?:en|n)$/u, "");
+      if (stem.length >= 3) {
+        const patterns = [
+          `${escapeRegExp(stem)}(?:e|st|t|en|te|ten|test|tet)`,
+          `ge${escapeRegExp(stem)}(?:t|en)`,
+        ];
+        const verbRegex = new RegExp(
+          `(?<![\\p{L}])(${patterns.join("|")})(?![\\p{L}])`,
+          "iu",
+        );
+        const m = sentence.match(verbRegex);
+        if (m && m[1]) {
+          return {
+            masked: sentence.replace(verbRegex, "_____"),
+            answer: m[1],
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+type WordCategory = "sentence" | "noun" | "verb" | "adj" | "adv_phrase" | "other";
+
+function wordCategory(w: Vocabulary): WordCategory {
+  if (w.pos === "sentence") return "sentence";
+  if (!w.pos && w.de.trim().split(/\s+/u).length >= 4 && /[.!?]$/u.test(w.de.trim())) {
+    return "sentence";
+  }
+  if (w.pos === "noun" || hasArticleNoun(w)) return "noun";
+  if (w.pos === "verb") return "verb";
+  if (w.pos === "adj") return "adj";
+  if (w.pos === "adv" || w.pos === "phrase") return "adv_phrase";
+  return "other";
+}
+
+function normalizedMeanings(w: Vocabulary): string[] {
+  const raw = [
+    ...w.tr.split(/\s*\/\s*/u),
+    ...(w.alternatives ?? []),
+  ];
+  return [
+    ...new Set(
+      raw
+        .map((s) =>
+          normalize(s)
+            .replace(/\([^)]*\)/gu, "")
+            .trim(),
+        )
+        .filter((s) => s.length >= 2),
+    ),
+  ];
+}
+
+function wordsOverlap(a: Vocabulary, b: Vocabulary): boolean {
+  if (normalize(a.de) === normalize(b.de)) return true;
+  if (normalize(a.tr) === normalize(b.tr)) return true;
+  const aM = normalizedMeanings(a);
+  const bM = normalizedMeanings(b);
+  return aM.some((am) =>
+    bM.some((bm) => am === bm || (am.length >= 4 && bm.length >= 4 && (am.includes(bm) || bm.includes(am)))),
+  );
+}
+
+function buildSentenceTurkishAlternatives(sentenceDe: string, sentenceTr: string): string[] {
+  const alts: string[] = [];
+  const trimTr = sentenceTr.trim();
+  const trimDe = sentenceDe.trim();
+  const lowerFirst = (s: string) =>
+    s.charAt(0).toLocaleLowerCase("tr") + s.slice(1);
+  const capFirst = (s: string) =>
+    s.charAt(0).toLocaleUpperCase("tr") + s.slice(1);
+
+  // Turkish is pro-drop: if German starts with Ich/Wir/Du/Er/Ihr and Turkish omits the pronoun,
+  // accept optional matching Turkish subject pronoun; if Turkish includes it, accept omitting it!
+  if (/^(?:Ben|Sen|O|Biz|Siz|Onlar)\s+/u.test(trimTr)) {
+    const stripped = trimTr.replace(/^(?:Ben|Sen|O|Biz|Siz|Onlar)\s+/u, "");
+    if (stripped.length >= 4) alts.push(capFirst(stripped));
+  } else {
+    if (/^Ich\s+/u.test(trimDe)) alts.push(`Ben ${lowerFirst(trimTr)}`);
+    else if (/^Wir\s+/u.test(trimDe)) alts.push(`Biz ${lowerFirst(trimTr)}`);
+    else if (/^Du\s+/u.test(trimDe)) alts.push(`Sen ${lowerFirst(trimTr)}`);
+    else if (/^Ihr\s+/u.test(trimDe)) alts.push(`Siz ${lowerFirst(trimTr)}`);
+    else if (/^Er\s+/u.test(trimDe)) alts.push(`O ${lowerFirst(trimTr)}`);
+  }
+
+  return [...new Set(alts)];
+}
+
+function selectCompatibleDistractors(
+  target: Vocabulary,
+  pool: Vocabulary[],
+): Vocabulary[] {
+  const targetCat = wordCategory(target);
+  const nonOverlapping = pool.filter(
+    (v) => v.id !== target.id && !wordsOverlap(target, v),
+  );
+
+  // Never mix sentences with single words
+  const isTargetSentence = targetCat === "sentence";
+  const sameSentenceClass = nonOverlapping.filter(
+    (v) => (wordCategory(v) === "sentence") === isTargetSentence,
+  );
+
+  const sameCatSameLevel = shuffle(
+    sameSentenceClass.filter(
+      (v) => wordCategory(v) === targetCat && v.level === target.level,
+    ),
+  );
+  const sameCatAnyLevel = shuffle(
+    sameSentenceClass.filter(
+      (v) => wordCategory(v) === targetCat && v.level !== target.level,
+    ),
+  );
+  const fallbackSameClass = shuffle(
+    sameSentenceClass.filter((v) => wordCategory(v) !== targetCat),
+  );
+
+  return [...sameCatSameLevel, ...sameCatAnyLevel, ...fallbackSameClass];
+}
+
+function selectBalancedCandidates(
+  source: Vocabulary[],
+  options: BuildActivityOptions,
+): Vocabulary[] {
+  const groupedByLevel = new Map<CefrLevel, Vocabulary[]>();
+  const recentSet = options.recentWordIds ?? new Set<string>();
+  const mistakeSet = options.mistakeWordIds ?? new Set<string>();
+
+  for (const w of source) {
+    if (!isCefrLevel(w.level)) continue;
+    const arr = groupedByLevel.get(w.level) ?? [];
+    arr.push(w);
+    groupedByLevel.set(w.level, arr);
+  }
+
+  const sortAndRotateTier = (items: Vocabulary[]) => {
+    const mistakes = shuffle(items.filter((w) => mistakeSet.has(w.id)));
+    const freshUnseen = shuffle(items.filter((w) => !mistakeSet.has(w.id) && !recentSet.has(w.id)));
+    const recentlySeen = shuffle(items.filter((w) => !mistakeSet.has(w.id) && recentSet.has(w.id)));
+    return [...mistakes, ...freshUnseen, ...recentlySeen];
+  };
+
+  const levelQueues = [...groupedByLevel.values()].map(sortAndRotateTier);
+  const balanced: Vocabulary[] = [];
+  let idx = 0;
+  while (balanced.length < source.length) {
+    let addedAny = false;
+    for (const q of levelQueues) {
+      if (idx < q.length) {
+        balanced.push(q[idx]);
+        addedAny = true;
+      }
+    }
+    if (!addedAny) break;
+    idx++;
+  }
+  return balanced;
 }
 
 export interface BuildActivityOptions {
   mistakeWordIds?: Set<string>;
+  recentWordIds?: Set<string>;
   reviewMode?: boolean;
   limit?: number;
+  forceDirectionByWordId?: Map<string, "de_tr" | "tr_de">;
+  avoidTypesByWordId?: Map<string, Set<string>>;
+  isMistakeReview?: boolean;
+  distractorWords?: Vocabulary[];
 }
 
 export function buildActivities(
@@ -101,58 +332,69 @@ export function buildActivities(
     : [];
 
   let baseSource = words;
+  const isMistakeSession = selected === "mistake_review" || options.isMistakeReview === true;
   if (selected === "mistake_review") {
     if (!mistakePool.length) return [];
     baseSource = mistakePool;
   }
 
-  let candidates: Vocabulary[];
+  let eligiblePool: Vocabulary[];
   if (selected === "article") {
-    candidates = baseSource.filter(hasArticleNoun).slice(0, 20);
+    eligiblePool = baseSource.filter(hasArticleNoun);
   } else if (selected === "conjugation") {
-    candidates = baseSource.filter((w) => !!w.conjugation).slice(0, 20);
+    eligiblePool = baseSource.filter((w) => !!w.conjugation);
   } else if (selected === "sentence_completion") {
-    candidates = baseSource.filter((w) => !!w.completion || hasSentenceContent(w)).slice(0, 20);
+    eligiblePool = baseSource.filter(
+      (w) => !!w.completion || (hasSentenceContent(w) && matchWordFormInSentence(getSentencePair(w)!.de, w) !== null),
+    );
   } else if (selected === "sentence_translation" || selected.startsWith("sentence_")) {
-    candidates = baseSource.filter(hasSentenceContent).slice(0, 20);
+    eligiblePool = baseSource.filter(hasSentenceContent);
   } else if (selected === "ordering") {
-    candidates = baseSource
-      .filter((w) => hasSentenceContent(w) || w.de.trim().split(/\s+/u).length >= 3)
-      .slice(0, 20);
+    eligiblePool = baseSource.filter(
+      (w) => hasSentenceContent(w) || w.de.trim().split(/\s+/u).length >= 3,
+    );
   } else if (selected === "gap") {
-    candidates = baseSource.filter(hasSentenceContent).slice(0, 20);
+    eligiblePool = baseSource.filter((w) => {
+      const sp = getSentencePair(w);
+      return sp !== null && matchWordFormInSentence(sp.de, w) !== null;
+    });
   } else if (selected === "multi") {
-    candidates = baseSource.filter((w) => w.tr.includes("/")).slice(0, 20);
+    eligiblePool = baseSource.filter((w) => {
+      const m = w.tr.split(/\s*\/\s*/u).filter(Boolean);
+      return m.length >= 2 && m.length <= 4;
+    });
   } else {
-    candidates = baseSource.slice(0, 20);
+    eligiblePool = baseSource;
   }
 
-  if (selected === "mixed") {
-    candidates = uniqueById([
-      ...candidates,
-      ...baseSource.filter(hasSentenceContent).slice(0, 6),
-      ...baseSource.filter(hasArticleNoun).slice(0, 6),
-      ...baseSource.filter((w) => !!w.conjugation).slice(0, 4),
-      ...baseSource.filter((w) => !!w.completion).slice(0, 4),
-    ]);
-  }
-
+  // Balance across ALL selected levels and rotate unseen/mistake items fairly (no slice(0, 20) starvation!)
+  const candidates = selectBalancedCandidates(eligiblePool, options);
   if (!candidates.length) return [];
 
-  // Distractor pool STRICTLY bounded to the validated, level-filtered `words` list!
-  const distractorPool = uniqueById([...words.slice(0, 48), ...candidates]);
+  // Distractor pool uses ALL validated words in the allowed level scope!
+  const distractorPool = options.distractorWords?.length
+    ? uniqueById(options.distractorWords).filter((w) => isCefrLevel(w.level))
+    : words;
+  const validationPool = uniqueById([...words, ...distractorPool]);
   const byType = new Map<string, Task[]>();
+  const byWordAndType = new Map<string, Map<string, Task>>();
 
-  const add = (
+  const pushTask = (
     w: Vocabulary,
     type: string,
     prompt: string,
     answer: string,
     opts: string[] = [],
-    interaction?: Task["interaction"],
-    alternatives: string[] = [],
-    explanation?: string,
-    passage = "",
+    taskMeta: {
+      direction: TaskDirection;
+      objective: TaskObjective;
+      interaction?: Task["interaction"];
+      alternatives?: string[];
+      explanation?: string;
+      passage?: string;
+      vocabularyIds?: string[];
+      pairVocabularyIds?: string[];
+    },
   ) => {
     const task: Task = {
       id: randomUUID(),
@@ -161,106 +403,158 @@ export function buildActivities(
       part: 1,
       level: w.level,
       topic: w.topic,
+      direction: taskMeta.direction,
+      objective: taskMeta.objective,
+      isMistakeReview: isMistakeSession || undefined,
+      pairVocabularyIds: taskMeta.pairVocabularyIds,
       prompt,
-      passage,
+      passage: taskMeta.passage ?? "",
       options: opts,
       answer,
-      alternatives: [...alternatives, ...(w.alternatives ?? [])].filter(Boolean),
-      explanation: explanation || `${w.de} — ${w.tr}`,
-      vocabularyIds: [w.id],
+      alternatives: (taskMeta.alternatives ?? []).filter(Boolean),
+      explanation: taskMeta.explanation || `${w.de} — ${w.tr}`,
+      vocabularyIds: taskMeta.vocabularyIds ?? [w.id],
       evidence: "",
       fingerprint: randomUUID(),
       interaction: {
-        ...interaction,
+        ...taskMeta.interaction,
         wordMeta: makeWordMeta(w),
       },
     };
-    byType.set(type, [...(byType.get(type) ?? []), task]);
+    const validated = validateTask(task, validationPool);
+    if (!validated) return;
+    byType.set(type, [...(byType.get(type) ?? []), validated]);
+    const wordMap = byWordAndType.get(w.id) ?? new Map<string, Task>();
+    if (!wordMap.has(type)) wordMap.set(type, validated);
+    byWordAndType.set(w.id, wordMap);
   };
 
   for (const w of candidates) {
-    const reverse =
-      direction === "tr_de" || (direction === "mixed" && randomInt(2) === 1);
+    const forcedDir = options.forceDirectionByWordId?.get(w.id);
+    const reverse = forcedDir
+      ? forcedDir === "tr_de"
+      : direction === "tr_de" || (direction === "mixed" && randomInt(2) === 1);
+    const taskDir: TaskDirection = reverse ? "tr_de" : "de_tr";
+
     const source = reverse ? w.tr : w.de;
     const target = reverse ? w.de : w.tr;
+    const cat = wordCategory(w);
     const meanings = w.tr.split(/\s*\/\s*/u).filter(Boolean);
-    const other = shuffle(
-      distractorPool.filter(
-        (v) =>
-          v.id !== w.id &&
-          !meanings.some((m) => normalize(v.tr).includes(normalize(m))) &&
-          normalize(v.de) !== normalize(w.de),
-      ),
-    );
+    const other = selectCompatibleDistractors(w, distractorPool);
 
     // 1. Multiple-choice translation
     if (other.length >= 2) {
-      const choiceDistractors = other
-        .slice(0, 3)
-        .map((v) => (reverse ? v.de : v.tr));
+      const choiceDistractors: string[] = [];
+      for (const cand of other) {
+        const opt = reverse ? cand.de : cand.tr;
+        if (
+          opt !== target &&
+          !choiceDistractors.includes(opt) &&
+          !gradeAnswer({
+            type: "choice",
+            answer: target,
+            alternatives: reverse ? [] : w.alternatives,
+            hasOptions: true,
+            userAnswer: opt,
+          })
+        ) {
+          choiceDistractors.push(opt);
+        }
+        if (choiceDistractors.length >= 3) break;
+      }
       const uniqueOpts = [...new Set([target, ...choiceDistractors])];
       if (uniqueOpts.length >= 3) {
-        add(
+        const nounOrPhraseLabel =
+          cat === "sentence"
+            ? "cümlesinin"
+            : cat === "adv_phrase"
+              ? "ifadesinin"
+              : "kelimesinin";
+        pushTask(
           w,
           "choice",
           reverse
-            ? `“${source}” ifadesinin Almanca karşılığı hangisidir?`
-            : `“${source}” Almanca kelimesinin Türkçe anlamı nedir?`,
+            ? `“${source}” ${cat === "sentence" ? "cümlesinin" : "ifadesinin"} Almanca karşılığı hangisidir?`
+            : `“${source}” Almanca ${nounOrPhraseLabel} Türkçe anlamı nedir?`,
           target,
           shuffle(uniqueOpts),
+          {
+            direction: taskDir,
+            objective: reverse ? "production" : "meaning",
+          },
         );
       }
 
-      // 2. Interactive Vocabulary Matching (3 pairs)
-      const group = [w, ...other.slice(0, 2)];
-      if (
-        new Set(group.map((v) => normalize(v.tr))).size === group.length &&
-        new Set(group.map((v) => normalize(v.de))).size === group.length
-      ) {
-        const left = group.map((v) => v.de);
-        const right = shuffle(group.map((v) => v.tr));
-        add(
-          w,
-          "matching",
-          "Almanca kelimeleri doğru Türkçe anlamlarıyla eşleştir.",
-          JSON.stringify(group.map((v) => v.tr)),
-          [],
-          { left, right },
-          [],
-          group.map((g) => `${g.de} = ${g.tr}`).join(" · "),
-        );
+      // 2. Interactive Vocabulary Matching (3 unambiguous pairs, direction-aware!)
+      const matchGroup: Vocabulary[] = [w];
+      for (const cand of other) {
+        if (matchGroup.some((m) => wordsOverlap(m, cand))) continue;
+        // Prefer comparable word length / non-sentence items in matching cards
+        if (wordCategory(cand) === "sentence" && cat !== "sentence") continue;
+        matchGroup.push(cand);
+        if (matchGroup.length === 3) break;
+      }
+      if (matchGroup.length === 3) {
+        const left = matchGroup.map((v) => (reverse ? v.tr : v.de));
+        const expectedRight = matchGroup.map((v) => (reverse ? v.de : v.tr));
+        const right = shuffle(expectedRight);
+        if (
+          new Set(left.map(normalize)).size === 3 &&
+          new Set(right.map(normalize)).size === 3
+        ) {
+          pushTask(
+            w,
+            "matching",
+            reverse
+              ? "Türkçe ifadeleri doğru Almanca karşılıklarıyla eşleştir."
+              : "Almanca kelimeleri doğru Türkçe anlamlarıyla eşleştir.",
+            JSON.stringify(expectedRight),
+            [],
+            {
+              direction: taskDir,
+              objective: "matching",
+              interaction: { left, right },
+              explanation: matchGroup.map((g) => `${g.de} = ${g.tr}`).join(" · "),
+              vocabularyIds: matchGroup.map((g) => g.id),
+              pairVocabularyIds: matchGroup.map((g) => g.id),
+            },
+          );
+        }
       }
 
       // Legacy compatibility task types when specifically requested
       if (selected === "true_false") {
         const wrong = other[0];
         const truth = randomInt(2) === 1;
-        add(
+        pushTask(
           w,
           "true_false",
           `${w.de} = ${truth ? w.tr : wrong.tr}`,
           truth ? "Doğru" : "Yanlış",
           ["Doğru", "Yanlış"],
+          { direction: "de_tr", objective: "meaning" },
         );
       }
       if (selected === "intruder") {
         const wrong = other[0];
         const bad = `${w.de} → ${wrong.tr}`;
-        add(
+        pushTask(
           w,
           "intruder",
           "Hangi eşleştirme yanlış?",
           bad,
           shuffle([bad, ...other.slice(0, 2).map((v) => `${v.de} → ${v.tr}`)]),
+          { direction: "de_tr", objective: "meaning" },
         );
       }
       if (selected === "multi" && meanings.length >= 2 && meanings.length <= 4) {
-        add(
+        pushTask(
           w,
           "multi",
           `“${w.de}” için geçerli olan tüm anlamları seç.`,
           [...meanings].sort().join(" | "),
           shuffle([...meanings, ...other.slice(0, 2).map((v) => v.tr)]),
+          { direction: "de_tr", objective: "meaning" },
         );
       }
     }
@@ -269,70 +563,92 @@ export function buildActivities(
     if (hasArticleNoun(w)) {
       const bareNoun = w.de.replace(/^(der|die|das)\s+/u, "");
       const article = w.de.split(/\s+/u)[0];
-      add(
+      pushTask(
         w,
         "article",
         `_____ ${bareNoun} (${w.tr})`,
         article,
         ["der", "die", "das"],
-        undefined,
-        [],
-        `Doğru artikel: ${w.de} (${w.tr})${w.grammar ? " · " + w.grammar : ""}`,
+        {
+          direction: "de_only",
+          objective: "article",
+          explanation: `Doğru artikel: ${w.de} (${w.tr})${w.grammar ? " · " + w.grammar : ""}`,
+        },
       );
     }
 
     // 4. Verb Conjugation (CEFR-tailored)
     if (w.conjugation) {
       const c = w.conjugation;
-      add(
+      pushTask(
         w,
         "conjugation",
         `${c.promptDe}`,
         c.answer,
         shuffle([...new Set([c.answer, ...c.options])]),
-        undefined,
-        [],
-        c.explanation,
-        `${c.tense} · Özne: ${c.pronoun}`,
+        {
+          direction: "de_only",
+          objective: "conjugation",
+          explanation: c.explanation,
+          passage: `${c.tense} · Özne: ${c.pronoun}`,
+        },
       );
     }
 
-    // 5. Fill in the Blank (gap)
+    // 5. Fill in the Blank (gap) — strictly authentic word-form matching!
     const sentencePair = getSentencePair(w);
     if (sentencePair) {
-      const masked = maskTargetInSentence(sentencePair.de, w.de);
+      const masked = matchWordFormInSentence(sentencePair.de, w);
       if (masked) {
-        const sameLevelWords = distractorPool
-          .flatMap((v) => v.de.split(/\s+/u))
-          .map((tok) => tok.replace(/[.!?,;:]+$/u, ""))
+        const cleanBare = (v: Vocabulary) => v.de.replace(/^(?:der|die|das)\s+/iu, "").trim();
+        const samePosWords = other
+          .filter((v) => wordCategory(v) === cat && wordCategory(v) !== "sentence")
+          .map(cleanBare)
           .filter(
-            (t) =>
-              /^[\p{L}]{2,}$/u.test(t) &&
-              !/^(der|die|das)$/iu.test(t) &&
-              normalize(t) !== normalize(masked.answer),
+            (d) =>
+              d.length >= 2 &&
+              !d.includes(" ") &&
+              normalize(d) !== normalize(masked.answer) &&
+              !sentencePair.de.toLowerCase().includes(d.toLowerCase()),
           );
-        const uniqDist = [...new Set(sameLevelWords)];
+        const fallbackWords = other
+          .filter((v) => wordCategory(v) !== "sentence")
+          .map(cleanBare)
+          .filter(
+            (d) =>
+              d.length >= 2 &&
+              !d.includes(" ") &&
+              normalize(d) !== normalize(masked.answer) &&
+              !sentencePair.de.toLowerCase().includes(d.toLowerCase()),
+          );
+
+        const gapDistractors = [...new Set([...samePosWords, ...fallbackWords])].slice(0, 3);
         const gapOpts =
-          uniqDist.length >= 3
-            ? shuffle([masked.answer, ...shuffle(uniqDist).slice(0, 3)])
+          gapDistractors.length >= 3
+            ? shuffle([masked.answer, ...gapDistractors])
             : [];
-        add(
+        pushTask(
           w,
           "gap",
           `${masked.masked}`,
           masked.answer,
           gapOpts,
-          undefined,
-          [],
-          `${sentencePair.de} — ${sentencePair.tr}`,
-          sentencePair.tr,
+          {
+            direction: "de_only",
+            objective: "cloze",
+            explanation: `${sentencePair.de} — ${sentencePair.tr}`,
+            passage: sentencePair.tr,
+          },
         );
       }
 
-      // 6. Sentence Translation (CEFR-accurate)
+      // 6. Sentence Translation (NEVER inherits isolated word synonyms!)
       const sSource = reverse ? sentencePair.tr : sentencePair.de;
       const sTarget = reverse ? sentencePair.de : sentencePair.tr;
-      add(
+      const sentAlts = reverse
+        ? []
+        : buildSentenceTurkishAlternatives(sentencePair.de, sentencePair.tr);
+      pushTask(
         w,
         "sentence_translation",
         reverse
@@ -340,9 +656,12 @@ export function buildActivities(
           : `Bu cümleyi Türkçeye çevir: “${sSource}”`,
         sTarget,
         [],
-        undefined,
-        [],
-        `${sentencePair.de} — ${sentencePair.tr}`,
+        {
+          direction: taskDir,
+          objective: reverse ? "production" : "meaning",
+          alternatives: sentAlts,
+          explanation: `${sentencePair.de} — ${sentencePair.tr}`,
+        },
       );
     }
 
@@ -354,24 +673,31 @@ export function buildActivities(
     if (orderSource) {
       const tokens = orderSource.de.split(/\s+/u).filter(Boolean);
       if (tokens.length >= 3) {
-        add(
+        pushTask(
           w,
           "ordering",
           `Kelimeleri doğru Almanca sıraya diz: “${orderSource.tr}”`,
           orderSource.de,
           [],
-          { tiles: shuffle(tokens) },
-          [],
-          `${orderSource.de} — ${orderSource.tr}`,
+          {
+            direction: "tr_de",
+            objective: "ordering",
+            interaction: { tiles: shuffle(tokens) },
+            explanation: `${orderSource.de} — ${orderSource.tr}`,
+          },
         );
         if (selected === "sentence_ordering") {
-          add(
+          pushTask(
             w,
             "sentence_ordering",
             `Almanca cümleyi kur: ${orderSource.tr}`,
             orderSource.de,
             [],
-            { tiles: shuffle(tokens) },
+            {
+              direction: "tr_de",
+              objective: "ordering",
+              interaction: { tiles: shuffle(tokens) },
+            },
           );
         }
       }
@@ -380,71 +706,100 @@ export function buildActivities(
     // 8. Sentence Completion
     if (w.completion) {
       const cmp = w.completion;
-      add(
+      pushTask(
         w,
         "sentence_completion",
         cmp.stem,
         cmp.answer,
         shuffle([cmp.answer, ...cmp.distractors]),
-        undefined,
-        [],
-        cmp.explanation,
-        cmp.trHint,
+        {
+          direction: "de_only",
+          objective: "cloze",
+          explanation: cmp.explanation,
+          passage: cmp.trHint,
+        },
       );
     } else if (sentencePair && other.length >= 3) {
-      // Fallback sentence completion strictly using same-level words when explicit completion metadata isn't set
-      const masked = maskTargetInSentence(sentencePair.de, w.de);
+      const masked = matchWordFormInSentence(sentencePair.de, w);
       if (masked) {
-        const cleanBare = (v: Vocabulary) => v.de.replace(/^(?:der|die|das)\s+/iu, "");
-        const dist = shuffle(other)
-          .map(cleanBare)
-          .filter((d) => normalize(d) !== normalize(masked.answer) && !d.includes(" "))
-          .slice(0, 3);
+        const cleanBare = (v: Vocabulary) => v.de.replace(/^(?:der|die|das)\s+/iu, "").trim();
+        const dist = [...new Set(
+          other
+            .filter((v) => wordCategory(v) === cat || wordCategory(v) !== "sentence")
+            .map(cleanBare)
+            .filter(
+              (d) =>
+                d.length >= 2 &&
+                normalize(d) !== normalize(masked.answer) &&
+                !d.includes(" "),
+            ),
+        )].slice(0, 3);
         if (dist.length >= 2) {
-          add(
+          pushTask(
             w,
             "sentence_completion",
             masked.masked,
             masked.answer,
             shuffle([masked.answer, ...dist]),
-            undefined,
-            [],
-            `${sentencePair.de} — ${sentencePair.tr}`,
-            sentencePair.tr,
+            {
+              direction: "de_only",
+              objective: "cloze",
+              explanation: `${sentencePair.de} — ${sentencePair.tr}`,
+              passage: sentencePair.tr,
+            },
           );
         }
       }
     }
 
-    // 9. Listening Exercise (with audioText & replay support)
+    // 9. Listening Exercise (strictly matching sentence-vs-sentence or word-vs-word options!)
     if (other.length >= 2) {
-      const spokenText = sentencePair?.de ?? w.de;
-      const isSentenceAudio = spokenText === sentencePair?.de && spokenText !== w.de;
-      const expectedListening = isSentenceAudio ? sentencePair!.tr : w.tr;
-      const distOpts = shuffle(other)
-        .slice(0, 3)
-        .map((v) => (isSentenceAudio && v.exampleTr ? v.exampleTr : v.tr));
+      let useSentenceAudio = Boolean(sentencePair && sentencePair.de !== w.de);
+      let sentenceDistPool: string[] = [];
+      if (useSentenceAudio) {
+        sentenceDistPool = shuffle(
+          other
+            .map((v) => getSentencePair(v)?.tr)
+            .filter((tr): tr is string => Boolean(tr && tr !== sentencePair!.tr)),
+        ).slice(0, 3);
+        if (sentenceDistPool.length < 2) {
+          useSentenceAudio = false;
+        }
+      }
+
+      const spokenText = useSentenceAudio ? sentencePair!.de : w.de;
+      const expectedListening = useSentenceAudio ? sentencePair!.tr : w.tr;
+      const distOpts = useSentenceAudio
+        ? sentenceDistPool
+        : shuffle(other.filter((v) => wordCategory(v) !== "sentence"))
+            .map((v) => v.tr)
+            .filter((tr) => tr !== expectedListening)
+            .slice(0, 3);
+
       const uniqListenOpts = [...new Set([expectedListening, ...distOpts])];
       if (uniqListenOpts.length >= 3) {
-        add(
+        pushTask(
           w,
           "listening",
           "Almanca telaffuzu dinle ve doğru Türkçe karşılığı seç.",
           expectedListening,
           shuffle(uniqListenOpts),
           {
-            audioText: spokenText,
-            audioLang: "de-DE",
-            hintTr: isSentenceAudio ? undefined : w.topic,
+            direction: "de_tr",
+            objective: "listening",
+            interaction: {
+              audioText: spokenText,
+              audioLang: "de-DE",
+              hintTr: useSentenceAudio ? undefined : w.topic,
+            },
+            explanation: `${spokenText} — ${expectedListening}`,
           },
-          [],
-          `${spokenText} — ${expectedListening}`,
         );
       }
     }
 
-    // 10. Direct Word Translation (typing)
-    add(
+    // 10. Direct Word Translation (typing) — NEVER leaks Turkish alternatives when producing German!
+    pushTask(
       w,
       "translation",
       reverse
@@ -452,18 +807,25 @@ export function buildActivities(
         : `Türkçe yaz: “${source}”`,
       target,
       [],
-      undefined,
-      reverse && w.article ? [w.de.replace(/^(der|die|das)\s+/u, "")] : [],
+      {
+        direction: taskDir,
+        objective: reverse ? "production" : "meaning",
+        alternatives: reverse ? [] : (w.alternatives ?? []),
+      },
     );
 
     if (selected === "spelling" && w.de.length <= 32) {
-      add(
+      pushTask(
         w,
         "spelling",
         `Harflerle oluştur: ${w.tr}`,
         w.de,
         [],
-        { tiles: shuffle(Array.from(w.de)) },
+        {
+          direction: "tr_de",
+          objective: "production",
+          interaction: { tiles: shuffle(Array.from(w.de)) },
+        },
       );
     }
 
@@ -475,53 +837,220 @@ export function buildActivities(
         const chars = Array.from(w.de);
         const answer = chars[pos];
         chars[pos] = "＿";
-        add(
+        pushTask(
           w,
           "missing",
           chars.join("") + " · " + w.tr,
           answer,
           shuffle([...new Set([answer, ..."aein".split("")])]).slice(0, 5),
+          {
+            direction: "de_only",
+            objective: "cloze",
+          },
         );
       }
     }
   }
 
-  // Round-robin mixing across available activity types for engaging variety
-  if (selected === "mistake_review") {
-    const reviewTypes = ["choice", "article", "gap", "translation", "listening", "conjugation"];
-    const pool: Task[] = [];
-    for (let i = 0; i < candidates.length; i++) {
-      for (const rt of reviewTypes) {
-        const g = byType.get(rt);
-        if (g && i < g.length) {
-          pool.push({ ...g[i], type: "mistake_review" });
-        }
-      }
-    }
-    return pool.slice(0, options.limit ?? 30);
+  // Candidate-priority selection: guarantee mistakes/freshUnseen words are covered in priority order
+  // before falling back to multiple passes on smaller pools, rotating activity types evenly.
+  const limit =
+    selected === "mistake_review" ? (options.limit ?? 30) : (options.limit ?? 40);
+
+  if (selected !== "mixed" && selected !== "mistake_review") {
+    const group = byType.get(selected) ?? [];
+    return group.slice(0, limit);
   }
 
   const keys =
-    selected === "mixed"
-      ? activities.map((a) => a[0]).filter((k) => k !== "mistake_review")
-      : [selected];
-  const result: Task[] = [];
-  const usedPromptFingerprints = new Set<string>();
+    selected === "mistake_review"
+      ? ["choice", "article", "gap", "translation", "listening", "conjugation", "sentence_completion"]
+      : activities.map((a) => a[0]).filter((k) => k !== "mistake_review" && byType.has(k));
 
-  for (let i = 0; i < candidates.length; i++) {
-    keys.forEach((key, offset) => {
-      const group = byType.get(key);
-      if (group && group.length > 0) {
-        const idx = (i + offset) % group.length;
-        const t = group[idx];
-        const pKey = `${t.type}:${t.vocabularyIds.join(",")}:${t.prompt}`;
-        if (i < group.length && !usedPromptFingerprints.has(pKey)) {
-          usedPromptFingerprints.add(pKey);
-          result.push(t);
-        }
+  if (!keys.length) return [];
+
+  const result: Task[] = [];
+  const usedFingerprints = new Set<string>();
+  const usedWordTypes = new Map<string, Set<string>>();
+  let keyCursor = randomInt(keys.length);
+
+  // Multiple passes: Pass 0 covers each candidate once in exact priority order;
+  // subsequent passes only run if fewer unique candidates exist than `limit`.
+  for (let pass = 0; pass < keys.length && result.length < limit; pass++) {
+    let addedInPass = false;
+    for (const w of candidates) {
+      if (result.length >= limit) break;
+      const wordMap = byWordAndType.get(w.id);
+      if (!wordMap || wordMap.size === 0) continue;
+      const tried = usedWordTypes.get(w.id) ?? new Set<string>();
+      for (let step = 0; step < keys.length; step++) {
+        const k = keys[(keyCursor + step) % keys.length];
+        if (tried.has(k)) continue;
+        const candidateTask = wordMap.get(k);
+        if (!candidateTask || usedFingerprints.has(candidateTask.fingerprint)) continue;
+        usedFingerprints.add(candidateTask.fingerprint);
+        tried.add(k);
+        usedWordTypes.set(w.id, tried);
+        result.push(
+          selected === "mistake_review"
+            ? { ...candidateTask, isMistakeReview: true }
+            : candidateTask,
+        );
+        keyCursor = (keyCursor + step + 1) % keys.length;
+        addedInPass = true;
+        break;
       }
-    });
+    }
+    if (!addedInPass) break;
   }
 
-  return result.slice(0, options.limit ?? 40);
+  return result.slice(0, limit);
+}
+
+/**
+ * Generates an optional reverse-direction reinforcement session using the EXACT same
+ * learning material from a completed parent practice session.
+ * - Prioritizes missed/skipped parent items first, then shuffles the remaining parent set.
+ * - Flips direction (de_tr <-> tr_de; or flips each item's dominant parent direction for mixed).
+ * - Replaces grammar-only items (article/conjugation) with meaningful active recall/usage tasks
+ *   for those exact nouns/verbs rather than fabricating nonsensical mirrored prompts.
+ */
+export function buildReinforcementActivities(input: {
+  parentTasks: Task[];
+  parentResults: Record<string, { score: number | null; skipped?: boolean }>;
+  parentDirection: StudyDirection;
+  scopedWords: Vocabulary[];
+  distractorUniverse: Vocabulary[];
+  limit?: number;
+}): { tasks: Task[]; targetDirection: StudyDirection } {
+  const {
+    parentTasks,
+    parentResults,
+    parentDirection,
+    scopedWords,
+    distractorUniverse,
+    limit = 10,
+  } = input;
+
+  const targetDirection = oppositeStudyDirection(parentDirection);
+  if (!scopedWords.length || !parentTasks.length) {
+    return { tasks: [], targetDirection };
+  }
+
+  const wrongWordIds = new Set<string>();
+  const skippedWordIds = new Set<string>();
+  const dominantParentDirByWord = new Map<string, "de_tr" | "tr_de">();
+  const parentTypesByWord = new Map<string, Set<string>>();
+
+  for (const t of parentTasks) {
+    const r = parentResults[t.id];
+    const isExplicitWrong = Boolean(r && !r.skipped && r.score !== null && r.score < 0.8);
+    const isSkipped = !r || r.skipped || r.score === null;
+    const inferredDir: "de_tr" | "tr_de" =
+      t.direction === "de_tr" || t.direction === "tr_de"
+        ? t.direction
+        : t.prompt.includes("Almanca karşılığı") ||
+            t.prompt.startsWith("Almanca yaz") ||
+            t.prompt.includes("Almancaya çevir") ||
+            t.type === "ordering"
+          ? "tr_de"
+          : "de_tr";
+
+    for (const wid of t.vocabularyIds) {
+      if (isExplicitWrong) wrongWordIds.add(wid);
+      else if (isSkipped) skippedWordIds.add(wid);
+      if (!dominantParentDirByWord.has(wid)) {
+        dominantParentDirByWord.set(wid, inferredDir);
+      }
+      const typeSet = parentTypesByWord.get(wid) ?? new Set<string>();
+      typeSet.add(t.type);
+      parentTypesByWord.set(wid, typeSet);
+    }
+  }
+
+  // Determine exact opposite direction per word
+  const forceDirMap = new Map<string, "de_tr" | "tr_de">();
+  for (const w of scopedWords) {
+    if (parentDirection === "tr_de") {
+      forceDirMap.set(w.id, "de_tr");
+    } else if (parentDirection === "de_tr") {
+      forceDirMap.set(w.id, "tr_de");
+    } else {
+      const prevDir = dominantParentDirByWord.get(w.id) ?? "tr_de";
+      forceDirMap.set(w.id, prevDir === "tr_de" ? "de_tr" : "tr_de");
+    }
+  }
+
+  // Order exact parent words: explicitly wrong first, skipped second, passed third (each tier shuffled)
+  const wrongWords = shuffle(scopedWords.filter((w) => wrongWordIds.has(w.id)));
+  const skippedWords = shuffle(
+    scopedWords.filter((w) => !wrongWordIds.has(w.id) && skippedWordIds.has(w.id)),
+  );
+  const passedWords = shuffle(
+    scopedWords.filter((w) => !wrongWordIds.has(w.id) && !skippedWordIds.has(w.id)),
+  );
+  const orderedParentWords = [...wrongWords, ...skippedWords, ...passedWords];
+  const parentIdSet = new Set(orderedParentWords.map((w) => w.id));
+  const missedWordIds = new Set([...wrongWordIds, ...skippedWordIds]);
+
+  // Build candidate pool with exact parent words + full level distractors,
+  // then filter strictly so generated tasks ONLY test the parent session's words!
+  const combinedPool = uniqueById([...orderedParentWords, ...distractorUniverse]);
+  const generatedAll = buildActivities(combinedPool, "mixed", targetDirection, {
+    mistakeWordIds: missedWordIds,
+    forceDirectionByWordId: forceDirMap,
+    limit: 120,
+  });
+
+  // Restrict to tasks whose tested vocabulary comes strictly from parentIdSet
+  // (for matching, keep only if at least the primary word or all paired words are from parentIdSet;
+  // prefer all words in parentIdSet when >= 3 parent words exist)
+  const strictlyParent = generatedAll.filter((t) => {
+    if (t.vocabularyIds.length === 1) {
+      return parentIdSet.has(t.vocabularyIds[0]);
+    }
+    if (parentIdSet.size >= 3) {
+      return t.vocabularyIds.every((id) => parentIdSet.has(id));
+    }
+    return parentIdSet.has(t.vocabularyIds[0]);
+  });
+
+  // Pick 1 meaningful reverse/complementary task per parent word cleanly!
+  // Avoid repeating grammar-only article/conjugation when a bilingual meaning/production task exists.
+  const picked: Task[] = [];
+  const usedFingerprints = new Set<string>();
+  const rankTaskForWord = (t: Task, wid: string): number => {
+    const prevTypes = parentTypesByWord.get(wid) ?? new Set<string>();
+    const targetDir = forceDirMap.get(wid);
+    let score = 0;
+    if (t.direction === targetDir) score += 20;
+    if (!prevTypes.has(t.type)) score += 10;
+    // Prefer rich active/meaning tasks over pure article/conjugation in reinforcement
+    if (["choice", "translation", "sentence_translation", "ordering", "listening", "matching"].includes(t.type)) {
+      score += 8;
+    }
+    if (prevTypes.has("article") && (t.type === "translation" || t.type === "choice")) {
+      score += 12;
+    }
+    if (prevTypes.has("conjugation") && (t.type === "sentence_completion" || t.type === "choice" || t.type === "translation")) {
+      score += 12;
+    }
+    return score;
+  };
+
+  for (const w of orderedParentWords) {
+    const wordTasks = strictlyParent
+      .filter((t) => t.vocabularyIds.includes(w.id) && !usedFingerprints.has(t.fingerprint))
+      .sort((a, b) => rankTaskForWord(b, w.id) - rankTaskForWord(a, w.id));
+    if (wordTasks[0]) {
+      picked.push(wordTasks[0]);
+      usedFingerprints.add(wordTasks[0].fingerprint);
+    }
+    if (picked.length >= limit) break;
+  }
+
+  return {
+    tasks: picked.slice(0, limit),
+    targetDirection,
+  };
 }

@@ -186,6 +186,9 @@ export default function KapsGerman() {
           onOverviewChanged={() => {
             void refreshOverview();
           }}
+          onOpenSession={(sid) => {
+            navigate(`/dersler/kaps-german?tab=${activeTab}&session=${encodeURIComponent(sid)}`);
+          }}
           onRestartSimilar={(filters, mod) => {
             void handleStartSession({
               module: mod,

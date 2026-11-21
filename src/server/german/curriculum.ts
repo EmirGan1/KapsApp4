@@ -798,8 +798,8 @@ const A1_RAW: RawSeed[] = [
     topic: "Temel Fiiller",
     pos: "verb",
     grammar: "Kök ünlü değişimi (a → ä): du schläfst, er schläft",
-    exampleDe: "Das Baby schläft schon.",
-    exampleTr: "Bebek şimdiden uyuyor.",
+    exampleDe: "Das Baby schläft ruhig.",
+    exampleTr: "Bebek sakin bir şekilde uyuyor.",
     conjugation: {
       pronoun: "er",
       tense: "Präsens",
@@ -918,7 +918,7 @@ const A2_RAW: RawSeed[] = [
     plural: "die Fahrkarten",
     grammar: "Bileşik dişil isim (die)",
     exampleDe: "Haben Sie schon eine Fahrkarte gekauft?",
-    exampleTr: "Zaten bilet satın aldınız mı?",
+    exampleTr: "Biletinizi şimdiden aldınız mı?",
   },
   {
     de: "das Gepäck",
@@ -987,7 +987,7 @@ const A2_RAW: RawSeed[] = [
     plural: "die Erfahrungen",
     grammar: "Dişil isim (die)",
     exampleDe: "Sie hat schon viel Erfahrung gesammelt.",
-    exampleTr: "Şimdiden çok deneyim kazandı.",
+    exampleTr: "Bugüne kadar çok deneyim kazandı.",
   },
   {
     de: "die Kleidung",
@@ -1213,7 +1213,7 @@ const A2_RAW: RawSeed[] = [
     pos: "verb",
     grammar: "Modalverb (ich darf, du darfst, wir dürfen)",
     exampleDe: "Hier darf man nicht rauchen.",
-    exampleTr: "Burada sigara içilmez (izin yok).",
+    exampleTr: "Burada sigara içmeye izin yok.",
   },
   {
     de: "erklären",
@@ -1308,8 +1308,8 @@ const A2_RAW: RawSeed[] = [
     topic: "Günlük Fiiller",
     pos: "verb",
     grammar: "du nimmst, er nimmt · hat genommen",
-    exampleDe: "Ich nehme heute den Bus statt das Auto.",
-    exampleTr: "Bugün araba yerine otobüse biniyorum.",
+    exampleDe: "Ich nehme heute lieber den Bus als das Auto.",
+    exampleTr: "Bugün araba yerine otobüse binmeyi tercih ediyorum.",
   },
   {
     de: "bleiben",

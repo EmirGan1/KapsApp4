@@ -18,40 +18,40 @@ export const CEFR_META: Record<
     trName: "Başlangıç",
     enName: "Beginner",
     subtitle: "Günlük temel kelimeler, tanışma ve şimdiki zaman",
-    accent: "#58CC02",
-    accentDark: "#46A302",
+    accent: "#0d9488",
+    accentDark: "#0f766e",
   },
   A2: {
     code: "A2",
     trName: "Temel",
     enName: "Elementary",
     subtitle: "Geçmiş zaman (Perfekt), modal fiiller ve günlük diyalog",
-    accent: "#1CB0F6",
-    accentDark: "#1899D6",
+    accent: "#2563eb",
+    accentDark: "#1d4ed8",
   },
   B1: {
     code: "B1",
     trName: "Orta",
     enName: "Intermediate",
     subtitle: "Bağlaçlar, Präteritum, Konjunktiv II ve bağımsız anlatım",
-    accent: "#CE82FF",
-    accentDark: "#A855F7",
+    accent: "#6366f1",
+    accentDark: "#4f46e5",
   },
   B2: {
     code: "B2",
     trName: "Orta Üstü",
     enName: "Upper Intermediate",
     subtitle: "Edilgen çatı, soyut kavramlar ve akademik ifadeler",
-    accent: "#FF9600",
-    accentDark: "#D97706",
+    accent: "#d97706",
+    accentDark: "#b45309",
   },
   C1: {
     code: "C1",
     trName: "İleri",
     enName: "Advanced",
     subtitle: "Akıcı söylem, nüanslı bağlaçlar ve üst düzey kelime hazinesi",
-    accent: "#FF4B4B",
-    accentDark: "#DC2626",
+    accent: "#be123c",
+    accentDark: "#9f1239",
   },
 };
 
@@ -150,6 +150,18 @@ export const activities = [
 export type ActivityType = (typeof activities)[number][0] | "mixed" | string;
 
 export type StudyDirection = "de_tr" | "tr_de" | "mixed";
+
+export function oppositeStudyDirection(dir: StudyDirection): StudyDirection {
+  if (dir === "tr_de") return "de_tr";
+  if (dir === "de_tr") return "tr_de";
+  return "mixed";
+}
+
+export function directionLabelTr(dir: StudyDirection): string {
+  if (dir === "tr_de") return "Türkçe → Almanca";
+  if (dir === "de_tr") return "Almanca → Türkçe";
+  return "Karışık Çift Yönlü";
+}
 
 export function isCefrLevel(value: unknown): value is CefrLevel {
   return typeof value === "string" && (studyLevels as readonly string[]).includes(value);
