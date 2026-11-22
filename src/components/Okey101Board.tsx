@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Gamepad2, Users, RefreshCcw, LogOut, Plus, Play, 
@@ -976,7 +977,7 @@ export default function Okey101Board({
                             >
                               <div className="flex items-center gap-2">
                                 <Avatar url={u.avatar} name={u.username} color={u.color} size={6} />
-                                <span>{u.username}</span>
+                                <span><UserProfileLink username={u.username} user={u} /></span>
                               </div>
                               <span className="text-[11px] text-purple-400">{isSelected ? '✓ Seçildi' : '+ Ekle'}</span>
                             </div>
@@ -1091,7 +1092,7 @@ export default function Okey101Board({
                     </div>
                     <h3 className="font-bold text-base text-white truncate">{room.name}</h3>
                     <p className="text-xs text-slate-400 mt-1">
-                      Masa Yöneticisi: {room.players?.[0]?.username || 'Bilinmiyor'}
+                      Masa Yöneticisi: <UserProfileLink username={room.players?.[0]?.username || 'Bilinmiyor'} user={room.players?.[0]} />
                     </p>
                   </div>
 
@@ -1192,7 +1193,7 @@ export default function Okey101Board({
                 : 'bg-black/60 border-emerald-900 text-emerald-300'
             }`}>
               <Clock size={16} />
-              <span>{isMyTurn ? `Sıra Sende (${currentRoom.turnTimeRemaining}s)` : `${currentRoom.players[currentRoom.currentTurn]?.username} (${currentRoom.turnTimeRemaining}s)`}</span>
+              <span>{isMyTurn ? `Sıra Sende (${currentRoom.turnTimeRemaining}s)` : <>{""}<UserProfileLink username={currentRoom.players[currentRoom.currentTurn]?.username} />{" ("}{currentRoom.turnTimeRemaining}{"s)"}</>}</span>
             </div>
           ) : (
             <div className="text-xs text-amber-300 bg-amber-500/20 px-3 py-1 rounded-full border border-amber-500/30">
@@ -1290,7 +1291,7 @@ export default function Okey101Board({
               <Avatar url={currentRoom.players[1].avatar} name={currentRoom.players[1].username} size={8} />
               <div>
                 <div className="flex items-center gap-1">
-                  <p className="font-bold text-slate-100">{currentRoom.players[1].username}</p>
+                  <p className="font-bold text-slate-100"><UserProfileLink username={currentRoom.players[1].username} user={currentRoom.players[1]} /></p>
                   {currentRoom.currentTurn === 1 && (
                     <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black animate-pulse">
                       Sıra ({currentRoom.turnTimeRemaining}s)
@@ -1322,7 +1323,7 @@ export default function Okey101Board({
               <Avatar url={currentRoom.players[2].avatar} name={currentRoom.players[2].username} size={8} />
               <div>
                 <div className="flex items-center gap-1">
-                  <p className="font-bold text-slate-100">{currentRoom.players[2].username}</p>
+                  <p className="font-bold text-slate-100"><UserProfileLink username={currentRoom.players[2].username} user={currentRoom.players[2]} /></p>
                   {currentRoom.currentTurn === 2 && (
                     <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black animate-pulse">
                       Sıra ({currentRoom.turnTimeRemaining}s)
@@ -1354,7 +1355,7 @@ export default function Okey101Board({
               <Avatar url={currentRoom.players[3].avatar} name={currentRoom.players[3].username} size={8} />
               <div>
                 <div className="flex items-center gap-1">
-                  <p className="font-bold text-slate-100">{currentRoom.players[3].username}</p>
+                  <p className="font-bold text-slate-100"><UserProfileLink username={currentRoom.players[3].username} user={currentRoom.players[3]} /></p>
                   {currentRoom.currentTurn === 3 && (
                     <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black animate-pulse">
                       Sıra ({currentRoom.turnTimeRemaining}s)
@@ -1759,7 +1760,7 @@ export default function Okey101Board({
                 <Avatar url={currentRoom.players[0].avatar} name={currentRoom.players[0].username} size={9} />
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="font-black text-xs sm:text-sm text-white">{currentRoom.players[0].username}</span>
+                    <span className="font-black text-xs sm:text-sm text-white"><UserProfileLink username={currentRoom.players[0].username} user={currentRoom.players[0]} /></span>
                     {currentRoom.currentTurn === 0 && (
                       <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black animate-pulse">
                         Sıra Onda ({currentRoom.turnTimeRemaining}s)
@@ -1830,7 +1831,7 @@ export default function Okey101Board({
               {currentRoom.players.map((p) => (
                 <div key={p.id} className="py-2 flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-white">{p.username}</span>
+                    <span className="font-bold text-white"><UserProfileLink username={p.username} user={p} /></span>
                     {p.id === currentRoom.winnerId && <Crown size={14} className="text-amber-400" />}
                   </div>
                   <div className="text-right">
@@ -1978,7 +1979,7 @@ export default function Okey101Board({
                       >
                         <div className="flex items-center gap-2">
                           <Avatar url={u.avatar} name={u.username} color={u.color} size={6} />
-                          <span>{u.username}</span>
+                          <span><UserProfileLink username={u.username} user={u} /></span>
                         </div>
                         <span className="text-[11px] text-purple-400">{isSelected ? '✓ İzinli' : '+ Ekle'}</span>
                       </div>

@@ -199,6 +199,8 @@ export function getTabFromPathname(pathname: string): {
     return { tab: "subject", subject };
   }
 
+  if (/^\/gonderi\/\d+\/?$/.test(cleanPath)) return { tab: "feed" };
+
   // Dynamic user profile route: /profil/:userId
   if (cleanPath.startsWith("/profil/")) {
     const rawId = cleanPath.slice("/profil/".length);

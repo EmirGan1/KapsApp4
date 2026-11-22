@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -1000,7 +1001,7 @@ export default function PartyMode({
                   )}
                 </div>
 
-                <span className="text-xs font-bold text-slate-200 truncate w-full">{p.username}</span>
+                <span className="text-xs font-bold text-slate-200 truncate w-full"><UserProfileLink username={p.username} user={p} /></span>
                 <span className="text-[10px] text-slate-400">{p.isBot ? '🤖 Yapay Zeka' : 'Gerçek Oyuncu'}</span>
 
                 <div className="mt-2.5">
@@ -1130,7 +1131,7 @@ export default function PartyMode({
                       }`}>
                         {i + 1}
                       </span>
-                      <span className="text-xs font-bold text-slate-200">{p.username}</span>
+                      <span className="text-xs font-bold text-slate-200"><UserProfileLink username={p.username} user={p} /></span>
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -1165,7 +1166,7 @@ export default function PartyMode({
                 {/* 2nd Place */}
                 {currentRoom.players[1] && (
                   <div className="flex flex-col items-center flex-1">
-                    <span className="text-xs font-bold text-slate-300 mb-1">{currentRoom.players[1].username}</span>
+                    <span className="text-xs font-bold text-slate-300 mb-1"><UserProfileLink username={currentRoom.players[1].username} user={currentRoom.players[1]} /></span>
                     <div className="w-full bg-slate-700/60 border border-slate-600 rounded-t-2xl h-24 flex flex-col items-center justify-center">
                       <span className="text-lg font-black text-slate-300">2</span>
                       <span className="text-[10px] text-slate-400 font-mono">{currentRoom.players[1].totalScore} Puan</span>
@@ -1177,7 +1178,7 @@ export default function PartyMode({
                 {currentRoom.players[0] && (
                   <div className="flex flex-col items-center flex-1">
                     <Crown className="w-6 h-6 text-amber-400 mb-1 animate-pulse" />
-                    <span className="text-sm font-black text-amber-400 mb-1">{currentRoom.players[0].username}</span>
+                    <span className="text-sm font-black text-amber-400 mb-1"><UserProfileLink username={currentRoom.players[0].username} user={currentRoom.players[0]} /></span>
                     <div className="w-full bg-gradient-to-t from-amber-600 to-amber-500 border border-amber-300 rounded-t-2xl h-36 flex flex-col items-center justify-center shadow-lg shadow-amber-500/30">
                       <span className="text-2xl font-black text-slate-950">1</span>
                       <span className="text-xs text-slate-950 font-black">{currentRoom.players[0].totalScore} Puan</span>
@@ -1188,7 +1189,7 @@ export default function PartyMode({
                 {/* 3rd Place */}
                 {currentRoom.players[2] && (
                   <div className="flex flex-col items-center flex-1">
-                    <span className="text-xs font-bold text-amber-700 mb-1">{currentRoom.players[2].username}</span>
+                    <span className="text-xs font-bold text-amber-700 mb-1"><UserProfileLink username={currentRoom.players[2].username} user={currentRoom.players[2]} /></span>
                     <div className="w-full bg-amber-950/60 border border-amber-800 rounded-t-2xl h-18 flex flex-col items-center justify-center">
                       <span className="text-base font-black text-amber-600">3</span>
                       <span className="text-[10px] text-amber-500/80 font-mono">{currentRoom.players[2].totalScore} Puan</span>

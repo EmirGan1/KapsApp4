@@ -1,3 +1,4 @@
+import UserProfileLink, { MentionText } from "./UserProfileLink";
 import { MentionInput, MentionHighlight } from "./Mentions";
 import { getUploadError } from "../utils/uploadErrors";
 import { formatMessageDate } from "../utils/messageDate";
@@ -628,7 +629,7 @@ export default function GlobalChat({
                         }`}
                       >
                         <div className="font-semibold text-xs mb-1 truncate">
-                          {msg.reply_message.sender_name}
+                          <UserProfileLink username={msg.reply_message.sender_name} user={msg.reply_message} />
                         </div>
                         {msg.reply_message.type === "text" ? (
                           <p className="truncate text-xs">{msg.reply_message.content}</p>
@@ -651,7 +652,7 @@ export default function GlobalChat({
                           size={5}
                         />
                         <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline truncate">
-                          {msg.sender_name}
+                          <UserProfileLink username={msg.sender_name} userId={msg.sender} />
                         </span>
                       </div>
                     )}
@@ -659,7 +660,7 @@ export default function GlobalChat({
                     {/* Text Message */}
                     {msg.type === "text" && (
                       <div className="privacy-sensitive break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap text-[15px] leading-relaxed select-text">
-                        <MentionHighlight kind="global" target={msg.id}>{msg.content}</MentionHighlight>
+                        <MentionHighlight kind="global" target={msg.id}><MentionText text={msg.content}/></MentionHighlight>
                       </div>
                     )}
 
@@ -866,7 +867,7 @@ export default function GlobalChat({
               return (
                 <div key={`typing-${id}`} className="flex justify-start">
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl rounded-bl-none shadow-sm p-3 flex items-center gap-2">
-                    <span className="text-xs text-slate-500 dark:text-slate-400">{tUser.username} yazıyor</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400"><UserProfileLink username={tUser.username} user={tUser} /> yazıyor</span>
                     <div className="flex gap-1">
                       <span
                         className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce"
@@ -894,7 +895,7 @@ export default function GlobalChat({
           {replyTo && (
             <div className="absolute bottom-full left-0 w-full bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-2 px-3 sm:px-4 flex justify-between items-center text-xs sm:text-sm shadow-md">
               <div className="truncate pr-2">
-                <span className="font-semibold text-blue-600 dark:text-blue-400">{replyTo.sender_name}</span> kişisine
+                <span className="font-semibold text-blue-600 dark:text-blue-400"><UserProfileLink username={replyTo.sender_name} user={replyTo} /></span> kişisine
                 yanıtlanıyor:{" "}
                 <span className="text-slate-500 dark:text-slate-400 truncate max-w-[150px] sm:max-w-xs inline-block align-bottom">
                   {replyTo.type === "text" ? replyTo.content : "Medya"}

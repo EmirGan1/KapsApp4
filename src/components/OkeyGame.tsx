@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Gamepad2, Users, RefreshCcw, LogOut, Plus, Play, 
@@ -755,7 +756,7 @@ export default function OkeyGame({
                             >
                               <div className="flex items-center gap-2">
                                 <Avatar url={u.avatar} name={u.username} color={u.color} size={6} />
-                                <span>{u.username}</span>
+                                <span><UserProfileLink username={u.username} user={u} /></span>
                               </div>
                               <span className="text-[11px]">{isSelected ? '✓ Seçildi' : '+ Ekle'}</span>
                             </div>
@@ -929,7 +930,7 @@ export default function OkeyGame({
             ) : (
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-amber-950/70 border border-amber-800/60 text-amber-300 rounded-lg text-[11px] font-medium">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                <span>Host bekleniyor ({hostPlayer?.username || 'Host'})</span>
+                <span>Host bekleniyor (<UserProfileLink username={hostPlayer?.username || 'Host'} user={hostPlayer} />)</span>
               </div>
             )
           )}
@@ -1020,7 +1021,7 @@ export default function OkeyGame({
               </div>
               <div className="text-left">
                 <p className="text-[10px] font-bold text-slate-200 leading-tight max-w-[70px] sm:max-w-[100px] truncate flex items-center gap-0.5">
-                  {leftOpponent.username}
+                  <UserProfileLink username={leftOpponent.username} user={leftOpponent} />
                   {leftOpponent.id === hostId && (
                     <span title="Masa Yöneticisi (Host)">
                       <Crown size={10} className="text-amber-400 shrink-0 inline" />
@@ -1056,7 +1057,7 @@ export default function OkeyGame({
               </div>
               <div className="text-left">
                 <p className="text-[10px] font-bold text-slate-200 leading-tight max-w-[70px] sm:max-w-[100px] truncate flex items-center gap-0.5">
-                  {topOpponent.username}
+                  <UserProfileLink username={topOpponent.username} user={topOpponent} />
                   {topOpponent.id === hostId && (
                     <span title="Masa Yöneticisi (Host)">
                       <Crown size={10} className="text-amber-400 shrink-0 inline" />
@@ -1092,7 +1093,7 @@ export default function OkeyGame({
               </div>
               <div className="text-left">
                 <p className="text-[10px] font-bold text-slate-200 leading-tight max-w-[70px] sm:max-w-[100px] truncate flex items-center gap-0.5">
-                  {rightOpponent.username}
+                  <UserProfileLink username={rightOpponent.username} user={rightOpponent} />
                   {rightOpponent.id === hostId && (
                     <span title="Masa Yöneticisi (Host)">
                       <Crown size={10} className="text-amber-400 shrink-0 inline" />
@@ -1139,13 +1140,13 @@ export default function OkeyGame({
                     : "🎯 Sıra Sende! Istakandan bir taş seçip 'Taşı At'a bas veya taşa çift tıkla."
                 ) : (
                   currentRoom.turnPhase === 'draw'
-                    ? `⏳ ${currentTurnPlayer?.username || 'Oyuncu'} taş çekiyor...`
-                    : `⏳ ${currentTurnPlayer?.username || 'Oyuncu'} taş atıyor...`
+                    ? <>{"⏳ "}<UserProfileLink username={currentTurnPlayer?.username || 'Oyuncu'} />{" taş çekiyor..."}</>
+                    : <>{"⏳ "}<UserProfileLink username={currentTurnPlayer?.username || 'Oyuncu'} />{" taş atıyor..."}</>
                 )
               ) : (
                 isHost 
                   ? "👑 Masa Yöneticisisiniz. Hazır olduğunuzda 'Taşları Dağıt' butonuna basın." 
-                  : `⏳ Masa Yöneticisinin (${hostPlayer?.username || 'Host'}) taşları dağıtması bekleniyor...`
+                  : <>{"⏳ Masa Yöneticisinin ("}<UserProfileLink username={hostPlayer?.username || 'Host'} />{") taşları dağıtması bekleniyor..."}</>
               )}
             </span>
           </div>
@@ -1178,7 +1179,7 @@ export default function OkeyGame({
                   </div>
                   <h3 className="text-base sm:text-lg font-black text-white">Masa Yöneticisi Bekleniyor</h3>
                   <p className="text-xs text-slate-300 mt-1">
-                    Masa yöneticisi <strong className="text-amber-300">{hostPlayer?.username || 'Host'}</strong> taşları dağıttığında oyun başlayacak.
+                    Masa yöneticisi <strong className="text-amber-300"><UserProfileLink username={hostPlayer?.username || 'Host'} user={hostPlayer} /></strong> taşları dağıttığında oyun başlayacak.
                   </p>
                 </div>
               )}
@@ -1219,7 +1220,7 @@ export default function OkeyGame({
                   )}
                 </button>
                 <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-slate-400 mt-0.5 sm:mt-1 max-w-[65px] sm:max-w-[100px] truncate text-center">
-                  {previousPlayer ? previousPlayer.username : 'Önceki Oyuncu'}
+                  <UserProfileLink username={previousPlayer ? previousPlayer.username : 'Önceki Oyuncu'} />
                 </span>
               </div>
 
@@ -1499,7 +1500,7 @@ export default function OkeyGame({
                 </div>
                 <div className="text-left">
                   <div className="flex items-center gap-1">
-                    <span className="font-bold text-xs text-white max-w-[100px] truncate">{bottomPlayer.username}</span>
+                    <span className="font-bold text-xs text-white max-w-[100px] truncate"><UserProfileLink username={bottomPlayer.username} user={bottomPlayer} /></span>
                     {bottomPlayer.id === hostId && (
                       <span title="Masa Yöneticisi (Host)">
                         <Crown size={11} className="text-amber-400" />
@@ -1599,7 +1600,7 @@ export default function OkeyGame({
                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                       {!isMe && (
                         <div className="flex items-center gap-1 mb-0.5 text-[10px] text-slate-400">
-                          <span className="font-semibold text-slate-300">{msg.username}</span>
+                          <span className="font-semibold text-slate-300"><UserProfileLink username={msg.username} user={msg} /></span>
                           <span>•</span>
                           <span>{msg.time}</span>
                         </div>
@@ -1766,7 +1767,7 @@ export default function OkeyGame({
                         >
                           <div className="flex items-center gap-2">
                             <Avatar url={u.avatar} name={u.username} color={u.color} size={6} />
-                            <span>{u.username}</span>
+                            <span><UserProfileLink username={u.username} user={u} /></span>
                           </div>
                           <span className="text-[11px] text-purple-400">{isSelected ? '✓ İzinli' : '+ Ekle'}</span>
                         </div>

@@ -1,3 +1,4 @@
+import UserProfileLink from "../../UserProfileLink";
 import React from 'react';
 import { Swords, Handshake, Gift, Smile, X, Crown, Shield } from 'lucide-react';
 import { CanvasPlayerInfo } from './KapstorialCanvas';
@@ -47,7 +48,7 @@ export default function KapstorialRadialMenu({
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
-              <span className="font-black text-base truncate">{targetPlayer.username}</span>
+              <span className="font-black text-base truncate"><UserProfileLink username={targetPlayer.username} user={targetPlayer} /></span>
               {isAlly && (
                 <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-500/40">
                   MÜTTEFİK

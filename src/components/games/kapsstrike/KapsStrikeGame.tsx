@@ -1,3 +1,4 @@
+import UserProfileLink from "../../UserProfileLink";
 import { GRENADE_NAMES } from "../../../games/kapsstrike/grenades";
 import {
   getTouchCombatButtonState,
@@ -1567,7 +1568,7 @@ export default function KapsStrikeGame({
                         }`}
                       />
                       <span className="font-bold">
-                        {p.username} {p.userId === currentUserId ? "(Sen)" : ""}
+                        <UserProfileLink username={p.username} user={p} /> {p.userId === currentUserId ? "(Sen)" : ""}
                       </span>
                     </td>
                     <td>
@@ -1811,7 +1812,7 @@ export default function KapsStrikeGame({
                   Maçın En Değerli Oyuncusu (MVP)
                 </span>
                 <span className="text-lg font-black text-amber-200">
-                  👑 {matchStats.mvp.username} ({matchStats.mvp.kills} Öldürme ·{" "}
+                  👑 <UserProfileLink username={matchStats.mvp.username} user={matchStats.mvp} /> ({matchStats.mvp.kills} Öldürme ·{" "}
                   {Math.round(matchStats.mvp.damage)} Hasar)
                 </span>
               </div>
@@ -1890,7 +1891,7 @@ export default function KapsStrikeGame({
                         <div key={p.id} className="ks-player-item">
                           <div className="ks-player-info">
                             <span className="font-bold text-red-400">
-                              {p.username} {p.userId === currentUserId ? "(Sen)" : ""}
+                              <UserProfileLink username={p.username} user={p} /> {p.userId === currentUserId ? "(Sen)" : ""}
                             </span>
                             {p.userId === currentRoom.hostId && (
                               <span className="text-amber-400 text-xs font-bold">👑 Host</span>
@@ -1919,7 +1920,7 @@ export default function KapsStrikeGame({
                         <div key={p.id} className="ks-player-item">
                           <div className="ks-player-info">
                             <span className="font-bold text-blue-400">
-                              {p.username} {p.userId === currentUserId ? "(Sen)" : ""}
+                              <UserProfileLink username={p.username} user={p} /> {p.userId === currentUserId ? "(Sen)" : ""}
                             </span>
                             {p.userId === currentRoom.hostId && (
                               <span className="text-amber-400 text-xs font-bold">👑 Host</span>
@@ -1944,7 +1945,7 @@ export default function KapsStrikeGame({
                       <div key={p.id} className="ks-player-item">
                         <div className="ks-player-info">
                           <span className="font-bold">
-                            {p.username} {p.userId === currentUserId ? "(Sen)" : ""}
+                            <UserProfileLink username={p.username} user={p} /> {p.userId === currentUserId ? "(Sen)" : ""}
                           </span>
                           {p.userId === currentRoom.hostId && (
                             <span className="text-amber-400 text-xs font-bold">👑 Host</span>

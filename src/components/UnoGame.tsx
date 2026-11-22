@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, RefreshCcw, LogOut, Plus, Play, 
@@ -546,7 +547,7 @@ export default function UnoGame({
                       />
                       <div className="overflow-hidden flex-1">
                         <div className="flex items-center gap-1">
-                          <span className="text-xs font-bold text-white truncate">{player.username}</span>
+                          <span className="text-xs font-bold text-white truncate"><UserProfileLink username={player.username} user={player} /></span>
                         </div>
                         <div className="flex items-center gap-1 text-[10px]">
                           {player.id === currentRoom.hostId && (
@@ -646,7 +647,7 @@ export default function UnoGame({
               {isMyTurn ? (
                 <span>🔥 <strong>Sıra Sende!</strong> Kartını oyna veya desteden çek.</span>
               ) : (
-                <span>Sıra: <strong>{currentTurnPlayer?.username}</strong> {currentTurnPlayer?.isBot ? '(Düşünüyor...)' : ''}</span>
+                <span>Sıra: <strong><UserProfileLink username={currentTurnPlayer?.username} user={currentTurnPlayer} /></strong> {currentTurnPlayer?.isBot ? '(Düşünüyor...)' : ''}</span>
               )}
             </div>
           </div>
@@ -688,7 +689,7 @@ export default function UnoGame({
                   </div>
 
                   <span className="text-[11px] font-semibold text-slate-300 truncate max-w-[80px]">
-                    {opponent.username}
+                    <UserProfileLink username={opponent.username} user={opponent} />
                   </span>
                 </div>
               );

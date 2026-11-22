@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import { DEFAULT_PACKING_ITEMS } from "../utils/ayvalikPacking";
 import TripGames from "./ayvalik/TripGames";
 import TripCompanion from "./ayvalik/TripCompanion";
@@ -1218,7 +1219,7 @@ function AyvalikCasContent({
                       <div className={`max-w-[78%] sm:max-w-[65%] space-y-1 ${isMe ? "items-end text-right" : "items-start text-left"}`}>
                         <div className="flex items-center gap-2 text-[11px] text-slate-400">
                           <span className="font-bold text-slate-800 dark:text-slate-200">
-                            {msg.username}
+                            <UserProfileLink username={msg.username} user={msg} />
                           </span>
                           <span>
                             {casDateLabel(msg.created_at)}
@@ -1392,7 +1393,7 @@ function AyvalikCasContent({
                           <p className="text-xs font-semibold line-clamp-1">{item.caption}</p>
                         )}
                         <span className="text-[10px] text-slate-300 block">
-                          Yükleyen: {item.username}
+                          Yükleyen: <UserProfileLink username={item.username} user={item} />
                         </span>
                       </div>
                     </div>
@@ -1832,7 +1833,7 @@ function AyvalikCasContent({
               <div>
                 <span className="font-bold text-sm block break-words">{selectedLightboxItem.caption || "Ayvalık CAS Gezi Anısı"}</span>
                 <span className="text-xs text-slate-300">
-                  {selectedLightboxItem.day_tag} • {selectedLightboxItem.location_tag} • Yükleyen: {selectedLightboxItem.username}
+                  {selectedLightboxItem.day_tag} • {selectedLightboxItem.location_tag} • Yükleyen: <UserProfileLink username={selectedLightboxItem.username} user={selectedLightboxItem} />
                 </span>
               </div>
 

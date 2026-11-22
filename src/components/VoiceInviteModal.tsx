@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect } from 'react';
 import { Socket } from 'socket.io-client';
 import { Search, PhoneCall, Check, X, Users, Loader2 } from 'lucide-react';
@@ -160,7 +161,7 @@ export const VoiceInviteModal: React.FC<VoiceInviteModalProps> = ({
                     <Avatar name={u.username} url={u.avatar} size={10} color={u.color || '#3b82f6'} />
                     <div className="min-w-0">
                       <p className="font-bold text-sm truncate text-slate-800 dark:text-slate-200">
-                        {u.username}
+                        <UserProfileLink beforeNavigate={onClose} username={u.username} user={u} />
                       </p>
                       {u.isOnline ? (
                         <span className="text-[10px] text-emerald-500 font-semibold flex items-center gap-1">

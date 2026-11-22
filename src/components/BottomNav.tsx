@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { 
@@ -196,7 +197,7 @@ export default function BottomNav({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <h3 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
-                      {username || "Kullanıcı"}
+                      <UserProfileLink username={username || "Kullanıcı"} embedded />
                     </h3>
                     {isEmirgan && (
                       <span className="text-[10px] font-mono font-bold text-amber-500">ROOT</span>

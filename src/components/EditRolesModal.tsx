@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useMemo } from "react";
 import { X, Check, Shield, Sparkles, Tag, AlertCircle, RefreshCw, Layers, Trash2, Award } from "lucide-react";
 import { COURSE_ROLES, CourseRole, sortRolesByPosition } from "../types";
@@ -204,7 +205,7 @@ export default function EditRolesModal({
                 Kullanıcı Rolleri Yönetimi
               </h3>
               <p className="text-xs text-slate-400">
-                <span className="text-indigo-400 font-semibold">@{username}</span> kullanıcısının ders ve özel rozetleri
+                <span className="text-indigo-400 font-semibold">@<UserProfileLink beforeNavigate={onClose} username={username} /></span> kullanıcısının ders ve özel rozetleri
               </p>
             </div>
           </div>

@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useEffect, useState } from 'react';
 import { Phone, PhoneOff, Video, Radio } from 'lucide-react';
 import Avatar from './Avatar';
@@ -153,7 +154,7 @@ export const VoiceCallInviteModal: React.FC<VoiceCallInviteModalProps> = ({
           </div>
 
           <h2 className="font-black text-white text-3xl lg:text-xl tracking-tight truncate max-w-[85vw]">
-            {invite.inviter.username}
+            <UserProfileLink username={invite.inviter.username} userId={invite.inviter.id} newTab />
           </h2>
           <p className="text-emerald-400 text-sm lg:text-xs font-semibold animate-pulse mt-1">
             📞 Sizi Sesli & Görüntülü Odaya Çaldırıyor...

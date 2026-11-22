@@ -134,12 +134,13 @@ export async function dismissDeviceNotification(id: string) {
   } catch {}
 }
 
-export async function showDeviceNotification(title: string, body: string, id?: number | string, preview = false, avatar?: string, incomingCall = false) {
+export async function showDeviceNotification(title: string, body: string, id?: number | string, preview = false, avatar?: string, incomingCall = false, targetUrl = "/") {
   const prefs = getStoredPreferences();
   if (!supported() || Notification.permission !== "granted" ||
       !prefs.desktopNotifs || (!preview && prefs.doNotDisturb)) return false;
   const options: NotificationOptions = {
     body: body.slice(0, 220),
+    data: { url: targetUrl.startsWith("/") && !targetUrl.startsWith("//") ? targetUrl : "/" },
     icon: notificationIcon(avatar),
     requireInteraction: incomingCall,
     tag: id == null ? undefined : `kapsapp-notification-${id}`,

@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import { X, Coins, Plus, Minus, Check, Search, Sparkles, Shield, RefreshCw, UserCheck, ArrowRight, UserX } from 'lucide-react';
@@ -244,7 +245,7 @@ export default function AdminChipManagerModal({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-black text-sm text-amber-300 truncate">{selectedUser.username}</span>
+                      <span className="font-black text-sm text-amber-300 truncate"><UserProfileLink beforeNavigate={onClose} username={selectedUser.username} user={selectedUser} /></span>
                       <span className="text-[10px] text-slate-400 font-mono">#{selectedUser.id}</span>
                     </div>
                     <div className="text-xs font-bold text-emerald-400 flex items-center gap-1 mt-0.5">
@@ -310,7 +311,7 @@ export default function AdminChipManagerModal({
                           <Avatar url={u.avatar} name={u.username} color={u.color || undefined} size={7} />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-xs truncate">{u.username}</span>
+                              <span className="font-bold text-xs truncate"><UserProfileLink beforeNavigate={onClose} username={u.username} user={u} /></span>
                               {u.username.toLowerCase() === 'emirgan' && (
                                 <span className="text-[10px] text-amber-400 font-black">👑</span>
                               )}
@@ -441,7 +442,7 @@ export default function AdminChipManagerModal({
         {/* Modal Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3">
           <span className="text-[11px] text-slate-500">
-            {selectedUser ? `${selectedUser.username} kullanıcısına uygulanacak.` : 'Lütfen hedef kullanıcı seçin.'}
+            {selectedUser ? <>{""}<UserProfileLink beforeNavigate={onClose} username={selectedUser.username} />{" kullanıcısına uygulanacak."}</> : 'Lütfen hedef kullanıcı seçin.'}
           </span>
           <div className="flex items-center gap-2">
             <button

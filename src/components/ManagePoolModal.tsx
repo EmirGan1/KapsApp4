@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect } from 'react';
 import {
   X,
@@ -206,7 +207,7 @@ export default function ManagePoolModal({
                       />
                       <div className="min-w-0">
                         <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate block">
-                          {u.username}
+                          <UserProfileLink beforeNavigate={onClose} username={u.username} user={u} />
                         </span>
                         <span className="text-[10px] text-slate-400 font-mono">
                           ID: #{u.id} {isEmirganUser ? '• Root Admin' : ''}

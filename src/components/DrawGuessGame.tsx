@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Palette, 
@@ -808,7 +809,7 @@ export default function DrawGuessGame({
 
                       <div className="min-w-0">
                         <div className="font-bold truncate flex items-center gap-1">
-                          <span className="truncate">{p.username}</span>
+                          <span className="truncate"><UserProfileLink username={p.username} user={p} /></span>
                           {isMe && <span className="text-[10px] text-slate-400 font-normal">(Sen)</span>}
                         </div>
                         <div className="text-[10px] flex items-center gap-1">
@@ -1086,7 +1087,7 @@ export default function DrawGuessGame({
                 return (
                   <div key={msg.id} className="leading-snug">
                     <span className={`font-bold ${isMe ? 'text-indigo-400' : 'text-slate-300'}`}>
-                      {msg.username}:
+                      <UserProfileLink username={msg.username} user={msg} />:
                     </span>{' '}
                     <span className="text-slate-200 break-words">{msg.text}</span>
                   </div>
@@ -1233,7 +1234,7 @@ export default function DrawGuessGame({
                         {rank === 0 ? '🥇' : rank === 1 ? '🥈' : rank === 2 ? '🥉' : `${rank + 1}.`}
                       </span>
                       <Avatar url={p.avatar} color={p.color} name={p.username} size={8} />
-                      <span className="font-bold text-sm text-white">{p.username}</span>
+                      <span className="font-bold text-sm text-white"><UserProfileLink username={p.username} user={p} /></span>
                     </div>
                     <span className="font-mono font-black text-base text-amber-400">
                       {p.score} Puan

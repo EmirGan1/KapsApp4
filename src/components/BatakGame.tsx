@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -458,7 +459,7 @@ export default function BatakGame({
                 </span>
               </h1>
               <p className="text-[10px] text-slate-400">
-                {table.trumpSuit ? `Koz: ${SUIT_SYMBOLS[table.trumpSuit]} ${SUIT_NAMES_TR[table.trumpSuit]}` : 'İhale Aşaması'} • İhale: {table.highestBid > 0 ? `${table.highestBid} (${table.players[table.bidWinnerSeat || 0]?.username})` : '-'}
+                {table.trumpSuit ? `Koz: ${SUIT_SYMBOLS[table.trumpSuit]} ${SUIT_NAMES_TR[table.trumpSuit]}` : 'İhale Aşaması'} • İhale: {table.highestBid > 0 ? <>{""}{table.highestBid}{" ("}<UserProfileLink username={table.players[table.bidWinnerSeat || 0]?.username} />{")"}</> : '-'}
               </p>
             </div>
           </div>
@@ -537,7 +538,7 @@ export default function BatakGame({
               size={6}
             />
             <div className="text-left">
-              <span className="text-xs font-black text-slate-100 block">{northPlayer.username}</span>
+              <span className="text-xs font-black text-slate-100 block"><UserProfileLink username={northPlayer.username} user={northPlayer} /></span>
               <span className="text-[10px] text-emerald-400 font-bold">
                 İhale: {northPlayer.bid > 0 ? northPlayer.bid : northPlayer.bid === 0 ? 'Pas' : '-'} • Aldığı: {northPlayer.tricksWon}
               </span>
@@ -568,7 +569,7 @@ export default function BatakGame({
                 size={6}
               />
               <div className="text-left">
-                <span className="text-xs font-black text-slate-100 block">{westPlayer.username}</span>
+                <span className="text-xs font-black text-slate-100 block"><UserProfileLink username={westPlayer.username} user={westPlayer} /></span>
                 <span className="text-[10px] text-emerald-400 font-bold">
                   İhale: {westPlayer.bid > 0 ? westPlayer.bid : westPlayer.bid === 0 ? 'Pas' : '-'} • Aldığı: {westPlayer.tricksWon}
                 </span>
@@ -617,7 +618,7 @@ export default function BatakGame({
                     className={`shadow-xl ${isWinning ? 'ring-4 ring-emerald-400 scale-110' : ''}`}
                   />
                   <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-300 bg-black/80 px-1.5 rounded whitespace-nowrap">
-                    {table.players[play.seatIndex].username}
+                    <UserProfileLink username={table.players[play.seatIndex].username} user={table.players[play.seatIndex]} />
                   </span>
                 </div>
               );
@@ -638,7 +639,7 @@ export default function BatakGame({
                 size={6}
               />
               <div className="text-left">
-                <span className="text-xs font-black text-slate-100 block">{eastPlayer.username}</span>
+                <span className="text-xs font-black text-slate-100 block"><UserProfileLink username={eastPlayer.username} user={eastPlayer} /></span>
                 <span className="text-[10px] text-emerald-400 font-bold">
                   İhale: {eastPlayer.bid > 0 ? eastPlayer.bid : eastPlayer.bid === 0 ? 'Pas' : '-'} • Aldığı: {eastPlayer.tricksWon}
                 </span>
@@ -663,7 +664,7 @@ export default function BatakGame({
               ? 'bg-amber-500 text-slate-950 font-black ring-4 ring-amber-400/40 animate-pulse'
               : 'bg-black/70 border border-emerald-500/40 text-emerald-400 font-bold'
           }`}>
-            <span className="text-xs">{southPlayer.username} (Sen)</span>
+            <span className="text-xs"><UserProfileLink username={southPlayer.username} user={southPlayer} /> (Sen)</span>
             <span className="text-xs opacity-90">
               İhale: {southPlayer.bid > 0 ? southPlayer.bid : southPlayer.bid === 0 ? 'Pas' : '-'} • Aldığın El: {southPlayer.tricksWon}
             </span>
@@ -818,7 +819,7 @@ export default function BatakGame({
                       <tr key={p.seatIndex} className={p.userId === currentUserId ? 'bg-emerald-950/30' : ''}>
                         <td className="py-2.5 font-bold flex items-center gap-2">
                           <Avatar url={p.avatar} name={p.username} color={p.color || undefined} size={5} />
-                          <span>{p.username}</span>
+                          <span><UserProfileLink username={p.username} user={p} /></span>
                         </td>
                         <td className="py-2.5 text-center font-bold text-slate-300">{p.bid > 0 ? p.bid : 'Pas'}</td>
                         <td className="py-2.5 text-center font-bold text-slate-300">{p.tricksWon}</td>

@@ -29,7 +29,7 @@ export async function createMentionService(db: Client, io: any, push: any) {
       }),'write');
       chunk.forEach((recipient,index)=>{
         if(!results[index*2].rowsAffected)return;
-        const userId=Number(recipient.id),notification={id:Number(results[index*2].lastInsertRowid),user_id:userId,type:'mention',content:text,read:0,sender_id:sender,target_id:Number(target),metadata,created_at:now};
+        const userId=Number(recipient.id),notification={id:Number(results[index*2].lastInsertRowid),user_id:userId,type:'mention',content:text,read:0,sender_id:sender,sender_username:author.username,target_id:Number(target),metadata,created_at:now};
         io.to(`dm-user:${userId}`).emit('new_notification',notification);
         io.to(`dm-user:${userId}`).emit('mention_updated');
         void push.deliver(userId,{title:'Etiketlendin',body:text,tag:`mention-${kind}-${target}`,url:`/?mentionKind=${kind}&mentionId=${encodeURIComponent(String(target))}`,expiresAt:Date.now()+86400000}).catch(()=>{});
@@ -56,7 +56,7 @@ export async function createMentionService(db: Client, io: any, push: any) {
       if(!receipt)return res.sendStatus(404);
       const allowed=await audience(kind,receipt.scope as string);if(allowed&&!allowed.includes(Number(user.id)))return res.sendStatus(403);
       const table=({global:'global_messages',group:'group_messages',dm:'messages',post:'posts'} as any)[kind];if(!table)return res.sendStatus(400);
-      const row=(await db.execute({sql:`SELECT t.${kind==='post'?'caption':'content'} AS content,u.username FROM ${table} t JOIN users u ON u.id=t.${kind==='post'?'user_id':'sender'} WHERE t.id=?`,args:[target]})).rows[0];
+      const row=(await db.execute({sql:`SELECT t.${kind==='post'?'caption':'content'} AS content,u.username,u.id AS sender_id FROM ${table} t JOIN users u ON u.id=t.${kind==='post'?'user_id':'sender'} WHERE t.id=?`,args:[target]})).rows[0];
       if(!row)return res.sendStatus(404);res.json({...row,kind,target});
     }));
   }

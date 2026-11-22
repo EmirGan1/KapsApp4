@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import {currentInputDevice} from '../utils/gameInput';
 import {useGameGyroscope} from '../hooks/useGameGyroscope';
 import {GYRO_STATUS} from '../utils/gameGyroscope';
@@ -2518,7 +2519,7 @@ export default function MiniBattleRoyale({
                             <td className="px-5 py-3.5">
                               <div className="flex items-center gap-2.5">
                                 <Avatar url={u.avatar} name={u.username} color={u.color} size={8} />
-                                <span className="text-white font-extrabold">{u.username}</span>
+                                <span className="text-white font-extrabold"><UserProfileLink username={u.username} user={u} /></span>
                               </div>
                             </td>
                             <td className="px-5 py-3.5 text-center text-amber-400 font-black text-sm">
@@ -2796,7 +2797,7 @@ export default function MiniBattleRoyale({
                       </div>
 
                       <div className="min-w-0 max-w-[120px]">
-                        <h4 className="font-extrabold text-sm text-white truncate">{player.username}</h4>
+                        <h4 className="font-extrabold text-sm text-white truncate"><UserProfileLink username={player.username} user={player} /></h4>
                         <span className={`text-[10px] font-bold block mt-0.5 ${
                           player.ready ? 'text-emerald-400' : 'text-slate-500'
                         }`}>
@@ -3101,7 +3102,7 @@ export default function MiniBattleRoyale({
                       }`}
                     >
                       <span className="truncate max-w-[110px]">
-                        {rank + 1}. {p.username}
+                        {rank + 1}. <UserProfileLink username={p.username} user={p} />
                       </span>
                       <span className="font-mono font-black text-red-400">{p.kills}</span>
                     </div>
@@ -3396,7 +3397,7 @@ export default function MiniBattleRoyale({
                     {isWinner ? 'ZAFER SENİN!' : 'MAÇ BİTTİ'}
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Şampiyon: <strong className="text-amber-400">{gameStateRef.current.winner?.username || 'Bilinmiyor'}</strong>
+                    Şampiyon: <strong className="text-amber-400"><UserProfileLink username={gameStateRef.current.winner?.username || 'Bilinmiyor'} user={gameStateRef.current.winner} /></strong>
                   </p>
                 </div>
 
@@ -3416,7 +3417,7 @@ export default function MiniBattleRoyale({
                       >
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-slate-500">#{rank + 1}</span>
-                          <span className="font-bold">{p.username}</span>
+                          <span className="font-bold"><UserProfileLink username={p.username} user={p} /></span>
                         </div>
                         <span className="font-mono">{p.kills} Kill / {p.deaths} Ölüm</span>
                       </div>

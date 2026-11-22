@@ -1,3 +1,4 @@
+import UserProfileLink from "../UserProfileLink";
 import { useEffect, useState } from "react";
 import {
   Award,
@@ -552,7 +553,7 @@ export function ProfileAdminView({
                         <div>
                           <strong style={{ fontSize: 14 }}>
                             {rep.level} · {activityLabel(rep.exerciseType)} ·{" "}
-                            <span className="kg-vocab-meta">{rep.username}</span>
+                            <span className="kg-vocab-meta"><UserProfileLink username={rep.username} user={rep} /></span>
                           </strong>
                           <div className="kg-section-sub" style={{ margin: 0 }}>
                             Neden: <strong>{rep.reason}</strong>
@@ -783,7 +784,7 @@ export function ProfileAdminView({
                     border: "1.5px solid var(--kg-border)",
                   }}
                 >
-                  <strong>{u.username}</strong>
+                  <strong><UserProfileLink username={u.username} user={u} /></strong>
                   <button
                     type="button"
                     disabled={u.id === 1}

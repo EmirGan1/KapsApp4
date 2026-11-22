@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import { MentionTextarea } from "./Mentions";
 import { uploadFile } from "../utils/uploadFile";
 import React, { useState, useEffect, useRef, useCallback } from "react";
@@ -951,7 +952,7 @@ export default function Feed({
                     )}
                   </div>
                   <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full text-center group-hover:underline">
-                    {story.username}
+                    <UserProfileLink username={story.username} user={story} />
                   </span>
                 </div>
               ))}
@@ -1277,7 +1278,7 @@ export default function Feed({
                       </div>
                     )}
                     <div className="absolute inset-0 z-20 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2.5 text-white text-xs">
-                      <span className="truncate">{post.username}: {post.caption || "Medya"}</span>
+                      <span className="truncate"><UserProfileLink username={post.username} user={post} />: {post.caption || "Medya"}</span>
                     </div>
                   </div>
                 ))}

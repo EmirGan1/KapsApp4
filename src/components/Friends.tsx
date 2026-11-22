@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect } from "react";
 import { Socket } from "socket.io-client";
 import { User, Friend } from "../types";
@@ -559,7 +560,7 @@ export default function Friends({
             </div>
 
             <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-              <strong className="text-slate-900 dark:text-white font-bold">"{userToDelete.username}"</strong> adlı kullanıcının hesabını ve tüm verilerini kalıcı olarak silmek üzeresiniz. Bu işlem geri alınamaz!
+              <strong className="text-slate-900 dark:text-white font-bold">"<UserProfileLink username={userToDelete.username} user={userToDelete} />"</strong> adlı kullanıcının hesabını ve tüm verilerini kalıcı olarak silmek üzeresiniz. Bu işlem geri alınamaz!
             </p>
 
             <div className="flex gap-3 pt-2">

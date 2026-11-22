@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
@@ -349,11 +350,11 @@ export const DownloadHistoryModal: React.FC<DownloadHistoryModalProps> = ({
                         <div className="min-w-0 space-y-0.5">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-bold text-slate-100 truncate">
-                              {userSummary.name ? userSummary.name : `@${userSummary.username}`}
+                              {userSummary.name ? userSummary.name : <>{"@"}<UserProfileLink beforeNavigate={onClose} username={userSummary.username} />{""}</>}
                             </span>
                             {userSummary.name && (
                               <span className="text-xs text-slate-400 font-mono">
-                                @{userSummary.username}
+                                @<UserProfileLink beforeNavigate={onClose} username={userSummary.username} user={userSummary} />
                               </span>
                             )}
                             {isEmirganUser && (
@@ -420,7 +421,7 @@ export const DownloadHistoryModal: React.FC<DownloadHistoryModalProps> = ({
                     {isExpanded && userSummary.download_times.length > 1 && (
                       <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 space-y-1.5 animate-in fade-in duration-150">
                         <div className="text-[11px] font-bold text-slate-400">
-                          {userSummary.username} Tarafından Yapılan Tüm İndirmelerin Saatleri:
+                          <UserProfileLink beforeNavigate={onClose} username={userSummary.username} user={userSummary} /> Tarafından Yapılan Tüm İndirmelerin Saatleri:
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
                           {userSummary.download_times.map((tIso, tIdx) => {
@@ -487,11 +488,11 @@ export const DownloadHistoryModal: React.FC<DownloadHistoryModalProps> = ({
                       <div className="min-w-0 space-y-0.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-xs sm:text-sm font-bold text-slate-200 truncate">
-                            {log.name ? log.name : `@${log.username}`}
+                            {log.name ? log.name : <>{"@"}<UserProfileLink beforeNavigate={onClose} username={log.username} />{""}</>}
                           </span>
                           {log.name && (
                             <span className="text-[11px] text-slate-400 font-mono">
-                              @{log.username}
+                              @<UserProfileLink beforeNavigate={onClose} username={log.username} user={log} />
                             </span>
                           )}
                           {/* Kullanıcı No */}

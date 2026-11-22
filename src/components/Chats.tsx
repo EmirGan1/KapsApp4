@@ -1,3 +1,4 @@
+import UserProfileLink, { MentionText } from "./UserProfileLink";
 import { MentionInput, MentionHighlight } from "./Mentions";
 import DmEmojiPicker from "./DmEmojiPicker";
 import { isDmForeground } from "../utils/dmVisibility";
@@ -1037,7 +1038,7 @@ export default function Chats({
                     </div>
                     <div className="text-left overflow-hidden flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1 mb-0.5">
-                        <h3 className="font-semibold text-slate-800 dark:text-slate-100 truncate text-sm">{f.username}</h3>
+                        <h3 className="font-semibold text-slate-800 dark:text-slate-100 truncate text-sm"><UserProfileLink username={f.username} user={f} embedded /></h3>
                         {timeFormatted && (
                           <span className={`text-[10px] shrink-0 font-medium ${unread > 0 ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-400 dark:text-slate-500'}`}>
                             {timeFormatted}
@@ -1139,7 +1140,7 @@ export default function Chats({
               )}
               
               <div>
-                <h3 className="font-bold text-slate-800 dark:text-slate-100 leading-tight">{(activeChat as Friend).username || (activeChat as Group).name}</h3>
+                <h3 className="font-bold text-slate-800 dark:text-slate-100 leading-tight">{activeTab === "friends" ? <UserProfileLink username={(activeChat as Friend).username} userId={activeChat.id} /> : (activeChat as Group).name}</h3>
                 {activeTab === "friends" ? (
                   <span className="text-xs text-slate-500 dark:text-slate-400">{onlineUsers.includes(activeChat.id) ? 'Çevrimiçi' : 'Çevrimdışı'}</span>
                 ) : (
@@ -1265,12 +1266,12 @@ export default function Chats({
                         {/* Reply Context */}
                         {msg.reply_message && (
                           <div role="button" tabIndex={0} onClick={() => jumpToOriginal(Number(msg.reply_to))} onKeyDown={e => { if (e.key === "Enter") jumpToOriginal(Number(msg.reply_to)); }} className={`cursor-pointer mb-2 p-2 rounded-lg text-sm border-l-4 min-w-0 max-w-full overflow-hidden ${isMine ? 'bg-green-700/20 border-green-600 text-green-900 dark:text-green-100' : 'bg-slate-100 dark:bg-slate-700 border-blue-500 text-slate-600 dark:text-slate-300'}`}>
-                            <div className="font-semibold text-xs mb-1 truncate">{msg.reply_message.sender_name}</div>
+                            <div className="font-semibold text-xs mb-1 truncate"><UserProfileLink username={msg.reply_message.sender_name} user={msg.reply_message} /></div>
                             {msg.reply_message.type === 'text' ? <p className="truncate text-xs">{msg.reply_message.content}</p> : <span className="italic text-xs">{msg.reply_message.file_name || (msg.reply_message.type === "image" ? "📷 Fotoğraf" : msg.reply_message.type === "voice" ? "🎤 Ses kaydı" : msg.reply_message.type === "video" ? "🎬 Video" : "📎 Ek")}</span>}
                           </div>
                         )}
 
-                        {msg.type === 'text' && <div className="privacy-sensitive text-[15px] text-slate-800 dark:text-slate-100 leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap select-text"><MentionHighlight kind={activeTab === "friends" ? "dm" : "group"} target={msg.id}><p>{msg.content}</p></MentionHighlight></div>}
+                        {msg.type === 'text' && <div className="privacy-sensitive text-[15px] text-slate-800 dark:text-slate-100 leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap select-text"><MentionHighlight kind={activeTab === "friends" ? "dm" : "group"} target={msg.id}><p><MentionText text={msg.content}/></p></MentionHighlight></div>}
                         {msg.type === 'image' && (
                           <div className="relative group cursor-pointer overflow-hidden rounded-xl max-w-xs md:max-w-sm" onClick={() => openMediaModal(msg)}>
                             <img src={msg.content} referrerPolicy="no-referrer" alt="Fotoğraf" className="w-full object-cover rounded-xl hover:opacity-95 transition-opacity" />
@@ -1468,7 +1469,7 @@ export default function Chats({
             <div className="bg-[#f0f2f5] dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 kaps-chat-composer relative pb-safe shrink-0 z-10">
               {replyTo && (
                 <div className="absolute bottom-full left-0 w-full bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-2 px-3 sm:px-4 flex justify-between items-center text-xs sm:text-sm shadow-md">
-                   <div className="truncate pr-2"><span className="font-semibold text-blue-600 dark:text-blue-400">{replyTo.sender_name || (replyTo.sender === currentUserId ? currentUsername : activeTab === 'friends' ? (activeChat as Friend).username : 'Biri')}</span> kişisine yanıtlanıyor: <span className="text-slate-500 dark:text-slate-400 truncate max-w-[150px] sm:max-w-xs inline-block align-bottom">{replyTo.type === 'text' ? replyTo.content : replyTo.file_name || (replyTo.type === 'image' ? '📷 Fotoğraf' : replyTo.type === 'voice' ? '🎤 Ses kaydı' : '📎 Ek')}</span></div>
+                   <div className="truncate pr-2"><span className="font-semibold text-blue-600 dark:text-blue-400"><UserProfileLink username={replyTo.sender_name || (replyTo.sender === currentUserId ? currentUsername : activeTab === 'friends' ? (activeChat as Friend).username : 'Biri')} user={replyTo} /></span> kişisine yanıtlanıyor: <span className="text-slate-500 dark:text-slate-400 truncate max-w-[150px] sm:max-w-xs inline-block align-bottom">{replyTo.type === 'text' ? replyTo.content : replyTo.file_name || (replyTo.type === 'image' ? '📷 Fotoğraf' : replyTo.type === 'voice' ? '🎤 Ses kaydı' : '📎 Ek')}</span></div>
                    <button type="button" aria-label="Yanıtı iptal et" onClick={() => setReplyTo(null)} className="text-slate-400 hover:text-red-500 font-bold px-2 text-base shrink-0">&times;</button>
                 </div>
               )}
@@ -1586,7 +1587,7 @@ export default function Chats({
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
                       />
                       <Avatar url={u.avatar} name={u.username} color={u.color} size={8} />
-                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{u.username}</span>
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate"><UserProfileLink username={u.username} user={u} /></span>
                     </label>
                   ));
                 })()}
@@ -1640,7 +1641,7 @@ export default function Chats({
                         <div className="flex items-center gap-2.5 min-w-0">
                           <Avatar url={u.avatar} name={u.username} color={u.color} size={8} />
                           <div className="truncate">
-                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate block">{u.username}</span>
+                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate block"><UserProfileLink username={u.username} user={u} /></span>
                             {isCreatorOfGroup ? (
                               <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 rounded-md">Kurucu</span>
                             ) : (
@@ -1685,7 +1686,7 @@ export default function Chats({
                         <div key={u.id} className="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 rounded-xl transition-colors">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <Avatar url={u.avatar} name={u.username} color={u.color} size={7} />
-                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{u.username}</span>
+                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate"><UserProfileLink username={u.username} user={u} /></span>
                           </div>
                           <button
                             type="button"

@@ -1,3 +1,4 @@
+import UserProfileLink from "../../UserProfileLink";
 import React from 'react';
 import { Trophy, Crown, Coins, Flame, ArrowRight, RotateCcw, Award } from 'lucide-react';
 
@@ -51,7 +52,7 @@ export default function KapstorialVictoryModal({
             {won ? '🎉 TEBRİKLER! ZAFER KAZANDINIZ' : 'OYUN SONA ERDİ'}
           </span>
           <h2 className="text-2xl sm:text-3xl font-black text-white">
-            {winnerPlayer ? winnerPlayer.username : `${winnerTeam}. Takım Kazandı!`}
+            {winnerPlayer ? <UserProfileLink username={winnerPlayer.username} user={winnerPlayer} /> : `${winnerTeam}. Takım Kazandı!`}
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 max-w-sm mt-1">
             {winnerReason || 'Tüm rakipler haritadan silindi ve topraklar ele geçirildi.'}
@@ -86,7 +87,7 @@ export default function KapstorialVictoryModal({
                   <div className="flex items-center gap-2">
                     <span className="font-black text-amber-400">#{idx + 1}</span>
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                    <span className="font-bold text-white truncate max-w-[140px]">{p.username}</span>
+                    <span className="font-bold text-white truncate max-w-[140px]"><UserProfileLink username={p.username} user={p} /></span>
                   </div>
                   <span className="font-bold text-slate-300">{p.pixels} Toprak ({p.troops.toLocaleString()} Asker)</span>
                 </div>

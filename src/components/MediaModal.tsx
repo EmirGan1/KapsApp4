@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect } from "react";
 import { X, Heart, Send, Download, MessageCircle, Calendar, Film, Image as ImageIcon, ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, FileText, Layers } from "lucide-react";
 import Avatar from "./Avatar";
@@ -334,7 +335,7 @@ export default function MediaModal({ data, onClose, onUserClick }: MediaModalPro
                   size={8}
                 />
                 <div className="flex-1 text-slate-800 dark:text-slate-200">
-                  <span className="font-bold mr-2">{data.authorName}</span>
+                  <span className="font-bold mr-2"><UserProfileLink beforeNavigate={onClose} username={data.authorName} user={data} /></span>
                   <span className="leading-relaxed whitespace-pre-wrap">{data.caption}</span>
                 </div>
               </div>

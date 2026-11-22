@@ -51,6 +51,8 @@
     "test:strike:audio": "node --import tsx tests/kapsstrike.audio.browser.ts",
     "test:strike:presence": "node --import tsx tests/kapsstrike.presence.browser.ts",
     "test:kapsapp-ai": "node --import tsx tests/kapsAppAi.browser.ts",
+    "test:social-navigation": "node --import tsx --test tests/socialNavigation.test.ts",
+    "test:social-navigation:browser": "node --import tsx tests/socialNavigation.browser.ts",
     "test:mentions": "node --import tsx --test tests/mentions.test.ts",
     "test:mentions:browser": "node --import tsx tests/mentions.browser.ts",
     "test:dm": "node --import tsx --test tests/directMessages.test.ts tests/dmPush.test.ts",

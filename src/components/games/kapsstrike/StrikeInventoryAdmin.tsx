@@ -1,3 +1,4 @@
+import UserProfileLink from "../../UserProfileLink";
 import React, { useEffect, useState, useMemo } from 'react';
 import type { Socket } from 'socket.io-client';
 import { COSMETICS, RARITIES, type Cosmetic, type Inventory } from '../../../games/kapsstrike/cosmetics';
@@ -303,7 +304,7 @@ export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | nul
                   : 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-700/70'
               }`}
             >
-              <span className="font-bold">@{u.username}</span>
+              <span className="font-bold">@<UserProfileLink username={u.username} user={u} embedded /></span>
               <span className="text-[11px] px-2 py-0.5 rounded bg-slate-900/80 text-slate-400 border border-slate-700/50">
                 {ownedTotal} skin · {u.inventory.opened} kasa
               </span>
@@ -318,7 +319,7 @@ export default function StrikeInventoryAdmin({ socket }: { socket?: Socket | nul
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3 mb-4">
             <div>
               <h3 className="text-base font-extrabold text-slate-100 m-0">
-                @{activeUser.username} — Envanter Yönetimi
+                @<UserProfileLink username={activeUser.username} user={activeUser} /> — Envanter Yönetimi
               </h3>
               <p className="text-xs text-slate-400 m-0 mt-0.5">
                 Toplam Sahip Olunan:{' '}

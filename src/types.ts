@@ -135,6 +135,7 @@ export interface TableChatMessage {
 }
 
 export interface AppNotification {
+  sender_username?: string;
   id: number;
   user_id: number;
   type: 'new_message' | 'dm' | 'like' | 'comment' | 'follow' | 'friend_request' | 'friend_accept' | 'group_invite' | 'new_group_message' | 'user_approval_request' | string;

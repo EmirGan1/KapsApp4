@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect } from "react";
 import { Socket } from "socket.io-client";
 import { 
@@ -176,7 +177,7 @@ export default function RemotePopupOverlay({ socket, currentUserId }: RemotePopu
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/25 backdrop-blur-xs border border-white/20">
-                  {activePopup.senderName ? `${activePopup.senderName}'den Bildirim` : "Yönetici Özel Pop-up"}
+                  {activePopup.senderName ? <>{""}<UserProfileLink beforeNavigate={() => setActivePopup(null)} username={activePopup.senderName} />{"'den Bildirim"}</> : "Yönetici Özel Pop-up"}
                 </span>
                 <span className="text-[10px] opacity-75 hidden sm:inline">
                   {activePopup.createdAt ? new Date(activePopup.createdAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) : ""}

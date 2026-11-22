@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import DOMPurify from "dompurify";
@@ -115,7 +116,7 @@ export default function AnnouncementModal({
           <div className="px-5 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 flex-wrap gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-slate-800 dark:text-slate-200">
-                {announcement.author_username}
+                <UserProfileLink beforeNavigate={onClose} username={announcement.author_username} user={announcement} />
               </span>
               <span className="text-[10px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold px-2 py-0.5 rounded-full border border-indigo-500/20 flex items-center gap-0.5">
                 <ShieldAlert size={10} /> Yönetici

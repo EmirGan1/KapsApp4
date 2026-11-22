@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import { disableDeviceNotifications, enableDeviceNotifications, showDeviceNotification } from "./DeviceNotifications";
 import React, { useState } from "react";
 import {
@@ -1061,7 +1062,7 @@ export default function Settings({
                       </div>
                       <div>
                         <div className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white">
-                          <span>{currentUsername || "Kullanıcı"}</span>
+                          <span><UserProfileLink username={currentUsername || "Kullanıcı"} /></span>
                           {isEmirgan && (
                             <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
                               · ROOT

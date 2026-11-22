@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { 
@@ -154,7 +155,7 @@ export default function CommunityMiniFeedWidget({
                 <div className="flex items-center justify-between gap-1 mb-0.5">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
-                      {post.username}
+                      <UserProfileLink username={post.username} user={post} embedded />
                     </span>
                     {post.subject && (
                       <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">

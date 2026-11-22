@@ -1,3 +1,4 @@
+import UserProfileLink from "../../UserProfileLink";
 import React, { useState, useEffect } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -200,7 +201,7 @@ export default function KapstorialWaitingRoom({
                     </div>
                     <div className="flex flex-col">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-white text-sm truncate max-w-[120px]">{p.username}</span>
+                        <span className="font-bold text-white text-sm truncate max-w-[120px]"><UserProfileLink username={p.username} user={p} /></span>
                         {p.isHost && (
                           <span className="text-[10px] bg-amber-500/20 text-amber-300 font-black px-1.5 py-0.5 rounded border border-amber-500/40">
                             HOST
@@ -297,7 +298,7 @@ export default function KapstorialWaitingRoom({
                     >
                       <div className="flex items-center gap-2.5">
                         <Avatar url={f.avatar} name={f.username} color={f.color} size={8} />
-                        <span className="font-bold text-xs">{f.username}</span>
+                        <span className="font-bold text-xs"><UserProfileLink username={f.username} user={f} /></span>
                       </div>
                       <button
                         onClick={() => handleSendInvite(f.id)}

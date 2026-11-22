@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useMemo } from "react";
 import { Socket } from "socket.io-client";
 import { Link } from "react-router-dom";
@@ -359,7 +360,7 @@ export default function Dashboard({
               </div>
 
               <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white truncate">
-                {greeting}, {currentUsername}
+                {greeting}, <UserProfileLink username={currentUsername} />
               </h1>
 
               {/* Dinamik Günün Sözü */}

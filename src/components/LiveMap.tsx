@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Socket } from "socket.io-client";
 import L from "leaflet";
@@ -925,7 +926,7 @@ export default function LiveMap({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1">
-                      <span className="text-xs font-bold text-white truncate">{username}</span>
+                      <span className="text-xs font-bold text-white truncate"><UserProfileLink username={username} /></span>
                       <span className={`text-[8px] px-1 py-0.2 rounded font-semibold ${isSharing ? 'bg-blue-500/20 text-blue-300' : 'bg-slate-700 text-slate-400'}`}>Siz</span>
                     </div>
                     <span className={`text-[9px] block truncate ${isSharing ? 'text-blue-300' : 'text-slate-400'}`}>
@@ -963,7 +964,7 @@ export default function LiveMap({
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1">
-                        <span className="text-xs font-bold text-white truncate block">{user.username}</span>
+                        <span className="text-xs font-bold text-white truncate block"><UserProfileLink username={user.username} user={user} /></span>
                         {isActiveUser ? (
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
                         ) : (

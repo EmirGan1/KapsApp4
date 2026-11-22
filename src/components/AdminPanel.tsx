@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { 
@@ -1127,7 +1128,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-base text-white truncate">
-                            {user.username}
+                            <UserProfileLink username={user.username} user={user} />
                           </span>
                           <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
                             ONAY BEKLİYOR
@@ -1266,7 +1267,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="font-bold text-white truncate">{user.username}</span>
+                                    <span className="font-bold text-white truncate"><UserProfileLink username={user.username} user={user} /></span>
                                     {isRoot && (
                                       <Crown size={14} className="text-amber-400 shrink-0" />
                                     )}
@@ -2733,14 +2734,14 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
                                 )}
                                 <div>
                                   <p className="font-extrabold text-white text-xs flex items-center gap-1.5">
-                                    <span>{item.name || item.username}</span>
+                                    <span><UserProfileLink username={item.name || item.username} user={item} /></span>
                                     {item.username.toLowerCase() === "emirgan" && (
                                       <span className="px-1 text-[8px] font-black rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase tracking-wide">
                                         KURUCU
                                       </span>
                                     )}
                                   </p>
-                                  <p className="text-[10px] text-slate-500">@{item.username}</p>
+                                  <p className="text-[10px] text-slate-500">@<UserProfileLink username={item.username} user={item} /></p>
                                 </div>
                               </div>
                             </td>
@@ -2936,7 +2937,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Ban size={18} className="text-rose-400" />
-                <span>Yasakla: {selectedUserForBan.username}</span>
+                <span>Yasakla: <UserProfileLink username={selectedUserForBan.username} user={selectedUserForBan} /></span>
               </h3>
               <button
                 onClick={() => setSelectedUserForBan(null)}
@@ -3016,7 +3017,7 @@ export default function AdminPanel({ socket, currentUsername, onUserClick, onPen
             <div className="text-center">
               <h3 className="text-base font-bold text-white">Hesabı Kalıcı Olarak Sil?</h3>
               <p className="text-xs text-slate-300 mt-1">
-                <strong className="text-white font-bold">{selectedUserForDelete.username}</strong> hesabını ve ilişkili tüm verileri kalıcı olarak silmek üzeresiniz. Bu işlem <u>geri alınamaz</u>.
+                <strong className="text-white font-bold"><UserProfileLink username={selectedUserForDelete.username} user={selectedUserForDelete} /></strong> hesabını ve ilişkili tüm verileri kalıcı olarak silmek üzeresiniz. Bu işlem <u>geri alınamaz</u>.
               </p>
             </div>
 

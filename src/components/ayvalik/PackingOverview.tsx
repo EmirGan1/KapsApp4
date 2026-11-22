@@ -1,3 +1,4 @@
+import UserProfileLink from "../UserProfileLink";
 import { useEffect, useState } from 'react';
 import { DEFAULT_PACKING_ITEMS } from '../../utils/ayvalikPacking';
 import { getApiUrl, getAuthHeaders } from '../../utils/api';
@@ -32,7 +33,7 @@ export default function PackingOverview() {
     {[...people.entries()].map(([id, items]) => {
       const ready = new Set(items.filter(item => Number(item.is_checked) === 1).map(item => item.item_id));
       return <details key={id} className="rounded-xl border p-3">
-        <summary className="cursor-pointer font-bold">{items[0].username} · {DEFAULT_PACKING_ITEMS.filter(item => ready.has(item.id)).length}/{DEFAULT_PACKING_ITEMS.length} hazır</summary>
+        <summary className="cursor-pointer font-bold"><UserProfileLink username={items[0].username} user={items[0]} /> · {DEFAULT_PACKING_ITEMS.filter(item => ready.has(item.id)).length}/{DEFAULT_PACKING_ITEMS.length} hazır</summary>
         <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">{DEFAULT_PACKING_ITEMS.map(item => <li key={item.id}>{ready.has(item.id) ? '✓ Hazır' : '○ Eksik'} · {item.label}</li>)}</ul>
       </details>;
     })}

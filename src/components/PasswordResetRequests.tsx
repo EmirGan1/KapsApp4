@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { safeFetchJson } from '../utils/api';
@@ -75,7 +76,7 @@ export default function PasswordResetRequests({ socket, onCountChange, refreshKe
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
     {!requests.length && !error && <p className="text-sm text-slate-500 dark:text-slate-400">Bekleyen talep yok.</p>}
     {requests.map(request => <div key={request.id} className="border-t border-slate-200 dark:border-slate-700 pt-3 break-words">
-      <p className="font-semibold">@{request.username}</p><time className="text-xs text-slate-500 dark:text-slate-400">{new Date(request.requested_at).toLocaleString('tr-TR')}</time>
+      <p className="font-semibold">@<UserProfileLink username={request.username} user={request} /></p><time className="text-xs text-slate-500 dark:text-slate-400">{new Date(request.requested_at).toLocaleString('tr-TR')}</time>
       <PasswordResetActions requestId={request.id} status={request.status} onDone={fetchRequests} />
     </div>)}
   </section>;

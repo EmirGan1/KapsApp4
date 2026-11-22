@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import { getUploadError } from "../utils/uploadErrors";
 import React, { useState, useEffect } from "react";
 import { Socket } from "socket.io-client";
@@ -418,7 +419,7 @@ export default function Profile({
             KapsApp Öğrenci & Topluluk Profili
           </div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            {userProfile.username}
+            <UserProfileLink username={userProfile.username} user={userProfile} />
           </h2>
         </div>
 
@@ -664,7 +665,7 @@ export default function Profile({
                   />
                   <div>
                     <h3 className="font-bold text-slate-800 dark:text-slate-100 text-[15px] leading-tight">
-                      {userProfile.username}
+                      <UserProfileLink username={userProfile.username} user={userProfile} />
                     </h3>
                     <p className="text-xs text-slate-400 dark:text-slate-500">
                       {new Date(post.created_at).toLocaleString([], {
@@ -818,7 +819,7 @@ export default function Profile({
             </div>
 
             <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-              <strong className="text-slate-900 dark:text-slate-100 font-bold">"{userProfile?.username}"</strong> adlı kullanıcının hesabını ve bu hesaba ait tüm verileri (gönderiler, mesajlar, arkadaşlıklar, yorumlar vb.) veritabanından kalıcı olarak silmek üzeresiniz.
+              <strong className="text-slate-900 dark:text-slate-100 font-bold">"<UserProfileLink username={userProfile?.username} user={userProfile} />"</strong> adlı kullanıcının hesabını ve bu hesaba ait tüm verileri (gönderiler, mesajlar, arkadaşlıklar, yorumlar vb.) veritabanından kalıcı olarak silmek üzeresiniz.
             </p>
 
             <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-xs text-red-700 dark:text-red-300">

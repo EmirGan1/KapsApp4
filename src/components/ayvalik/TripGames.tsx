@@ -1,3 +1,4 @@
+import UserProfileLink from "../UserProfileLink";
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Socket } from 'socket.io-client';
@@ -59,7 +60,7 @@ export default function TripGames({ socket, userId }: { socket: Socket | null; u
       <div className="flex flex-wrap items-center gap-3"><h3 className="text-xl font-bold">{room.name}</h3>
         <button className={button} onClick={() => action('leave')}>Odadan ayrıl</button>
       </div>
-      <p>{room.members.map(member => member.name).join(' · ')} · {room.members.length}/8</p>
+      <p>{room.members.map((member,index) => <span key={member.id}>{index > 0 && ' · '}<UserProfileLink username={member.name} userId={member.id}/></span>)} · {room.members.length}/8</p>
       {!round && <div className="flex flex-wrap items-start gap-2">
         <InvitePlayer socket={socket} activity="ayvalik-games" userId={userId} />
         <button className={button} onClick={async () => {
@@ -75,13 +76,13 @@ export default function TripGames({ socket, userId }: { socket: Socket | null; u
       {round && <div className="space-y-3 rounded-2xl bg-slate-100 p-4 dark:bg-slate-900">
         {round.mode === 'mole' && <p><strong>{round.isMole ? 'Köstebeksin · İpucun' : 'Gizli kelimen'}</strong> · {round.clue}</p>}
         {!round.result && !round.voted && <div className="flex flex-wrap gap-2">
-          {round.mode === 'mole' ? room.members.filter(member => member.id !== userId).map(member => <button key={member.id} className={button} onClick={() => action('vote', member.id)}>{member.name} köstebek</button>)
+          {round.mode === 'mole' ? room.members.filter(member => member.id !== userId).map(member => <button key={member.id} className={button} onClick={() => action('vote', member.id)}><UserProfileLink username={member.name} userId={member.id} embedded/> köstebek</button>)
             : round.options?.map((option, index) => <button key={option} className={button} onClick={() => action('vote', index)}>{option}</button>)}
         </div>}
         <p role="status">{round.voteCount}/{room.members.length} oy</p>
         {round.result && <div className="space-y-2">
-          {round.mode === 'mole' && <p><strong>{moleVotes > (room.members.length - 1) / 2 ? 'Grup köstebeği buldu!' : 'Köstebek saklanmayı başardı!'}</strong> Köstebek: {playerName(round.result.mole ?? 0)} · Kelime: {round.result.word}</p>}
-          <ul>{round.result.votes.map(([id, vote]) => <li key={id}>{playerName(id)} → {round.mode === 'mole' ? playerName(vote) : round.options?.[vote]}</li>)}</ul>
+          {round.mode === 'mole' && <p><strong>{moleVotes > (room.members.length - 1) / 2 ? 'Grup köstebeği buldu!' : 'Köstebek saklanmayı başardı!'}</strong> Köstebek: <UserProfileLink username={playerName(round.result.mole ?? 0)} userId={round.result.mole}/> · Kelime: {round.result.word}</p>}
+          <ul>{round.result.votes.map(([id, vote]) => <li key={id}><UserProfileLink username={playerName(id)} userId={id}/> → {round.mode === 'mole' ? <UserProfileLink username={playerName(vote)} userId={vote}/> : round.options?.[vote]}</li>)}</ul>
         </div>}
       </div>}
     </>}

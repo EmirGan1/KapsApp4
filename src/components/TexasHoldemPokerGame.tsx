@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Socket } from 'socket.io-client';
 import {
@@ -1120,7 +1121,7 @@ export default function TexasHoldemPokerGame({
                   />
                   <div className="flex flex-col">
                     <span className="font-extrabold text-xs sm:text-sm text-white flex items-center gap-1.5">
-                      {username}
+                      <UserProfileLink username={username} />
                       {seats[0].lastAction && (
                         <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase">
                           {seats[0].lastAction}

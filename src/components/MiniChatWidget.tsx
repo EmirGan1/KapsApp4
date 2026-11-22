@@ -1,3 +1,4 @@
+import UserProfileLink, { MentionText } from "./UserProfileLink";
 import { MentionInput, MentionHighlight } from "./Mentions";
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
@@ -210,13 +211,13 @@ export default function MiniChatWidget({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1 mb-0.5">
                       <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">
-                        {name}
+                        <UserProfileLink username={name} userId={msg.sender} />
                       </span>
                       <span className="text-[10px] text-slate-400 shrink-0 font-mono">
                         {timeStr}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-600 dark:text-slate-300 break-words privacy-sensitive"><MentionHighlight kind="global" target={msg.id}>{msg.content}</MentionHighlight></div>
+                    <div className="text-xs text-slate-600 dark:text-slate-300 break-words privacy-sensitive"><MentionHighlight kind="global" target={msg.id}><MentionText text={msg.content}/></MentionHighlight></div>
                   </div>
                 </div>
               );

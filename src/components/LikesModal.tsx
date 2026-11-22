@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
@@ -202,7 +203,7 @@ export const LikesModal: React.FC<LikesModalProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
-                          {user.username}
+                          <UserProfileLink beforeNavigate={onClose} username={user.username} userId={user.user_id} />
                         </span>
                         {(isEmirgan || user.is_admin) && (
                           <span className="px-1.5 py-0.2 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-[9px] font-extrabold flex items-center gap-0.5 shrink-0">

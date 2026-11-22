@@ -1,3 +1,4 @@
+import { registerSocialNavigation } from "./src/server/socialNavigation";
 import { createMentionService } from './src/server/mentions';
 import { DmPresence, registerDirectMessages } from './src/server/directMessages';
 import express from "express";
@@ -1941,6 +1942,7 @@ async function startServer() {
   registerCourseRoutes(app, client, upload, io, deleteUploadedFile, receiveSingleUpload);
   registerSubjectResourceRoutes(app, client);
   registerPostRoutes(app, client, io);
+  registerSocialNavigation(app, client, io, authenticateToken);
 
   // REST Message Pagination Route (beforeId, limit)
   app.get(["/api/messages/:roomId", "/api/chat/messages/:roomId"], async (req, res) => {
@@ -7472,14 +7474,14 @@ async function startServer() {
         sql: "INSERT INTO notifications (user_id, type, content, read, sender_id, target_id, created_at) VALUES (?, ?, ?, 0, ?, ?, ?)",
         args: [userId, type, content, senderId || null, targetId || null, new Date().toISOString()]
       });
-      const newNotifRes = await client.execute({ sql: "SELECT id, user_id, type, content, read, sender_id, target_id, created_at FROM notifications WHERE id = ?", args: [Number(res.lastInsertRowid)] });
+      const newNotifRes = await client.execute({ sql: "SELECT n.id,n.user_id,n.type,n.content,n.read,n.sender_id,n.target_id,n.created_at,u.username AS sender_username FROM notifications n LEFT JOIN users u ON u.id=n.sender_id WHERE n.id = ?", args: [Number(res.lastInsertRowid)] });
       io.to(`dm-user:${Number(userId)}`).emit("new_notification", newNotifRes.rows[0]);
       io.to(`dm-user:${Number(userId)}`).emit("notifications_updated");
     };
 
     socket.on("get_notifications", async (cb) => {
       const notifsRes = await client.execute({
-        sql: "SELECT id, user_id, type, content, read, sender_id, target_id, metadata, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30",
+        sql: "SELECT n.id,n.user_id,n.type,n.content,n.read,n.sender_id,n.target_id,n.metadata,n.created_at,u.username AS sender_username FROM notifications n LEFT JOIN users u ON u.id=n.sender_id WHERE n.user_id = ? ORDER BY n.created_at DESC,n.id DESC LIMIT 30",
         args: [user.id]
       });
       cb(notifsRes.rows);

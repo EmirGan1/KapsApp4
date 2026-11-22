@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Socket } from "socket.io-client";
 import DOMPurify from "dompurify";
@@ -993,7 +994,7 @@ export default function Announcements({
                         <div>
                           <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
                             <span className="font-bold text-slate-900 dark:text-white text-sm">
-                              {ann.author_username}
+                              <UserProfileLink username={ann.author_username} user={ann} />
                             </span>
                             <span>·</span>
                             <span className="font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 text-xs">

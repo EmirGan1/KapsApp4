@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useMemo } from 'react';
 import {
   X,
@@ -212,7 +213,7 @@ export default function IBGradingModal({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white truncate">
-                  {targetUser.username}
+                  <UserProfileLink beforeNavigate={onClose} username={targetUser.username} user={targetUser} />
                 </h3>
                 {isSelf && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">

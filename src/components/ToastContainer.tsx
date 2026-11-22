@@ -1,3 +1,4 @@
+import UserProfileLink, { UserNamedText } from "./UserProfileLink";
 import Avatar from "./Avatar";
 import React, { useState } from "react";
 import { MessageSquare, Heart, MessageCircle, UserPlus, UserCheck, Bell, Users, X, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
@@ -107,7 +108,7 @@ export default function ToastContainer({
 
         return (
           <div
-            key={toast.senderId ? `dm-sender-${toast.senderId}` : toast.id}
+            key={isDm && toast.senderId ? `dm-sender-${toast.senderId}` : toast.id}
             id={`toast-item-${toast.id}`}
             onClick={() => onClick(toast)}
             className="pointer-events-auto transition-all duration-200 ease-out bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-xl hover:shadow-2xl cursor-pointer relative overflow-hidden group"
@@ -122,7 +123,7 @@ export default function ToastContainer({
                   {isDm ? (
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
-                        {toast.senderName || toast.title || "Yeni Mesaj"}
+                        <UserProfileLink username={toast.senderName || toast.title || "Yeni Mesaj"} user={toast} userId={toast.senderId} />
                       </span>
                       {hasMultipleMessages && (
                         <span className="px-2 py-0.5 bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25 rounded-full text-[10px] font-extrabold shadow-sm shrink-0 whitespace-nowrap">
@@ -148,7 +149,7 @@ export default function ToastContainer({
 
                 {/* Compact Preview of Latest Message */}
                 <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 font-medium leading-snug line-clamp-2 mt-0.5">
-                  {toast.lastMessage}
+                  <UserNamedText text={toast.lastMessage} name={toast.senderName} userId={toast.senderId || undefined} />
                 </p>
 
                 {!isExpanded && (

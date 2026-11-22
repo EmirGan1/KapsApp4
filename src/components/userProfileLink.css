@@ -1,0 +1,6 @@
+.user-profile-link{pointer-events:auto;color:inherit;font:inherit;line-height:inherit;cursor:pointer;text-decoration:none;border-radius:3px;}
+.user-profile-link:hover{text-decoration:underline;text-underline-offset:3px;}
+.user-profile-link:focus-visible{outline:2px solid #818cf8;outline-offset:3px;}
+.user-profile-link[aria-busy=true]{opacity:.6;cursor:progress;}
+.user-profile-error{display:inline-block;font-size:11px;color:#b91c1c;margin-inline-start:6px;}
+.dark .user-profile-error,[class*="theme-"] .user-profile-error{color:#fca5a5;}

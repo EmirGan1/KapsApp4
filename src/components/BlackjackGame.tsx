@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { 
@@ -1566,7 +1567,7 @@ export default function BlackjackGame({
                     />
                     <div className="min-w-0 truncate">
                       <span className={`text-[10px] sm:text-[11px] font-black truncate block ${isMe ? 'text-emerald-400' : 'text-slate-200'}`}>
-                        {seat.username}
+                        <UserProfileLink username={seat.username} user={seat} />
                       </span>
                       <span className="text-[9px] sm:text-[10px] text-amber-400 font-bold block">
                         {seat.chips.toLocaleString()} 🪙
@@ -1726,7 +1727,7 @@ export default function BlackjackGame({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
                 <span className="text-xs sm:text-sm font-black text-amber-300">
-                  {table.activeSeatIndex === mySeatIndex ? 'SIRA SENDE!' : `Sıra: ${table.seats[table.activeSeatIndex]?.username || 'Oyuncu'}`}
+                  {table.activeSeatIndex === mySeatIndex ? 'SIRA SENDE!' : <>{"Sıra: "}<UserProfileLink username={table.seats[table.activeSeatIndex]?.username || 'Oyuncu'} />{""}</>}
                 </span>
               </div>
 

@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import {
@@ -1209,7 +1210,7 @@ export default function BilliardsGame({
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-white">{room?.player1.username}</span>
+              <span className="text-xs font-bold text-white"><UserProfileLink username={room?.player1.username} user={room?.player1} /></span>
               {room?.player1.id === currentUserId && (
                 <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded font-semibold">Sen</span>
               )}
@@ -1262,7 +1263,7 @@ export default function BilliardsGame({
                       Sen
                     </span>
                   )}
-                  <span className="text-xs font-bold text-white">{room?.player2.username}</span>
+                  <span className="text-xs font-bold text-white"><UserProfileLink username={room?.player2.username} user={room?.player2} /></span>
                 </div>
                 <div className="flex items-center justify-end gap-1 text-[11px] text-slate-300">
                   <span>{p2Group ? (p2Group === 'solids' ? '🟡 Düzler (1-7)' : '🔵 Çizgililer (9-15)') : 'Nötr'}</span>
@@ -1350,7 +1351,7 @@ export default function BilliardsGame({
                 {room.winnerId === currentUserId ? '🏆 TEBRİKLER, KAZANDIN!' : 'KAYBETTİN!'}
               </h2>
               <p className="text-sm text-slate-300 max-w-sm">
-                {room.winnerId === room.player1.id ? room.player1.username : room.player2?.username} maçı kazandı!
+                <UserProfileLink username={room.winnerId === room.player1.id ? room.player1.username : room.player2?.username} /> maçı kazandı!
               </p>
             </div>
 

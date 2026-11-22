@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
@@ -204,7 +205,7 @@ export default function FullLeaderboardModal({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
-                          {user.username}
+                          <UserProfileLink beforeNavigate={onClose} username={user.username} user={user} />
                         </span>
                         {isSelf && (
                           <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white">

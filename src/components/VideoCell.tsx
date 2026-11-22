@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 export interface VideoCellProps {
@@ -123,7 +124,7 @@ export const VideoCell: React.FC<VideoCellProps> = ({
       {username && (
         <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/60 backdrop-blur-md text-[11px] font-bold text-white z-10 pointer-events-none shadow-sm border border-white/10">
           {isScreenSharing && <span>🖥️ Ekran Paylaşımı</span>}
-          <span>{username}</span>
+          <span><UserProfileLink username={username} /></span>
         </div>
       )}
     </div>

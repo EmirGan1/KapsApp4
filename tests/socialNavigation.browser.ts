@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';import express from 'express';import{createClient}from'@libsql/client';import{createServer}from'vite';import{chromium}from'playwright';import{registerSocialNavigation}from'../src/server/socialNavigation';import{registerPostRoutes}from'../src/server/postsController';
+const db=createClient({url:':memory:'});await db.batch([
+ 'CREATE TABLE users(id INTEGER PRIMARY KEY,username TEXT,avatar TEXT,color TEXT,roles TEXT,is_admin INTEGER,status TEXT)',"INSERT INTO users VALUES(1,'Owner',NULL,NULL,NULL,0,'approved'),(2,'Ali Can',NULL,NULL,NULL,0,'approved')",
+ 'CREATE TABLE posts(id INTEGER PRIMARY KEY,user_id INTEGER,caption TEXT,image TEXT,media_type TEXT,subject TEXT,attachments TEXT,created_at TEXT)',"INSERT INTO posts VALUES(7,1,'OLD PHYSICS POST',NULL,'image','Physics',NULL,'2020-01-01'),(8,1,'SECOND POST',NULL,'image',NULL,NULL,'2026-11-22')",
+ 'CREATE TABLE likes(id INTEGER PRIMARY KEY,post_id INTEGER,user_id INTEGER)',"INSERT INTO likes VALUES(1,7,2)",
+ 'CREATE TABLE comments(id INTEGER PRIMARY KEY,post_id INTEGER,user_id INTEGER,content TEXT,created_at TEXT)',"INSERT INTO comments VALUES(1,7,2,'A comment','2026-11-22')",
+ 'CREATE TABLE notifications(id INTEGER PRIMARY KEY,user_id INTEGER,type TEXT,content TEXT,read INTEGER,sender_id INTEGER,target_id INTEGER,created_at TEXT)'
+],'write');
+const app=express();app.use(express.json());registerSocialNavigation(app,db,{to:()=>({emit:()=>{}}),emit:()=>{}},async req=>req.headers.authorization==='Bearer test-token'?{id:1,username:'Owner'}:null);registerPostRoutes(app,db);
+app.get('/api/posts/:postId/comments',async(req,res)=>res.json((await db.execute({sql:'SELECT c.*,u.username FROM comments c JOIN users u ON u.id=c.user_id WHERE c.post_id=?',args:[Number(req.params.postId)]})).rows));
+const vite=await createServer({logLevel:'error',server:{host:'127.0.0.1',port:0},plugins:[{name:'social-fixture',configureServer(s){s.middlewares.use('/api',(q,r,n)=>{q.url='/api'+q.url;app(q as any,r as any,n);});s.middlewares.use(async(q,r,n)=>{if(q.url?.startsWith('/src/')||q.url?.startsWith('/@')||q.url?.startsWith('/node_modules')||q.url?.startsWith('/tests/'))return n();r.setHeader('Content-Type','text/html');r.end(await s.transformIndexHtml(q.url||'/','<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/socialNavigation.fixture.tsx"></script>'));});}}]});await vite.listen();const base=`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`,browser=await chromium.launch();
+try{for(const mobile of [false,true]){
+ const context=await browser.newContext({viewport:{width:mobile?390:1365,height:844},isMobile:mobile,hasTouch:mobile}),page=await context.newPage();page.setDefaultTimeout(12000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/bildirimler');await page.getByText('ve 1 kişi daha gönderini beğendi',{exact:false}).waitFor();
+ const sender=page.getByRole('link',{name:'Ali Can profilini aç'});await sender.click();await page.getByRole('heading',{name:'Profil 2'}).waitFor();assert.ok(page.url().endsWith('/profil/2'),'Name action must not open the post');
+ await page.goBack();await page.getByText('ve 1 kişi daha gönderini beğendi',{exact:false}).click();await page.locator('[data-post-id="7"]').waitFor();assert.ok(page.url().endsWith('/gonderi/7'));await page.getByText('OLD PHYSICS POST',{exact:true}).waitFor();await page.reload();await page.locator('[data-post-id="7"]').waitFor();
+ await page.getByRole('button',{name:/Yorum/}).click();await page.getByText('A comment',{exact:true}).waitFor();await page.getByRole('link',{name:'Ali Can profilini aç'}).click();await page.getByRole('heading',{name:'Profil 2'}).waitFor();
+ await page.goto(base+'/toast');await page.locator('#toast-item-like-toast').getByText('Görüntüle',{exact:true}).click();await page.locator('[data-post-id="7"]').waitFor();
+ await page.goto(base+'/toast');await page.locator('#toast-item-second-like-toast').getByText('Görüntüle',{exact:true}).click();await page.locator('[data-post-id="8"]').waitFor();await page.getByText('SECOND POST',{exact:true}).waitFor();
+ await page.goto(base+'/names');const links=page.getByRole('link',{name:'Ali Can profilini aç'});await links.nth(1).click();await page.getByRole('heading',{name:'Profil 2'}).waitFor();await page.goBack();assert.equal(await page.locator('[data-selected]').innerText(),'0','Profile link cannot select an invite/action row');
+ await page.getByRole('link',{name:'Missing User profilini aç'}).click();await page.getByRole('status').filter({hasText:'Bu kullanıcı profili bulunamadı.'}).waitFor();assert.ok(page.url().endsWith('/names'));assert.equal(await page.getByRole('link',{name:'Bot Ada profilini aç'}).count(),0);
+ await page.locator('[data-explicit-mentions]').getByRole('link',{name:'Ali Can profilini aç'}).waitFor();assert.equal(await page.locator('[data-explicit-mentions] a').count(),1);
+ await links.first().focus();await page.keyboard.press('Enter');await page.getByRole('heading',{name:'Profil 2'}).waitFor();await page.goto(base+'/profil?username=Ali%20Can');await page.getByRole('heading',{name:'Profil 2'}).waitFor();
+ await page.goto(base+'/gonderi/404');await page.getByRole('alert').filter({hasText:'Bu gönderi silinmiş'}).waitFor();assert.equal(await page.locator('[data-post-id]').count(),0);
+ await page.goto(base+'/gonderi/7');await page.locator('[data-post-id="7"]').waitFor();await page.getByRole('link',{name:'Owner profilini aç'}).waitFor();
+ await page.getByRole('button',{name:'Beğen',exact:true}).click();await page.getByRole('button',{name:'Beğenmekten vazgeç',exact:true}).waitFor();await page.getByRole('button',{name:'Beğenmekten vazgeç',exact:true}).click();await page.getByRole('button',{name:'Beğen',exact:true}).waitFor();
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:`/workspace/scratch/eb4732f1954e/social-post-${mobile?'mobile':'desktop'}.png`});const destination=await page.evaluate(`(async()=>{
+  const reg={showNotification:async(_title,options)=>{window.lastOptions=options;}};
+  Object.defineProperty(window,'Notification',{configurable:true,value:{permission:'granted'}});
+  Object.defineProperty(navigator,'serviceWorker',{configurable:true,value:{register:async()=>reg,ready:Promise.resolve(reg)}});
+  const prefs=await import('/src/utils/preferences.ts');prefs.savePreferences({desktopNotifs:true,doNotDisturb:false});
+  const device=await import('/src/components/DeviceNotifications.tsx');await device.showDeviceNotification('Beğeni','Test',1,false,undefined,false,'/gonderi/7');return window.lastOptions.data.url;
+ })()`);assert.equal(destination,'/gonderi/7');assert.deepEqual(errors,[]);
+ console.log(`PASS ${mobile?'touch/mobile':'desktop'}: grouped like + toast → exact old subject post, refresh/back, comment/name profile, nested action isolation, missing user/post, keyboard and named profile URL`);await context.close();
+}}finally{await browser.close();await vite.close();db.close();}

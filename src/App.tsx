@@ -1,3 +1,6 @@
+import PostDetail from "./components/PostDetail";
+import { notificationPostPath, postIdFromPath } from "./shared/socialNavigation";
+import { resolveProfile } from "./components/UserProfileLink";
 import { MentionTargetPreview, notifyMentionsChanged, mentionPersisted } from "./components/Mentions";
 import { dismissDeviceNotification, hasDevicePush, NotificationPermissionPrompt, removeDevicePush, showDeviceNotification, syncDevicePush } from "./components/DeviceNotifications";
 import { AI_CHECKER_RESULT_NOTIFICATION } from "./utils/aiDetectorAssessment";
@@ -638,6 +641,8 @@ export default function App() {
       try { const metadata = typeof notif.metadata === 'string' ? JSON.parse(notif.metadata) : notif.metadata; if (metadata?.kind && metadata?.target) window.dispatchEvent(new CustomEvent('open-mention', {detail:metadata})); } catch {}
       return;
     }
+    const postTarget = notificationPostPath(notif);
+    if (postTarget) { setActiveSubject(null); setActiveTab('feed'); navigate(postTarget); return; }
     const senderId = notif.senderId || notif.sender_id;
     const groupId = notif.chatId || notif.groupId || notif.group_id || notif.roomId || notif.room_id || (notif.type === "new_group_message" ? notif.target_id : null);
 
@@ -796,12 +801,12 @@ export default function App() {
           if (!isDemoSession && notif.type !== "new_message" && notif.type !== "dm" &&
               notif.type !== AI_CHECKER_RESULT_NOTIFICATION &&
               !((notif.type === "new_group_message" || notif.type === "mention") && hasDevicePush())) {
-            void showDeviceNotification(title, notif.content, notif.id);
+            void showDeviceNotification(title, notif.content, notif.id, false, undefined, false, notificationPostPath(notif) || "/");
           }
 
           const colonIdx = notif.content.indexOf(":");
           const hasColon = colonIdx !== -1;
-          const senderName = hasColon ? notif.content.substring(0, colonIdx).trim() : undefined;
+          const senderName = notif.sender_username || (hasColon ? notif.content.substring(0, colonIdx).trim() : undefined);
           const text = hasColon ? notif.content.substring(colonIdx + 1).trim() : notif.content;
 
           if (notif.type === "new_message" || notif.type === "dm") return;
@@ -1134,6 +1139,19 @@ export default function App() {
       navigate(`/profil/${userId}`);
     }
   };
+
+  useEffect(() => {
+    const open = (event: Event) => { const id = Number((event as CustomEvent).detail); if (Number.isSafeInteger(id) && id > 0) handleUserClick(id); };
+    window.addEventListener('navigate-profile', open); return () => window.removeEventListener('navigate-profile', open);
+  }, [navigate, currentUserId]);
+  const [profileResolution, setProfileResolution] = useState('');
+  const profileName = location.pathname === '/profil' ? new URLSearchParams(location.search).get('username') : null;
+  useEffect(() => {
+    if (!profileName) { setProfileResolution(''); return; }
+    let disposed=false; setProfileResolution('Profil açılıyor…');
+    void resolveProfile(profileName).then(id=>{if(!disposed)navigate(`/profil/${id}`,{replace:true});}).catch(error=>{if(!disposed)setProfileResolution(error.message);});
+    return()=>{disposed=true;};
+  }, [profileName, navigate]);
 
   const handleOpenChat = (targetId: number) => {
     setTargetChatUserId(targetId);
@@ -1923,7 +1941,7 @@ export default function App() {
             onActiveChatChange={setIsChatOpen}
           />
         )}
-        {activeTab === 'feed' && <Feed socket={socket} currentUserId={currentUserId} currentUsername={username} onUserClick={handleUserClick} />}
+        {activeTab === 'feed' && (postIdFromPath(location.pathname) ? <PostDetail key={postIdFromPath(location.pathname)} postId={postIdFromPath(location.pathname)!} socket={socket} currentUserId={currentUserId} currentUsername={username} onUserClick={handleUserClick} /> : <Feed socket={socket} currentUserId={currentUserId} currentUsername={username} onUserClick={handleUserClick} />)}
         {activeTab === 'folders' && (
           <SubjectsDirectory 
             subjects={SUBJECTS}
@@ -1986,7 +2004,8 @@ export default function App() {
         )}
         <MentionTargetPreview />
         {activeTab === 'notifications' && <Notifications socket={socket} onNotificationClick={handleNotificationClick} />}
-        {activeTab === 'profile' && (
+        {activeTab === 'profile' && profileName && <p role="status" className="p-6">{profileResolution || 'Profil açılıyor…'}</p>}
+        {activeTab === 'profile' && !profileName && (
           <Profile 
             socket={socket} 
             currentUserId={currentUserId} 

@@ -1,3 +1,4 @@
+import { UserNamedText } from "./UserProfileLink";
 import { useState, useEffect, useMemo } from "react";
 import { Socket } from "socket.io-client";
 import { 
@@ -134,7 +135,7 @@ export default function Notifications({
         }
       } else if (type === "like") {
         const firstColon = latestItem.content.indexOf(" ");
-        const firstSender = firstColon !== -1 ? latestItem.content.substring(0, firstColon) : "Bir kullanıcı";
+        const firstSender = latestItem.sender_username || (firstColon !== -1 ? latestItem.content.substring(0, firstColon) : "Bir kullanıcı");
         if (count > 1) {
           stack.title = `${firstSender} ve ${count - 1} kişi daha gönderini beğendi`;
           stack.preview = "Gönderin kullanıcılar arasında etkileşim alıyor";
@@ -144,7 +145,7 @@ export default function Notifications({
         }
       } else if (type === "comment") {
         const firstColon = latestItem.content.indexOf(" ");
-        const firstSender = firstColon !== -1 ? latestItem.content.substring(0, firstColon) : "Bir kullanıcı";
+        const firstSender = latestItem.sender_username || (firstColon !== -1 ? latestItem.content.substring(0, firstColon) : "Bir kullanıcı");
         if (count > 1) {
           stack.title = `${firstSender} gönderine ${count} yorum yaptı`;
           stack.preview = `Son yorum: "${latestItem.content}"`;
@@ -340,7 +341,7 @@ export default function Notifications({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <p className={`text-sm ${stack.unreadCount > 0 ? 'font-bold text-slate-900 dark:text-slate-100' : 'font-medium text-slate-700 dark:text-slate-300'} leading-snug truncate`}>
-                      {stack.title}
+                      <UserNamedText text={stack.title} name={stack.latestItem.sender_username} userId={stack.sender_id} />
                     </p>
                     {stack.count > 1 && (
                       <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0 tabular-nums">

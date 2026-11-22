@@ -1,3 +1,4 @@
+import UserProfileLink from "../../UserProfileLink";
 import React, { useEffect } from 'react';
 import { 
   Crown, 
@@ -130,7 +131,7 @@ export default function KapstorialHUD({
                       className="w-2.5 h-2.5 rounded-full shrink-0" 
                       style={{ backgroundColor: p.color }} 
                     />
-                    <span className="font-bold truncate max-w-[70px] sm:max-w-[90px]">{p.username}</span>
+                    <span className="font-bold truncate max-w-[70px] sm:max-w-[90px]"><UserProfileLink username={p.username} user={p} /></span>
                     <span className="font-black text-amber-400 text-[10px]">{landPct.toFixed(1)}%</span>
                   </div>
                 );

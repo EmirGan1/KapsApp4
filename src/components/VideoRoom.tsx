@@ -1,3 +1,4 @@
+import UserProfileLink from "./UserProfileLink";
 import type { ScreenShareFps } from '../utils/webrtcConfig';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
@@ -247,7 +248,7 @@ export const VideoTile = React.memo(({
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5 truncate">
                     <Volume2 size={13} className="text-blue-400 shrink-0" />
-                    <span className="truncate">{participant.username} Sesi</span>
+                    <span className="truncate"><UserProfileLink username={participant.username} user={participant} /> Sesi</span>
                   </span>
                   <span className={`text-[11px] font-black px-1.5 py-0.5 rounded ${
                     currentVolume === 0 ? 'bg-rose-900/60 text-rose-300' :
@@ -326,7 +327,7 @@ export const VideoTile = React.memo(({
             {showMenu && (
               <div className="absolute right-0 top-full mt-1.5 w-52 bg-slate-900 text-slate-100 rounded-xl shadow-2xl border border-slate-700 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100">
                 <div className="px-3 py-1.5 text-[11px] font-bold text-slate-300 border-b border-slate-800 truncate flex items-center justify-between">
-                  <span className="truncate">{participant.username}</span>
+                  <span className="truncate"><UserProfileLink username={participant.username} user={participant} /></span>
                   <span className="text-[10px] text-blue-400 font-black">%{currentVolume}</span>
                 </div>
 
@@ -394,7 +395,7 @@ export const VideoTile = React.memo(({
       <div className="relative z-10 p-2 sm:p-2.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-between">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-xs sm:text-sm font-bold text-white truncate drop-shadow-sm">
-            {participant.username} {isSelf && '(Sen)'}
+            <UserProfileLink username={participant.username} user={participant} /> {isSelf && '(Sen)'}
           </span>
         </div>
 
@@ -689,7 +690,7 @@ export function VideoRoomView({
                   <span>•</span>
                   <span className="text-emerald-400 font-bold flex items-center gap-1">
                     <Monitor size={12} />
-                    <span>{screenSharer?.username} ekran paylaşıyor</span>
+                    <span><UserProfileLink username={screenSharer?.username} user={screenSharer} /> ekran paylaşıyor</span>
                     {(screenSharer?.isScreenAudioEnabled || (screenSharer?.id === currentUserId && isScreenAudioEnabled)) && (
                       <span className="flex items-center gap-0.5 text-blue-300 bg-blue-950/90 px-1.5 py-0.2 rounded border border-blue-500/30 text-[10px] font-bold">
                         <Volume2 size={10} />
@@ -1098,7 +1099,7 @@ export function VideoRoomView({
         if (document.fullscreenElement === dialog) void document.exitFullscreen().catch(() => {});
       }} className="fixed inset-0 m-0 h-[100dvh] w-full max-h-none max-w-none overflow-hidden bg-black text-white backdrop:bg-black open:flex open:flex-col">
         <header className="flex shrink-0 items-center justify-between gap-3 bg-slate-950 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-          <span className="truncate text-sm font-semibold">{screenSharer?.username} · Ekran paylaşımı</span>
+          <span className="truncate text-sm font-semibold"><UserProfileLink username={screenSharer?.username} user={screenSharer} /> · Ekran paylaşımı</span>
           <button type="button" autoFocus aria-label="Tam ekrandan çık" title="Tam ekrandan çık"
             onClick={() => viewer.current?.close()} className="grid size-11 shrink-0 place-items-center rounded-xl bg-slate-800 hover:bg-slate-700">
             <X size={20} />

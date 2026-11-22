@@ -1,3 +1,4 @@
+import UserProfileLink, { MentionText } from "./UserProfileLink";
 import { MentionHighlight } from "./Mentions";
 import React, { useState } from 'react';
 import { 
@@ -76,7 +77,7 @@ export const PostCard: React.FC<PostCardProps> = ({
               className="font-bold text-slate-800 dark:text-slate-200 text-[15px] leading-tight cursor-pointer hover:underline truncate"
               onClick={() => onUserClick && onUserClick(post.user_id)}
             >
-              {post.username}
+              <UserProfileLink username={post.username} userId={post.user_id} />
             </h3>
             {post.subject && !activeSubject && (
               <span className="text-[11px] px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium rounded-full truncate">
@@ -120,7 +121,7 @@ export const PostCard: React.FC<PostCardProps> = ({
 
       {/* Caption */}
       {post.caption && (
-        <div className="px-4 pb-3 text-slate-800 dark:text-slate-200 text-[15px] leading-relaxed whitespace-pre-wrap"><MentionHighlight kind="post" target={post.id}>{post.caption}</MentionHighlight></div>
+        <div className="px-4 pb-3 text-slate-800 dark:text-slate-200 text-[15px] leading-relaxed whitespace-pre-wrap"><MentionHighlight kind="post" target={post.id}><MentionText text={post.caption}/></MentionHighlight></div>
       )}
 
       {/* MultiMediaPostViewer: Displays single or multiple photos, videos, and files */}
@@ -164,6 +165,7 @@ export const PostCard: React.FC<PostCardProps> = ({
           {/* Yorum Butonu */}
           <button
             type="button"
+            aria-label={isCommentsOpen ? "Yorumları gizle" : "Yorumları göster"}
             onClick={() => onToggleComments(post.id)}
             className={`flex items-center gap-2 transition-colors cursor-pointer ${
               isCommentsOpen
@@ -213,7 +215,7 @@ export const PostCard: React.FC<PostCardProps> = ({
                         className="font-semibold text-xs text-slate-800 dark:text-slate-200 cursor-pointer hover:underline inline-block"
                         onClick={() => onUserClick && onUserClick(c.user_id)}
                       >
-                        {c.username}
+                        <UserProfileLink username={c.username} userId={c.user_id} />
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] text-slate-400">
@@ -235,7 +237,7 @@ export const PostCard: React.FC<PostCardProps> = ({
                       </div>
                     </div>
                     <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                      {c.content}
+                      <MentionText text={c.content}/>
                     </p>
                   </div>
                 </div>
