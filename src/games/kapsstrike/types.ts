@@ -3,7 +3,7 @@ export interface Vec3 {
   y: number;
   z: number;
 }
-export type MapId = "warehouse" | "dust" | "neon" | "district" | "bolluca";
+export type MapId = "warehouse" | "dust" | "neon" | "district" | "bolluca" | "dust2v2";
 export type WeaponId = "rifle" | "smg" | "sniper" | "shotgun" | "pistol" | "knife" | "carbine" | "lmg" | "railgun";
 export interface Solid {
   id: string;

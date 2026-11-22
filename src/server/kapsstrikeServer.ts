@@ -442,7 +442,7 @@ export class StrikeRoom {
     return {
       tick: this.tick,
       roomCode: this.roomCode,
-      world: this.map === 'bolluca' ? createWorld(MAPS.bolluca) : cloneWorld(this.world),
+      world: (this.map === 'bolluca' || this.map === 'dust2v2') ? createWorld(MAPS[this.map]) : cloneWorld(this.world),
       serverTime: Date.now(),
       players: playerSnapshots,
       teamScores: this.mode !== "ffa" ? { ...this.teamScores } : undefined,
@@ -636,7 +636,7 @@ export class KapsStrikeServerManager {
     const requestedMap = options.map && Object.hasOwn(MAPS, options.map) ? MAPS[options.map] : undefined;
     const mapId: MapId = options.mode === "bomb"
       ? requestedMap?.bombSites ? requestedMap.id : "district"
-      : requestedMap?.id === "bolluca" ? "warehouse" : requestedMap?.id ?? "warehouse";
+      : (requestedMap?.id === "bolluca" || requestedMap?.id === "dust2v2") ? "warehouse" : requestedMap?.id ?? "warehouse";
     const mode: StrikeGameMode = options.mode === "bomb" ? "bomb" : options.mode === "tdm" ? "tdm" : "ffa";
     const maxPlayers = Math.max(2, Math.min(10, Number(options.maxPlayers) || 8));
     const timeLimit = Math.max(60, Math.min(900, Number(options.timeLimit) || 300));
@@ -1106,7 +1106,7 @@ export class KapsStrikeServerManager {
   public tickSimulation(room: StrikeRoom): void {
     const mapDef = MAPS[room.map];
     room.tick++;
-    if(mapDef.id==='bolluca')advanceWorld(room.world,mapDef,room.tick);
+    if(mapDef.id==='bolluca'||mapDef.id==='dust2v2')advanceWorld(room.world,mapDef,room.tick);
     else if(!room.bomb)advanceWorld(room.world,mapDef,room.tick);
     else room.world.pickups=room.world.pickups.filter(p=>!p.opened&&p.expires>room.tick);
     if(room.bomb){const b=room.bomb,round=b.round,phase=b.phase,explosion=b.explosion;

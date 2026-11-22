@@ -6,8 +6,8 @@ export type CatalogMaps = { albedo: string; normal?: string; orm?: string };
 export const catalogMaterials = catalog.materials;
 
 export function catalogMaterial(map: MapDefinition, surface: Solid['surface'], solid?: Solid): CatalogMaterial | undefined {
-  if (map.id !== 'district' && map.id !== 'bolluca') return;
-  const dust = map.id === 'district';
+  if (map.id !== 'district' && map.id !== 'bolluca' && map.id !== 'dust2v2') return;
+  const dust = map.id === 'district' || map.id === 'dust2v2';
   if (!solid) return dust ? 'dustGround' : 'bollucaGround';
   if (solid.label || solid.glow || /photo|poster|mural|logo|sign|site-mark/i.test(solid.id)) return;
   // Photo panels and their backing solids keep their existing material and UVs.

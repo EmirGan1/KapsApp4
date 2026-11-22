@@ -85,7 +85,7 @@ test('explosion payload reaches both teams including the dead victim during resu
 test('all 15 community photos remain in the original four maps',async()=>{
  const {MAPS}=await import('../src/games/kapsstrike/maps');
  const expectedPhotos=Array.from({length:15},(_,i)=>`/kapsstrike/photos/photo-${String(i+1).padStart(2,'0')}.jpg`);
- for(const map of Object.values(MAPS).filter(m=>m.id!=='bolluca')){
+ for(const map of Object.values(MAPS).filter(m=>m.id!=='bolluca'&&m.id!=='dust2v2')){
   assert.ok(map.photoFrames&&map.photoFrames.length>=15,`${map.id} must have at least 15 photoFrames`);
   const present=new Set(map.photoFrames!.map(f=>f.image));
   for(const img of expectedPhotos){

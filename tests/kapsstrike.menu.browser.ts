@@ -51,13 +51,16 @@ try {
     await page.getByRole("button",{name:/Bomba Kurma/i}).click();
     assert.equal(await page.getByLabel("Harita",{exact:true}).inputValue(),"district");
     const bombMap = page.getByLabel("Harita", { exact: true });
-    assert.deepEqual(await bombMap.locator("option").allTextContents(), ["Dust II", "Bolluca"]);
+    assert.deepEqual(await bombMap.locator("option").allTextContents(), ["Dust II", "Dust II V2", "Bolluca"]);
+    await bombMap.selectOption("dust2v2");
+    assert.equal(await bombMap.inputValue(), "dust2v2");
     await bombMap.selectOption("bolluca");
     assert.equal(await bombMap.inputValue(), "bolluca");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.getByLabel("Kazanmak için gereken raund").selectOption("8");
     await page.getByRole("button",{name:/Kill Yarışı/i}).click();
     assert.equal(await page.getByLabel("Harita", { exact: true }).locator("option[value=bolluca]").count(), 0);
+    assert.equal(await page.getByLabel("Harita", { exact: true }).locator("option[value=dust2v2]").count(), 0);
     await page.getByLabel("Maç süresi").selectOption("600");
     await page.getByRole("button",{name:"İptal",exact:true}).click();
     await page

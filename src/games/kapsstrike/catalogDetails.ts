@@ -3,7 +3,7 @@ import type { MapDefinition, Solid } from './types';
 
 /** Small trim attached to existing props. Only the renderer sees these solids. */
 export function catalogDetails(map: MapDefinition): Solid[] {
-  if (map.id !== 'district' && map.id !== 'bolluca') return [];
+  if (map.id !== 'district' && map.id !== 'bolluca' && map.id !== 'dust2v2') return [];
   const details: Solid[] = [];
   for (const solid of map.solids) {
     if (solid.hidden || !catalogMaterial(map, solid.surface, solid)) continue;

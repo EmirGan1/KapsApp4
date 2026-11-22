@@ -175,6 +175,20 @@ html:not(.dark) .ks-root button:hover {
 .ks-map-art.dust i:nth-child(2) {
   background: #dec29a;
 }
+.ks-map-art.dust2v2 {
+  background: linear-gradient(180deg, #8ec0df 0%, #d8c29d 60%, #b8986d 100%);
+}
+.ks-map-art.dust2v2 i {
+  background: #c7ad87;
+  border-top: 3px solid #a84530;
+}
+.ks-map-art.dust2v2 i:nth-child(2) {
+  background: #e5d4b6;
+  border-top: 3px solid #356170;
+}
+.ks-map-art.dust2v2 i:nth-child(3) {
+  background: #917452;
+}
 .ks-map-art.neon {
   background: #1e2e4a;
 }

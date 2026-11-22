@@ -1769,7 +1769,7 @@ export default function KapsStrikeGame({
           {hud.ads && !hud.dead && (hud.weapon==='sniper'||hud.weapon==='railgun') && <div className="ks-scope" aria-label="Dürbün açık"><div className="ks-scope-lens"><i/><b/><span>{hud.weapon==='railgun'?'5×':'3.5×'} / UFUK OPTICS</span></div></div>}
           {hud.lootNotice&&!hud.dead&&<div className="ks-loot-notice" role="status">{hud.lootNotice}</div>}
           {hud.supplyPrompt && !hud.dead && <button className="ks-supply-prompt" onClick={()=>game.current?.interact()}>{isMobile?'Dokun':label(settings.bindings?.interact||'KeyE')} · {hud.supplyPrompt}</button>}
-          {(currentRoom?.map||map)!=='bolluca' && hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · 3 özel silahtan biri</small></div>}
+          {(currentRoom?.map||map)!=='bolluca' && (currentRoom?.map||map)!=='dust2v2' && hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · 3 özel silahtan biri</small></div>}
           <StrikeDamageFeedback hp={hud.hp} dead={hud.dead} tick={hud.tick} hurt={hud.hurt}/>
           {hud.hp > 0 && hud.hp <= 25 && <span className="ks-low-health" role="status">KRİTİK CAN</span>}
           {hud.hurt && hud.hurt.until > hud.tick && (
@@ -2219,7 +2219,7 @@ export default function KapsStrikeGame({
                 </header>
                 <div className="ks-room-mode-cards" aria-label="Oyun modu">
                   <button type="button" aria-pressed={createCategory === "bomb"} onClick={() => setCreateCategory("bomb")}>
-                    <small>TAKTİK · T / CT</small><strong>Bomba Kurma</strong><span>Dust II veya Bolluca’da bomba bölgelerini savun ya da ele geçir.</span>
+                    <small>TAKTİK · T / CT</small><strong>Bomba Kurma</strong><span>Dust II, Dust II V2 veya Bolluca’da bomba bölgelerini savun ya da ele geçir.</span>
                   </button>
                   <button type="button" aria-pressed={createCategory === "kill"} onClick={() => setCreateCategory("kill")}>
                     <small>HIZLI MAÇ · FFA / TDM</small><strong>Kill Yarışı</strong><span>Haritayı seç ve süre dolmadan skor hedefine ulaş.</span>
@@ -2232,14 +2232,14 @@ export default function KapsStrikeGame({
                       {Array.from({ length: 9 }, (_, i) => i + 2).map(count => <option key={count} value={count}>{count} oyuncu</option>)}
                     </select></label>
                     {createCategory === "bomb" ? <>
-                      <label>Harita<select value={createBombMap} onChange={e => setCreateBombMap(e.target.value as MapId)}>
+                      <label>Harita<select aria-label="Harita" value={createBombMap} onChange={e => setCreateBombMap(e.target.value as MapId)}>
                         {BOMB_MAPS.map(m => <option key={m.id} value={m.id}>{m.name.split(" · ")[0]}</option>)}
                       </select></label>
                       <label>Kazanmak için gereken raund<select value={createBombRounds} onChange={e => setCreateBombRounds(Number(e.target.value))}>
                         {BOMB_WIN_TARGETS.map(target => <option key={target} value={target}>İlk {target} galibiyet</option>)}
                       </select></label>
                     </> : <>
-                      <label>Harita<select value={createMap} onChange={e => setCreateMap(e.target.value as MapId)}>
+                      <label>Harita<select aria-label="Harita" value={createMap} onChange={e => setCreateMap(e.target.value as MapId)}>
                         {Object.values(MAPS).filter(m => !m.bombSites).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select></label>
                       <label>Takım düzeni<select value={createMode} onChange={e => setCreateMode(e.target.value === "ffa" ? "ffa" : "tdm")}>
