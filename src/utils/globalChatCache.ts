@@ -1,3 +1,4 @@
+import { liveRows, recordDeletion } from "./contentDeletion";
 // In-memory client cache for Global Chat (Stale-While-Revalidate & Instant 0ms Load)
 export interface GlobalChatCache {
   messages: any[];
@@ -14,7 +15,7 @@ export const globalChatCache: GlobalChatCache = {
 };
 
 export function appendToGlobalCache(msg: any) {
-  if (!msg || !msg.id) return;
+  if (!msg || !msg.id || !liveRows("global",[msg]).length) return;
   const exists = globalChatCache.messages.some(m => m.id === msg.id);
   if (!exists) {
     globalChatCache.messages.push(msg);
@@ -28,6 +29,7 @@ export function updateGlobalCacheReactions(messageId: number, reactions: any[]) 
 }
 
 export function removeFromGlobalCache(messageId: string | number) {
+  recordDeletion("global", {id:messageId});
   const strId = String(messageId);
   globalChatCache.messages = globalChatCache.messages.filter(m => String(m.id) !== strId);
 }
@@ -35,4 +37,9 @@ export function removeFromGlobalCache(messageId: string | number) {
 export function clearGlobalCache() {
   globalChatCache.messages = [];
   globalChatCache.lastFetchedAt = null;
+}
+
+if(typeof window!=='undefined'){
+ window.addEventListener('content-deleted',(event:Event)=>{if((event as CustomEvent).detail?.kind==='global')globalChatCache.messages=liveRows('global',globalChatCache.messages);});
+ window.addEventListener('content-cleared',(event:Event)=>{if((event as CustomEvent).detail?.kind==='global')clearGlobalCache();});
 }

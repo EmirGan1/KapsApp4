@@ -1,3 +1,4 @@
+import { useDeletionArray } from "../utils/contentDeletion";
 import UserProfileLink from "./UserProfileLink";
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
@@ -64,7 +65,7 @@ export default function CommunityMiniFeedWidget({
   onNavigateFeed,
   className = ""
 }: CommunityMiniFeedWidgetProps) {
-  const [posts, setPosts] = useState<MiniFeedPost[]>(FALLBACK_POSTS);
+  const [posts, setPosts] = useDeletionArray<MiniFeedPost>("post",FALLBACK_POSTS);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {

@@ -163,6 +163,8 @@ export interface UserProfileData {
 }
 
 export interface MediaModalData {
+  sourceMessageId?: string | number;
+  sourceMessageKind?: "global" | "private" | "group";
   url: string;
   type: 'image' | 'video' | 'file';
   items?: { url: string; type: 'image' | 'video' | 'file'; name?: string; size?: number }[];

@@ -1,3 +1,5 @@
+import { recordDeletion, recordClear } from "./utils/contentDeletion";
+import { removeFromGlobalCache, clearGlobalCache } from "./utils/globalChatCache";
 import PostDetail from "./components/PostDetail";
 import { notificationPostPath, postIdFromPath } from "./shared/socialNavigation";
 import { resolveProfile } from "./components/UserProfileLink";
@@ -775,6 +777,10 @@ export default function App() {
         localStorage.setItem("lan_user_id", id.toString());
       });
       
+      newSocket.on('message_deleted', data => { recordDeletion(data?.type,data);if(data?.type==='global')removeFromGlobalCache(data.id); });
+      newSocket.on('post_deleted', data => recordDeletion('post',data));
+      newSocket.on('comment_deleted', data => recordDeletion('comment',data));
+      newSocket.on('global_chat_cleared', () => {clearGlobalCache();recordClear('global');});
       newSocket.on("mention_updated", notifyMentionsChanged);
       newSocket.on("mention_message_id", mentionPersisted);
       newSocket.on("new_notification", (notif: any) => {

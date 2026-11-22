@@ -1,3 +1,4 @@
+import { useDeletionArray, deleteContent, recordDeletion, liveRows, wasDeleted } from "../utils/contentDeletion";
 import UserProfileLink, { MentionText } from "./UserProfileLink";
 import { MentionInput, MentionHighlight } from "./Mentions";
 import React, { useState, useEffect, useRef } from "react";
@@ -35,7 +36,7 @@ export default function MiniChatWidget({
   onNavigateChat,
   className = ""
 }: MiniChatWidgetProps) {
-  const [messages, setMessages] = useState<MiniChatMessage[]>([]);
+  const [messages, setMessages] = useDeletionArray<MiniChatMessage>("global", []);
   useEffect(() => {
     if (!socket) return;
     const persisted = (data: any) => { if(data.kind === 'global') setMessages(prev => prev.map(m => String(m.id) === String(data.tempId) ? {...m,id:data.id} : m)); };
@@ -64,12 +65,13 @@ export default function MiniChatWidget({
     socket.emit("join_room", "global");
 
     // 2. Fetch initial messages
-    socket.emit("get_global_messages", (initialMsgs: any[]) => {
+    const sync = () => socket.emit("get_global_messages", (initialMsgs: any[]) => {
       if (Array.isArray(initialMsgs)) {
         setMessages(initialMsgs.slice(-5));
         setTimeout(scrollToBottom, 100);
       }
     });
+    sync();socket.on("connect",sync);
 
     // 3. New message listener (supporting both 'new_global_message', 'chat:message', 'global_message')
     const handleNewMessage = (msg: any) => {
@@ -101,6 +103,7 @@ export default function MiniChatWidget({
     socket.on("global_message", handleNewMessage);
 
     return () => {
+      socket.off("connect",sync);
       socket.off("new_global_message", handleNewMessage);
       socket.off("chat:message", handleNewMessage);
       socket.off("global_message", handleNewMessage);

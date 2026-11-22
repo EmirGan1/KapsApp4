@@ -1,3 +1,4 @@
+import { useDeletionArray, deleteContent, recordDeletion, liveRows, wasDeleted } from "../utils/contentDeletion";
 import UserProfileLink, { MentionText } from "./UserProfileLink";
 import { MentionInput, MentionHighlight } from "./Mentions";
 import DmEmojiPicker from "./DmEmojiPicker";
@@ -176,7 +177,7 @@ export default function Chats({
     }
   }, [targetGroupId, socket, groups, onTargetGroupHandled]);
   
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useDeletionArray<any>(activeTab === "friends" ? "private" : "group", []);
   useEffect(() => {
     if (!socket) return;
     const persisted = (data: any) => { if(data.kind === 'group') setMessages(prev => prev.map(m => String(m.id) === String(data.tempId) ? {...m,id:data.id} : m)); };
@@ -398,16 +399,11 @@ export default function Chats({
         if (data.length < 50) setHasMore(false);
       });
     };
-    if (activeTab === "friends") {
-      loadDmHistory();
-    } else {
-      socket.emit("get_group_messages", { groupId: activeChat.id, limit: 50 }, (data: any[]) => {
-        if (activeChatRef.current?.id !== activeChat.id || activeTabRef.current !== activeTab) return;
-        const list = Array.isArray(data) ? data : [];
-        setMessages(list);
-        if (list.length < 50) setHasMore(false);
-      });
-    }
+    const loadGroupHistory = () => socket.emit("get_group_messages", {groupId:activeChat.id,limit:50},(data:any[])=>{
+      if(activeChatRef.current?.id!==activeChat.id||activeTabRef.current!=='groups')return;
+      const list=Array.isArray(data)?data:[];setMessages(list);if(list.length<50)setHasMore(false);
+    });
+    if(activeTab==='friends')loadDmHistory();else loadGroupHistory();
 
     socket.emit("get_chat_read", roomId, (data: [number, number][]) => setReadReceipts(Object.fromEntries(data)));
     
@@ -468,6 +464,9 @@ export default function Chats({
     };
 
     const onMessageDeleted = (data: any) => {
+      const kind=activeTab === 'friends'?'private':'group';
+      if(data?.type!==kind)return;
+      recordDeletion(kind,data);
       const deletedId = String(data?.message_id || data?.id || data?._id || data?.messageId || data);
       setMessages(prev => prev.filter(m => String(m.id) !== deletedId && String((m as any)._id) !== deletedId));
     };
@@ -549,7 +548,7 @@ export default function Chats({
     window.addEventListener("blur", syncDmPresence);
     const onReconnect = () => {
       syncDmPresence();
-      if (activeTab === 'friends') loadDmHistory();
+      if (activeTab === 'friends') loadDmHistory();else loadGroupHistory();
     };
     const heartbeat = window.setInterval(syncDmPresence, 15000);
     const hideDm = () => { if (activeTab === 'friends') socket.emit('dm:leave_chat'); };
@@ -858,6 +857,8 @@ export default function Chats({
       senderColor = (activeChat as Friend).color;
     }
     setActiveModalData({
+      sourceMessageId: msg.id,
+      sourceMessageKind: activeTab === 'friends' ? 'private' : 'group',
       url: msg.content,
       type: msg.type === "video" ? "video" : "image",
       authorName: senderName || "Kullanıcı",
@@ -914,41 +915,18 @@ export default function Chats({
     }
   };
 
-  const handleDeleteMessage = (messageId: number | string) => {
-    console.log('Silinen ID (Chat):', messageId);
-    if (!messageId && messageId !== 0) return;
-    const idStr = String(messageId);
-    setMessages(prev => prev.filter(m => String(m.id) !== idStr && String((m as any)._id) !== idStr));
-    
-    if (socket) {
-      socket.emit("delete_message", { 
-        message_id: messageId, 
-        id: messageId,
-        messageId: messageId,
-        type: activeTab === "friends" ? "private" : "group",
-        receiver: activeTab === "friends" ? (activeChat as Friend)?.id : undefined,
-        group_id: activeTab === "groups" ? (activeChat as Group)?.id : undefined
-      }, (res: any) => {
-        if (res?.error) {
-          console.error("delete_message error:", res.error);
-          if (activeChat) {
-            if (activeTab === "friends") {
-              socket.emit("get_messages", activeChat.id, setMessages);
-            } else {
-              socket.emit("get_group_messages", activeChat.id, setMessages);
-            }
-          }
-        }
-      });
-    }
+  useEffect(()=>{
+    const deleted=(event:Event)=>{const data=(event as CustomEvent).detail;
+      setActiveModalData(previous=>previous?.sourceMessageKind===data?.kind&&String(previous?.sourceMessageId)===String(data.id)?null:previous);
+      setReplyTo((previous:any)=>previous&&String(previous.id)===String(data.id)&&data.kind===(activeTab === 'friends' ? 'private' : 'group')?null:previous);
+    };
+    window.addEventListener('content-deleted',deleted);return()=>window.removeEventListener('content-deleted',deleted);
+  },[activeTab]);
 
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-    if (token) {
-      fetch(getApiUrl(`/api/messages/${messageId}`), {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch((err) => console.error("REST delete_message error:", err));
-    }
+  const handleDeleteMessage = async (messageId:number|string) => {
+    const kind=activeTab === 'friends' ? 'private' : 'group';
+    try{await deleteContent(kind,messageId);setMessages(previous=>liveRows(kind,previous));}
+    catch(error:any){alert(error.message||'Mesaj silinemedi.');}
   };
 
   const handleCreateGroup = () => {

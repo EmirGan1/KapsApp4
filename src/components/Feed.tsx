@@ -1,3 +1,4 @@
+import { useDeletionArray, deleteContent, recordDeletion, liveRows, wasDeleted } from "../utils/contentDeletion";
 import UserProfileLink from "./UserProfileLink";
 import { MentionTextarea } from "./Mentions";
 import { uploadFile } from "../utils/uploadFile";
@@ -62,7 +63,7 @@ export default function Feed({
   onBackToFolders?: () => void;
 }) {
   const isAdmin = currentUsername?.toLowerCase() === 'emirgan' || currentUsername?.toLowerCase() === 'emirhan' || currentUsername?.toLowerCase() === 'admin' || currentUserId === 1;
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [posts, setPosts] = useDeletionArray<Post>("post", []);
   const [stories, setStories] = useState<Story[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
@@ -78,7 +79,7 @@ export default function Feed({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const [activeCommentsPostId, setActiveCommentsPostId] = useState<number | null>(null);
-  const [comments, setComments] = useState<any[]>([]);
+  const [comments, setComments] = useDeletionArray<any>("comment", []);
   const [newComment, setNewComment] = useState("");
 
   const [activeModalData, setActiveModalData] = useState<MediaModalData | null>(null);
@@ -166,6 +167,7 @@ export default function Feed({
     loadData();
 
     if (socket) {
+      socket.on("connect", loadData);
       socket.on("feed_updated", loadData);
       socket.on("stories_updated", loadData);
 
@@ -181,6 +183,7 @@ export default function Feed({
       socket.on("new_post", onNewPost);
       
       const onPostDeleted = (data: any) => {
+        recordDeletion("post",data);
         const deletedId = String(data?.postId || data?.id || data?._id || data);
         setPosts((prev) => prev.filter((p) => String(p.id) !== deletedId && String((p as any)._id) !== deletedId));
       };
@@ -188,6 +191,7 @@ export default function Feed({
       socket.on("post:deleted", onPostDeleted);
 
       const onCommentDeleted = (data: any) => {
+        recordDeletion("comment",data);
         const deletedCommentId = Number(data?.commentId || data?.id || data);
         if (!isNaN(deletedCommentId)) {
           setComments((prev) => prev.filter((c) => Number(c.id) !== deletedCommentId));
@@ -197,6 +201,7 @@ export default function Feed({
       socket.on("comment:deleted", onCommentDeleted);
 
       return () => {
+        socket.off("connect", loadData);
         socket.off("feed_updated", loadData);
         socket.off("stories_updated", loadData);
         socket.off("new_post", onNewPost);
@@ -588,32 +593,14 @@ export default function Feed({
     socket?.emit("like_post", postId);
   };
 
-  const handleDeletePost = async (postId: number | string) => {
-    console.log('Silinen Gönderi ID:', postId);
-    if (!postId && postId !== 0) return;
-    const targetId = String(postId);
+  useEffect(()=>{
+    const deleted=(event:Event)=>{const data=(event as CustomEvent).detail;if(data?.kind==='post')setActiveModalData(previous=>String(previous?.postId)===String(data.id)?null:previous);};
+    window.addEventListener('content-deleted',deleted);return()=>window.removeEventListener('content-deleted',deleted);
+  },[]);
 
-    // Anında ekrandan kaldır (id ve _id eşleşmesiyle)
-    setPosts((prev) => prev.filter((p) => String(p.id) !== targetId && String((p as any)._id) !== targetId));
-    if (activeModalData && (String(activeModalData.postId) === targetId || String((activeModalData as any)._id) === targetId)) {
-      setActiveModalData(null);
-    }
-
-    if (socket) {
-      socket.emit("delete_post", { postId, id: postId }, (res: any) => {
-        if (res?.error) {
-          console.error("Socket delete_post error:", res.error);
-        }
-      });
-    }
-
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-    if (token) {
-      fetch(getApiUrl(`/api/posts/${postId}`), {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch((err) => console.error("REST delete_post error:", err));
-    }
+  const handleDeletePost = async (postId:number|string) => {
+    try{await deleteContent('post',postId);setPosts(previous=>liveRows('post',previous));if(String(activeModalData?.postId)===String(postId))setActiveModalData(null);}
+    catch(error:any){alert(error.message||'Gönderi silinemedi.');}
   };
 
   const toggleComments = (postId: number) => {
@@ -624,113 +611,25 @@ export default function Feed({
     }
   };
 
-  const handleCardCommentSubmit = async (postId: number, content: string) => {
-    const trimmed = content.trim();
-    if (!trimmed) return;
-
-    const tempCommentId = Date.now();
-    const optimisticComment = {
-      id: tempCommentId,
-      post_id: postId,
-      user_id: currentUserId,
-      username: currentUsername || "Kullanıcı",
-      avatar: null,
-      content: trimmed,
-      created_at: new Date().toISOString()
-    };
-
-    setComments((prev) => [...prev, optimisticComment]);
-
-    const payload = {
-      postId,
-      content: trimmed
-    };
-
-    if (socket && socket.connected) {
-      socket.emit("create_comment", payload);
-    }
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-    fetch(getApiUrl(`/api/posts/${postId}/comments`), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify(payload)
-    }).catch((e) => console.error("REST comment submit error:", e));
+  const submitComment = async (postId:number,content:string) => {
+    const trimmed=content.trim();if(!trimmed)return false;
+    try{
+      const response=await fetch(getApiUrl(`/api/posts/${postId}/comments`),{method:'POST',headers:getAuthHeaders({'Content-Type':'application/json'}),body:JSON.stringify({postId,content:trimmed}),signal:AbortSignal.timeout(15000)});
+      const data=await response.json().catch(()=>null);
+      if(!response.ok||!data?.comment?.id)throw new Error(data?.error||'Yorum kaydedilemedi.');
+      setComments(previous=>previous.some(comment=>String(comment.id)===String(data.comment.id))?previous:[...previous,data.comment]);
+      return true;
+    }catch(error:any){alert(error.message||'Yorum kaydedilemedi.');return false;}
+  };
+  const handleCardCommentSubmit = async (postId:number,content:string) => {await submitComment(postId,content);};
+  const handleAddComment = async (event:React.FormEvent) => {
+    event.preventDefault();if(!activeCommentsPostId)return;
+    const content=newComment;if(await submitComment(activeCommentsPostId,content))setNewComment(previous=>previous===content?'':previous);
   };
 
-  const handleAddComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const commentContent = newComment.trim();
-    if (!commentContent || !activeCommentsPostId) return;
-
-    setNewComment("");
-
-    const tempCommentId = Date.now();
-    const optimisticComment = {
-      id: tempCommentId,
-      post_id: activeCommentsPostId,
-      user_id: currentUserId,
-      username: currentUsername || "Kullanıcı",
-      avatar: null,
-      content: commentContent,
-      created_at: new Date().toISOString()
-    };
-
-    setComments((prev) => [...prev, optimisticComment]);
-
-    const payload = {
-      postId: activeCommentsPostId,
-      content: commentContent
-    };
-
-    if (socket && socket.connected) {
-      socket.emit("create_comment", payload, async (res: any) => {
-        if (res?.error) {
-          // Fallback to REST
-          try {
-            const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-            await fetch(getApiUrl(`/api/posts/${activeCommentsPostId}/comments`), {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                ...(token ? { Authorization: `Bearer ${token}` } : {})
-              },
-              body: JSON.stringify(payload)
-            });
-          } catch (e) {
-            console.error("Comment submit error:", e);
-          }
-        }
-      });
-    } else {
-      try {
-        const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-        await fetch(getApiUrl(`/api/posts/${activeCommentsPostId}/comments`), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify(payload)
-        });
-      } catch (e) {
-        console.error("Comment submit error:", e);
-      }
-    }
-  };
-
-  const handleDeleteComment = (commentId: number, postId: number) => {
-    setComments((prev) => prev.filter((c) => c.id !== commentId));
-    socket?.emit("delete_comment", { commentId, postId });
-    const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-    if (token) {
-      fetch(getApiUrl(`/api/comments/${commentId}`), {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch((e) => console.error("REST delete comment error:", e));
-    }
+  const handleDeleteComment = async (commentId:number,postId:number) => {
+    try{await deleteContent('comment',commentId);setComments(previous=>liveRows('comment',previous));}
+    catch(error:any){alert(error.message||'Yorum silinemedi.');}
   };
 
   const openPostModal = (post: Post, initialIndex = 0) => {
@@ -755,35 +654,7 @@ export default function Feed({
       fileName: activeItem?.name,
       onLike: () => handleLike(post.id),
       onOpenLikes: () => handleOpenLikesModal(post.id, post.likes_count),
-      onAddComment: async (content: string) => {
-        const trimmed = content.trim();
-        if (!trimmed) return;
-        const tempId = Date.now();
-        const optimistic = {
-          id: tempId,
-          post_id: post.id,
-          user_id: currentUserId,
-          username: currentUsername || "Kullanıcı",
-          avatar: null,
-          content: trimmed,
-          created_at: new Date().toISOString()
-        };
-        setComments((prev) => [...prev, optimistic]);
-
-        const payload = { postId: post.id, content: trimmed };
-        if (socket && socket.connected) {
-          socket.emit("create_comment", payload);
-        }
-        const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-        fetch(getApiUrl(`/api/posts/${post.id}/comments`), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify(payload)
-        }).catch(() => {});
-      },
+      onAddComment: async (content:string) => {await submitComment(post.id,content);},
       onDeleteComment: (commentId: number) => {
         handleDeleteComment(commentId, post.id);
       },

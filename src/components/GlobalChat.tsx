@@ -1,3 +1,4 @@
+import { useDeletionArray, deleteContent, recordDeletion, liveRows, wasDeleted } from "../utils/contentDeletion";
 import UserProfileLink, { MentionText } from "./UserProfileLink";
 import { MentionInput, MentionHighlight } from "./Mentions";
 import { getUploadError } from "../utils/uploadErrors";
@@ -34,7 +35,7 @@ export default function GlobalChat({
   onUserClick?: (id: number) => void;
 }) {
   // Stale-While-Revalidate: Instant 0ms load from memory cache
-  const [messages, setMessages] = useState<any[]>(() => [...globalChatCache.messages]);
+  const [messages, setMessages] = useDeletionArray<any>("global", () => [...globalChatCache.messages]);
   useEffect(() => {
     if (!socket) return;
     const persisted = (data: any) => { if(data.kind === 'global') setMessages(prev => prev.map(m => String(m.id) === String(data.tempId) ? {...m,id:data.id} : m)); };
@@ -64,31 +65,11 @@ export default function GlobalChat({
   useEffect(() => {
     if (!socket) return;
 
-    // Background fetch: If cache is empty, fetch initial batch; otherwise, fetch delta updates
-    if (globalChatCache.messages.length === 0) {
-      socket.emit("get_global_messages", (msgs: any[]) => {
-        if (Array.isArray(msgs)) {
-          globalChatCache.messages = msgs;
-          globalChatCache.lastFetchedAt = new Date().toISOString();
-          setMessages(msgs);
-        }
-      });
-    } else {
-      // Light background delta sync
-      socket.emit("get_delta_global_messages", { since: globalChatCache.lastFetchedAt }, (deltaMsgs: any[]) => {
-        if (Array.isArray(deltaMsgs) && deltaMsgs.length > 0) {
-          setMessages((prev) => {
-            const existingIds = new Set(prev.map((m) => m.id));
-            const newItems = deltaMsgs.filter((m) => !existingIds.has(m.id));
-            if (newItems.length === 0) return prev;
-            const merged = [...prev, ...newItems];
-            globalChatCache.messages = merged;
-            return merged;
-          });
-        }
-        globalChatCache.lastFetchedAt = new Date().toISOString();
-      });
-    }
+    // A fresh snapshot also removes messages deleted while this view was unmounted/offline.
+    const sync = () => socket.emit("get_global_messages", (msgs: any[]) => {
+      if(Array.isArray(msgs)){const rows=liveRows('global',msgs);globalChatCache.messages=rows;globalChatCache.lastFetchedAt=new Date().toISOString();setMessages(rows);setHasMore(true);}
+    });
+    sync();socket.on('connect',sync);
 
     socket.emit("get_all_users", (allUsers: any[]) => {
       if (Array.isArray(allUsers)) {
@@ -135,6 +116,8 @@ export default function GlobalChat({
     };
     
     const onMessageDeleted = (data: any) => {
+      if(data?.type !== "global") return;
+      recordDeletion("global",data);
       const deletedId = String(data?.message_id || data?.id || data?._id || data?.messageId || data);
       removeFromGlobalCache(deletedId);
       setMessages((prev) => prev.filter(m => String(m.id) !== deletedId && String((m as any)._id) !== deletedId));
@@ -200,6 +183,7 @@ export default function GlobalChat({
     socket.on("global_read_update", onReadUpdate);
 
     return () => {
+      socket.off("connect",sync);
       socket.off("new_global_message", onNewMsg);
       socket.off("message_reacted", onReacted);
       socket.off("message_deleted", onMessageDeleted);
@@ -482,6 +466,8 @@ export default function GlobalChat({
   const openMediaModal = (msg: any) => {
     const isMine = msg.sender === currentUserId;
     setActiveModalData({
+      sourceMessageId: msg.id,
+      sourceMessageKind: 'global',
       url: msg.content,
       type: msg.type === "video" ? "video" : "image",
       authorName: isMine ? "Sen" : msg.sender_name || "Kullanıcı",
@@ -493,29 +479,18 @@ export default function GlobalChat({
     });
   };
 
-  const handleDeleteMessage = (messageId: number | string) => {
-    console.log('Silinen ID (Global):', messageId);
-    if (!messageId && messageId !== 0) return;
-    if (window.confirm("Bu mesajı silmek istediğinize emin misiniz?")) {
-      const idStr = String(messageId);
-      removeFromGlobalCache(idStr);
-      setMessages((prev) => prev.filter((m) => String(m.id) !== idStr && String((m as any)._id) !== idStr));
-      if (socket) {
-        socket.emit("delete_message", { message_id: messageId, id: messageId, type: "global" }, (res: any) => {
-          if (res?.error) {
-            alert(res.error);
-            socket.emit("get_global_messages", setMessages);
-          }
-        });
-      }
-      const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-      if (token) {
-        fetch(getApiUrl(`/api/messages/${messageId}`), {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch((err) => console.error("REST delete_message error:", err));
-      }
-    }
+  useEffect(()=>{
+    const deleted=(event:Event)=>{const data=(event as CustomEvent).detail;
+      setActiveModalData(previous=>previous?.sourceMessageKind===data?.kind&&String(previous?.sourceMessageId)===String(data.id)?null:previous);
+      setReplyTo((previous:any)=>previous&&String(previous.id)===String(data.id)&&data.kind===('global')?null:previous);
+    };
+    window.addEventListener('content-deleted',deleted);return()=>window.removeEventListener('content-deleted',deleted);
+  },[]);
+
+  const handleDeleteMessage = async (messageId:number|string) => {
+    if(!window.confirm('Bu mesajı silmek istediğinize emin misiniz?'))return;
+    try{await deleteContent('global',messageId);removeFromGlobalCache(messageId);setMessages(previous=>liveRows('global',previous));}
+    catch(error:any){alert(error.message||'Mesaj silinemedi.');}
   };
 
   const sortedUsers = [...users].sort((a, b) => {

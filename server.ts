@@ -1,3 +1,5 @@
+import { MessageRamCache } from "./src/server/messageRamCache";
+import { createContentDeletion } from "./src/server/contentDeletion";
 import { registerSocialNavigation } from "./src/server/socialNavigation";
 import { createMentionService } from './src/server/mentions';
 import { DmPresence, registerDirectMessages } from './src/server/directMessages';
@@ -1526,7 +1528,10 @@ async function startServer() {
     maxHttpBufferSize: 2e6 // 2 MB limit for balanced memory usage under 1GB RAM ceiling
   });
 
+  const messageRamCache = new MessageRamCache();
   const mentions = await createMentionService(client, io, devicePush);
+  const contentDeletion = await createContentDeletion(client, io, messageRamCache, deleteUploadedFile);
+  contentDeletion.routes(app, authenticateToken);
   mentions.routes(app, authenticateToken);
 
   // Start Agenda reminder Cron job
@@ -2205,70 +2210,6 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/posts/:id", async (req, res) => {
-    try {
-      const token = req.headers.authorization?.replace("Bearer ", "");
-      if (!token) return res.status(401).json({ error: "Giriş yapmalısınız." });
-      const userRes = await client.execute({ sql: "SELECT id, username, is_admin, roles FROM users WHERE token = ?", args: [token] });
-      if (userRes.rows.length === 0) return res.status(401).json({ error: "Geçersiz oturum." });
-      const authUser = userRes.rows[0];
-
-      const targetId = req.params.id;
-      if (!targetId || targetId === "undefined" || targetId === "null") {
-        return res.status(400).json({ error: "Geçersiz veya eksik gönderi ID'si." });
-      }
-      const numPostId = Number(targetId);
-      const isNum = !isNaN(numPostId);
-
-      const postRes = await client.execute({
-        sql: "SELECT * FROM posts WHERE id = ? OR id = ?",
-        args: [isNum ? numPostId : targetId, String(targetId)]
-      });
-      if (postRes.rows.length === 0) {
-        return res.status(404).json({ error: "Gönderi bulunamadı." });
-      }
-
-      const item = postRes.rows[0];
-      const itemUserId = item.user_id !== undefined ? item.user_id : (item as any).userId;
-      const usernameStr = authUser.username ? String(authUser.username).trim().toLowerCase() : "";
-      const isSuperAdmin = usernameStr === "emirgan" || authUser.is_admin === 1 || (authUser as any).role === "admin";
-
-      if (Number(itemUserId) !== Number(authUser.id) && !isSuperAdmin) {
-        return res.status(403).json({ error: "Silme yetkiniz yok." });
-      }
-
-      // 1. Delete physical photo and multi-attachments from disk and database
-      const postImage = (item.image || (item as any).image_url) as string | null;
-      if (postImage) {
-        await deleteUploadedFile(postImage).catch(() => {});
-      }
-      if ((item as any).attachments) {
-        try {
-          const atts = typeof (item as any).attachments === 'string' ? JSON.parse((item as any).attachments) : (item as any).attachments;
-          if (Array.isArray(atts)) {
-            for (const att of atts) {
-              const url = typeof att === 'string' ? att : att?.url;
-              if (url) await deleteUploadedFile(url).catch(() => {});
-            }
-          }
-        } catch (e) {}
-      }
-
-      // 2. Delete from database (posts, likes, comments)
-      await client.execute({ sql: "DELETE FROM posts WHERE id = ? OR id = ?", args: [isNum ? numPostId : targetId, String(targetId)] });
-      await client.execute({ sql: "DELETE FROM likes WHERE post_id = ? OR post_id = ?", args: [isNum ? numPostId : targetId, String(targetId)] });
-      await client.execute({ sql: "DELETE FROM comments WHERE post_id = ? OR post_id = ?", args: [isNum ? numPostId : targetId, String(targetId)] });
-
-      const resolvedId = isNum ? numPostId : targetId;
-      io.emit("post_deleted", { postId: resolvedId, id: resolvedId, _id: resolvedId });
-      io.emit("feed_updated");
-      return res.json({ success: true, postId: resolvedId, id: resolvedId, _id: resolvedId });
-    } catch (err: any) {
-      console.error("DELETE /api/posts/:id error:", err);
-      res.status(500).json({ error: err.message || "Gönderi silinirken hata oluştu." });
-    }
-  });
-
   // REST API: Delete file (Universal File Delete endpoint)
   app.delete(["/api/files/:id", "/api/subjects/files/:id"], async (req, res) => {
     try {
@@ -2321,113 +2262,6 @@ async function startServer() {
     } catch (err: any) {
       console.error("DELETE /api/files/:id error:", err);
       return res.status(500).json({ error: "Dosya silinirken hata oluştu." });
-    }
-  });
-
-  app.delete("/api/messages/:id", async (req, res) => {
-    try {
-      const token = req.headers.authorization?.replace("Bearer ", "");
-      if (!token) return res.status(401).json({ error: "Unauthorized" });
-      const userRes = await client.execute({ sql: "SELECT id, username, is_admin, roles FROM users WHERE token = ?", args: [token] });
-      if (userRes.rows.length === 0) return res.status(401).json({ error: "Unauthorized" });
-      const authUser = userRes.rows[0];
-      
-      const targetId = req.params.id;
-      if (!targetId || targetId === "undefined" || targetId === "null") {
-        return res.status(400).json({ error: "Geçersiz veya eksik mesaj ID'si." });
-      }
-      const numId = Number(targetId);
-      const isNum = !isNaN(numId);
-      
-      const usernameStr = authUser.username ? String(authUser.username).trim().toLowerCase() : "";
-      const isSuperAdmin = usernameStr === "emirgan" || Number(authUser.is_admin) === 1 || String(authUser.is_admin) === "1" || String((authUser as any).role || "").trim().toUpperCase() === "ROOT" || String((authUser as any).role || "").trim().toUpperCase() === "ADMIN";
-      
-      for (const tbl of ["messages", "global_messages", "group_messages"]) {
-        try {
-          const msgRes = await client.execute({ 
-            sql: `SELECT * FROM ${tbl} WHERE id = ? OR id = ?`, 
-            args: [isNum ? numId : targetId, String(targetId)] 
-          });
-          if (msgRes.rows.length > 0) {
-            const item = msgRes.rows[0];
-            const senderId = Number(item.sender !== undefined ? item.sender : (item as any).userId || (item as any).user_id);
-            const receiverId = Number((item as any).receiver);
-            
-            if (senderId !== Number(authUser.id) && receiverId !== Number(authUser.id) && !isSuperAdmin) {
-              return res.status(403).json({ error: "Silme yetkiniz yok." });
-            }
-            await client.execute({ 
-              sql: `DELETE FROM ${tbl} WHERE id = ? OR id = ?`, 
-              args: [isNum ? numId : targetId, String(targetId)] 
-            });
-
-            // Clean up uploaded media
-            if (item.content && typeof item.content === 'string' && item.content.startsWith('/uploads/')) {
-              deleteUploadedFile(item.content).catch(() => {});
-            }
-            if ((item as any).image_url && typeof (item as any).image_url === 'string' && (item as any).image_url.startsWith('/uploads/')) {
-              deleteUploadedFile((item as any).image_url).catch(() => {});
-            }
-            
-            const messageId = isNum ? numId : targetId;
-            const payload = { 
-              message_id: messageId, 
-              id: messageId, 
-              _id: messageId,
-              messageId: messageId,
-              group_id: (item as any).group_id,
-              receiver: (item as any).receiver
-            };
-            io.emit("message_deleted", payload);
-            io.emit("message:deleted", payload);
-            return res.json({ success: true, message_id: messageId, messageId: messageId, id: messageId, _id: messageId });
-          }
-        } catch (e) {
-          console.error(`Error querying ${tbl} for deletion:`, e);
-        }
-      }
-      return res.json({ success: true, alreadyDeleted: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Mesaj silinemedi." });
-    }
-  });
-
-  app.delete("/api/comments/:id", async (req, res) => {
-    try {
-      const token = req.headers.authorization?.replace("Bearer ", "");
-      if (!token) return res.status(401).json({ error: "Giriş yapmalısınız." });
-      const userRes = await client.execute({ sql: "SELECT id, username, is_admin FROM users WHERE token = ?", args: [token] });
-      if (userRes.rows.length === 0) return res.status(401).json({ error: "Geçersiz oturum." });
-      const authUser = userRes.rows[0];
-
-      const rawId = req.params.id;
-      const numId = Number(rawId);
-      const commentId = !isNaN(numId) ? numId : rawId;
-
-      const commentRes = await client.execute({
-        sql: "SELECT id, post_id, user_id FROM comments WHERE id = ? OR id = ?",
-        args: [commentId, String(rawId)]
-      });
-      if (commentRes.rows.length === 0) {
-        return res.status(404).json({ error: "Yorum bulunamadı." });
-      }
-
-      const comment = commentRes.rows[0];
-      const isEmirgan = authUser.username && (authUser.username as string).trim().toLowerCase() === "emirgan";
-      const isAdmin = isEmirgan || authUser.is_admin === 1 || (authUser as any).role === "admin";
-
-      if (Number(comment.user_id) !== Number(authUser.id) && !isAdmin) {
-        return res.status(403).json({ error: "Yetkisiz işlem: Sadece kendi yorumunuzu silebilirsiniz." });
-      }
-
-      await client.execute({ sql: "DELETE FROM comments WHERE id = ? OR id = ?", args: [commentId, String(rawId)] });
-
-      io.emit("comments_updated", comment.post_id);
-      io.emit("feed_updated");
-      return res.json({ success: true, commentId, postId: comment.post_id });
-    } catch (err: any) {
-      console.error("DELETE /api/comments/:id error:", err);
-      res.status(500).json({ error: "Yorum silinirken hata oluştu." });
     }
   });
 
@@ -4171,11 +4005,10 @@ async function startServer() {
       const postId = Number(req.body?.postId);
       if (!postId) return res.status(400).json({ error: "Geçerli bir postId gereklidir." });
 
-      await client.execute({ sql: "DELETE FROM posts WHERE id = ?", args: [postId] });
-      await client.execute({ sql: "DELETE FROM comments WHERE post_id = ?", args: [postId] });
-      await client.execute({ sql: "DELETE FROM likes WHERE post_id = ?", args: [postId] });
+      const actor=await authenticateToken(req);
+      if(!actor)return res.sendStatus(401);
+      await contentDeletion.mutate('post',postId,Number(actor.id));
 
-      io.emit("feed_updated");
       return res.json({ success: true, message: "Gönderi kalıcı olarak silindi." });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
@@ -6358,73 +6191,6 @@ async function startServer() {
     }
   });
 
-  // --- High-Speed In-Memory Message RAM Cache (Max 50 messages per room/conversation for 1GB RAM) ---
-  interface CachedMessage {
-    id: number | string;
-    sender: number;
-    receiver?: number;
-    group_id?: number;
-    type: string;
-    content: string;
-    reply_to?: number | null;
-    reactions: any;
-    file_name?: string | null;
-    file_size?: string | null;
-    created_at: string;
-    sender_name?: string;
-    sender_avatar?: string;
-    sender_color?: string;
-    reply_message?: any;
-    room_id?: string;
-    status?: string;
-    is_read?: number;
-    read_at?: string;
-  }
-
-  class MessageRamCache {
-    private cache: Map<string, CachedMessage[]> = new Map();
-    private readonly MAX_PER_ROOM = 50;
-
-    get(roomKey: string): CachedMessage[] | null {
-      const list = this.cache.get(roomKey);
-      return list ? [...list] : null;
-    }
-
-    set(roomKey: string, messages: CachedMessage[]) {
-      this.cache.set(roomKey, messages.slice(-this.MAX_PER_ROOM));
-    }
-
-    push(roomKey: string, message: CachedMessage) {
-      let list = this.cache.get(roomKey);
-      if (!list) {
-        list = [];
-        this.cache.set(roomKey, list);
-      }
-      list.push(message);
-      if (list.length > this.MAX_PER_ROOM) {
-        list.splice(0, list.length - this.MAX_PER_ROOM);
-      }
-    }
-
-    delete(roomKey: string, messageId: number | string) {
-      const list = this.cache.get(roomKey);
-      if (list) {
-        const idx = list.findIndex(m => String(m.id) === String(messageId));
-        if (idx !== -1) list.splice(idx, 1);
-      }
-    }
-
-    clear(roomKey?: string) {
-      if (roomKey) {
-        this.cache.delete(roomKey);
-      } else {
-        this.cache.clear();
-      }
-    }
-  }
-
-  const messageRamCache = new MessageRamCache();
-
   const registerActivitySocket = registerActivityGames(io);
   io.on("connection", (socket) => {
     const user = socket.data.user;
@@ -7132,62 +6898,6 @@ async function startServer() {
       io.emit("feed_updated");
     });
 
-    socket.on("delete_post", async (rawPostId, cb) => {
-      try {
-        const raw = typeof rawPostId === "object" && rawPostId !== null ? (rawPostId.id || rawPostId.postId) : rawPostId;
-        const numId = Number(raw);
-        const postId = !isNaN(numId) ? numId : raw;
-        const postRes = await client.execute({
-          sql: "SELECT * FROM posts WHERE id = ? OR id = ?",
-          args: [postId, String(raw)]
-        });
-        if (postRes.rows.length === 0) {
-          if (cb) cb({ error: "Gönderi bulunamadı." });
-          return;
-        }
-
-        const post = postRes.rows[0];
-        const usernameStr = user.username ? String(user.username).trim().toLowerCase() : "";
-        const isEmirgan = usernameStr === "emirgan";
-        const isAdmin = isEmirgan || user.is_admin === 1 || (user as any).role === 'admin';
-        const postOwnerId = Number(post.user_id !== undefined ? post.user_id : (post as any).userId);
-        const currentUserId = Number(user.id);
-
-        if (postOwnerId !== currentUserId && !isAdmin) {
-          if (cb) cb({ error: "Silme yetkiniz yok." });
-          return;
-        }
-
-        const postImage = (post.image || (post as any).image_url) as string | null;
-        if (postImage) {
-          await deleteUploadedFile(postImage).catch(() => {});
-        }
-        if ((post as any).attachments) {
-          try {
-            const atts = typeof (post as any).attachments === 'string' ? JSON.parse((post as any).attachments) : (post as any).attachments;
-            if (Array.isArray(atts)) {
-              for (const att of atts) {
-                const url = typeof att === 'string' ? att : att?.url;
-                if (url) await deleteUploadedFile(url).catch(() => {});
-              }
-            }
-          } catch (e) {}
-        }
-
-        await client.execute({ sql: "DELETE FROM posts WHERE id = ? OR id = ?", args: [postId, String(raw)] });
-        await client.execute({ sql: "DELETE FROM likes WHERE post_id = ? OR post_id = ?", args: [postId, String(raw)] });
-        await client.execute({ sql: "DELETE FROM comments WHERE post_id = ? OR post_id = ?", args: [postId, String(raw)] });
-        
-        const resolvedId = !isNaN(numId) ? numId : (post.id || raw);
-        io.emit("post_deleted", { postId: resolvedId, id: resolvedId, _id: resolvedId });
-        io.emit("feed_updated");
-        if (cb) cb({ success: true, postId: resolvedId, id: resolvedId, _id: resolvedId });
-      } catch (err) {
-        console.error("delete_post socket error:", err);
-        if (cb) cb({ error: "Silme işlemi sırasında hata oluştu." });
-      }
-    });
-
     socket.on("get_comments", async (postId, cb) => {
       try {
         const commentsRes = await client.execute({
@@ -7261,36 +6971,6 @@ async function startServer() {
 
     socket.on("add_comment", handleSocketAddComment);
     socket.on("create_comment", handleSocketAddComment);
-
-    socket.on("delete_comment", async (rawCommentId: any, cb?: any) => {
-      try {
-        const raw = typeof rawCommentId === "object" && rawCommentId !== null ? (rawCommentId.commentId || rawCommentId.id) : rawCommentId;
-        const numId = Number(raw);
-        const commentId = !isNaN(numId) ? numId : raw;
-        const commentRes = await client.execute({
-          sql: "SELECT id, post_id, user_id FROM comments WHERE id = ? OR id = ?",
-          args: [commentId, String(raw)]
-        });
-        if (commentRes.rows.length === 0) {
-          if (cb) cb({ error: "Yorum bulunamadı." });
-          return;
-        }
-        const comment = commentRes.rows[0];
-        const isEmirgan = user.username && user.username.trim().toLowerCase() === "emirgan";
-        const isAdmin = isEmirgan || user.is_admin === 1 || (user as any).role === "admin";
-        if (Number(comment.user_id) !== Number(user.id) && !isAdmin) {
-          if (cb) cb({ error: "Yetkisiz işlem: Sadece kendi yorumunuzu silebilirsiniz." });
-          return;
-        }
-        await client.execute({ sql: "DELETE FROM comments WHERE id = ? OR id = ?", args: [commentId, String(raw)] });
-        io.emit("comments_updated", comment.post_id);
-        io.emit("feed_updated");
-        if (cb) cb({ success: true, commentId, postId: comment.post_id });
-      } catch (err) {
-        console.error("delete_comment socket error:", err);
-        if (cb) cb({ error: "Yorum silinirken hata oluştu." });
-      }
-    });
 
     // Agenda (Takvim, Etkinlik ve Yemek Menüsü) Socket Handlers
     socket.on("get_agenda_events", async (payload: any, cb?: any) => {
@@ -8791,7 +8471,7 @@ async function startServer() {
     };
 
     // Global Chat (In-Memory RAM Cache & Instant Broadcast)
-    socket.on("get_global_messages", async (data, cb) => {
+    socket.on("get_global_messages", async function getGlobalMessages(data, cb) {
       let limit = 30;
       let beforeId: number | null = null;
       let callback = cb;
@@ -8810,6 +8490,7 @@ async function startServer() {
         }
       }
 
+      const version = messageRamCache.version("global");
       try {
         let msgs;
         if (beforeId) {
@@ -8824,6 +8505,7 @@ async function startServer() {
           });
         }
         const populated = await Promise.all(msgs.rows.map(m => populateMessage(m, "global")));
+        if (version !== messageRamCache.version("global")) return getGlobalMessages(data, cb);
         if (!beforeId) {
           messageRamCache.set("global", populated);
         }
@@ -8855,8 +8537,8 @@ async function startServer() {
         if (!user.username || user.username.trim().toLowerCase() !== 'emirgan') {
           return socket.emit("error_message", "Genel sohbeti temizleme yetkiniz bulunmuyor.");
         }
-        messageRamCache.clear("global");
         await client.execute("DELETE FROM global_messages");
+        messageRamCache.clear("global");
         io.emit("global_chat_cleared");
       } catch (err) {
         console.error("clear_global_chat error:", err);
@@ -8979,6 +8661,7 @@ async function startServer() {
 
         await client.execute({ sql: "DELETE FROM groups WHERE id = ?", args: [gId] });
         await client.execute({ sql: "DELETE FROM group_messages WHERE group_id = ?", args: [gId] });
+        messageRamCache.clear(`group_${gId}`);
 
         members.forEach((mId: number) => {
           const targetSocket = onlineUsers.get(mId);
@@ -8995,7 +8678,7 @@ async function startServer() {
       }
     });
 
-    socket.on("get_group_messages", async (dataOrGroupId, cb) => {
+    socket.on("get_group_messages", async function getGroupMessages(dataOrGroupId, cb) {
       let groupId: number = 0;
       let beforeId: number | null = null;
       let limit = 50;
@@ -9027,6 +8710,7 @@ async function startServer() {
         }
       }
 
+      const version = messageRamCache.version(roomKey);
       try {
         let msgsRes;
         if (beforeId && !isNaN(beforeId)) {
@@ -9043,6 +8727,7 @@ async function startServer() {
 
         const rows = [...msgsRes.rows].reverse();
         const populated = await Promise.all(rows.map((m: any) => populateMessage(m, "group")));
+        if (version !== messageRamCache.version(roomKey)) return getGroupMessages(dataOrGroupId, cb);
         if (!beforeId) {
           messageRamCache.set(roomKey, populated);
         }
@@ -9052,7 +8737,8 @@ async function startServer() {
       }
     });
 
-    socket.on("send_group_message", async (data) => {
+    socket.on("send_group_message", async (data, cb) => {
+      try {
       let { group_id, type, content, reply_to, file_name, file_size } = data;
       const membership = await client.execute({ sql: "SELECT members FROM groups WHERE id = ?", args: [group_id] });
       if (!membership.rows.length || !JSON.parse(String(membership.rows[0].members || "[]")).some((id: any) => Number(id) === Number(user.id))) return;
@@ -9095,6 +8781,12 @@ async function startServer() {
         created_at: nowIso
       };
 
+      const saved = await client.execute({
+        sql: "INSERT INTO group_messages (group_id, sender, type, content, reply_to, reactions, file_name, file_size, created_at) VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?)",
+        args: [group_id, user.id, type, content, reply_to || null, file_name || null, file_size || null, nowIso]
+      });
+      popMsg.id = Number(saved.lastInsertRowid);
+      // Publish only durable IDs, never a message that can still fail to persist.
       // 1. Instant RAM Cache write
       messageRamCache.push(roomKey, popMsg);
 
@@ -9119,18 +8811,11 @@ async function startServer() {
         }
       }).catch(() => {});
 
-      // 3. Asynchronous Turso write
-      client.execute({
-        sql: "INSERT INTO group_messages (group_id, sender, type, content, reply_to, reactions, file_name, file_size, created_at) VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?)",
-        args: [group_id, user.id, type, content, reply_to || null, file_name || null, file_size || null, nowIso]
-      }).then(async res => {
-        const oldId = popMsg.id;
-        popMsg.id = Number(res.lastInsertRowid);
-        for (const memberId of JSON.parse(String(membership.rows[0].members || "[]"))) io.to(`dm-user:${Number(memberId)}`).emit("mention_message_id", {kind:"group",tempId:oldId,id:popMsg.id});
-        if(type === "text") await mentions.record("group", popMsg.id, Number(user.id), content, group_id);
-      }).catch(err => {
-        console.error("Async group msg persist error:", err);
-      });
+
+      if(type === "text") await mentions.record("group",popMsg.id,Number(user.id),content,group_id).catch(console.error);
+      if (typeof cb === 'function') cb({success:true,message:popMsg});
+      } catch (error) { console.error('Group send failed',error); if(typeof cb === 'function') cb({error:'Mesaj kaydedilemedi.'}); }
+
     });
 
     socket.on("typing", async (data) => {
@@ -9189,115 +8874,7 @@ async function startServer() {
       }
     });
 
-    const handleDeleteMessage = async (data: any, cb?: (res: any) => void) => {
-      let rawId: any = null;
-      let requestedType = "";
-      if (typeof data === "number" || typeof data === "string") {
-        rawId = data;
-      } else if (data && typeof data === "object") {
-        rawId = data.message_id || data.id || data.messageId;
-        requestedType = data.type || "";
-      }
-      
-      const numId = Number(rawId);
-      const messageId = !isNaN(numId) ? numId : rawId;
-      if (!messageId) {
-        if (cb) cb({ error: "Mesaj ID eksik." });
-        return;
-      }
-
-      const usernameStr = user.username ? String(user.username).trim().toLowerCase() : "";
-      const isEmirgan = usernameStr === "emirgan" || Number(user.is_admin) === 1 || String(user.is_admin) === "1" || String((user as any).role || "").trim().toUpperCase() === "ROOT" || String((user as any).role || "").trim().toUpperCase() === "ADMIN";
-      const currentUserId = Number(user.id);
-
-      // Search tables: prioritize requestedType if given, otherwise search all 3 tables
-      const tablesToTry = requestedType === "private"
-        ? ["messages", "global_messages", "group_messages"]
-        : requestedType === "group"
-        ? ["group_messages", "messages", "global_messages"]
-        : requestedType === "global"
-        ? ["global_messages", "messages", "group_messages"]
-        : ["messages", "global_messages", "group_messages"];
-
-      let foundTable = "";
-      let foundMsg: any = null;
-
-      for (const tbl of tablesToTry) {
-        try {
-          const res = await client.execute({ 
-            sql: `SELECT * FROM ${tbl} WHERE id = ? OR id = ?`, 
-            args: [!isNaN(numId) ? numId : rawId, String(rawId)] 
-          });
-          if (res.rows.length > 0) {
-            foundTable = tbl;
-            foundMsg = res.rows[0];
-            break;
-          }
-        } catch (e) {
-          console.error(`Error querying ${tbl} for message ${rawId}:`, e);
-        }
-      }
-
-      if (!foundTable || !foundMsg) {
-        if (cb) cb({ success: true, alreadyDeleted: true });
-        return;
-      }
-
-      const originalSender = Number(foundMsg.sender);
-      const originalReceiver = Number((foundMsg as any).receiver);
-      // Backend yetki kontrolü: Mesajın göndereni, DM alıcısı veya admin silebilir
-      if (originalSender !== currentUserId && originalReceiver !== currentUserId && !isEmirgan) {
-        if (cb) cb({ error: "Bu mesajı silme yetkiniz yok." });
-        return;
-      }
-
-      try {
-        // Kalıcı olarak DELETE FROM sorgusu ile sil
-        await client.execute({ 
-          sql: `DELETE FROM ${foundTable} WHERE id = ? OR id = ?`, 
-          args: [!isNaN(numId) ? numId : rawId, String(rawId)] 
-        });
-
-        // Clean up media if it was an uploaded file
-        if (foundMsg.content && typeof foundMsg.content === 'string' && foundMsg.content.startsWith('/uploads/')) {
-          deleteUploadedFile(foundMsg.content).catch(() => {});
-        }
-        if (foundMsg.image_url && typeof foundMsg.image_url === 'string' && foundMsg.image_url.startsWith('/uploads/')) {
-          deleteUploadedFile(foundMsg.image_url).catch(() => {});
-        }
-        
-        const resolvedType = foundTable === "messages" ? "private" : foundTable === "group_messages" ? "group" : "global";
-        
-        const payload = { 
-          id: messageId,
-          _id: messageId,
-          message_id: messageId, 
-          messageId: messageId,
-          type: resolvedType, 
-          table: foundTable,
-          group_id: foundMsg.group_id || data?.group_id, 
-          receiver: foundMsg.receiver || data?.receiver 
-        };
-
-        // Emit to all connected sockets
-        io.emit("message_deleted", payload);
-        io.emit("message:deleted", payload);
-
-        if (cb) cb({ success: true, id: messageId, _id: messageId, message_id: messageId, messageId: messageId });
-      } catch (err) {
-        console.error("Delete message error:", err);
-        if (cb) cb({ error: "Silme işlemi sırasında hata oluştu." });
-      }
-    };
-
-    socket.on("delete_message", (data, cb) => handleDeleteMessage(data, cb));
-    socket.on("delete_global_message", (data, cb) => {
-      if (typeof data === "number" || typeof data === "string") {
-        handleDeleteMessage({ message_id: data, type: "global" }, cb);
-      } else {
-        handleDeleteMessage({ ...data, type: "global" }, cb);
-      }
-    });
+    contentDeletion.sockets(socket, user);
 
     socket.on("react_message", async (data) => {
        if (data?.type === "private") return;

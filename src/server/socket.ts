@@ -71,6 +71,11 @@ export function setupChatSocketHandlers(io: Server, socket: Socket, user: any, c
         created_at: nowIso
       };
 
+      const saved = await client.execute({
+        sql: "INSERT INTO global_messages (sender, type, content, reply_to, reactions, file_name, file_size, created_at) VALUES (?, ?, ?, ?, '[]', ?, ?, ?)",
+        args: [user.id, type, content, reply_to || null, file_name || null, file_size || null, nowIso]
+      });
+      popMsg.id = Number(saved.lastInsertRowid);
       // 1. RAM Cache write
       messageRamCache.push("global", popMsg);
 
@@ -86,18 +91,7 @@ export function setupChatSocketHandlers(io: Server, socket: Socket, user: any, c
         callback({ success: true, message: popMsg });
       }
 
-      // 3. Asenkron veritabanı kaydı
-      client.execute({
-        sql: "INSERT INTO global_messages (sender, type, content, reply_to, reactions, file_name, file_size, created_at) VALUES (?, ?, ?, ?, '[]', ?, ?, ?)",
-        args: [user.id, type, content, reply_to || null, file_name || null, file_size || null, nowIso]
-      }).then(async (res: any) => {
-        const oldId=popMsg.id;
-        popMsg.id = Number(res.lastInsertRowid);
-        io.emit("mention_message_id", {kind:"global",tempId:oldId,id:popMsg.id});
-        if(type === "text") await mention?.("global",popMsg.id,Number(user.id),content);
-      }).catch((err: any) => {
-        console.error("Async global msg error:", err);
-      });
+      if(type === "text") await mention?.("global",popMsg.id,Number(user.id),content).catch(console.error);
     } catch (err) {
       console.error("handleSendMessage error:", err);
       if (typeof callback === "function") callback({ error: "Sunucu hatası" });

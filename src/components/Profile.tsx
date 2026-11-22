@@ -1,3 +1,4 @@
+import { useDeletionArray, deleteContent, recordDeletion, liveRows, wasDeleted } from "../utils/contentDeletion";
 import UserProfileLink from "./UserProfileLink";
 import { getUploadError } from "../utils/uploadErrors";
 import React, { useState, useEffect } from "react";
@@ -67,7 +68,7 @@ export default function Profile({
     }
     return null;
   });
-  const [userPosts, setUserPosts] = useState<any[]>([]);
+  const [userPosts, setUserPosts] = useDeletionArray<any>("post", []);
   const [activeModalData, setActiveModalData] = useState<MediaModalData | null>(null);
   
   // Follower / Following Modal State
@@ -151,6 +152,7 @@ export default function Profile({
     loadProfile();
     loadPosts();
 
+    socket.on("connect", loadPosts);
     socket.on("feed_updated", loadPosts);
     const onPostDeleted = (data: any) => {
       const deletedId = Number(data?.postId || data?.id || data);
@@ -182,6 +184,7 @@ export default function Profile({
     socket.on("user:roles_updated", onRolesUpdated);
 
     return () => {
+      socket.off("connect", loadPosts);
       socket.off("feed_updated", loadPosts);
       socket.off("post_deleted", onPostDeleted);
       socket.off("profile_updated", onProfileUpdated);
@@ -325,32 +328,15 @@ export default function Profile({
     });
   };
 
-  const handleDeletePost = async (postId: number | string) => {
-    console.log('Silinen Gönderi ID (Profil):', postId);
-    if (!postId && postId !== 0) return;
-    if (window.confirm("Bu gönderiyi silmek istediğinize emin misiniz?")) {
-      const idStr = String(postId);
-      setUserPosts((prev) => prev.filter((p) => String(p.id) !== idStr && String((p as any)._id) !== idStr));
-      if (socket) {
-        socket.emit("delete_post", { postId, id: postId }, (res: any) => {
-          if (res?.error) {
-            alert(res.error);
-            socket.emit("get_user_posts", viewingUserId, (posts: any[]) => setUserPosts(posts));
-          }
-        });
-      }
-      const token = localStorage.getItem("lan_token") || localStorage.getItem("token");
-      if (token) {
-        try {
-          await fetch(getApiUrl(`/api/posts/${postId}`), {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${token}` },
-          });
-        } catch (e) {
-          // Handled via socket
-        }
-      }
-    }
+  useEffect(()=>{
+    const deleted=(event:Event)=>{const data=(event as CustomEvent).detail;if(data?.kind==='post')setActiveModalData(previous=>String(previous?.postId)===String(data.id)?null:previous);};
+    window.addEventListener('content-deleted',deleted);return()=>window.removeEventListener('content-deleted',deleted);
+  },[]);
+
+  const handleDeletePost = async (postId:number|string) => {
+    if(!window.confirm('Bu gönderiyi silmek istediğinize emin misiniz?'))return;
+    try{await deleteContent('post',postId);setUserPosts(previous=>liveRows('post',previous));}
+    catch(error:any){alert(error.message||'Gönderi silinemedi.');}
   };
 
   const handleChangePassword = (e: React.FormEvent) => {
