@@ -38,6 +38,11 @@ import {
   resolvePronunciation,
   type PronunciationGuide,
 } from "./pronunciation";
+import {
+  canonicalPersonalKey,
+  initPersonalGermanSchema,
+  syncCanonicalMasteryAcrossModulesTx,
+} from "./personalStore";
 
 export function localDayKey(date = new Date(), timeZone = "Europe/Istanbul"): string {
   try {
@@ -72,6 +77,7 @@ async function safeAlter(db: Client, sql: string) {
 
 export async function initGermanSchema(db: Client) {
   await initPreparationSchema(db);
+  await initPersonalGermanSchema(db);
   await db.batch(
     [
       "CREATE TABLE IF NOT EXISTS german_permissions(user_id INTEGER PRIMARY KEY,enabled INTEGER NOT NULL)",
@@ -1036,6 +1042,22 @@ export async function recordAttemptAndApplyMastery(
       sql: "INSERT INTO german_memory VALUES(?,?,?) ON CONFLICT(user_id,word_id) DO UPDATE SET data=excluded.data",
       args: [input.userId, wordId, JSON.stringify(masteryToMemory(nextMastery))],
     });
+
+    // Mirror canonical mastery to any matching Personal Learning vocabulary item for this user
+    if (w?.de && w?.tr) {
+      await syncCanonicalMasteryAcrossModulesTx(tx, {
+        userId: input.userId,
+        sourceWordId: wordId,
+        canonicalKey: canonicalPersonalKey(w.de),
+        tr: w.tr,
+        consecutiveCorrect: nextMastery.consecutiveCorrect,
+        totalCorrect: nextMastery.totalCorrect,
+        totalIncorrect: nextMastery.totalIncorrect,
+        masteryStatus: nextMastery.masteryStatus,
+        lastPracticedAt: nextMastery.lastPracticedAt,
+        masteredAt: nextMastery.masteredAt,
+      });
+    }
 
     masteryUpdates[wordId] = nextMastery;
 

@@ -70,6 +70,8 @@ import {
 import { reviewSatzbauWithAi } from "./satzbau";
 import { classifyWordIntoHierarchy } from "./curriculumHierarchy";
 import type { DistractorDifficulty, SatzbauMode } from "../../shared/germanActivities";
+import { registerPersonalGermanRoutes } from "./personalRoutes";
+import { completePersonalGoogleOAuth, startPersonalGoogleSyncWorker } from "./personalGoogleSync";
 
 export { seedBuiltinCurriculum };
 
@@ -97,6 +99,9 @@ export function registerGerman(
   const ready = initGermanSchema(db).then(async () => {
     if (options?.autoSeedCurriculum) {
       await seedBuiltinCurriculum(db);
+    }
+    if (process.env.KAPS_GERMAN_DISABLE_SYNC_WORKER !== "1") {
+      startPersonalGoogleSyncWorker(db);
     }
   });
   let schemaError = false;
@@ -183,8 +188,9 @@ export function registerGerman(
     router,
   );
 
-  router.use(express.json({ limit: "128kb", inflate: false }));
+  router.use(express.json({ limit: "512kb", inflate: false }));
   registerPreparationProgress(router, db);
+  registerPersonalGermanRoutes(router, db);
 
   const wrap =
     (
@@ -545,10 +551,19 @@ export function registerGerman(
       const state = String(req.query.state ?? "");
       const code = String(req.query.code ?? "");
       const found = await db.execute({
-        sql: "DELETE FROM german_oauth WHERE state=? AND expires_at>? RETURNING state",
+        sql: "DELETE FROM german_oauth WHERE state=? AND expires_at>? RETURNING state, verifier, user_id, flow_type",
         args: [state, Date.now()],
       });
       if (!found.rows.length || !code) return void res.sendStatus(403);
+      const oauthRow = found.rows[0];
+      if (String(oauthRow.flow_type ?? "admin") === "personal") {
+        await completePersonalGoogleOAuth(db, {
+          userId: Number(oauthRow.user_id),
+          code,
+          verifier: String(oauthRow.verifier ?? ""),
+        });
+        return void res.redirect("/dersler/kaps-german?tab=personal&google=connected");
+      }
       await googleToken(db, code);
       res.redirect("/dersler/kaps-german?google=connected");
     } catch {

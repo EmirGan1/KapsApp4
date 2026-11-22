@@ -2154,9 +2154,9 @@
 
   .kg-mobile-nav {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 4px;
-    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 2px;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
     background: var(--kg-surface);
     border-top: 1.5px solid var(--kg-border);
     flex-shrink: 0;
@@ -2168,17 +2168,19 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 2px;
     min-height: 48px;
-    padding: 4px 2px;
+    padding: 4px 1px;
     border-radius: 10px;
     border: 1.5px solid transparent;
     background: transparent;
     color: var(--kg-ink-muted);
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     cursor: pointer;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .kg-mobile-tab.is-active {

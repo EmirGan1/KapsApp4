@@ -1,0 +1,1298 @@
+# KapsGerman — Complete Personalized AI Learning System with Google Docs Synchronization, Vocabulary Mastery and Adaptive Practice
+
+## 0. MISSION — BUILD THE COMPLETE FEATURE
+
+Repository: **EmirGan1/KapsApp4**
+
+Application: **KapsApp → KapsGerman**
+
+Implement a complete new feature called **Personalized Learning (Kişisel Çalışma)** inside the existing KapsGerman application.
+
+This feature must allow every user to build a private, personalized German-learning environment from their own German–Turkish vocabulary lists, classroom notes, phrases, expressions, and sentences.
+
+Users must be able to:
+
+1. Paste German–Turkish notes directly.
+2. Create and edit vocabulary lists manually.
+3. Connect Google Docs documents.
+4. Upload supported text-based documents.
+5. Automatically synchronize connected documents.
+6. Extract vocabulary and phrases using AI.
+7. Analyze vocabulary difficulty using CEFR levels.
+8. Generate unlimited variations of meaningful practice questions.
+9. Study through flashcards, matching, multiple choice, translation, spelling, true/false, sentence construction, and other exercises.
+10. Take a comprehensive mixed test covering every vocabulary item in a selected source.
+11. Track individual vocabulary mastery across all exercise types.
+12. See exactly how much of each personal document has been learned.
+13. Continue previous sessions without losing progress.
+14. Automatically incorporate newly added vocabulary when documents change.
+
+**The main educational objective is long-term vocabulary retention through varied, meaningful, AI-generated practice — not merely memorizing repeated questions.**
+
+This must be a fully functional, persistent, production-ready system, not a UI mockup.
+
+---
+
+## 1. INSPECT THE EXISTING APPLICATION FIRST
+
+Before implementation, inspect the complete KapsGerman architecture.
+
+Identify:
+
+- Existing learning modes.
+- Existing vocabulary database.
+- Current German proficiency levels.
+- Current exercise-generation system.
+- Existing Groq or other AI integrations.
+- User authentication and authorization.
+- Existing user progress and vocabulary mastery tracking.
+- Database architecture and migrations.
+- Mobile and desktop layouts.
+- Existing German text-to-speech implementation.
+- Exercise session creation, persistence, and resumption.
+- Existing question validation and answer evaluation.
+- Any spaced-repetition or review systems.
+
+Reuse and extend existing components wherever appropriate.
+
+Do not create a second incompatible learning engine.
+
+The Personalized Learning section must integrate with the existing KapsGerman global vocabulary library and progress system.
+
+Preserve all existing features and user data.
+
+---
+
+## 2. NEW PERSONALIZED LEARNING TAB
+
+Add a prominent new navigation entry:
+
+**Kişisel Çalışma**
+
+The UI should follow the existing KapsGerman design language, with a clean, playful, modern, Duolingo-inspired learning experience.
+
+Use Turkish for the interface.
+
+Design a personalized learning dashboard containing:
+
+- My Learning Sources.
+- Add New Notes.
+- Connect Google Docs.
+- My Vocabulary.
+- Comprehensive Test.
+- Individual Practice Modes.
+- Vocabulary Mastery Progress.
+- CEFR Level Distribution.
+- Recently Learned Words.
+- Words Requiring Review.
+- Continue Previous Session.
+
+Every source must appear as a separate card.
+
+Example:
+
+**Almanca B1 — Ders Notlarım**
+
+- 186 vocabulary items
+- 72 mastered
+- 114 not yet mastered
+- 38.7% completed
+- Last synchronized: 14:32
+- CEFR distribution available
+- Continue Studying
+- Comprehensive Test
+- Select Exercise
+
+Users should be able to create multiple sources, rename them, organize them, and study them separately or together.
+
+Each source must remain private to its owner unless the application already has an explicit, secure sharing feature.
+
+---
+
+## 3. THREE MAIN INPUT METHODS
+
+### Method A — Paste Text
+
+Provide a large, convenient text editor.
+
+Users should be able to enter notes in flexible formats, including:
+
+```text
+der Termin — randevu
+die Erfahrung — deneyim
+sich bewerben — başvurmak
+Ich habe keine Zeit. — Zamanım yok.
+```
+
+Also support:
+
+```text
+Termin: randevu
+Erfahrung = deneyim
+sich freuen auf + Akk. = dört gözle beklemek
+```
+
+Support paragraphs, bullet lists, numbered lists, headings, and mixed German–Turkish notes.
+
+Allow users to save, edit, and reanalyze their text.
+
+Do not require a rigid input format.
+
+### Method B — Google Docs Connection
+
+Implement a genuine Google Docs integration.
+
+Use this document as the initial example and integration test reference:
+
+**Google Docs URL:**
+https://docs.google.com/document/d/12xV5naixNciwOwHKyzWcoBYOaZI2HkEhM8GVFRANFIk/edit?usp=sharing
+
+**Document ID:**
+`12xV5naixNciwOwHKyzWcoBYOaZI2HkEhM8GVFRANFIk`
+
+This is a user-provided example, not a document that should be automatically connected to every account.
+
+The feature must work with any valid Google Docs document that the individual user is authorized to access.
+
+Provide:
+
+- Connect Google Account.
+- Paste Google Docs URL.
+- Validate document access.
+- Import document content.
+- Display document title.
+- Display last successful synchronization.
+- Synchronize Now.
+- Enable Automatic Synchronization.
+- Disconnect Document.
+
+Use official Google OAuth and Google Docs/Drive APIs with the minimum necessary read-only permissions.
+
+Do not ask users to make private documents publicly accessible.
+
+Do not ask users to paste Google passwords or access tokens.
+
+Store credentials securely on the server, encrypted where appropriate.
+
+Never expose OAuth secrets or refresh tokens to frontend JavaScript.
+
+**Important: Google Docs connection must not depend on hardcoded document IDs or a single developer account.**
+
+### Method C — File Upload
+
+Support suitable document formats, prioritizing:
+
+- TXT
+- MD
+- DOCX
+- PDF with extractable text
+
+Use safe file-size limits and validate actual file types.
+
+Preserve the source's original German and Turkish content.
+
+Clearly report unsupported, corrupted, or image-only documents instead of silently importing empty content.
+
+---
+
+## 4. AUTOMATIC GOOGLE DOCS SYNCHRONIZATION
+
+Connected Google Docs must support automatic updates.
+
+When the user edits a connected document, KapsGerman should detect changes and update its vocabulary collection.
+
+Implement:
+
+- A background synchronization worker or scheduler.
+- A configurable polling interval, with a reasonable default such as 15 minutes.
+- Immediate synchronization when the user clicks Synchronize Now.
+- Revision or content-hash comparison to avoid unnecessary AI processing.
+- Retries with exponential backoff.
+- Handling for revoked Google permissions.
+- Handling for deleted or inaccessible documents.
+- Proper rate-limit handling.
+- Synchronization status indicators.
+- Idempotent processing.
+
+If a document has not changed, do not reprocess it.
+
+When changes are detected:
+
+1. Fetch the latest content.
+2. Compare it with the previous successful version.
+3. Identify added, modified, and removed vocabulary.
+4. Preserve existing mastery progress for unchanged vocabulary.
+5. Process new vocabulary.
+6. Recalculate CEFR distribution.
+7. Recalculate source completion.
+8. Update the user interface.
+9. Record the successful synchronization time.
+
+**Never reset a user's learned vocabulary simply because a Google Doc was edited or synchronized.**
+
+If a vocabulary entry is removed from a source, preserve its historical global learning progress while removing it from that source's current completion denominator.
+
+If a term's meaning is materially changed, determine whether it represents a corrected entry or a genuinely different vocabulary sense. Do not silently merge unrelated meanings.
+
+Google Docs is a read-only source for KapsGerman. Do not modify the user's original document.
+
+---
+
+## 5. AI-POWERED VOCABULARY EXTRACTION
+
+Build a robust extraction pipeline for German–Turkish notes.
+
+The system must recognize:
+
+- German nouns.
+- Articles and grammatical gender.
+- Plural forms.
+- Verbs.
+- Separable verbs.
+- Reflexive verbs.
+- Adjectives.
+- Adverbs.
+- Prepositions.
+- Conjunctions.
+- Fixed expressions.
+- Idioms.
+- Collocations.
+- Example sentences.
+- Common sentence patterns.
+- Verb-preposition combinations.
+- Case requirements such as Akkusativ and Dativ.
+
+Example:
+
+```text
+sich interessieren für + Akk.
+```
+
+Should produce a structured entry with:
+
+- German expression.
+- Turkish meaning.
+- Reflexive structure.
+- Required preposition.
+- Required grammatical case.
+- Example usage.
+- CEFR estimate.
+
+For nouns, preserve the article:
+
+`die Entscheidung`
+
+Do not reduce it to `Entscheidung` and discard the gender information.
+
+For separable verbs, preserve the full infinitive and relevant conjugation information.
+
+### Extraction quality requirements
+
+Use a combination of deterministic parsing and AI-assisted interpretation.
+
+Do not rely on an LLM for simple formatting operations that can be handled reliably with code.
+
+For ambiguous notes, use AI to identify the likely German term and Turkish translation.
+
+Do not invent missing translations or grammatical properties with false confidence.
+
+Flag uncertain entries for user review.
+
+Users must be able to correct, merge, split, exclude, or delete extracted entries.
+
+Keep original source text references for traceability.
+
+---
+
+## 6. CEFR LEVEL ANALYSIS
+
+After every initial import and meaningful source update, analyze vocabulary difficulty.
+
+Classify vocabulary using:
+
+- A1
+- A2
+- B1
+- B2
+- C1
+- C2
+- Unknown / Uncertain
+
+Use reputable CEFR-aligned German vocabulary resources when available, supplemented by AI-based estimation.
+
+Treat CEFR classification as an estimate where no authoritative classification exists.
+
+Avoid assigning high confidence to every word.
+
+A word may have multiple senses with different difficulty levels. Consider the meaning and context found in the user's notes.
+
+### Dashboard visualization
+
+Show the distribution as a chart and percentage breakdown.
+
+Example:
+
+| Level | Vocabulary | Percentage |
+|---|---:|---:|
+| A1 | 35 | 18.8% |
+| A2 | 48 | 25.8% |
+| B1 | 67 | 36.0% |
+| B2 | 28 | 15.1% |
+| C1 | 8 | 4.3% |
+
+These numbers are illustrative only.
+
+Actual values must be calculated from the user's imported vocabulary.
+
+The percentages must total approximately 100%, accounting for rounding.
+
+Show both counts and percentages.
+
+When a Google Doc changes, automatically recalculate the distribution.
+
+Also provide a summary such as:
+
+"Bu notlardaki kelimelerin çoğu B1 seviyesindedir."
+
+Optionally highlight newly added vocabulary by CEFR level.
+
+---
+
+## 7. THE CENTRAL VOCABULARY MASTERY SYSTEM
+
+This is one of the most important requirements.
+
+Every unique vocabulary item must have a persistent mastery state.
+
+### The five-consecutive-correct rule
+
+**A vocabulary item becomes MASTERED only after the user answers that item correctly five consecutive times.**
+
+Correct answers may come from different exercise types.
+
+For example:
+
+| Attempt | Exercise | Result | Streak |
+|---|---|---|---|
+| 1 | German → Turkish | Correct | 1/5 |
+| 2 | Turkish → German | Correct | 2/5 |
+| 3 | Spelling | Correct | 3/5 |
+| 4 | Sentence translation | Correct | 4/5 |
+| 5 | Matching | Correct | 5/5 |
+
+Result: **MASTERED**
+
+The same rule applies regardless of question direction or exercise mode.
+
+However, the answer must actually demonstrate knowledge of the target vocabulary item.
+
+Do not award mastery credit for merely opening a flashcard, viewing an answer, or skipping a question.
+
+For a flashcard to count, require an explicit recall assessment, such as typing an answer or using a clearly identified self-assessment control. Distinguish self-reported recall from automatically verified answers.
+
+### Incorrect answers
+
+If the user answers incorrectly:
+
+- Reset that vocabulary item's consecutive correct streak to zero.
+- Keep its historical attempt records.
+- Preserve the number of previous correct answers.
+- Mark it as needing review.
+- Provide a useful explanation.
+- Schedule future practice.
+
+Do not reset other words.
+
+### Global mastery
+
+The five-correct streak must be shared across the entire KapsGerman application.
+
+If a user correctly answers a vocabulary item twice in Personalized Learning and three more times in another KapsGerman mode, that item should become mastered globally, provided the attempts are valid and refer to the same vocabulary sense.
+
+Likewise, mastering a word in Personalized Learning should update its status in the global vocabulary library.
+
+Use a stable canonical vocabulary identity.
+
+Handle:
+
+- Capitalization differences.
+- Unicode normalization.
+- German umlauts.
+- ß.
+- Articles.
+- Inflected forms.
+- Synonyms.
+- Different senses of the same word.
+
+Do not merge distinct meanings simply because their spelling is identical.
+
+### Avoid artificial mastery
+
+A single matching question must not give multiple credits for the same word.
+
+Repeating the same question immediately must not be used to inflate mastery.
+
+Prevent duplicate answer submissions and race conditions.
+
+A correct attempt should be recorded exactly once.
+
+After mastery, the item may enter a separate spaced-review system. The user-requested five-correct mastery rule must remain clearly defined and consistent.
+
+---
+
+## 8. SOURCE-SPECIFIC COMPLETION PROGRESS
+
+Every personal document must have its own progress bar.
+
+The progress bar must represent the percentage of vocabulary items from that document that have reached the mastered state.
+
+Formula:
+
+**Completion % = (Mastered vocabulary items in this source ÷ Total active vocabulary items in this source) × 100**
+
+Example:
+
+- Total words: 200
+- Mastered words: 75
+- Completion: 37.5%
+
+Display:
+
+**75 / 200 kelime öğrenildi — %37,5**
+
+The progress bar must not represent:
+
+- Questions answered.
+- Time spent studying.
+- Number of exercises completed.
+- Average test score.
+- Total attempts.
+
+It must represent only vocabulary mastery.
+
+If the same canonical vocabulary item appears multiple times in the same document, count it once unless it represents a distinct meaning or learning objective.
+
+If a new word is added to a Google Doc, the total increases, and the percentage may decrease.
+
+If a word is already mastered globally when imported into another document, reflect its mastery in the new document immediately.
+
+Update the progress bar after every valid mastery-changing attempt.
+
+Keep the progress synchronized across devices.
+
+---
+
+## 9. INDIVIDUAL EXERCISE MODES
+
+Users must be able to select one specific exercise type.
+
+### Mode A — Flashcards
+
+Show the German word or phrase on one side and its Turkish meaning on the other.
+
+Support:
+
+- German → Turkish.
+- Turkish → German.
+- Random direction.
+- Pronunciation playback.
+- Example sentences.
+- Article and plural information.
+- Reveal answer.
+- Explicit recall assessment.
+- Swipe interactions on mobile.
+- Keyboard shortcuts on desktop.
+
+Avoid repeatedly showing cards in the same order.
+
+### Mode B — Vocabulary Matching
+
+Create matching games using words and translations from the selected source.
+
+Generate different combinations for each session.
+
+Avoid placing identical or ambiguous translations in the same matching board without clarification.
+
+Correct matches should animate smoothly.
+
+Wrong matches should provide clear feedback.
+
+Support both mobile touch and desktop mouse interactions.
+
+### Mode C — Multiple Choice
+
+Ask the user to identify the correct meaning or German equivalent.
+
+Support both directions.
+
+Each question should contain one clearly correct answer and meaningful distractors.
+
+**Distractors must be semantically or grammatically plausible.**
+
+For example, if the target is:
+
+`die Entscheidung — karar`
+
+Good distractors could include:
+
+- die Meinung — fikir
+- die Möglichkeit — olasılık
+- die Erfahrung — deneyim
+
+Avoid random unrelated choices.
+
+Do not create questions with multiple defensibly correct answers.
+
+### Mode D — True or False
+
+Show a German word or expression paired with a Turkish meaning.
+
+The user decides whether the pairing is correct.
+
+False statements must use plausible but incorrect meanings.
+
+Maintain balanced correct/incorrect distributions.
+
+Avoid predictable patterns.
+
+### Mode E — German → Turkish Translation
+
+Generate a German sentence containing a target vocabulary item.
+
+Ask the user to translate it into Turkish.
+
+Evaluate semantic correctness.
+
+Accept natural alternative translations.
+
+Do not require exact string matching.
+
+Explain the target word and its role in the sentence.
+
+### Mode F — Turkish → German Translation
+
+Generate a Turkish sentence that requires the target German vocabulary.
+
+Ask the user to translate it into German.
+
+Evaluate:
+
+- Vocabulary usage.
+- Grammar.
+- Word order.
+- Articles.
+- Cases.
+- Verb conjugation.
+- Naturalness.
+- Meaning preservation.
+
+Accept valid alternative phrasings where appropriate.
+
+If the question specifically tests a target word, make that requirement explicit.
+
+### Mode G — Spelling and Written Recall
+
+Show a Turkish meaning or contextual clue.
+
+Require the user to type the German word or expression.
+
+Check spelling, capitalization, articles, and umlauts appropriately.
+
+Do not silently accept incorrect spelling as correct when spelling is the learning objective.
+
+Provide targeted explanations for mistakes.
+
+### Mode H — Sentence Construction
+
+Give users German words or phrases in shuffled order.
+
+Ask them to construct a grammatically correct sentence.
+
+Use vocabulary from their personal notes.
+
+Support natural word order and valid alternatives where possible.
+
+### Mode I — Fill in the Blank
+
+Generate meaningful German sentences with a missing target word.
+
+The sentence must contain enough context to identify the intended answer.
+
+Support both typed and multiple-choice variants.
+
+### Mode J — Contextual Vocabulary Practice
+
+Generate short dialogues, practical situations, and mini-paragraphs using vocabulary from the selected source.
+
+Examples:
+
+- Booking an appointment.
+- Talking to a teacher.
+- Shopping.
+- Asking for directions.
+- Discussing plans.
+- Describing past experiences.
+
+Adapt contexts to vocabulary difficulty.
+
+Use varied situations to reinforce the same word from different perspectives.
+
+---
+
+## 10. COMPREHENSIVE TEST — ALL VOCABULARY AND ALL EXERCISE TYPES
+
+Create a prominent button:
+
+**Genel Test — Tüm Kelimeler**
+
+This mode must cover **every active vocabulary item in the selected source**.
+
+The user must also be able to select multiple sources.
+
+### Requirements
+
+1. Include every unique vocabulary item in the selected source or sources.
+2. Include every supported exercise type that can meaningfully assess those items.
+3. Distribute exercise types intelligently.
+4. Use both German → Turkish and Turkish → German directions.
+5. Include spelling and sentence-based questions.
+6. Avoid repeating the same question wording.
+7. Avoid unnecessary repeated testing of already assessed words within the same pass.
+8. Provide clear progress through the test.
+9. Allow pausing and resuming.
+10. Save results automatically.
+
+For large documents, split the comprehensive test into manageable batches while preserving one overall test session.
+
+Example:
+
+A source contains 450 vocabulary items.
+
+The test may consist of 9 batches of approximately 50 vocabulary targets.
+
+**Do not silently reduce the test to 20 random words and claim it covers the entire source.**
+
+Every target must receive at least one valid assessment before the comprehensive test is marked complete.
+
+All supported exercise types should be represented across the complete test, although not every word needs to be assessed in every type.
+
+Provide an optional extended mode for users who explicitly want each word tested across multiple exercise categories.
+
+### Final results
+
+Show:
+
+- Total vocabulary covered.
+- Correct answers.
+- Incorrect answers.
+- Accuracy percentage.
+- Newly mastered words.
+- Words still being learned.
+- Weakest vocabulary.
+- Performance by exercise type.
+- Suggested next practice.
+
+The test score must remain separate from the source's mastery percentage.
+
+---
+
+## 11. AI-GENERATED QUESTIONS — NO REPETITIVE QUESTION BANK
+
+The current problem to eliminate is excessive repetition.
+
+Do not simply select the same hardcoded questions from a static database.
+
+Implement a hybrid question-generation engine that uses AI to produce varied, contextualized exercises.
+
+Reuse the existing Groq integration if available and suitable.
+
+### Variation dimensions
+
+For each vocabulary item, vary:
+
+- Exercise type.
+- Translation direction.
+- Sentence structure.
+- Grammar.
+- Context.
+- Difficulty.
+- Distractor selection.
+- Example sentence.
+- Communicative situation.
+- Question wording.
+
+Example target:
+
+`vereinbaren — kararlaştırmak / ayarlamak`
+
+Possible exercises:
+
+1. Translate `einen Termin vereinbaren`.
+2. Complete a sentence about arranging an appointment.
+3. Select the correct German verb.
+4. Translate a Turkish sentence requiring `vereinbaren`.
+5. Construct a German sentence.
+6. Distinguish `vereinbaren` from `verschieben`.
+7. Identify the correct contextual usage.
+
+These should be genuinely different learning tasks.
+
+### Repetition prevention
+
+Maintain a recent-question history per user and vocabulary item.
+
+Use semantic similarity checks, not only exact text comparison.
+
+Avoid regenerating questions with almost identical sentences.
+
+Prevent the same distractor set from appearing repeatedly.
+
+Track recent contexts and exercise types.
+
+Prefer underused contexts and assessment directions.
+
+**Do not promise mathematically infinite unique questions. Instead, maximize meaningful variation and prevent excessive near-duplicate questions.**
+
+### Critical distinction
+
+Repeated exposure to vocabulary is desirable.
+
+Repeated exposure to the exact same question is not.
+
+The user should encounter the same vocabulary through new examples, new contexts, and different cognitive tasks.
+
+---
+
+## 12. HIGH-QUALITY DISTRACTOR GENERATION
+
+Implement a dedicated distractor-selection system.
+
+For multiple-choice questions, prefer:
+
+1. Same grammatical category.
+2. Similar CEFR difficulty.
+3. Related semantic category.
+4. Commonly confused meanings.
+5. Similar spelling or morphology where educationally relevant.
+6. Contextually plausible alternatives.
+
+Never use obviously unrelated random answers merely to fill options.
+
+Validate that only one option is correct.
+
+Check for synonyms and acceptable alternative translations.
+
+If the vocabulary source does not contain enough suitable distractors, generate validated external distractors without adding those distractors to the user's personal vocabulary library.
+
+Do not misrepresent externally generated words as imported from the document.
+
+---
+
+## 13. AI ANSWER EVALUATION AND EXPLANATIONS
+
+Use deterministic checking for straightforward questions.
+
+Use AI-assisted semantic evaluation when multiple natural answers are possible.
+
+For written translations:
+
+- Accept correct alternative translations.
+- Distinguish minor typos from meaning errors.
+- Identify grammar errors.
+- Explain why an answer is wrong.
+- Provide a natural corrected answer.
+- Explain relevant German vocabulary.
+- Show important grammatical details.
+
+For a sentence-based question, optionally display a word-by-word German–Turkish breakdown.
+
+Do not mark a correct translation wrong merely because it differs from one predefined answer.
+
+### Reliability safeguards
+
+Use structured JSON responses from AI.
+
+Validate responses against schemas.
+
+Use timeouts and retry limits.
+
+Reject malformed question content.
+
+Detect multiple-correct-answer ambiguity.
+
+Do not award mastery credit when an answer cannot be evaluated reliably.
+
+Allow the user to report a wrong evaluation.
+
+Where appropriate, provide a re-evaluation action that can correct the attempt without creating duplicate mastery events.
+
+---
+
+## 14. ADAPTIVE PRACTICE AND SPACED REVIEW
+
+The exercise engine must adapt to the user's performance.
+
+Prioritize:
+
+- Newly imported words.
+- Words with low correct streaks.
+- Recently answered incorrectly.
+- Words that have not appeared recently.
+- Vocabulary approaching mastery.
+- Previously mastered words due for review.
+
+Use a balanced scheduling strategy.
+
+Do not show the same word excessively in consecutive questions unless the user explicitly selects intensive review.
+
+Prefer interleaving different vocabulary items.
+
+Use spaced repetition to improve retention.
+
+### Personalized practice modes
+
+Provide optional filters:
+
+- All words.
+- New words.
+- Not yet mastered.
+- Incorrectly answered.
+- Almost mastered.
+- Mastered words for review.
+- Specific CEFR level.
+- Specific document.
+- Multiple documents.
+- Specific vocabulary category.
+
+Allow the user to choose a practice length for ordinary practice sessions.
+
+The comprehensive test must retain its full-coverage behavior.
+
+---
+
+## 15. VOCABULARY LIBRARY INTEGRATION
+
+Create a unified vocabulary view showing:
+
+- German term.
+- Turkish meaning.
+- Article.
+- Word category.
+- CEFR level.
+- Source documents.
+- Consecutive correct count.
+- Total correct answers.
+- Total incorrect answers.
+- Mastery status.
+- Last practiced date.
+- Next review date.
+
+Provide search, filtering, and sorting.
+
+Example:
+
+| German | Turkish | Streak | Status |
+|---|---|---|---|
+| die Erfahrung | deneyim | 5/5 | Öğrenildi |
+| vereinbaren | ayarlamak | 3/5 | Öğreniliyor |
+| die Entscheidung | karar | 1/5 | Öğreniliyor |
+
+Users should be able to inspect an individual vocabulary item and review its learning history.
+
+Keep all progress user-specific.
+
+Never share one user's mastery streak with another user.
+
+---
+
+## 16. DATABASE AND DATA INTEGRITY
+
+Design an appropriate database structure for:
+
+- Personal learning sources.
+- Source types.
+- Google Docs connections.
+- Document revisions.
+- Imported source versions.
+- Canonical vocabulary items.
+- Vocabulary senses.
+- Source-to-vocabulary relationships.
+- CEFR classifications.
+- User vocabulary mastery.
+- Learning sessions.
+- Question instances.
+- Answer attempts.
+- Recent-question fingerprints.
+- Review scheduling.
+- Synchronization jobs.
+
+Use the repository's existing database technology and migration conventions.
+
+### Critical requirements
+
+- Preserve all existing data.
+- Never reset global vocabulary progress.
+- Ensure user isolation.
+- Make synchronization idempotent.
+- Prevent duplicate vocabulary records.
+- Prevent duplicate answer submissions.
+- Use atomic mastery updates.
+- Ensure session recovery after refresh.
+- Support multiple devices.
+- Protect against concurrent answer submissions.
+- Use appropriate indexes.
+
+Keep raw document content and AI processing data only as long as necessary for the feature and user-selected retention settings.
+
+Provide source deletion and disconnection controls.
+
+Deleting a source must not unexpectedly delete global vocabulary mastery history.
+
+---
+
+## 17. SECURITY AND PRIVACY
+
+Treat imported documents as private user data.
+
+Requirements:
+
+- Server-side authorization on every source and progress request.
+- Secure Google OAuth flow.
+- Minimal Google API scopes.
+- Secure token storage.
+- No client-side API secrets.
+- No public exposure of private notes.
+- Input sanitization.
+- File validation.
+- Protection against prompt injection inside imported notes.
+- Rate limiting for AI requests.
+- Safe handling of large documents.
+- Clear source deletion behavior.
+- No accidental cross-user data leakage.
+
+Document contents are learning material, not trusted instructions.
+
+Do not execute instructions found inside imported notes.
+
+When AI providers process private note excerpts, minimize the data transmitted and disclose the processing appropriately.
+
+---
+
+## 18. FAST AND COST-EFFICIENT AI ARCHITECTURE
+
+The application should feel fast.
+
+Avoid making an expensive AI request for every simple interaction.
+
+Use a hybrid architecture:
+
+**Deterministic operations**
+
+- Matching.
+- Basic vocabulary recall.
+- Progress calculations.
+- Simple answer checking.
+- Deduplication.
+- Source parsing where reliable.
+
+**AI-assisted operations**
+
+- Complex note extraction.
+- CEFR estimation.
+- Contextual sentence generation.
+- Distractor validation.
+- Translation assessment.
+- Grammar explanations.
+- Question variation.
+
+Use background generation to prepare small batches of questions.
+
+Prefetch upcoming questions.
+
+Cache generated content where appropriate, but enforce per-user repetition avoidance.
+
+Avoid sending an entire large document to the AI provider for every question.
+
+Use the relevant target vocabulary and minimal context.
+
+Provide graceful fallback behavior when Groq or another AI provider is unavailable.
+
+Never display a blank screen or silently terminate an exercise because an AI request failed.
+
+---
+
+## 19. USER EXPERIENCE AND DESIGN
+
+The Personalized Learning interface must be intuitive for beginners.
+
+Use:
+
+- Large clickable cards.
+- Clear section headings.
+- Rounded controls.
+- Friendly visual feedback.
+- Smooth progress animations.
+- Responsive mobile layouts.
+- Clear success and error states.
+- Accessible contrast.
+- Keyboard navigation.
+- Touch-friendly interactions.
+- Consistent German pronunciation controls.
+
+Avoid overcrowding the screen.
+
+### Suggested dashboard layout
+
+**Header**
+
+Kişisel Çalışma
+
+"Almanca ders notlarından öğrenmeye devam et!"
+
+**My Sources**
+
+Cards for connected Google Docs, pasted notes, and uploaded files.
+
+**Learning Progress**
+
+Source-specific mastery bar.
+
+**Vocabulary Distribution**
+
+CEFR chart.
+
+**Study Actions**
+
+- Genel Test
+- Flashcards
+- Kelime Eşleştirme
+- Çoktan Seçmeli
+- Doğru / Yanlış
+- Cümle Çevirisi
+- Yazma ve Spelling
+- Cümle Oluşturma
+- Boşluk Doldurma
+
+**Continue Learning**
+
+Resume the most recent unfinished session.
+
+---
+
+## 20. CRITICAL SESSION AND MOBILE RELIABILITY
+
+Previously observed exercise-launching problems must not recur.
+
+Ensure:
+
+- Tapping an exercise actually starts it.
+- No exercise immediately redirects to a zero-score result page.
+- No empty session is marked completed.
+- The first question loads reliably.
+- Mobile controls respond correctly.
+- User answers are saved.
+- Navigation does not erase progress.
+- Refreshing does not corrupt sessions.
+- Paused sessions can resume.
+- Completing an exercise produces accurate results.
+- Network failures do not falsely mark answers incorrect.
+- AI generation failures do not end the session unexpectedly.
+
+Use explicit loading, ready, active, paused, completed, and error states.
+
+Avoid race conditions between question generation and session initialization.
+
+---
+
+## 21. REQUIRED TEST SCENARIOS
+
+Implement and run tests for at least the following cases.
+
+### Import tests
+
+1. Paste 20 German–Turkish vocabulary pairs.
+2. Import a Google Doc.
+3. Import a DOCX file.
+4. Import mixed vocabulary and sentence notes.
+5. Handle malformed or ambiguous entries.
+6. Prevent duplicate vocabulary creation.
+
+### Google Docs synchronization tests
+
+7. Add 10 new words to a document.
+8. Confirm that the source total increases.
+9. Confirm CEFR distribution updates.
+10. Confirm source completion recalculates.
+11. Confirm unchanged mastery records remain intact.
+12. Remove a vocabulary entry.
+13. Confirm source membership updates without deleting global history.
+14. Handle revoked Google access.
+15. Handle repeated synchronization without duplicates.
+
+### Mastery tests
+
+16. Answer the same word correctly across five different modes.
+17. Verify the streak reaches 5/5.
+18. Verify the global library marks it mastered.
+19. Verify the source progress bar updates.
+20. Answer incorrectly at 4/5 and verify the streak resets.
+21. Verify unrelated words are unaffected.
+22. Verify duplicate answer submissions do not count twice.
+23. Verify the same canonical vocabulary item is shared across sources.
+24. Verify different meanings are not incorrectly merged.
+
+### Comprehensive test tests
+
+25. Import 100 vocabulary items.
+26. Start a comprehensive test.
+27. Confirm all 100 items are covered.
+28. Confirm multiple exercise types appear.
+29. Pause and resume the test.
+30. Verify completion cannot occur before full coverage.
+31. Verify final results and mastery progress are calculated separately.
+
+### AI quality tests
+
+32. Generate multiple exercises for the same word.
+33. Verify meaningful variation.
+34. Detect near-duplicate questions.
+35. Validate distractor plausibility.
+36. Reject ambiguous multiple-choice questions.
+37. Accept valid alternative translations.
+38. Reject semantically incorrect answers.
+39. Handle AI timeouts and malformed responses.
+
+### Platform tests
+
+40. Desktop browser.
+41. Android browser.
+42. Android PWA.
+43. iOS Safari.
+44. iOS PWA.
+45. Refresh during an active exercise.
+46. Temporary network disconnection.
+47. Concurrent sessions on multiple devices.
+
+Do not report unexecuted tests as passed.
+
+---
+
+## 22. IMPLEMENTATION ORDER
+
+Implement the system in this order:
+
+**Phase 1 — Architecture and data model**
+
+Inspect the repository, design the schema, and create safe migrations.
+
+**Phase 2 — Personal source management**
+
+Build text input, document upload, source cards, and editing.
+
+**Phase 3 — Google Docs integration**
+
+Implement secure connection, import, manual sync, and automatic sync.
+
+**Phase 4 — Vocabulary extraction**
+
+Implement parsing, deduplication, canonical vocabulary records, and CEFR classification.
+
+**Phase 5 — Mastery engine**
+
+Implement global five-consecutive-correct tracking and source-specific completion.
+
+**Phase 6 — Exercise modes**
+
+Implement all requested practice types and reliable answer validation.
+
+**Phase 7 — Comprehensive test**
+
+Implement full vocabulary coverage and resumable test batches.
+
+**Phase 8 — AI variation and adaptive scheduling**
+
+Add contextual question generation, meaningful distractors, repetition prevention, and adaptive practice.
+
+**Phase 9 — Dashboard and analytics**
+
+Implement progress bars, CEFR charts, vocabulary status, and detailed results.
+
+**Phase 10 — Testing and deployment preparation**
+
+Run all available tests, verify integration, and resolve critical issues.
+
+Do not stop after Phase 1 or after producing a development plan.
+
+---
+
+## 23. GITHUB AND DELIVERY INSTRUCTIONS
+
+Work in:
+
+**EmirGan1/KapsApp4**
+
+Requirements:
+
+- Implement actual working code.
+- Preserve existing KapsGerman features.
+- Preserve all user data.
+- Do not break other KapsApp modules.
+- Use safe database migrations.
+- Keep API keys in environment variables.
+- Do not commit secrets.
+- Run TypeScript checks and production build.
+- Run relevant automated tests.
+- Commit verified changes directly to `main`.
+- Do not create a pull request.
+
+If Google OAuth configuration requires credentials or consent that are not already available, implement the integration and clearly report the exact remaining configuration steps. Never invent credentials or claim the connection works without testing it.
+
+Do not perform destructive production database operations.
+
+### Final report
+
+Provide:
+
+1. Features implemented.
+2. Files modified.
+3. Database migrations.
+4. Google Docs integration status.
+5. AI provider integration status.
+6. Supported exercise modes.
+7. Mastery tracking validation.
+8. Comprehensive test coverage validation.
+9. Mobile and desktop test results.
+10. Known limitations.
+11. Required environment variables.
+12. Commit hash.
+13. Deployment instructions.
+
+---
+
+## FINAL ACCEPTANCE CRITERIA
+
+The implementation is successful only if the following complete user journey works:
+
+1. A user opens KapsGerman.
+2. The user enters **Kişisel Çalışma**.
+3. The user connects their own Google Docs vocabulary notes.
+4. KapsGerman extracts the German–Turkish vocabulary correctly.
+5. The application displays the vocabulary count and CEFR distribution.
+6. The user starts a matching exercise.
+7. The user completes additional flashcard, translation, spelling, and sentence exercises.
+8. Each valid correct answer advances the relevant vocabulary item's shared consecutive-correct streak.
+9. A vocabulary item reaches 5/5 and becomes mastered in the global library.
+10. The connected document's mastery percentage increases.
+11. The user starts a comprehensive test that covers all vocabulary items in that document.
+12. Questions use varied contexts and plausible distractors rather than repeating identical prompts.
+13. The user edits the original Google Doc and adds new vocabulary.
+14. KapsGerman detects the update and imports the new items.
+15. The CEFR distribution and completion percentage update automatically.
+16. Previously learned vocabulary retains its progress.
+17. The user can continue learning seamlessly on desktop or mobile.
+
+**Do not implement this as a simple flashcard generator.**
+
+Build it as a complete personalized German-learning system centered on the user's own learning material, reliable vocabulary mastery, adaptive AI-generated exercises, automatic Google Docs synchronization, and measurable long-term progress.
+
+**Start by inspecting the existing repository, then implement the complete feature end-to-end.**

@@ -8,7 +8,7 @@ import type {
   StudyDirection,
 } from "../../shared/germanActivities";
 
-export type GermanTab = "learn" | "practice" | "words" | "progress" | "profile";
+export type GermanTab = "learn" | "practice" | "personal" | "words" | "progress" | "profile";
 
 export interface PronunciationGuide {
   ipa: string;

@@ -8,6 +8,7 @@ import {
   Compass,
   Dumbbell,
   Flame,
+  NotebookPen,
   Sparkles,
   User,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import { PracticeHubView } from "./PracticeHubView";
 import { ProfileAdminView } from "./ProfileAdminView";
 import { ProgressDashboardView } from "./ProgressDashboardView";
 import type { GermanTab, OverviewResponse } from "./types";
+import { PersonalLearningView } from "./PersonalLearningView";
 import { VocabularyLibraryView } from "./VocabularyLibraryView";
 import "./german.css";
 
@@ -38,6 +40,9 @@ function normalizeTab(raw: string | null): GermanTab {
     case "practice":
     case "goethe":
       return "practice";
+    case "personal":
+    case "kisisel":
+      return "personal";
     case "words":
     case "vocabulary":
       return "words";
@@ -52,9 +57,10 @@ function normalizeTab(raw: string | null): GermanTab {
   }
 }
 
-const NAV_ITEMS: Array<{ id: GermanTab; label: string; icon: any }> = [
+const NAV_ITEMS: Array<{ id: GermanTab; label: string; mobileLabel?: string; icon: any }> = [
   { id: "learn", label: "Öğren", icon: Compass },
   { id: "practice", label: "Pratik", icon: Dumbbell },
+  { id: "personal", label: "Kişisel Çalışma", mobileLabel: "Kişisel", icon: NotebookPen },
   { id: "words", label: "Kelimeler", icon: BookOpen },
   { id: "progress", label: "İlerleme", icon: BarChart3 },
   { id: "profile", label: "Profil", icon: User },
@@ -383,6 +389,10 @@ function KapsGermanContent() {
               />
             )}
 
+            {activeTab === "personal" && (
+              <PersonalLearningView onOverviewChanged={() => void refreshOverview()} />
+            )}
+
             {activeTab === "words" && (
               <VocabularyLibraryView
                 isAdmin={Boolean(access?.admin)}
@@ -448,8 +458,8 @@ function KapsGermanContent() {
                 goTab(item.id);
               }}
             >
-              <Icon size={19} />
-              <span>{item.label}</span>
+              <Icon size={18} />
+              <span>{item.mobileLabel ?? item.label}</span>
             </button>
           );
         })}
