@@ -322,9 +322,9 @@ function detectLinguisticFeatures(de: string): {
   if (prepCaseMatch && (prepCaseMatch[2] || /\+\s*(?:Akk|Dat|Gen)/iu.test(working) || reflexive)) {
     preposition = prepCaseMatch[1].toLowerCase();
     const rawCase = (prepCaseMatch[2] ?? "").toLowerCase();
-    if (rawCase.startsWith("akk")) requiredCase = "Akkusativ";
-    else if (rawCase.startsWith("dat")) requiredCase = "Dativ";
-    else if (rawCase.startsWith("gen")) requiredCase = "Genitiv";
+    if (rawCase.startsWith("akk")) requiredCase = "Akk";
+    else if (rawCase.startsWith("dat")) requiredCase = "Dat";
+    else if (rawCase.startsWith("gen")) requiredCase = "Gen";
   }
 
   const bareFirst = working

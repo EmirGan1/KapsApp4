@@ -165,7 +165,7 @@ test("Personal 1: Deterministic & AI text parsing, varied formats, CEFR summary,
   assert.ok(freuen);
   assert.equal(freuen.reflexive, true);
   assert.equal(freuen.preposition, "auf");
-  assert.equal(freuen.requiredCase, "Akk.");
+  assert.equal(freuen.requiredCase, "Akk");
   assert.ok(freuen.exampleDe.includes("Urlaub"));
   assert.ok(freuen.exampleTr.includes("Tatili"));
 
@@ -649,19 +649,16 @@ test("Personal 5: Comprehensive Test — 100% coverage of 100-item source, persi
 
 test("Personal 6: All 10 exercise modes generate valid questions, near-duplicate detection, strict spelling diagnostics & semantic AI grading", async () => {
   // Mock AI semantic evaluation accepting a natural Turkish synonym
-  setGermanAITransportForTests(async ({ prompt }) => {
-    if (prompt.includes("DEĞERLENDİR") || prompt.includes("isCorrect")) {
-      return {
-        text: JSON.stringify({
-          isCorrect: true,
-          feedbackTr: "Doğal Türkçe eş anlamlısı doğru kabul edildi.",
-          tipTr: "Harika çeviri!",
-        }),
-        provider: "mock-ai",
-        model: "mock-1",
-      };
-    }
-    throw new Error("Skip batch generation to verify deterministic speed");
+  setGermanAITransportForTests(async () => {
+    return {
+      text: JSON.stringify({
+        isCorrect: true,
+        feedbackTr: "Doğru Türkçe eş anlamlısı kabul edildi.",
+        errorTags: [],
+      }),
+      provider: "mock",
+      model: "mock-1",
+    };
   });
 
   // Unit check near-duplicate detection & strict spelling diagnostics
@@ -671,21 +668,29 @@ test("Personal 6: All 10 exercise modes generate valid questions, near-duplicate
   );
   assert.ok(sim > 0.9);
   assert.equal(
-    isNearDuplicateOfHistory("Ich gehe morgen in die Schule.", ["Ich gehe morgen in die Schule!"]),
+    isNearDuplicateOfHistory(
+      "Ich gehe morgen in die Schule.",
+      "fp1",
+      [{ vocabId: "v1", mode: "flashcards", direction: "de_tr", contextTag: "", fingerprint: "fp2", promptText: "Ich gehe morgen in die Schule!", distractors: [] }]
+    ),
     true,
   );
   assert.equal(
-    isNearDuplicateOfHistory("Der Arzt untersucht den Patienten.", ["Ich kaufe einen Apfel im Markt."]),
+    isNearDuplicateOfHistory(
+      "Der Arzt untersucht den Patienten.",
+      "fp3",
+      [{ vocabId: "v2", mode: "flashcards", direction: "de_tr", contextTag: "", fingerprint: "fp4", promptText: "Ich kaufe einen Apfel im Markt.", distractors: [] }]
+    ),
     false,
   );
 
-  const spellDiag = gradeStrictGermanSpelling("der apfel", "der Apfel");
+  const spellDiag = gradeStrictGermanSpelling("der Apfel", "der apfel");
   assert.equal(spellDiag.isCorrect, false);
-  assert.ok(spellDiag.diagnostics.some((d) => /büyük|harf/iu.test(d)));
+  assert.ok(spellDiag.errorTags.some((d: string) => /harf|artikel/iu.test(d)));
 
-  const spellUmlaut = gradeStrictGermanSpelling("die Tur", "die Tür");
+  const spellUmlaut = gradeStrictGermanSpelling("die Tür", "die Tur");
   assert.equal(spellUmlaut.isCorrect, false);
-  assert.ok(spellUmlaut.diagnostics.some((d) => /umlaut|ü|ß/iu.test(d)));
+  assert.ok(spellUmlaut.errorTags.some((d: string) => /umlaut|ü|ß/iu.test(d)));
 
   const env = await createTestApp();
   try {

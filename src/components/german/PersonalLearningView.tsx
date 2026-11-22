@@ -711,9 +711,9 @@ export function PersonalLearningView({
                                   <Clock size={12} /> Son eşitleme: {formatDateTr(src.lastSyncedAt)}
                                 </span>
                               )}
-                              {src.uncertainCount > 0 && (
+                              {src.uncertainItems > 0 && (
                                 <span className="text-amber-600 dark:text-amber-400 font-semibold">
-                                  {src.uncertainCount} belirsiz kayıt
+                                  {src.uncertainItems} belirsiz kayıt
                                 </span>
                               )}
                             </div>
@@ -775,9 +775,9 @@ export function PersonalLearningView({
                       </div>
 
                       {/* Google Sync Error / Auto-Sync Controls */}
-                      {src.lastSyncError && (
+                      {src.syncError && (
                         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 flex flex-wrap items-center justify-between gap-2">
-                          <span>{src.lastSyncError}</span>
+                          <span>{src.syncError}</span>
                           {src.syncStatus === "auth_required" && (
                             <button
                               type="button"
@@ -827,7 +827,7 @@ export function PersonalLearningView({
                           </span>
                           <span className="text-xs text-[var(--kg-ink-muted)]">
                             Neredeyse: {src.almostMasteredItems} · Çalışılıyor: {src.learningItems} ·
-                            Tekrar: {src.needsReviewItems}
+                            Belirsiz: {src.uncertainItems}
                           </span>
                         </div>
                         <div className="w-full h-2.5 rounded-full bg-[var(--kg-surface-soft)] overflow-hidden border border-[var(--kg-border)]">
@@ -960,10 +960,10 @@ export function PersonalLearningView({
                         }`}
                       >
                         <div className="text-sm font-extrabold text-[var(--kg-ink)]">
-                          {m.labelTr}
+                          {m.titleTr}
                         </div>
                         <div className="text-xs text-[var(--kg-ink-muted)] leading-snug">
-                          {m.shortDescTr}
+                          {m.descriptionTr}
                         </div>
                       </button>
                     );
