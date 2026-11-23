@@ -1769,7 +1769,7 @@ export default function KapsStrikeGame({
           {hud.ads && !hud.dead && (hud.weapon==='sniper'||hud.weapon==='railgun') && <div className="ks-scope" aria-label="Dürbün açık"><div className="ks-scope-lens"><i/><b/><span>{hud.weapon==='railgun'?'5×':'3.5×'} / UFUK OPTICS</span></div></div>}
           {hud.lootNotice&&!hud.dead&&<div className="ks-loot-notice" role="status">{hud.lootNotice}</div>}
           {hud.supplyPrompt && !hud.dead && <button className="ks-supply-prompt" onClick={()=>game.current?.interact()}>{isMobile?'Dokun':label(settings.bindings?.interact||'KeyE')} · {hud.supplyPrompt}</button>}
-          {(currentRoom?.map||map)!=='bolluca' && (currentRoom?.map||map)!=='dust2v2' && hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · 3 özel silahtan biri</small></div>}
+          {(currentRoom?.map||map)!=='bolluca' && (currentRoom?.map||map)!=='bollucav2' && (currentRoom?.map||map)!=='dust2v2' && hud.world?.drop && <div className="ks-drop-warning" role="status">İKMAL UÇAĞI YAKLAŞIYOR · {Math.max(0,Math.ceil((hud.world.drop.landing-hud.tick)/120))} sn<br/><small>Kırmızı dumanı takip et · 3 özel silahtan biri</small></div>}
           <StrikeDamageFeedback hp={hud.hp} dead={hud.dead} tick={hud.tick} hurt={hud.hurt}/>
           {hud.hp > 0 && hud.hp <= 25 && <span className="ks-low-health" role="status">KRİTİK CAN</span>}
           {hud.hurt && hud.hurt.until > hud.tick && (

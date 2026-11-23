@@ -6,7 +6,7 @@ export const DROP_INTERVAL = Math.round(90/C.dt);
 export const DROP_WARNING = Math.round(12/C.dt);
 /** Candidates are on authored, continuous spawn-to-spawn routes, never random rooftops or water. */
 export function supplyLocations(map:MapDefinition):Vec3[]{
- if(map.id==='bolluca'||map.id==='dust2v2')return [];
+ if(map.id==='bolluca'||map.id==='bollucav2'||map.id==='dust2v2')return [];
  const points:Vec3[]=[];
  for(const route of map.routes||[])for(let i=1;i<route.points.length;i++){
   const a=route.points[i-1],b=route.points[i],n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/7));
@@ -22,7 +22,7 @@ const candidates=new WeakMap<MapDefinition,Vec3[]>();
 function locations(map:MapDefinition){let p=candidates.get(map);if(!p){p=supplyLocations(map);candidates.set(map,p);}return p;}
 export function createWorld(map:MapDefinition,seed=Date.now()):StrikeWorld{
  const w:StrikeWorld={pickups:[],nextDrop:DROP_INTERVAL,serial:0,seed:seed>>>0};
- if(map.id==='district'||map.id==='bolluca'||map.id==='dust2v2')return w;
+ if(map.id==='district'||map.id==='bolluca'||map.id==='bollucav2'||map.id==='dust2v2')return w;
  const pool=[...locations(map)];
  // 8 pickups: 3 Health boxes, 2 Armor boxes, 3 Special Weapons (carbine, lmg, railgun)
  const pickupTypes: Array<{ consumable?: "health" | "armor"; amount?: number; weapon?: WeaponId }> = [
@@ -51,7 +51,7 @@ export function createWorld(map:MapDefinition,seed=Date.now()):StrikeWorld{
  return w;
 }
 export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
- if(map.id==='bolluca'||map.id==='dust2v2'){
+ if(map.id==='bolluca'||map.id==='bollucav2'||map.id==='dust2v2'){
   w.drop=undefined;
   w.respawns=undefined;
   w.pickups=[];
@@ -79,7 +79,7 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
  }
 }
 export function nearestSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState){
- if(map.id==='bolluca'||map.id==='dust2v2')return undefined;
+ if(map.id==='bolluca'||map.id==='bollucav2'||map.id==='dust2v2')return undefined;
  if(p.hp<=0)return undefined;
  const eye={...p.movement.position,y:p.movement.position.y+1.1};
  return w.pickups.filter(s=>!s.opened).map(s=>({s,d:Math.hypot(s.position.x-eye.x,s.position.y+.5-eye.y,s.position.z-eye.z)})).filter(({s,d})=>{
@@ -107,7 +107,7 @@ export function claimSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState,tick:n
  return true;
 }
 export function dropInventory(w:StrikeWorld,p:PlayerState,tick:number,map?:MapDefinition){
- if(map?.id!=='bolluca'&&map?.id!=='dust2v2')for(const weapon of p.weapon.inventory||[])if(SPECIAL_WEAPONS.includes(weapon))w.pickups.push({id:`weapon-${++w.serial}`,position:{...p.movement.position},weapon,kind:'dropped',opened:false,expires:tick+DROP_INTERVAL});
+ if(map?.id!=='bolluca'&&map?.id!=='bollucav2'&&map?.id!=='dust2v2')for(const weapon of p.weapon.inventory||[])if(SPECIAL_WEAPONS.includes(weapon))w.pickups.push({id:`weapon-${++w.serial}`,position:{...p.movement.position},weapon,kind:'dropped',opened:false,expires:tick+DROP_INTERVAL});
  p.weapon.inventory=[];p.weapon.selected='rifle';p.weapon.reloadUntil=0;
 }
 

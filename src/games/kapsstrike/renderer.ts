@@ -242,14 +242,14 @@ export class StrikeRenderer {
         new Vector3(0.2, 1, 0.3),
         this.scene,
       );
-      hemi.intensity = map.id === "neon" ? 0.5 : map.bombSites?(effectiveQuality==='high'?.85:.65):.6;
+      hemi.intensity = map.id === "neon" ? 0.5 : map.bombSites?(effectiveQuality==='high'?.85:.78):.6;
       const sun = new DirectionalLight(
         "sun",
         new Vector3(-0.4, -1, 0.3),
         this.scene,
       );
       sun.position.set(15, 35, -20);
-      sun.intensity = map.id === "neon" ? 0.45 : map.bombSites?(effectiveQuality==='high'?1.35:.65):.65;
+      sun.intensity = map.id === "neon" ? 0.45 : map.bombSites?(effectiveQuality==='high'?1.35:.98):.65;
       if (effectiveQuality === "high") {
         this.shadow = new ShadowGenerator(2048, sun);
         this.shadow.usePoissonSampling = true;this.shadow.bias=.003;this.shadow.normalBias=.06;
@@ -683,8 +683,8 @@ export class StrikeRenderer {
       }
       for(const m of this.scene.meshes)if(m.name.startsWith('district-'))m.setEnabled(m.metadata?.highOnly ? q==='high' : q!=='low'||!m.metadata?.detail);
       const sun=this.scene.getLightByName('sun') as DirectionalLight;
-      sun.intensity=this.map.bombSites?(q==='high'?1.35:.65):this.map.id==='neon'?.45:.65;
-      this.scene.getLightByName('sky')!.intensity=this.map.bombSites?(q==='high'?.85:.65):this.map.id==='neon'?.5:.6;
+      sun.intensity=this.map.bombSites?(q==='high'?1.35:.98):this.map.id==='neon'?.45:.65;
+      this.scene.getLightByName('sky')!.intensity=this.map.bombSites?(q==='high'?.85:.78):this.map.id==='neon'?.5:.6;
       if(q==='high'&&!this.shadow){this.shadow=new ShadowGenerator(2048,sun);this.shadow.usePoissonSampling=true;this.shadow.bias=.003;this.shadow.normalBias=.06;for(const m of this.scene.meshes)if(m.receiveShadows && m.name !== 'ground')this.shadow.addShadowCaster(m);this.configureShadowRefresh();}
       if(q!=='high'&&this.shadow){this.shadow.dispose();this.shadow=undefined;}
       // Retain shared PBR textures until scene disposal. Several batches reference
@@ -698,7 +698,7 @@ export class StrikeRenderer {
     if (previousQuality !== q || previousScale !== next.scale || previousDynamicScale !== this.dynamicScale) this.resize();
   }
   private renderSupplies(state:TrainingState){
-    if(this.map.id==='bolluca'){
+    if(this.map.id==='bolluca'||this.map.id==='bollucav2'||this.map.id==='dust2v2'){
       for(const node of this.supplyMeshes.values())node.dispose();
       this.supplyMeshes.clear();
       this.plane?.setEnabled(false);this.falling?.setEnabled(false);
@@ -759,7 +759,15 @@ export class StrikeRenderer {
       const metadata={color,surface,label,emissive,doubleSided,finish};
       const maps: CatalogMaps=catalogMaterials[finish][q];
       const key=JSON.stringify([q,finish,color,doubleSided]);
-      const tint=Color3.Lerp(Color3.White(),Color3.FromHexString(color),surface==='fabric'?.7:.28);
+      const tintWeight =
+        surface === 'fabric'
+          ? 0.7
+          : finish === 'corrugatedMetal' || finish === 'paintedMetal'
+            ? 0.62
+            : finish === 'bollucaBlue' || finish === 'paintedPlaster'
+              ? 0.42
+              : 0.28;
+      const tint=Color3.Lerp(Color3.White(),Color3.FromHexString(color),tintWeight);
       const texture=(file:string,gamma:boolean)=>{
         const name=file.replace(/\.[^.]+$/,'.webp');
         let cached=this.photographicTextures.get(name);
@@ -784,7 +792,7 @@ export class StrikeRenderer {
       if(!m){
         m=new PBRMaterial(key,this.scene);
         m.albedoTexture=texture(maps.albedo,true);m.albedoColor=tint;
-        m.metallic=surface==='metal'?.65:0;m.roughness=maps.orm?1:.86;
+        m.metallic=finish==='paintedMetal'?.32:surface==='metal'?.65:0;m.roughness=maps.orm?1:.86;
         if(maps.normal){
           m.bumpTexture=texture(maps.normal,false);m.bumpTexture.level=.65;
           m.invertNormalMapY=true;

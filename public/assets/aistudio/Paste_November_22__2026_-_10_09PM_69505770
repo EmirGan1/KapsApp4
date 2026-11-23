@@ -1,0 +1,1026 @@
+# KapsApp / KapsGO — Bolluca V2: High-Fidelity CS:GO Mirage Reconstruction + Dust II V2 PBR Texture Upgrade
+
+## 1. PRIMARY MISSION
+
+You are an autonomous senior 3D game developer, technical artist, multiplayer gameplay engineer, and graphics optimization specialist working on:
+
+**GitHub repository: `EmirGan1/KapsApp4`**
+
+Your assignment has TWO deliverables:
+
+**DELIVERABLE A — Rebuild Bolluca V2 as an extremely faithful recreation of the original Counter-Strike: Global Offensive Mirage map (`de_mirage`).**
+
+**DELIVERABLE B — Evaluate and selectively upgrade Dust II V2's existing materials and textures using the supplied PBR texture catalog, but only when the changes genuinely improve its visual quality without damaging performance, appearance, or gameplay.**
+
+These deliverables are separate. Complete and validate both without damaging other maps or existing game features.
+
+This is an IMPLEMENTATION assignment, not a request for a concept document, mockup, roadmap, or theoretical design.
+
+Your responsibility is to write and integrate working production code and assets.
+
+---
+
+## 2. MANDATORY ATTACHED REFERENCES
+
+Two PDFs are attached to this request:
+
+**REFERENCE 1 — Mirage Geometry and Visual Reference**
+
+`KapsApp_Mirage_3D_Gorsel_Referans_Kitabi.pdf`
+
+**REFERENCE 2 — Dust II / Bolluca PBR Materials and Texture Catalog**
+
+`KapsStrike_DustII_Bolluca_4K_2K_PBR_Texture_Katalogu.pdf`
+
+Read both documents completely before implementing anything.
+
+Do not rely only on extracted text. Inspect all embedded images, radar diagrams, architectural illustrations, reference screenshots, material previews, and clickable source links.
+
+### How to use these references
+
+Use Reference 1 as the authoritative project-specific guide for reconstructing Bolluca V2's Mirage-inspired geometry.
+
+Use Reference 2 as a material-selection, asset-sourcing, texture-processing, and graphics-optimization guide for both Bolluca V2 and Dust II V2.
+
+The PDFs are references, not ready-made game levels or packaged texture assets.
+
+**Do not assume the 3D source meshes or original 4K/8K texture files are embedded in the PDFs.**
+
+Follow external links where necessary, obtain actual source assets from permitted locations, and integrate the resulting game-ready files.
+
+Do not merely display PDF preview images as textures.
+
+Treat reference diagrams as evidence appropriate to their purpose. Schematic layouts are not engineering drawings, and perspective screenshots do not establish exact world coordinates.
+
+Where an image conflicts with verified original CS:GO gameplay geometry, investigate the conflict rather than blindly copying either interpretation.
+
+---
+
+## 3. RESEARCH ORIGINAL CS:GO MIRAGE EXTENSIVELY
+
+Do not limit research to the two PDFs.
+
+Research the original **CS:GO Mirage (`de_mirage`)** from multiple independent online references before modifying the level.
+
+Prioritize CS:GO-era references rather than Counter-Strike 2.
+
+Use:
+
+- Original CS:GO Mirage radar and overhead maps.
+- Detailed labeled callout maps.
+- Original match footage.
+- Ground-level gameplay walkthroughs.
+- Multiple camera angles from A Site, B Site, Mid, Palace, Apartments, and CT Spawn.
+- Archived screenshots from the CS:GO version.
+- Original route and sightline demonstrations.
+- Building and architectural reference images.
+- Verified geometry or coordinate information when lawfully available.
+- Relevant community map studies and visual comparisons.
+
+Useful initial research sources:
+
+- https://counterstrike.fandom.com/wiki/Mirage/Gallery
+- https://counterstrike.fandom.com/wiki/Mirage/Guide
+- https://csdb.gg/maps/mirage/
+- https://capdisk.com/csgo/maps/mirage
+- https://www.youtube.com/results?search_query=CSGO+Mirage+map+walkthrough
+
+Also inspect the external reference links contained in the attached Mirage PDF.
+
+### Version consistency
+
+Establish a clearly defined CS:GO Mirage reference version.
+
+Do not randomly mix:
+
+- Older CS:GO map revisions.
+- Later CS:GO changes.
+- Counter-Strike 2 architectural redesigns.
+- Community-made simplified maps.
+- Stylized fan recreations.
+
+Choose one coherent CS:GO-era geometry target and document it.
+
+Modern CS2 material may be consulted for callout terminology or contextual information, but do not silently transfer changed geometry or visual details into the CS:GO reconstruction.
+
+### Required reference analysis
+
+Before implementation, establish:
+
+1. Overall map orientation.
+2. Complete playable footprint.
+3. Main route connections.
+4. Relative positions of all major locations.
+5. Building footprints and street boundaries.
+6. Significant elevation differences.
+7. Combat-critical sightlines.
+8. Cover and obstruction placement.
+9. Reachable and non-reachable structures.
+10. Main landmark proportions.
+
+Create a technical reference comparison internally and use it continuously throughout development.
+
+Do not stop after creating this reference analysis. Proceed to actual implementation.
+
+---
+
+## 4. INVESTIGATE THE EXISTING KAPSGO ARCHITECTURE
+
+Inspect the repository thoroughly.
+
+Identify:
+
+- Existing Bolluca and Bolluca V2 definitions.
+- Current Dust II V2 implementation.
+- Map registry and selection UI.
+- Babylon.js or other actual rendering-engine integration.
+- Existing world coordinate conventions.
+- Scene generation and mesh management.
+- Collision geometry.
+- Character dimensions.
+- Character controller and movement physics.
+- Jumping, crouching, and stair behavior.
+- Weapon raycasts and damage checks.
+- Bomb Defuse systems.
+- Spawn selection and round resets.
+- Multiplayer replication and server authority.
+- Minimap coordinate transforms.
+- Texture loading and caching.
+- Graphics quality preferences.
+- Mobile rendering and PWA restrictions.
+- Existing automated tests and test fixtures.
+
+Do not introduce another independent rendering engine.
+
+Use the repository's actual engine and existing patterns.
+
+Where possible, use modular level geometry, reusable mesh factories, material registries, and data-driven configuration instead of one enormous hardcoded map function.
+
+### Preserve map compatibility
+
+Modify or rebuild **Bolluca V2** as requested.
+
+Do not overwrite the original Bolluca map unless existing architecture requires an intentional shared component change that is proven safe.
+
+Do not replace Dust II V2 with Mirage geometry.
+
+Do not modify unrelated maps.
+
+Keep existing map identifiers and saved references compatible where possible.
+
+Ensure Bolluca V2 remains selectable in the existing KapsGO game interface.
+
+---
+
+# DELIVERABLE A — BOLLUCA V2 / CS:GO MIRAGE
+
+## 5. EXTREMELY HIGH GEOMETRIC FIDELITY
+
+The objective is not a vaguely Mirage-inspired arena.
+
+**Bolluca V2 should feel, look, and play as close as possible to the original CS:GO Mirage map.**
+
+Prioritize physical accuracy over artistic improvisation.
+
+Reconstruct:
+
+- The original navigable map footprint.
+- Relative corridor lengths.
+- Passage widths.
+- Room sizes.
+- Floor heights.
+- Wall positions.
+- Staircases and ramps.
+- Doors and windows.
+- Arches and balconies.
+- Cover positions.
+- Building silhouettes.
+- Rooflines.
+- Courtyard structures.
+- Player-accessible ledges.
+- Jump and boost positions.
+- Sniper sightlines.
+- Bombsite access.
+- Spawn layouts.
+
+Never approximate the entire map with a small number of arbitrary rectangular rooms.
+
+Do not invent extra routes simply because they are convenient to implement.
+
+Do not turn narrow original passages into large open plazas.
+
+Do not omit a location because it is structurally complex.
+
+### Coordinate accuracy
+
+Establish a single consistent 3D world coordinate system.
+
+Calibrate horizontal and vertical scale against the existing KapsGO player dimensions and the original Mirage references.
+
+Prefer verified geometry measurements whenever available.
+
+If exact dimensions are unavailable, triangulate from multiple reference views and use internally consistent estimates.
+
+Record estimated measurements as estimates.
+
+Do not claim centimeter-level or perfect 1:1 fidelity without authoritative geometry evidence.
+
+---
+
+## 6. RECONSTRUCT THE COMPLETE MIRAGE TOPOLOGY
+
+Every major area must exist and be connected correctly.
+
+### T-side architecture
+
+- T Spawn.
+- T Ramp.
+- A Ramp.
+- Palace Alley.
+- Palace interior.
+- Palace balcony and exit.
+- T-side A approach.
+- Top Mid.
+- T-side Apartments route.
+- Back Alley.
+- B Apartments.
+
+### A Site architecture
+
+- A Site.
+- Tetris.
+- Default.
+- Triple Box.
+- Firebox.
+- Ninja.
+- Sandwich.
+- Stairs.
+- Ticket Booth.
+- CT approach.
+- Jungle.
+- Connector exit.
+- Palace exit.
+- A Ramp exit.
+- Relevant columns, boxes, cover, and platform edges.
+
+### Middle architecture
+
+- Top Mid.
+- Mid.
+- Mid Boxes.
+- Chair.
+- Window / Sniper's Nest.
+- Window Room.
+- Ladder Room.
+- Vent.
+- Connector.
+- Underpass.
+- Catwalk.
+- Short / B Short.
+- Mid-to-A and Mid-to-B connections.
+
+### B Site architecture
+
+- B Apartments.
+- Apartments exit and balcony.
+- Van.
+- B Site.
+- Default.
+- Bench.
+- Back Site.
+- B Platform.
+- Site boxes.
+- Central canopy structure.
+- Market.
+- Market Door.
+- Market Window.
+- Kitchen / Shop.
+- B Short / Catwalk entry.
+- CT-side B approach.
+
+### CT-side architecture
+
+- CT Spawn.
+- Ticket / A approach.
+- Jungle rotation.
+- Window-side access.
+- Market rotation.
+- B Site access.
+
+Do not treat this list as permission to create unnecessary passages. Every connection, opening, and jump must follow the chosen original CS:GO Mirage reference.
+
+---
+
+## 7. MANDATORY ROUTE VALIDATION
+
+At minimum, preserve the following playable paths.
+
+**A approach through Ramp**
+
+T Spawn → T Ramp → A Ramp → A Site.
+
+**A approach through Palace**
+
+T Spawn → Palace Alley → Palace → Palace Exit → A Site.
+
+**A approach through Mid**
+
+Top Mid → Mid → Connector → A-side / Jungle connection → A Site.
+
+**B approach through Apartments**
+
+T Spawn → Back Alley / Apartments approach → B Apartments → B Site.
+
+**B approach through Short**
+
+Top Mid → Mid → Catwalk / B Short → B Site.
+
+**Underpass connection**
+
+B-side approach → Underpass → Mid, respecting the original elevation and accessible exits.
+
+**CT A rotation**
+
+CT Spawn → Ticket / CT approach → A Site.
+
+**CT B rotation**
+
+CT Spawn → Market / Kitchen → B Site.
+
+**Window access**
+
+CT-side interior → Window Room → Mid viewpoint, with correct ledge, drop, ladder, and vent behavior.
+
+Validate each applicable route in both directions.
+
+Do not assume that a line drawn in a reference diagram implies a flat, bidirectional ground-level passage.
+
+Differentiate walking routes from jump-only, boost-only, drop-only, and sightline-only connections.
+
+---
+
+## 8. VERTICAL GEOMETRY AND PLAYER MOVEMENT
+
+Mirage relies heavily on height differences.
+
+Model real elevation relationships around:
+
+- A Ramp.
+- Palace balcony.
+- Tetris.
+- A Site Stairs.
+- Ticket.
+- Connector.
+- Window.
+- Ladder Room.
+- Underpass.
+- Catwalk.
+- Apartments balcony.
+- Van.
+- B Site cover.
+- Market Window.
+
+These cannot be represented merely by texture markings.
+
+Use appropriate physical geometry and calibrated collision.
+
+Player movement must support the intended original paths.
+
+Test:
+
+- Walking.
+- Running.
+- Jumping.
+- Crouching.
+- Falling.
+- Ledge traversal.
+- Stair navigation.
+- Ramp movement.
+- Boostable positions supported by the existing gameplay system.
+
+Fix:
+
+- Invisible steps.
+- Incorrect jump distances.
+- Player clipping.
+- Camera snapping.
+- Broken ramp collision.
+- Getting stuck on crates.
+- Walking through solid architecture.
+- Falling through seams.
+
+If the existing game movement system cannot reproduce a specific original movement maneuver, make the smallest safe adaptation and document the difference.
+
+---
+
+## 9. SIGHTLINES AND COMPETITIVE GAMEPLAY
+
+Match the original tactical geometry.
+
+Important sightlines include:
+
+- T Ramp toward A Site.
+- Palace toward Default and Triple.
+- A Site toward Ticket and CT.
+- A Site toward Connector and Jungle.
+- Top Mid toward Window.
+- Mid toward Connector.
+- Mid toward Catwalk.
+- Window toward Mid.
+- Connector toward Mid.
+- Apartments toward B Site.
+- B Short toward B Site.
+- Market Window toward B Site.
+- Market Door toward B Site.
+
+Do not place a decorative wall across a legitimate original sightline.
+
+Do not accidentally allow vision through what should be a solid wall.
+
+Use the original player's eye height and field of view, adjusted consistently for KapsGO's character controller.
+
+Validate visibility using both reference-aligned screenshots and in-game raycasts.
+
+A visual resemblance is insufficient if cover geometry and combat angles are incorrect.
+
+---
+
+## 10. BUILD ORIGINAL-STYLE ARCHITECTURE
+
+Use the 3D reference atlas for overall architectural structure and visual comparisons.
+
+Recreate Mirage's recognizable visual character:
+
+- Warm, weathered plaster walls.
+- Stone masonry.
+- Mixed urban courtyards.
+- Narrow streets.
+- Dense building blocks.
+- Arched entrances.
+- Distinctive windows.
+- Rooftops and parapets.
+- Market architecture.
+- Interior plaster and stone.
+- Palace interior.
+- Apartments interior.
+- Tiled and stone floors.
+- Boxes, shutters, and awnings.
+- Cables, signs, and structural details.
+- Architectural depth between playable and inaccessible areas.
+
+Do not create enormous empty spaces around playable geometry.
+
+Decorative buildings should establish authentic visual boundaries and skyline composition.
+
+Non-accessible architecture must not become accidentally walkable.
+
+Create original or appropriately licensed geometry and assets. Do not extract or redistribute proprietary Valve map files without permission.
+
+---
+
+## 11. MULTIPLAYER AND BOMB DEFUSE SUPPORT
+
+The new Bolluca V2 must work with KapsGO's existing multiplayer FPS systems.
+
+Preserve:
+
+- Match creation.
+- Room joining.
+- Team assignment.
+- Team spawning.
+- Round timers.
+- Buy phase.
+- Weapon inventory.
+- Shooting and hit detection.
+- Grenades.
+- Bomb carrying.
+- Bomb planting.
+- Bomb defusing.
+- Bomb explosion.
+- Round reset.
+- Spectating.
+- Voice chat.
+- Multiplayer state synchronization.
+- Reconnection.
+- Existing latency and performance diagnostics.
+
+Implement accurate A and B planting zones.
+
+Prevent planting outside the intended site surfaces.
+
+Ensure bombs remain reachable and defusable.
+
+Do not accidentally reset or change established game rules.
+
+Maintain server-authoritative gameplay wherever already implemented.
+
+---
+
+# DELIVERABLE B — PBR MATERIALS AND TEXTURE IMPLEMENTATION
+
+## 12. USE THE NEW TEXTURE CATALOG PROPERLY
+
+The attached PBR catalog is a material research and sourcing document.
+
+It provides selected materials, suggested quality profiles, and source links.
+
+**You must retrieve the actual texture assets from their original sources.**
+
+Do not assume the PDF previews contain usable production-resolution texture data.
+
+Visit the catalog's source links and verify:
+
+- Asset availability.
+- License.
+- Download options.
+- Resolution.
+- Albedo/base color.
+- Normal maps.
+- Roughness.
+- Metallic data.
+- Ambient occlusion.
+- Compatibility with the current renderer.
+
+Poly Haven may be used as the principal asset source where the specified assets are available.
+
+Official license reference:
+
+https://polyhaven.com/license
+
+Document asset origins and licensing appropriately.
+
+Avoid importing unnecessary texture maps or extremely large source files into runtime bundles.
+
+---
+
+## 13. IMPLEMENT HIGH AND MEDIUM GRAPHICS PROFILES
+
+Create or extend the existing quality system so both maps support appropriate high-quality and performance-oriented materials.
+
+### HIGH profile
+
+Target visually rich, realistic surfaces.
+
+Use appropriately compressed:
+
+- 4K source textures for selected large, important surfaces where justified.
+- 2K textures for normal architecture and relevant props.
+- 1K or smaller textures for minor props.
+
+### MEDIUM profile
+
+Prioritize stable performance.
+
+Use:
+
+- 2K where genuinely useful.
+- 1K for most normal surfaces.
+- 512–1024 textures for smaller props where appropriate.
+
+Do not automatically use the highest available resolution for everything.
+
+Quality profiles must share the same gameplay geometry, collision boundaries, and sightlines.
+
+Do not let lower quality settings alter important gameplay cover.
+
+### Texture pipeline
+
+Use the actual engine's supported PBR workflow.
+
+Where supported, implement:
+
+- KTX2/Basis Universal compression.
+- Correct color-space handling.
+- Proper normal-map conventions.
+- Appropriate roughness and metallic values.
+- Mipmaps.
+- Anisotropic filtering where beneficial.
+- Texture atlases.
+- Trim sheets.
+- Material reuse.
+- Reduced draw calls.
+- Efficient GPU memory consumption.
+
+Verify the existing engine supports the chosen format and loader before introducing new build dependencies.
+
+Do not blindly copy a Three.js implementation into Babylon.js or vice versa.
+
+---
+
+## 14. APPLY THE TEXTURE CATALOG TO BOLLUCA V2
+
+Use the Bolluca/Mirage-specific section of the supplied PBR catalog to select materials for the new map.
+
+Choose materials according to the architectural surfaces and visual references.
+
+Keep:
+
+- Correct surface scale.
+- Consistent texel density.
+- Appropriate UV mapping.
+- Natural weathering.
+- Controlled roughness.
+- Realistic material response.
+- Suitable lighting.
+- Balanced contrast.
+- Clear separation between walls and floors.
+
+Do not apply generic sand textures to every surface.
+
+Do not turn Mirage into a desert-themed arena simply because sand materials are available.
+
+Preserve the recognizable colors and architectural atmosphere of the chosen CS:GO Mirage version.
+
+Use decals for surface markings and appropriate meshes for structural forms.
+
+A texture must not substitute for missing physical geometry.
+
+---
+
+## 15. SELECTIVELY IMPROVE DUST II V2 TEXTURES
+
+Dust II V2 already exists.
+
+Do not rebuild its geometry as part of this task unless a directly related, critical material integration issue requires a small safe correction.
+
+Your task is to **evaluate the existing Dust II V2 material quality and upgrade it selectively if the new catalog enables a meaningful improvement**.
+
+First inspect the current materials and texture implementation.
+
+Compare the current visuals against:
+
+1. The supplied Dust II section of the PBR catalog.
+2. Original CS:GO Dust II 2017 screenshots.
+3. Existing project quality expectations.
+4. Performance and memory budgets.
+
+### Upgrade only when justified
+
+Consider improvements in:
+
+- Sand and gravel ground surfaces.
+- Stone streets.
+- Sandstone walls.
+- Plaster buildings.
+- Weathered surfaces.
+- Tunnel interiors.
+- A and B Site platforms.
+- Wooden crates.
+- Heavy wooden doors.
+- Metal doors.
+- Barrels.
+- Vehicle surface materials.
+- Roofing.
+- Small architectural details.
+
+Replace or upgrade materials when the proposed version produces better:
+
+- Surface detail.
+- Material realism.
+- Visual consistency.
+- Texture sharpness.
+- UV quality.
+- Normal-map appearance.
+- Lighting response.
+- Environmental cohesion.
+
+**Do not replace a better existing material with a worse catalog material merely because the catalog is new.**
+
+Do not change Dust II V2's geometry, map coordinates, collision, callouts, spawn points, bombsites, or weapon sightlines during a texture-only improvement.
+
+### Before-and-after evaluation
+
+Capture comparable screenshots of the existing and proposed visuals.
+
+Use consistent:
+
+- Camera positions.
+- Field of view.
+- Lighting.
+- Graphics settings.
+- Render resolution.
+
+Inspect areas such as:
+
+- T Spawn.
+- A Long.
+- Long Doors.
+- A Site.
+- Mid.
+- Upper Tunnels.
+- B Site.
+- CT Spawn.
+
+If a new material is visually worse or disproportionately expensive, retain the existing version.
+
+Report which textures were replaced and which were intentionally preserved.
+
+---
+
+## 16. SHARED ASSET SYSTEM
+
+Avoid duplicated textures between Bolluca V2 and Dust II V2.
+
+If both maps use the same material, allow the asset pipeline to share the underlying resource when appropriate.
+
+Create or reuse a central texture/material registry.
+
+Use predictable asset names.
+
+Support:
+
+- Shared material loading.
+- Correct asset references.
+- Texture caching.
+- Resource disposal.
+- Map transitions.
+- Quality-profile switching.
+- Graceful fallback when an asset fails to load.
+
+Do not create memory leaks when players switch maps.
+
+Do not load all 4K textures for every map during the initial KapsApp page load.
+
+Do not download production gameplay assets from arbitrary third-party servers at runtime. Bundle or serve validated optimized assets from the application's own asset infrastructure.
+
+---
+
+# QUALITY ASSURANCE
+
+## 17. REFERENCE-ALIGNED VISUAL COMPARISON
+
+Create repeatable comparison camera positions for Bolluca V2.
+
+At minimum:
+
+- T Spawn.
+- A Ramp.
+- Palace.
+- A Site Default.
+- A Site Stairs.
+- Ticket.
+- Connector.
+- Jungle.
+- Top Mid.
+- Mid Window.
+- Catwalk.
+- Underpass.
+- B Apartments.
+- B Site.
+- Market Window.
+- Market Door.
+- CT Spawn.
+
+For each camera position:
+
+1. Identify a suitable original CS:GO reference.
+2. Reproduce approximately the same player-eye camera angle.
+3. Compare architectural silhouettes.
+4. Compare key wall positions.
+5. Compare cover placement.
+6. Compare visible passage geometry.
+7. Compare scale and perspective.
+8. Fix major discrepancies.
+
+Do not rely exclusively on overhead radar comparison.
+
+A map can have a superficially correct minimap while still having completely incorrect 3D geometry.
+
+---
+
+## 18. AUTOMATED GEOMETRY AND GAMEPLAY TESTS
+
+Add meaningful validation where technically possible.
+
+### Geometry tests
+
+- All required regions exist.
+- All mandatory routes connect.
+- Walkable surfaces have proper collision.
+- Outer boundaries are sealed.
+- Floor height transitions are consistent.
+- No major geometry overlaps block valid routes.
+- Window and doorway openings behave correctly.
+- No invisible barriers block legitimate movement.
+- No unintended access to inaccessible rooftops.
+
+### Multiplayer tests
+
+- Two players can join the same match.
+- Their positions synchronize.
+- Map geometry is consistent on client and server.
+- Weapon hits are handled correctly.
+- Grenades collide with the intended surfaces.
+- Bombs can be planted at both sites.
+- Bombs can be defused.
+- Round resets restore correct positions.
+- Team spawn locations are safe.
+- Match reconnect behavior remains functional.
+
+### Performance tests
+
+Evaluate on desktop and mobile.
+
+Measure where possible:
+
+- Average FPS.
+- Frame-time stability.
+- Draw calls.
+- Mesh counts.
+- Texture memory.
+- Asset download size.
+- Map loading time.
+- GPU resource usage.
+
+Compare High and Medium profiles.
+
+Report actual results rather than inventing benchmark numbers.
+
+---
+
+## 19. REGRESSION REQUIREMENTS
+
+After implementation, verify that the following remain functional:
+
+- Original Bolluca.
+- Bolluca V2.
+- Dust II.
+- Dust II V2.
+- Other existing maps.
+- Map selection interface.
+- Multiplayer room creation.
+- Bomb Defuse mode.
+- Character controls.
+- Weapon damage.
+- Voice chat.
+- Spectator mode.
+- Mobile controls.
+- Quality settings.
+- Minimap.
+- Existing user profiles and inventory.
+
+Do not alter existing database content unnecessarily.
+
+Never reset the production database.
+
+Use safe migrations only when strictly required.
+
+---
+
+## 20. EXECUTION ORDER
+
+Complete the work in the following order.
+
+### Phase 1 — Repository inspection
+
+Identify the current map engine, Bolluca V2, Dust II V2, and rendering architecture.
+
+### Phase 2 — Reference research
+
+Read both PDFs, inspect embedded visuals, follow material-source links, and research original CS:GO Mirage.
+
+### Phase 3 — Coordinate and topology reconstruction
+
+Determine a consistent scale, map orientation, major boundaries, and route graph.
+
+### Phase 4 — Complete Mirage whitebox
+
+Build the entire navigable Bolluca V2 layout before detailed decoration.
+
+### Phase 5 — Geometry and collision validation
+
+Verify all required routes, height differences, jumping surfaces, bombsites, and combat lines.
+
+### Phase 6 — Structural architecture
+
+Build the correct buildings, arches, rooms, rooftops, doorways, corridors, platforms, and cover.
+
+### Phase 7 — Bolluca V2 PBR materials
+
+Download, process, optimize, and apply appropriate PBR assets from the supplied catalog.
+
+### Phase 8 — Visual accuracy refinement
+
+Compare multiple original CS:GO screenshots against KapsGO renders and fix important differences.
+
+### Phase 9 — Dust II V2 material assessment
+
+Evaluate existing Dust II V2 materials and test selective improvements with the new texture catalog.
+
+### Phase 10 — Performance optimization
+
+Optimize textures, rendering, resource loading, draw calls, and graphics-quality profiles.
+
+### Phase 11 — Integration tests
+
+Run gameplay, synchronization, collision, bombsite, desktop, and mobile tests.
+
+### Phase 12 — Final verification and commit
+
+Fix identified defects, verify the production build, and commit the completed changes.
+
+Do not stop after producing only the whitebox or downloading textures.
+
+The final deliverable must be functional code and assets.
+
+---
+
+## 21. GITHUB AND DEPLOYMENT REQUIREMENTS
+
+Repository:
+
+`EmirGan1/KapsApp4`
+
+Requirements:
+
+- Work on the existing application architecture.
+- Implement real changes, not pseudocode.
+- Preserve unrelated functionality.
+- Do not overwrite unrelated user changes.
+- Avoid unnecessary dependencies.
+- Keep source asset licenses documented.
+- Do not commit secrets.
+- Do not modify the production database destructively.
+- Run TypeScript checks.
+- Run production build checks.
+- Run relevant automated tests.
+- Commit verified changes directly to `main`.
+- Do not open a pull request.
+
+Do not change Cloudflare, DNS, Nginx, or production server configuration unless absolutely necessary for the implementation. If a server-level change is required, identify it precisely and report it instead of making an unverified infrastructure change.
+
+Do not claim deployment or testing succeeded unless it actually did.
+
+---
+
+## 22. FINAL REPORT
+
+Provide a clear final implementation report containing:
+
+1. Bolluca V2 reconstruction status.
+2. Reference version of CS:GO Mirage used.
+3. Map areas completed.
+4. Geometry and topology accuracy findings.
+5. Required route validation results.
+6. Collision and bombsite test results.
+7. Architectural and material changes.
+8. PBR assets downloaded and integrated.
+9. High and Medium quality-profile behavior.
+10. Dust II V2 textures upgraded.
+11. Dust II V2 textures intentionally retained.
+12. Before-and-after visual comparison findings.
+13. Desktop and mobile performance results.
+14. Remaining discrepancies from original Mirage.
+15. Files created or modified.
+16. Build and automated test results.
+17. Git commit hash.
+18. Deployment instructions.
+
+Explicitly separate verified results from estimates and untested claims.
+
+---
+
+## 23. NON-NEGOTIABLE ACCEPTANCE CRITERIA
+
+Do not mark the project complete unless:
+
+**For Bolluca V2:**
+
+- The map is a complete playable 3D reconstruction of CS:GO Mirage.
+- Major areas and routes are correctly connected.
+- Elevation differences are represented physically.
+- Tactical sightlines are recognizable.
+- A and B bombsites are functional.
+- Collision is reliable.
+- Multiplayer functionality works.
+- The minimap matches the final 3D world.
+- Visuals use properly sourced and optimized materials.
+- Desktop and mobile rendering are tested.
+- The map can be selected and played inside KapsGO.
+
+**For Dust II V2:**
+
+- Existing geometry and gameplay remain intact.
+- The supplied PBR catalog has been evaluated.
+- Material upgrades are applied only where beneficial.
+- Assets are correctly licensed and processed.
+- Visual quality and runtime performance are checked.
+- No texture change creates gameplay or collision regression.
+
+**Most importantly:**
+
+Do not produce a generic Middle Eastern town and call it Mirage.
+
+Do not approximate Mirage with a few rectangular corridors.
+
+Do not use attractive textures to conceal incorrect topology.
+
+Do not treat material preview images as final texture assets.
+
+Do not claim perfect fidelity without verified measurements and comparison evidence.
+
+**The final objective is a KapsGO Bolluca V2 map that is structurally, tactically, visually, and functionally as close to the original CS:GO Mirage as the available references and game engine reasonably permit, together with a carefully validated Dust II V2 texture improvement.**
+
+Begin implementation immediately after inspecting the repository and both attached reference PDFs.
+
+Deliver working code, actual optimized assets, validated gameplay, and a direct commit to `main`.

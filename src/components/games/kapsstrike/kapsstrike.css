@@ -189,6 +189,20 @@ html:not(.dark) .ks-root button:hover {
 .ks-map-art.dust2v2 i:nth-child(3) {
   background: #917452;
 }
+.ks-map-art.bollucav2 {
+  background: linear-gradient(180deg, #8ec4e6 0%, #dfc69f 58%, #b9976c 100%);
+}
+.ks-map-art.bollucav2 i {
+  background: #d8bc93;
+  border-top: 3px solid #3d6b69;
+}
+.ks-map-art.bollucav2 i:nth-child(2) {
+  background: #cfa786;
+  border-top: 3px solid #c89d4e;
+}
+.ks-map-art.bollucav2 i:nth-child(3) {
+  background: #597354;
+}
 .ks-map-art.neon {
   background: #1e2e4a;
 }
