@@ -18,15 +18,20 @@ import {
 } from 'lucide-react';
 import KapIBCalculator from './KapIBCalculator';
 import KilicKepenekCalculator from './KilicKepenekCalculator';
+import GermanGradeCalculator from './GermanGradeCalculator';
 
 interface KapsculatorHubProps {
   currentUserRoles?: string[];
 }
 
-export type KapsculatorVersion = 'hub' | 'original' | 'kilic_kepenek';
+export type KapsculatorVersion = 'hub' | 'original' | 'kilic_kepenek' | 'german_grade';
 
 export default function KapsculatorHub({ currentUserRoles = [] }: KapsculatorHubProps) {
   const [activeVersion, setActiveVersion] = useState<KapsculatorVersion>('hub');
+
+  if (activeVersion === 'german_grade') {
+    return <GermanGradeCalculator onBack={() => setActiveVersion('hub')} />;
+  }
 
   // If a specific calculator version is active, render it with back-to-hub and cross-switch handlers
   if (activeVersion === 'original') {
@@ -76,6 +81,18 @@ export default function KapsculatorHub({ currentUserRoles = [] }: KapsculatorHub
           <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
             Resmî IB Diploma not sınırları, mock denemeleri ve predicted grade hesaplamaları için kullanmak istediğiniz motoru seçin.
           </p>
+        </div>
+
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <button type="button" onClick={() => setActiveVersion('german_grade')}
+            className="w-full flex items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-left hover:border-indigo-400 dark:hover:border-indigo-500 focus-visible:outline-2 focus-visible:outline-indigo-500 transition-colors">
+            <GraduationCap size={22} className="text-indigo-500 shrink-0" />
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-bold">Almanya Not Dönüşümü</span>
+              <span className="block text-xs text-slate-500 dark:text-slate-400">IB final puanı → Alman notu · 1,0 en iyi, 4,0 en düşük geçer not</span>
+            </span>
+            <ArrowRight size={18} className="shrink-0 text-indigo-500" />
+          </button>
         </div>
 
         {/* TWO BIG INTERACTIVE CARDS */}
