@@ -93,11 +93,13 @@ test('Bolluca does not create, respawn, or expose supply crates and airdrops', a
   const staleCrate = { id: 'old-crate', kind: 'chest', weapon: 'carbine',
     position: { ...player.movement.position }, opened: false, expires: 0 } as const;
   world.pickups.push(staleCrate);
-  world.pickups.push({ ...staleCrate, id: 'old-weapon', kind: 'dropped' });
   world.respawns = [{ at: 1, pickup: staleCrate }];
   world.drop = { position: { ...player.movement.position }, warning: 1, landing: 2 };
   assert.equal(nearestSupply(world, map, player), undefined);
   assert.equal(claimSupply(world, map, player, 1), false);
+  // Physical dropped weapons ARE allowed on bomb maps (including Bolluca) and carry skins/yaw.
+  world.pickups.push({ ...staleCrate, id: 'old-weapon', kind: 'dropped', expires: DROP_INTERVAL });
+  assert.equal(nearestSupply(world, map, player)?.id, 'old-weapon');
   player.weapon.inventory = ['carbine'];
   dropInventory(world, player, 2, map);
   assert.equal(world.pickups.length, 2);

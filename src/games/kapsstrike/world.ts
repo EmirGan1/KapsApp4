@@ -54,7 +54,8 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
  if(map.id==='bolluca'||map.id==='bollucav2'||map.id==='dust2v2'){
   w.drop=undefined;
   w.respawns=undefined;
-  w.pickups=[];
+  // Preserve physical dropped weapons while keeping arcade chests/airdrops disabled on bomb maps.
+  w.pickups=w.pickups.filter(p=>p.kind==='dropped'&&!p.opened&&(!p.expires||p.expires>tick));
   return;
  }
  for(const job of [...(w.respawns||[])]){
@@ -79,12 +80,12 @@ export function advanceWorld(w:StrikeWorld,map:MapDefinition,tick:number){
  }
 }
 export function nearestSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState){
- if(map.id==='bolluca'||map.id==='bollucav2'||map.id==='dust2v2')return undefined;
+ const droppedOnly=map.id==='bolluca'||map.id==='bollucav2'||map.id==='dust2v2';
  if(p.hp<=0)return undefined;
  const eye={...p.movement.position,y:p.movement.position.y+1.1};
- return w.pickups.filter(s=>!s.opened).map(s=>({s,d:Math.hypot(s.position.x-eye.x,s.position.y+.5-eye.y,s.position.z-eye.z)})).filter(({s,d})=>{
+ return w.pickups.filter(s=>!s.opened&&(!droppedOnly||s.kind==='dropped')).map(s=>({s,d:Math.hypot(s.position.x-eye.x,s.position.y+.35-eye.y,s.position.z-eye.z)})).filter(({s,d})=>{
   if(d>2.8)return false;
-  const dir={x:(s.position.x-eye.x)/d,y:(s.position.y+.5-eye.y)/d,z:(s.position.z-eye.z)/d};
+  const dir={x:(s.position.x-eye.x)/d,y:(s.position.y+.35-eye.y)/d,z:(s.position.z-eye.z)/d};
   return !collisionSolids(map).some(solid=>raySolid(eye,dir,solid,d)<d-.1);
  }).sort((a,b)=>Math.abs(a.d-b.d)>.05?a.d-b.d:Number(b.s.kind==='airdrop')-Number(a.s.kind==='airdrop'))[0]?.s;
 }
@@ -97,7 +98,14 @@ export function claimSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState,tick:n
  }else{
   const weapons=s.weapons?.length?s.weapons:[s.weapon];
   p.weapon.inventory=Array.from(new Set([...(p.weapon.inventory||[]),...weapons]));
-  for(const weapon of weapons)p.weapon.ammo[weapon]=WEAPONS[weapon].capacity;
+  for(const weapon of weapons){
+   p.weapon.ammo[weapon]=WEAPONS[weapon].capacity;
+   if(s.kind==='dropped'){
+    p.weapon.pickedSkins={...(p.weapon.pickedSkins||{}),[weapon]:s.skinId??''};
+   }else if(p.weapon.pickedSkins){
+    delete p.weapon.pickedSkins[weapon];
+   }
+  }
   p.weapon.selected=weapons[0];p.weapon.reloadUntil=0;p.weapon.switchUntil=tick+24;p.weapon.triggerHeld=true;
   p.lootNotice=weapons.map(weapon=>WEAPONS[weapon].name).join(' + ');
  }
@@ -106,9 +114,33 @@ export function claimSupply(w:StrikeWorld,map:MapDefinition,p:PlayerState,tick:n
  s.opened=true;s.expires=tick+Math.round(15/C.dt);p.lootNoticeUntil=tick+Math.round(3/C.dt);
  return true;
 }
-export function dropInventory(w:StrikeWorld,p:PlayerState,tick:number,map?:MapDefinition){
- if(map?.id!=='bolluca'&&map?.id!=='bollucav2'&&map?.id!=='dust2v2')for(const weapon of p.weapon.inventory||[])if(SPECIAL_WEAPONS.includes(weapon))w.pickups.push({id:`weapon-${++w.serial}`,position:{...p.movement.position},weapon,kind:'dropped',opened:false,expires:tick+DROP_INTERVAL});
- p.weapon.inventory=[];p.weapon.selected='rifle';p.weapon.reloadUntil=0;
+export function dropInventory(
+ w:StrikeWorld,
+ p:PlayerState,
+ tick:number,
+ map?:MapDefinition,
+ cosmeticLoadout?:Partial<Record<WeaponId,string>>,
+){
+ if(map?.id!=='bolluca'&&map?.id!=='bollucav2'&&map?.id!=='dust2v2'){
+  for(const weapon of p.weapon.inventory||[]){
+   if(SPECIAL_WEAPONS.includes(weapon)){
+    const pos={...p.movement.position};
+    if(map)pos.y=support(map,pos,pos.y+C.step);
+    const activeSkin=p.weapon.pickedSkins?.[weapon]!==undefined?(p.weapon.pickedSkins[weapon]||undefined):cosmeticLoadout?.[weapon];
+    w.pickups.push({
+     id:`weapon-${++w.serial}`,
+     position:pos,
+     weapon,
+     kind:'dropped',
+     opened:false,
+     expires:tick+DROP_INTERVAL,
+     ...(activeSkin?{skinId:activeSkin}:{}),
+     yaw:p.yaw,
+    });
+   }
+  }
+ }
+ p.weapon.inventory=[];p.weapon.pickedSkins=undefined;p.weapon.selected='rifle';p.weapon.reloadUntil=0;
 }
 
 export function supplyLabel(s:StrikeWorld['pickups'][number],p?:PlayerState){

@@ -164,14 +164,14 @@ export class StrikeController {
   private sequence = 0;
   private active = false;
   private menuOverlay=false;
-  private spectator?:{id:string;username:string;position:Vec3;yaw:number;pitch:number;stance:string};
+  private spectator?:{id:string;username:string;position:Vec3;yaw:number;pitch:number;stance:string;selectedWeapon?:WeaponId;weaponSkin?:string};
   private teamSpectator=new TeamSpectator();
   private get watchingTeam(){return !!this.state.bomb&&this.state.bomb.phase!=='finished'&&this.state.player.hp<=0;}
   cycleSpectator(direction=1){
     if(!this.watchingTeam)return;
     this.refreshSpectator();this.teamSpectator.cycle(direction);this.refreshSpectator();this.pushHUD();
   }
-  private refreshSpectator(rendered?:{id:string;position:Vec3;yaw:number;pitch:number;stance:string}[]){
+  private refreshSpectator(rendered?:{id:string;position:Vec3;yaw:number;pitch:number;stance:string;selectedWeapon?:WeaponId;weaponSkin?:string}[]){
     const target=this.teamSpectator.update(this.state.bomb,this.socket?.id||this.state.player.id,this.localTeam,this.state.player.hp,this.remotePlayerList);
     const pose=target&&rendered?.find(p=>p.id===target.id);
     this.spectator=target?{...target,...(pose||{})}:undefined;
@@ -1396,7 +1396,7 @@ export class StrikeController {
       return this.localUtility;
     }
     const bomb = this.state.bomb;
-    const playerId = this.isMultiplayer ? (this.socket?.id ?? "") : this.state.player.id;
+    const playerId = this.socket?.id || this.state.player.id;
     return bomb?.players[playerId]?.utility;
   }
   private canEquipUtility(item: GrenadeKind) {
@@ -1405,7 +1405,7 @@ export class StrikeController {
       return (this.localUtility[item] ?? 0) > 0;
     }
     const bomb = this.state.bomb;
-    const playerId = this.isMultiplayer ? (this.socket?.id ?? "") : this.state.player.id;
+    const playerId = this.socket?.id || this.state.player.id;
     return !!(bomb && ['active','planted'].includes(bomb.phase) && bomb.players[playerId]?.utility?.[item]);
   }
   public selectUtility(item?: GrenadeKind) {

@@ -14,7 +14,7 @@ export default function StrikeMinimap({map,hud}:{map:MapDefinition;hud:StrikeHUD
  const callout=map.id==='dust2v2'?getDust2V2Callout(p.x,p.y,p.z):map.id==='bollucav2'?getBollucaV2Callout(p.x,p.y,p.z):null;
  return <aside className="ks-minimap" aria-label="Taktik mini harita"><svg viewBox={`${-b} ${-b} ${b*2} ${b*2}`} role="img" aria-label={`${map.name} mini haritası`}>
  <rect x={-b} y={-b} width={b*2} height={b*2} fill="#0c1b25"/>
- {map.radarFootprint?.map(([west,east,south,north])=><rect key={`${west},${east},${south},${north}`} x={west} y={-north} width={east-west} height={north-south} fill="#405c6b"/>)}
+ {map.radarFootprint?.map(([west,east,south,north],i)=><rect key={`${west},${east},${south},${north}-${i}`} x={west} y={-north} width={east-west} height={north-south} fill="#405c6b"/>)}
  {!map.radarFootprint&&map.routes?.map(r=><polyline key={r.name} points={r.points.map(p=>`${p.x},${-p.z}`).join(' ')} fill="none" stroke="#304756" strokeWidth="3"/>)}
  {terraces.map(s=><rect key={s.id} x={s.x-s.w/2} y={-s.z-s.d/2} width={s.w} height={s.d} fill="#3b5965"/>)}
  {buildings.map(s=><rect key={s.id} x={s.x-s.w/2} y={-s.z-s.d/2} width={s.w} height={s.d} fill="#69818d"/>)}

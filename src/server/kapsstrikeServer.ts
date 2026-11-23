@@ -1,7 +1,7 @@
 import { grenadeEffect, grenadeLaunch, isGrenade, stepGrenade } from "../games/kapsstrike/grenades";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import {advanceReload} from '../games/kapsstrike/reload';
-import {dropBombWeapon,pickupBombWeapon} from '../games/kapsstrike/bombWeapons';
+import {dropBombWeapon,pickupBombWeapon,resolveActiveWeaponSkin} from '../games/kapsstrike/bombWeapons';
 import {safeSpawn,spreadSpawn} from "../games/kapsstrike/spawns";
 import {tracePlayer} from '../games/kapsstrike/hitboxes';
 import {BOMB_RULES,bombView,bombPurchaseError,createBombMatch,stepBomb,bombInteract,dropBomb,buyBombEquipment,refundBombEquipment,bombWinTarget,isBombPrimary,type BombMatch} from "../games/kapsstrike/bomb";
@@ -52,6 +52,7 @@ function clonePlayerState(s: PlayerState): PlayerState {
       ...s.weapon,
       ammo: { ...s.weapon.ammo },
       inventory: s.weapon.inventory ? [...s.weapon.inventory] : undefined,
+      pickedSkins: s.weapon.pickedSkins ? { ...s.weapon.pickedSkins } : undefined,
     },
   };
 }
@@ -363,7 +364,7 @@ export class StrikeRoom {
       userId: p.userId,
       username: p.username,
       skin: p.skin,
-      weaponSkin:p.cosmeticLoadout[p.state.weapon.selected],
+      weaponSkin: resolveActiveWeaponSkin(p.state, p.state.weapon.selected, p.cosmeticLoadout),
       avatar: p.avatar,
       color: p.color,
       team: p.team,
@@ -416,7 +417,7 @@ export class StrikeRoom {
       userId: p.userId,
       username: p.username,
       skin: p.skin,
-      weaponSkin: p.cosmeticLoadout[p.state.weapon.selected],
+      weaponSkin: resolveActiveWeaponSkin(p.state, p.state.weapon.selected, p.cosmeticLoadout),
       team: p.team,
       color: p.color,
       hp: p.state.hp,
@@ -439,10 +440,19 @@ export class StrikeRoom {
       ping: p.ping,
     }));
 
+    const isClassicBombMap =
+      this.map === "bolluca" || this.map === "bollucav2" || this.map === "dust2v2";
+    const worldSnapshot = cloneWorld(this.world);
+    if (isClassicBombMap) {
+      worldSnapshot.pickups = worldSnapshot.pickups.filter((pk) => pk.kind === "dropped");
+      worldSnapshot.drop = undefined;
+      worldSnapshot.respawns = undefined;
+    }
+
     return {
       tick: this.tick,
       roomCode: this.roomCode,
-      world: (this.map === 'bolluca' || this.map === 'bollucav2' || this.map === 'dust2v2') ? createWorld(MAPS[this.map]) : cloneWorld(this.world),
+      world: worldSnapshot,
       serverTime: Date.now(),
       players: playerSnapshots,
       teamScores: this.mode !== "ffa" ? { ...this.teamScores } : undefined,
@@ -1125,6 +1135,11 @@ export class KapsStrikeServerManager {
           p.state.movement=newMovement(spawn);bp.position={...spawn};
           p.state.hp=100;p.state.armor=bp.armor;p.state.deadUntil=0;p.state.protectedUntil=room.tick+C.protectionTicks;p.damageCredits.clear();
           p.state.weapon.inventory=[...bp.weapons];p.state.weapon.switchUntil=0;
+          if(p.state.weapon.pickedSkins){
+            const kept:Partial<Record<WeaponId,string>>={};
+            for(const w of bp.weapons)if(p.state.weapon.pickedSkins[w]!==undefined)kept[w]=p.state.weapon.pickedSkins[w];
+            p.state.weapon.pickedSkins=Object.keys(kept).length?kept:undefined;
+          }
           p.state.yaw=p.team==='blue'?Math.PI:0;p.state.pitch=0;
           p.inputQueue=[];p.receivedInputs.clear();p.heldInput=undefined;p.lastInputTick=room.tick;
           p.state.weapon.selected=bp.weapons.find(w=>w!=='knife'&&w!=='pistol')||(bp.weapons.includes('pistol')?'pistol':'knife');p.state.weapon.reloadUntil=0;p.state.weapon.nextFire=0;p.state.weapon.triggerHeld=false;
@@ -1193,7 +1208,7 @@ export class KapsStrikeServerManager {
         player.state.yaw = input.yaw;
         player.state.pitch = clamp(input.pitch, -1.48, 1.48);
 
-        if(input.interact){if(room.bomb)pickupBombWeapon(room.bomb,room.world,mapDef,player.state,room.tick);else claimSupply(room.world,mapDef,player.state,room.tick);}
+        if(input.interact){if(room.bomb)pickupBombWeapon(room.bomb,room.world,mapDef,player.state,room.tick,player.cosmeticLoadout);else claimSupply(room.world,mapDef,player.state,room.tick);}
 
         // Handle weapon switch request
         if (input.weapon && (!room.bomb||room.bomb.players[player.id]?.weapons.includes(input.weapon)) && ownsWeapon(player.state.weapon,input.weapon) && input.weapon !== player.state.weapon.selected) {
@@ -1499,8 +1514,8 @@ export class KapsStrikeServerManager {
       if(id!==killer.id && helper && credit.amount>=20 && room.tick-credit.tick<=8/C.dt){helper.assists++;helper.score+=25;}
     }
     victim.damageCredits.clear();
-    if(room.bomb&&room.map!=='bolluca')dropBombWeapon(room.bomb,room.world,victim.state,room.tick,true);
-    dropInventory(room.world,victim.state,room.tick,MAPS[room.map]);
+    if(room.bomb)dropBombWeapon(room.bomb,room.world,victim.state,room.tick,true,victim.cosmeticLoadout,MAPS[room.map]);
+    dropInventory(room.world,victim.state,room.tick,MAPS[room.map],victim.cosmeticLoadout);
     if(room.bomb){room.bomb.players[victim.id].alive=false;dropBomb(room.bomb,victim.id);killer.state.hp=Math.min(100,killer.state.hp);const p=room.bomb.players[killer.id];if(p)p.money=Math.min(BOMB_RULES.maxMoney,p.money+BOMB_RULES.killReward);}
     victim.deaths++;
     victim.state.deadUntil = room.tick + C.respawnTicks;
@@ -1744,8 +1759,8 @@ export class KapsStrikeServerManager {
         ));
         reply(true);return;
       }
-      if(request.kind==='pickup_weapon'){const player=room.players.get(socket.id)!;reply(pickupBombWeapon(b,room.world,MAPS[room.map],player.state,room.tick));return;}
-      if(request.kind==='drop_weapon'){const player=room.players.get(socket.id)!;const success=room.map!=='bolluca'&&dropBombWeapon(b,room.world,player.state,room.tick);if(success)player.pendingFire=undefined;reply(success,success?undefined:'Bu silah bırakılamaz.');return;}
+      if(request.kind==='pickup_weapon'){const player=room.players.get(socket.id)!;reply(pickupBombWeapon(b,room.world,MAPS[room.map],player.state,room.tick,player.cosmeticLoadout));return;}
+      if(request.kind==='drop_weapon'){const player=room.players.get(socket.id)!;const success=dropBombWeapon(b,room.world,player.state,room.tick,false,player.cosmeticLoadout,MAPS[room.map]);if(success)player.pendingFire=undefined;reply(success,success?undefined:'Bu silah bırakılamaz.');return;}
       if(request.kind==='drop'){reply(dropBomb(b,socket.id));return;}
       if(request.kind==='fast_detonate'){
         // The UI hiding this test shortcut is not an authorization boundary.

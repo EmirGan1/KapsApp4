@@ -95,7 +95,7 @@ export interface MovementState {
   crouchHeld: boolean;
 }
 export interface WorldPickup {
-  id: string; position: Vec3; ammo?:number; weapon: WeaponId; weapons?:WeaponId[]; consumable?:"health"|"armor"; amount?:number; kind: "chest" | "dropped" | "airdrop"; opened: boolean; expires: number;
+  id: string; position: Vec3; ammo?:number; weapon: WeaponId; weapons?:WeaponId[]; consumable?:"health"|"armor"; amount?:number; kind: "chest" | "dropped" | "airdrop"; opened: boolean; expires: number; skinId?: string; yaw?: number;
 }
 export interface StrikeWorld {
   respawns?: {at:number;pickup:WorldPickup}[]; pickups: WorldPickup[]; nextDrop: number; drop?: {position: Vec3; warning: number; landing: number}; serial: number; seed: number;
@@ -109,6 +109,8 @@ export interface WeaponState {
   switchUntil: number;
   triggerHeld: boolean;
   shotIndex: number;
+  /** Per-weapon skin overrides inherited from picked-up ground weapons ("" = explicitly unskinned). */
+  pickedSkins?: Partial<Record<WeaponId, string>>;
 }
 export interface PlayerState {
   id: string;

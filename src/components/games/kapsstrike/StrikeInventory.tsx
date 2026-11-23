@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { CASES, COSMETICS, RARITIES, caseRewards, emptyInventory, type Cosmetic, type Inventory } from '../../../games/kapsstrike/cosmetics';
 import { WEAPONS } from '../../../games/kapsstrike/config';
+import WeaponPreview3D from './WeaponPreview3D';
 
 export function WeaponArt({ item }: { item: Cosmetic }) {
   const gradientId = React.useId().replace(/:/g,'') + '-finish';
@@ -349,6 +350,7 @@ export default function StrikeInventory({
   const [sound, setSound] = useState(true);
   const [rewardChance,setRewardChance]=useState(0);
   const [pendingReward, setPendingReward] = useState<Cosmetic | null>(null);
+  const [inspectedItem, setInspectedItem] = useState<Cosmetic | null>(null);
 
   const audio = useRef<AudioContext | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -458,6 +460,13 @@ export default function StrikeInventory({
 
   const visibleItems=COSMETICS.filter(c=>state.owned[c.id]&&(weaponFilter==='all'||c.weapon===weaponFilter)&&(rarityFilter==='all'||c.rarity===rarityFilter)&&(!equippedOnly||state.equipped[c.weapon]===c.id)&&(c.name+' '+WEAPONS[c.weapon].name).toLocaleLowerCase('tr-TR').includes(search.toLocaleLowerCase('tr-TR'))).sort((a,b)=>Object.keys(RARITIES).indexOf(b.rarity)-Object.keys(RARITIES).indexOf(a.rarity)||a.name.localeCompare(b.name,'tr'));
   const pool = caseRewards(selected),cost=caseCost(selected,state.freeCases);
+  const activeCaseInspect = reward || (inspectedItem && pool.some((p) => p.item.id === inspectedItem.id) ? inspectedItem : pool[0]?.item ?? null);
+  const activeCaseChance = activeCaseInspect ? pool.find((p) => p.item.id === activeCaseInspect.id)?.chance : undefined;
+  const activeOwnedInspect =
+    (inspectedItem && visibleItems.some((c) => c.id === inspectedItem.id) ? inspectedItem : null) ||
+    visibleItems.find((c) => state.equipped[c.weapon] === c.id) ||
+    visibleItems[0] ||
+    null;
 
   return (
     <div className="ks-inventory">
@@ -555,44 +564,101 @@ export default function StrikeInventory({
             adediyle saklanır. Takas veya parasal değer yoktur.
           </p>
 
+          {activeCaseInspect && (
+            <WeaponPreview3D
+              weapon={activeCaseInspect.weapon}
+              item={activeCaseInspect}
+              chance={activeCaseChance}
+              isOwned={Boolean(state.owned[activeCaseInspect.id])}
+              isEquipped={state.equipped[activeCaseInspect.weapon] === activeCaseInspect.id}
+              onEquip={equip}
+              busy={busy}
+            />
+          )}
+
           <h3>İçerikler ve olasılıklar</h3>
           <div className="ks-loot-grid">
-            {pool.map(({ item, chance }) => (
-              <article key={item.id} style={{ '--rarity': RARITIES[item.rarity].color } as React.CSSProperties}>
-                <WeaponArt item={item} />
-                <b>{item.name}</b>
-                <small className="flex items-center justify-between text-xs text-slate-300 mt-1">
-                  <span>{WEAPONS[item.weapon]?.name || item.weapon}</span>
-                  <span style={{ color: RARITIES[item.rarity].color }}>{RARITIES[item.rarity].name}</span>
-                </small>
-                <strong>%{chance.toLocaleString('tr-TR', { maximumFractionDigits: 3 })}</strong>
-              </article>
-            ))}
+            {pool.map(({ item, chance }) => {
+              const selectedCard = activeCaseInspect?.id === item.id;
+              return (
+                <article
+                  key={item.id}
+                  className={selectedCard ? 'is-inspected' : ''}
+                  style={{ '--rarity': RARITIES[item.rarity].color } as React.CSSProperties}
+                >
+                  <WeaponArt item={item} />
+                  <b>{item.name}</b>
+                  <small className="flex items-center justify-between text-xs text-slate-300 mt-1">
+                    <span>{WEAPONS[item.weapon]?.name || item.weapon}</span>
+                    <span style={{ color: RARITIES[item.rarity].color }}>{RARITIES[item.rarity].name}</span>
+                  </small>
+                  <div className="ks-loot-card-foot">
+                    <strong>%{chance.toLocaleString('tr-TR', { maximumFractionDigits: 3 })}</strong>
+                    <button
+                      type="button"
+                      className="ks-inspect-btn"
+                      aria-pressed={selectedCard}
+                      onClick={() => {
+                        setReward(null);
+                        setInspectedItem(item);
+                      }}
+                    >
+                      3D İncele
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </>
       ) : (
         <>
           <div className="ks-inventory-toolbar"><input aria-label="Skin ara" placeholder="Skin veya silah ara…" value={search} onChange={e=>setSearch(e.target.value)}/><select aria-label="Silah filtresi" value={weaponFilter} onChange={e=>setWeaponFilter(e.target.value)}><option value="all">Tüm silahlar</option>{Object.entries(WEAPONS).map(([id,w])=><option key={id} value={id}>{w.name}</option>)}</select><select aria-label="Nadirlik filtresi" value={rarityFilter} onChange={e=>setRarityFilter(e.target.value)}><option value="all">Tüm nadirlikler</option>{Object.entries(RARITIES).map(([id,r])=><option key={id} value={id}>{r.name}</option>)}</select><label><input type="checkbox" checked={equippedOnly} onChange={e=>setEquippedOnly(e.target.checked)}/> Yalnızca kuşanılanlar</label><button onClick={()=>{setSearch('');setWeaponFilter('all');setRarityFilter('all');setEquippedOnly(false);}}>Filtreleri temizle</button></div>
+          <WeaponPreview3D
+            weapon={activeOwnedInspect?.weapon ?? (weaponFilter !== 'all' ? (weaponFilter as any) : 'rifle')}
+            item={activeOwnedInspect}
+            isOwned={Boolean(activeOwnedInspect && state.owned[activeOwnedInspect.id])}
+            isEquipped={Boolean(activeOwnedInspect && state.equipped[activeOwnedInspect.weapon] === activeOwnedInspect.id)}
+            onEquip={equip}
+            busy={busy}
+          />
           <p>{visibleItems.length} görünüm · Kuşanılan skinler işaretlidir</p>{!visibleItems.length&&<p role="status">Bu filtrelerle eşleşen görünüm yok.</p>}<div className="ks-loot-grid">
-            {visibleItems.map((item) => (
-              <article key={item.id} style={{ '--rarity': RARITIES[item.rarity].color } as React.CSSProperties}>
-                <WeaponArt item={item} />
-                <b>{item.name}</b>
-                <small className="flex items-center justify-between text-xs text-slate-300 mt-1">
-                  <span>
-                    {WEAPONS[item.weapon]?.name || item.weapon}
-                    {item.knife ? ` · ${item.knife}` : ''}
-                  </span>
-                  <span>×{state.owned[item.id]}</span>
-                </small>
-                <button
-                  disabled={busy || state.equipped[item.weapon] === item.id}
-                  onClick={() => equip(item)}
+            {visibleItems.map((item) => {
+              const selectedCard = activeOwnedInspect?.id === item.id;
+              return (
+                <article
+                  key={item.id}
+                  className={selectedCard ? 'is-inspected' : ''}
+                  style={{ '--rarity': RARITIES[item.rarity].color } as React.CSSProperties}
                 >
-                  {state.equipped[item.weapon] === item.id ? 'Kuşanıldı' : 'Kuşan'}
-                </button>
-              </article>
-            ))}
+                  <WeaponArt item={item} />
+                  <b>{item.name}</b>
+                  <small className="flex items-center justify-between text-xs text-slate-300 mt-1">
+                    <span>
+                      {WEAPONS[item.weapon]?.name || item.weapon}
+                      {item.knife ? ` · ${item.knife}` : ''}
+                    </span>
+                    <span>×{state.owned[item.id]}</span>
+                  </small>
+                  <div className="ks-loot-card-actions">
+                    <button
+                      type="button"
+                      className="ks-inspect-btn"
+                      aria-pressed={selectedCard}
+                      onClick={() => setInspectedItem(item)}
+                    >
+                      3D İncele
+                    </button>
+                    <button
+                      disabled={busy || state.equipped[item.weapon] === item.id}
+                      onClick={() => equip(item)}
+                    >
+                      {state.equipped[item.weapon] === item.id ? 'Kuşanıldı' : 'Kuşan'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
           {!Object.keys(state.owned).length && <p>Henüz kaplaman yok. İlk kasanı ücretsiz aç.</p>}
         </>
