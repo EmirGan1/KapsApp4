@@ -47,6 +47,32 @@ try {
         assert.ok(geometry.scrollHeight <= geometry.height + 1, 'document must not have a second scrollbar');
       };
       await check();
+      // iOS may keep stale JS viewport dimensions while CSS 100dvh is full size.
+      // This is a measurement simulation, not physical iOS/PWA verification.
+      await page.evaluate(() => {
+        (window as any).__viewportDescriptors = {
+          innerHeight: Object.getOwnPropertyDescriptor(window, 'innerHeight'),
+          height: Object.getOwnPropertyDescriptor(visualViewport!, 'height'),
+          offsetTop: Object.getOwnPropertyDescriptor(visualViewport!, 'offsetTop'),
+        };
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: visualViewport!.height - 44 });
+        Object.defineProperty(visualViewport!, 'height', { configurable: true, value: visualViewport!.height - 88 });
+        Object.defineProperty(visualViewport!, 'offsetTop', { configurable: true, value: 44 });
+        visualViewport!.dispatchEvent(new Event('resize'));
+      });
+      await page.waitForFunction(() => !document.documentElement.style.getPropertyValue('--app-shell-height'));
+      assert.equal(await page.locator('.app-shell').evaluate(e => e.getBoundingClientRect().bottom), size.height);
+      assert.equal(await page.locator('.kapsapp-bottom-nav').evaluate(e => e.getBoundingClientRect().bottom), size.height);
+      await page.evaluate(() => {
+        const saved = (window as any).__viewportDescriptors;
+        for (const [target, key] of [[window, 'innerHeight'], [visualViewport!, 'height'], [visualViewport!, 'offsetTop']] as const) {
+          if (saved[key]) Object.defineProperty(target, key, saved[key]);
+          else delete (target as any)[key];
+        }
+        delete (window as any).__viewportDescriptors;
+        visualViewport!.dispatchEvent(new Event('resize'));
+      });
+      await check();
       // Scroll the actual dashboard to its end: chrome stays still, final content remains reachable.
       const scroller = page.locator('.app-content > .overflow-y-auto');
       await scroller.evaluate(e => { e.scrollTop = e.scrollHeight; });

@@ -9,10 +9,10 @@ for (const [name, visibleHeight, innerHeight] of [
   ['tall phone', 932, 932],
   ['landscape viewport', 390, 390],
 ] as const) {
-  test(`${name} uses available viewport bounds`, () => {
+  test(`${name} leaves fullscreen height to CSS`, () => {
     assert.deepEqual(resolveMobileShellHeight({
       visibleHeight, innerHeight, unobscuredHeight: innerHeight, editing: false
-    }), { keyboardOpen: false, shellHeight: Math.min(visibleHeight, innerHeight) });
+    }), { keyboardOpen: false, shellHeight: null });
   });
 }
 
@@ -26,5 +26,15 @@ test('keyboard takes precedence even when innerHeight also shrinks', () => {
 test('focused input without keyboard does not hide the dock', () => {
   assert.deepEqual(resolveMobileShellHeight({
     visibleHeight: 800, innerHeight: 800, unobscuredHeight: 800, editing: true
-  }), { keyboardOpen: false, shellHeight: 800 });
+  }), { keyboardOpen: false, shellHeight: null });
 });
+
+// These dimensions reproduce the stale iOS measurements that left the dock
+// above the bottom of the display. Neither measurement may pin normal layout.
+for (const editing of [false, true]) {
+  test(`stale iOS viewport cannot shrink the shell (editing=${editing})`, () => {
+    assert.deepEqual(resolveMobileShellHeight({
+      visibleHeight: 756, innerHeight: 800, unobscuredHeight: 800, editing
+    }), { keyboardOpen: false, shellHeight: null });
+  });
+}

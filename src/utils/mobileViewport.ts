@@ -5,8 +5,9 @@ export function resolveMobileShellHeight(input: {
   editing: boolean;
 }) {
   const keyboardOpen = input.editing && input.unobscuredHeight - input.visibleHeight > 60;
-  // Physical screen dimensions include OS-owned areas and are never layout bounds.
-  return { keyboardOpen, shellHeight: Math.min(input.visibleHeight, input.innerHeight) };
+  // iOS can retain a shorter visualViewport after the keyboard/browser UI closes.
+  // Only the keyboard may override CSS viewport sizing. Otherwise use 100dvh.
+  return { keyboardOpen, shellHeight: keyboardOpen ? input.visibleHeight : null };
 }
 
 /** Use the visible viewport when a software keyboard covers the layout viewport. */
@@ -27,7 +28,13 @@ export function installMobileViewport() {
       visibleHeight: height, innerHeight: window.innerHeight,
       unobscuredHeight, editing
     });
-    root.style.setProperty('--app-shell-height', `${shellHeight}px`);
+    if (shellHeight !== null) {
+      root.style.setProperty('--app-shell-height', `${shellHeight}px`);
+      root.style.setProperty('--app-shell-top', `${viewport?.offsetTop ?? 0}px`);
+    } else {
+      root.style.removeProperty('--app-shell-height');
+      root.style.removeProperty('--app-shell-top');
+    }
     root.style.setProperty('--visible-height', `${height}px`);
     root.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
     root.dataset.keyboardOpen = String(keyboardOpen);
@@ -52,6 +59,7 @@ export function installMobileViewport() {
   viewport?.addEventListener('scroll', schedule);
   window.addEventListener('resize', schedule);
   window.addEventListener('pageshow', schedule);
+  window.addEventListener('orientationchange', schedule);
   document.addEventListener('focusin', schedule);
   document.addEventListener('focusout', schedule);
   update();
@@ -62,11 +70,13 @@ export function installMobileViewport() {
     viewport?.removeEventListener('scroll', schedule);
     window.removeEventListener('resize', schedule);
     window.removeEventListener('pageshow', schedule);
+    window.removeEventListener('orientationchange', schedule);
     document.removeEventListener('focusin', schedule);
     document.removeEventListener('focusout', schedule);
     root.style.removeProperty('--visible-height');
     root.style.removeProperty('--app-shell-height');
     root.style.removeProperty('--visible-top');
+    root.style.removeProperty('--app-shell-top');
     delete root.dataset.keyboardOpen;
   };
 }

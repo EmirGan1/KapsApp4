@@ -428,8 +428,8 @@ button, a, [role="button"], input, select, textarea {
   .app-shell.kapsapp-viewport {
     position: fixed;
     inset-inline: 0;
-    top: var(--visible-top, 0px);
-    height: var(--app-shell-height, 100vh);
+    top: var(--app-shell-top, 0px);
+    height: var(--app-shell-height, 100%);
     height: var(--app-shell-height, 100dvh);
     min-height: 0;
     /* The header, including its safe area, owns the top inset. */
