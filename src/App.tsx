@@ -684,11 +684,16 @@ export default function App() {
         transports: ["websocket", "polling"],
         withCredentials: true,
         autoConnect: true,
-        auth: { token, deviceId: hwFingerprint, hardwareFingerprint: hwFingerprint },
+        auth: (cb: (data: Record<string, string>) => void) => {
+          const latestToken = localStorage.getItem("lan_token") || localStorage.getItem("token") || token;
+          const latestFp = getCachedHardwareFingerprint() || hwFingerprint;
+          cb({ token: latestToken, deviceId: latestFp, hardwareFingerprint: latestFp });
+        },
         reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 600,
+        reconnectionDelayMax: 4000,
+        randomizationFactor: 0.3,
         timeout: 20000
       };
       const isDemoSession =
@@ -697,11 +702,14 @@ export default function App() {
         localStorage.getItem("lan_is_demo") === "true";
 
       const newSocket = io(socketUrl || undefined, socketOptions);
+      setSocket(newSocket);
       // Never switch hosts after a successful connection: that would interrupt live matches.
       let hasConnectedSuccessfully = false;
+      let directConnectFailures = 0;
       
       const onConnect = () => {
         hasConnectedSuccessfully = true;
+        directConnectFailures = 0;
         setSocket(newSocket);
         if (!isDemoSession && preferencesRef.current.desktopNotifs) void syncDevicePush();
         newSocket.emit("heartbeat");
@@ -735,10 +743,13 @@ export default function App() {
             handleLogout();
           }
         } else if (!hasConnectedSuccessfully && !socketProxyFallback && socketUrl === "https://ws.kapsapp.online") {
-          // A failed direct WebSocket connection must not take down messaging and calls.
-          // React effect cleanup disconnects the original socket before opening the fallback.
-          console.warn("[Socket.IO] Direct realtime endpoint unavailable; falling back to page origin.", err.message);
-          setSocketProxyFallback(true);
+          directConnectFailures++;
+          if (directConnectFailures >= 2) {
+            // A failed direct WebSocket connection must not take down messaging and calls.
+            // React effect cleanup disconnects the original socket before opening the fallback.
+            console.warn("[Socket.IO] Direct realtime endpoint unavailable after retries; falling back to page origin.", err.message);
+            setSocketProxyFallback(true);
+          }
         }
       });
 

@@ -122,8 +122,11 @@ export interface MultiplayerOptions {
   username?: string;
   team?: StrikeTeam;
   isMultiplayer?: boolean;
+  initialSnapshot?: StrikeSnapshot;
   onSynchronized?: () => void;
   onLoadingStage?: (stage:string) => void;
+  onConnectionStateChange?: (state: { connected: boolean; reconnecting: boolean; message?: string }) => void;
+  onRoomLost?: (reason: string) => void;
   onScoreboardToggle?: (open: boolean) => void;
   onPttChange?: (active: boolean) => void;
 }
@@ -209,6 +212,7 @@ export class StrikeController {
   private jitter = 0;
   private snapshotArrival = 0;
   private receivedInitialState = false;
+  private syncReceivedAt = 0;
   private notifiedReady = false;
   private supportsInputBatch = false;
   private lastPingSampleAt = -Infinity;
@@ -300,10 +304,10 @@ export class StrikeController {
     });
 
     listen(window, "blur", () => {
-      if (!this.isTouchDevice) this.pause();
+      if (!this.isTouchDevice && (!this.isMultiplayer || this.notifiedReady)) this.pause();
     });
     listen(document, "visibilitychange", () => {
-      if (document.hidden) this.pause();
+      if (document.hidden && (!this.isMultiplayer || this.notifiedReady)) this.pause();
     });
 
     listen(canvas, "strike-context-lost", () =>
@@ -400,7 +404,7 @@ export class StrikeController {
 
     // Setup Multiplayer Socket Handlers
     if (this.isMultiplayer && this.socket) {
-      this.setupMultiplayerSocket(this.socket, mpOptions?.onSynchronized);
+      this.setupMultiplayerSocket(this.socket, mpOptions);
     }
 
     this.pushHUD();
@@ -476,8 +480,23 @@ export class StrikeController {
     return (Object.keys(this.bindings) as Action[]).some(a => this.down(a));
   }
 
-  private setupMultiplayerSocket(socket: Socket, onSynchronized?: () => void) {
-    const disconnected = () => this.pause("Bağlantı kesildi. Menüye dönüp odaya yeniden katılabilirsin.");
+  private setupMultiplayerSocket(socket: Socket, mpOptions?: MultiplayerOptions) {
+    const disconnected = () => {
+      if (this.disposed) return;
+      this.clearInput();
+      this.unacknowledgedInputs = [];
+      this.networkSample = {
+        ...(this.networkSample || { frameGapMaxMs: Math.round(this.frameGapMaxMs), timeoutCount: this.pingTimeoutCount }),
+        transport: "disconnected",
+        status: "disconnected",
+      };
+      this.callbacks?.onConnectionStateChange?.({
+        connected: false,
+        reconnecting: true,
+        message: "Bağlantı koptu, yeniden bağlanılıyor…",
+      });
+      this.pushHUD();
+    };
     socket.on("disconnect", disconnected);
     this.removers.push(() => socket.off("disconnect", disconnected));
     const replaced = () => this.pause("Bu hesap başka bir sekmede oyuna katıldı. Menüden tekrar katılabilirsin.");
@@ -532,9 +551,13 @@ export class StrikeController {
       );
 
       if (myServerState) {
+        if (myServerState.id && this.state.player.id !== myServerState.id) {
+          this.state.player.id = myServerState.id;
+        }
         if (!synchronized) {
           synchronized = true;
           this.receivedInitialState = true;
+          this.syncReceivedAt = arrival;
           this.callbacks?.onLoadingStage?.("Grafikler hazırlanıyor…");
         }
         const respawned=(this.state.player.hp<=0&&myServerState.hp>0)||(snapshot.bomb?.round!==this.state.bomb?.round);
@@ -617,6 +640,90 @@ export class StrikeController {
 
     socket.on("strike:snapshot", handleSnapshot);
     this.removers.push(() => socket.off("strike:snapshot", handleSnapshot));
+
+    let syncInFlight = false;
+    const requestSync = (reason: "init" | "reconnect" | "retry" = "init") => {
+      if (this.disposed || !this.roomCode || !socket.connected || syncInFlight) return;
+      syncInFlight = true;
+      if (reason === "init" && !this.receivedInitialState) {
+        this.callbacks?.onLoadingStage?.("Sunucu durumu senkronize ediliyor…");
+      }
+      socket.timeout(5000).emit(
+        "strike:request_sync",
+        { roomCode: this.roomCode },
+        (
+          err: Error | null,
+          res?: {
+            success?: boolean;
+            status?: string;
+            snapshot?: StrikeSnapshot;
+            error?: string;
+          }
+        ) => {
+          syncInFlight = false;
+          if (this.disposed) return;
+          if (err || !res) {
+            return;
+          }
+          if (!res.success) {
+            if (reason === "reconnect" || !this.receivedInitialState) {
+              this.callbacks?.onConnectionStateChange?.({ connected: socket.connected, reconnecting: false });
+              this.callbacks?.onRoomLost?.(res.error || "Oda oturumu sona erdi.");
+            }
+            return;
+          }
+          if (res.status === "lobby" || res.status === "game_over") {
+            this.callbacks?.onConnectionStateChange?.({ connected: true, reconnecting: false });
+            this.callbacks?.onRoomLost?.(
+              res.status === "game_over" ? "Maç sona erdi." : "Maç lobiye döndü."
+            );
+            return;
+          }
+          this.callbacks?.onConnectionStateChange?.({ connected: true, reconnecting: false });
+          if (res.snapshot) {
+            handleSnapshot(res.snapshot);
+          }
+          if (this.notifiedReady) {
+            socket.emit("strike:client_ready", { roomCode: this.roomCode });
+          }
+        }
+      );
+    };
+
+    const reconnected = () => {
+      if (this.disposed) return;
+      if (socket.id) this.state.player.id = socket.id;
+      lastSnapshotTick = -1;
+      this.unacknowledgedInputs = [];
+      this.remoteSnapshots = [];
+      this.viewTick = undefined;
+      this.callbacks?.onConnectionStateChange?.({
+        connected: true,
+        reconnecting: true,
+        message: "Oturum senkronize ediliyor…",
+      });
+      requestSync("reconnect");
+    };
+    socket.on("connect", reconnected);
+    this.removers.push(() => socket.off("connect", reconnected));
+
+    if (mpOptions?.initialSnapshot) {
+      handleSnapshot(mpOptions.initialSnapshot);
+    }
+    if (!this.receivedInitialState && socket.connected) {
+      requestSync("init");
+    }
+
+    const syncRetryTimer = setInterval(() => {
+      if (this.disposed || this.receivedInitialState) {
+        clearInterval(syncRetryTimer);
+        return;
+      }
+      if (socket.connected) {
+        requestSync("retry");
+      }
+    }, 1500);
+    this.removers.push(() => clearInterval(syncRetryTimer));
 
     let probeSeq = 0;
     const getTransportName = (): string => {
@@ -762,6 +869,7 @@ export class StrikeController {
   private loop = () => {
     if (!this.active || this.disposed) return;
     if (!this.canvas.getClientRects().length) {
+      if (this.isMultiplayer && !this.notifiedReady) return;
       this.pause();
       return;
     }
@@ -956,8 +1064,16 @@ export class StrikeController {
         this.utilityEquipped
       );
 
-      if(this.receivedInitialState && !this.notifiedReady && this.renderer.scene.isReady()){
-        this.notifiedReady=true;this.callbacks?.onSynchronized?.();
+      if (
+        this.receivedInitialState &&
+        !this.notifiedReady &&
+        (this.renderer.scene.isReady() || performance.now() - this.syncReceivedAt >= 1200)
+      ) {
+        this.notifiedReady = true;
+        if (this.isMultiplayer && this.socket?.connected && this.roomCode) {
+          this.socket.emit("strike:client_ready", { roomCode: this.roomCode });
+        }
+        this.callbacks?.onSynchronized?.();
       }
       if (now - this.lastHUD > 100) {
         this.lastHUD = now;
@@ -1279,8 +1395,15 @@ export class StrikeController {
   start(capturePointer = true) {
     if (this.disposed) return;
     if (this.isMultiplayer && !this.socket?.connected) {
-      this.onPause("Sunucu bağlantısı yok. Menüden odaya yeniden katıl.");
-      return;
+      if (!this.notifiedReady) {
+        this.callbacks?.onLoadingStage?.("Sunucuya yeniden bağlanılıyor…");
+      } else {
+        this.callbacks?.onConnectionStateChange?.({
+          connected: false,
+          reconnecting: true,
+          message: "Sunucu bağlantısı bekleniyor…",
+        });
+      }
     }
     this.pointerLockIgnoreUntil = performance.now() + 250;
     if(this.canvas.tabIndex<0)this.canvas.tabIndex=0;

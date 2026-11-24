@@ -1008,9 +1008,6 @@ function GamesContent({
                       onClick={() => {
                         setBlackjackTableOptions(null);
                         setSelectedGameTableId(t.id);
-                        if (socket && socket.connected) {
-                          socket.emit('join_table', { tableId: t.id, gameType: t.gameType });
-                        }
                         const targetRoute: SelectedGameType = 
                           (t.gameType as any) === 'strike' || (t.gameType as any) === 'kapsstrike' ? 'kapsstrike' :
                           t.gameType === 'poker' ? 'poker' :
@@ -1023,6 +1020,9 @@ function GamesContent({
                           t.gameType === 'kapstorial' ? 'kapstorial' :
                           t.gameType === 'royale' || t.gameType === 'battleroyale' ? 'battleroyale' :
                           'blackjack';
+                        if (targetRoute !== 'kapsstrike' && socket && socket.connected) {
+                          socket.emit('join_table', { tableId: t.id, gameType: t.gameType });
+                        }
                         setSelectedGame(targetRoute);
                       }}
                       className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shrink-0 cursor-pointer transition-all transform hover:scale-105 active:scale-95"

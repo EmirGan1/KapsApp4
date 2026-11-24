@@ -513,6 +513,15 @@ export class KapsStrikeServerManager {
     bombPlayer?: any;
     disconnectedAt: number;
   }> = new Map();
+  private disconnectTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  private clearDisconnectTimer(userId: number) {
+    const timer = this.disconnectTimers.get(userId);
+    if (timer) {
+      clearTimeout(timer);
+      this.disconnectTimers.delete(userId);
+    }
+  }
 
   /** Local developer-only ring buffer; never included in public room/snapshot state. */
   readonly combatDiagnostics:Record<string,unknown>[]=[];
@@ -706,15 +715,31 @@ export class KapsStrikeServerManager {
     }
 
     roomCode = room.roomCode; // Store canonical codes even when users join without KS-.
-    if (!invited && room.players.get(socketId)?.userId !== user.id && room.password && room.password !== (password || "").trim()) {
+    const savedSession = this.disconnectedSessions.get(user.id);
+    const alreadyMember =
+      savedSession?.roomCode === roomCode ||
+      Array.from(room.players.values()).some((p) => p.userId === user.id);
+    if (!invited && !alreadyMember && room.password && room.password !== (password || "").trim()) {
       return { success: false, error: "Hatalı oda şifresi." };
     }
 
     // A reconnect replaces the previous controller even when the room is full.
-    const savedSession = this.disconnectedSessions.get(user.id);
     for (const [sId, p] of room.players.entries()) {
       if (p.userId === user.id) {
-        if(sId === socketId) return {success:true,room};
+        this.clearDisconnectTimer(user.id);
+        const newSock = this.io.sockets?.sockets?.get(socketId);
+        if (sId === socketId) {
+          p.isDisconnected = false;
+          delete p.disconnectedAt;
+          this.socketToRoom.set(socketId, roomCode);
+          this.userToRoom.set(user.id, roomCode);
+          this.disconnectedSessions.delete(user.id);
+          newSock?.join(`strike:${roomCode}`);
+          if (room.status === "in_progress") {
+            this.io.to(socketId).emit("strike:snapshot", room.getSnapshotForPlayer(socketId));
+          }
+          return { success: true, room };
+        }
         this.socketToRoom.delete(sId);
         const previous=this.io.sockets?.sockets?.get(sId);
         previous?.emit("strike:session_replaced");previous?.leave(`strike:${roomCode}`);
@@ -741,9 +766,11 @@ export class KapsStrikeServerManager {
         room.players.delete(sId);room.players.set(socketId,p);
         this.socketToRoom.set(socketId,roomCode);this.userToRoom.set(user.id,roomCode);
         this.disconnectedSessions.delete(user.id);
-        const newSock = this.io.sockets?.sockets?.get(socketId);
         newSock?.join(`strike:${roomCode}`);
         this.broadcastRoomState(room);
+        if (room.status === "in_progress") {
+          this.io.to(socketId).emit("strike:snapshot", room.getSnapshotForPlayer(socketId));
+        }
         this.io.to(`strike:${room.roomCode}`).emit("strike:player_reconnected", {
           userId: user.id,
           username: p.username,
@@ -823,10 +850,14 @@ export class KapsStrikeServerManager {
     this.userToRoom.set(user.id, roomCode);
     this.socketToRoom.set(socketId, roomCode);
 
+    this.clearDisconnectTimer(user.id);
     const newSock = this.io.sockets?.sockets?.get(socketId);
     newSock?.join(`strike:${roomCode}`);
 
     this.broadcastRoomState(room);
+    if (room.status === "in_progress") {
+      this.io.to(socketId).emit("strike:snapshot", room.getSnapshotForPlayer(socketId));
+    }
     if (isReconnecting) {
       this.io.to(`strike:${room.roomCode}`).emit("strike:player_reconnected", {
         userId: user.id,
@@ -891,6 +922,7 @@ export class KapsStrikeServerManager {
     this.socketToRoom.delete(actualSocketId);
     if(this.userToRoom.get(userId)===roomCode)this.userToRoom.delete(userId);
     this.disconnectedSessions.delete(userId);
+    this.clearDisconnectTimer(userId);
 
     const hasHuman = [...room.players.values()].some((p) => !p.id.startsWith("bot-") && !p.isDisconnected);
     if (room.players.size === 0 || !hasHuman) {
@@ -1034,6 +1066,14 @@ export class KapsStrikeServerManager {
     this.startRoomSimulationLoop(room);
     this.broadcastRoomState(room);
     this.io.to(`strike:${room.roomCode}`).emit("strike:match_started", room.getPublicRoomState());
+
+    // Push an immediate authoritative frame-0 snapshot to all connected human players
+    // so clients begin synchronizing without waiting for the first simulation interval tick.
+    const initialBase = room.buildSharedSnapshotBase();
+    room.players.forEach((p) => {
+      if (p.isDisconnected || p.id.startsWith("bot-")) return;
+      this.io.to(p.id).emit("strike:snapshot", room.getSnapshotForPlayer(p.id, initialBase));
+    });
 
     return { success: true };
   }
@@ -1984,7 +2024,10 @@ export class KapsStrikeServerManager {
           const res = this.joinRoom(rawCode, u, socket.id, data.password);
           if (res.success && res.room) {
             socket.join(`strike:${res.room.roomCode}`);
-            if (cb) cb({ success: true, room: res.room.getPublicRoomState() });
+            const snapshot = res.room.status === "in_progress"
+              ? res.room.getSnapshotForPlayer(socket.id)
+              : undefined;
+            if (cb) cb({ success: true, room: res.room.getPublicRoomState(), ...(snapshot ? { snapshot } : {}) });
           } else {
             if (cb) cb({ success: false, error: res.error || "Odaya katılınamadı." });
           }
@@ -1994,15 +2037,83 @@ export class KapsStrikeServerManager {
       }
     );
 
-    // 4. Quick Match
+    // 3b. Explicit Client Ready / State Sync Handshake (initial match sync & seamless reconnect)
+    const handleSyncRequest = (
+      arg1?: any,
+      arg2?: (res: { success: boolean; status?: string; room?: StrikeRoomState; snapshot?: StrikeSnapshot; error?: string }) => void
+    ) => {
+      const cb = typeof arg1 === "function" ? arg1 : typeof arg2 === "function" ? arg2 : undefined;
+      const data = arg1 && typeof arg1 === "object" ? arg1 : undefined;
+      try {
+        const requestedCode = typeof data?.roomCode === "string" ? data.roomCode.trim() : "";
+        let roomCode = this.socketToRoom.get(socket.id) || this.userToRoom.get(userIdNum);
+        let room = roomCode ? this.rooms.get(roomCode) : undefined;
+        if (!room && requestedCode) {
+          room = this.findRoomByCode(requestedCode);
+          roomCode = room?.roomCode;
+        }
+        if (!room || !roomCode) {
+          if (cb) cb({ success: false, error: "Oda artık aktif değil." });
+          return;
+        }
+
+        const existingByUser = Array.from(room.players.values()).find((p) => p.userId === userIdNum);
+        const savedSession = this.disconnectedSessions.get(userIdNum);
+        const isAuthorizedMember = !!existingByUser || savedSession?.roomCode === room.roomCode;
+        if (!isAuthorizedMember) {
+          if (cb) cb({ success: false, error: "Bu odada aktif oturumun bulunamadı." });
+          return;
+        }
+
+        if (!room.players.has(socket.id) || existingByUser?.isDisconnected) {
+          const rejoined = this.joinRoom(room.roomCode, u, socket.id, undefined, true);
+          if (!rejoined.success || !rejoined.room) {
+            if (cb) cb({ success: false, error: rejoined.error || "Oturum yeniden bağlanamadı." });
+            return;
+          }
+          room = rejoined.room;
+        } else {
+          socket.join(`strike:${room.roomCode}`);
+          this.socketToRoom.set(socket.id, room.roomCode);
+          this.userToRoom.set(userIdNum, room.roomCode);
+        }
+
+        const snapshot = room.status === "in_progress"
+          ? room.getSnapshotForPlayer(socket.id)
+          : undefined;
+        if (snapshot) {
+          socket.emit("strike:snapshot", snapshot);
+        }
+        if (cb) {
+          cb({
+            success: true,
+            status: room.status,
+            room: room.getPublicRoomState(),
+            ...(snapshot ? { snapshot } : {}),
+          });
+        }
+      } catch (e: any) {
+        if (cb) cb({ success: false, error: e?.message || "Oyun durumu senkronize edilemedi." });
+      }
+    };
+    socket.on("strike:request_sync", handleSyncRequest);
+    socket.on("strike:client_ready", handleSyncRequest);
+
+    // 4. Quick Match (accepts both (cb) and (opts, cb))
     socket.on(
       "strike:quick_match",
-      (cb?: (res: { success: boolean; room?: StrikeRoomState; error?: string }) => void) => {
+      (arg1?: any, arg2?: (res: { success: boolean; room?: StrikeRoomState; snapshot?: StrikeSnapshot; error?: string }) => void) => {
+        const cb = typeof arg1 === "function" ? arg1 : typeof arg2 === "function" ? arg2 : undefined;
         try {
           const res = this.quickMatch(u, socket.id);
           if (res.success && res.room) {
             socket.join(`strike:${res.room.roomCode}`);
-            if (cb) cb({ success: true, room: res.room.getPublicRoomState() });
+            const snapshot = res.room.status === "in_progress"
+              ? res.room.getSnapshotForPlayer(socket.id)
+              : undefined;
+            if (cb) cb({ success: true, room: res.room.getPublicRoomState(), ...(snapshot ? { snapshot } : {}) });
+          } else if (cb) {
+            cb({ success: false, error: "Hızlı maça girilemedi." });
           }
         } catch (e: any) {
           if (cb) cb({ success: false, error: e.message || "Hızlı maça girilemedi." });
@@ -2261,15 +2372,54 @@ export class KapsStrikeServerManager {
         team: player.team
       });
 
-      // 90 seconds reconnect grace period
-      setTimeout(() => {
+      // 90 seconds reconnect grace period during active matches
+      this.clearDisconnectTimer(userId);
+      const matchTimer = setTimeout(() => {
+        this.disconnectTimers.delete(userId);
         const curRoom = this.rooms.get(roomCode);
         if (!curRoom) return;
         const p = curRoom.players.get(socket.id);
-        if (p && p.isDisconnected && p.userId === userId && p.disconnectedAt===disconnectedAt) {
+        if (p && p.isDisconnected && p.userId === userId && p.disconnectedAt === disconnectedAt) {
           this.leaveRoom(socket.id, userId, true);
         }
-      }, 90000).unref();
+      }, 90000);
+      matchTimer.unref?.();
+      this.disconnectTimers.set(userId, matchTimer);
+      return;
+    }
+
+    if (room.status === "lobby" && player) {
+      // 20 seconds lobby disconnect grace period so transient mobile/WebSocket blips
+      // never instantly kick players out or destroy newly created rooms.
+      player.isDisconnected = true;
+      player.disconnectedAt = Date.now();
+      const disconnectedAt = player.disconnectedAt;
+      if (player.isHost) {
+        const successor = [...room.players.values()].find(
+          (p) => p.id !== player.id && !p.isDisconnected && !p.id.startsWith("bot-")
+        );
+        if (successor) {
+          player.isHost = false;
+          successor.isHost = true;
+          successor.ready = true;
+          room.hostId = successor.userId;
+        }
+      }
+      this.socketToRoom.delete(socket.id);
+      this.broadcastRoomState(room);
+
+      this.clearDisconnectTimer(userId);
+      const lobbyTimer = setTimeout(() => {
+        this.disconnectTimers.delete(userId);
+        const curRoom = this.rooms.get(roomCode);
+        if (!curRoom) return;
+        const p = curRoom.players.get(socket.id);
+        if (p && p.isDisconnected && p.userId === userId && p.disconnectedAt === disconnectedAt) {
+          this.leaveRoom(socket.id, userId, true);
+        }
+      }, 20000);
+      lobbyTimer.unref?.();
+      this.disconnectTimers.set(userId, lobbyTimer);
       return;
     }
 

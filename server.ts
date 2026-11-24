@@ -963,7 +963,24 @@ async function startServer() {
   }
   
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const resolvePort = (): number => {
+    const argv = process.argv.slice(2);
+    for (let i = 0; i < argv.length; i++) {
+      if ((argv[i] === "--port" || argv[i] === "-p") && argv[i + 1]) {
+        const parsed = Number(argv[i + 1]);
+        if (Number.isInteger(parsed) && parsed > 0) return parsed;
+      } else if (argv[i].startsWith("--port=")) {
+        const parsed = Number(argv[i].slice("--port=".length));
+        if (Number.isInteger(parsed) && parsed > 0) return parsed;
+      }
+    }
+    const npmPort = Number(process.env.npm_config_port);
+    if (Number.isInteger(npmPort) && npmPort > 0) return npmPort;
+    const envPort = Number(process.env.PORT);
+    if (Number.isInteger(envPort) && envPort > 0) return envPort;
+    return 3000;
+  };
+  const PORT = resolvePort();
   
   // Production Performance & Security Headers (Disable ETag to prevent HTTP 412 Precondition Failed errors on uploads & mutations)
   app.disable("x-powered-by");
@@ -1523,8 +1540,9 @@ async function startServer() {
       credentials: true 
     },
     perMessageDeflate: false,
-    pingTimeout: 20000,
-    pingInterval: 10000,
+    pingTimeout: 30000,
+    pingInterval: 12000,
+    connectTimeout: 25000,
     maxHttpBufferSize: 2e6 // 2 MB limit for balanced memory usage under 1GB RAM ceiling
   });
 
@@ -6167,17 +6185,16 @@ async function startServer() {
         return next(new Error("Hesabınız kural ihlali nedeniyle askıya alınmıştır."));
       }
       
-      // Update last_ip, device_fingerprint, last_device_id and last_seen on authenticated socket connection
+      // Update last_ip, device_fingerprint, last_device_id and last_seen asynchronously
+      // so Socket.IO connect/reconnect handshakes never stall waiting on a metadata DB write.
       if ((socketIp && socketIp !== "Bilinmiyor") || hwFingerprint) {
-        try {
-          await client.execute({
-            sql: "UPDATE users SET last_ip = COALESCE(?, last_ip), device_fingerprint = COALESCE(?, device_fingerprint), last_device_id = COALESCE(?, last_device_id), last_seen = ? WHERE id = ?",
-            args: [socketIp !== "Bilinmiyor" ? socketIp : null, hwFingerprint || null, hwFingerprint || null, new Date().toISOString(), userObj.id]
-          });
-          userObj.last_ip = socketIp;
-          userObj.device_fingerprint = hwFingerprint;
-          userObj.last_device_id = hwFingerprint;
-        } catch (e) {}
+        userObj.last_ip = socketIp;
+        userObj.device_fingerprint = hwFingerprint;
+        userObj.last_device_id = hwFingerprint;
+        void client.execute({
+          sql: "UPDATE users SET last_ip = COALESCE(?, last_ip), device_fingerprint = COALESCE(?, device_fingerprint), last_device_id = COALESCE(?, last_device_id), last_seen = ? WHERE id = ?",
+          args: [socketIp !== "Bilinmiyor" ? socketIp : null, hwFingerprint || null, hwFingerprint || null, new Date().toISOString(), userObj.id]
+        }).catch(() => {});
       }
 
       socket.data.user = userObj;
@@ -12172,7 +12189,10 @@ async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === "true" ? false : { server: httpServer },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);

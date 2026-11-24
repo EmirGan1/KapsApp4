@@ -20,7 +20,7 @@ await Promise.all(Array.from({ length: 6 }, async () => {
     const input = output + '.' + process.pid + '-' + name;
     const temporary = target + '.' + process.pid + '.webp';
     try {
-      await run('curl', ['-fsSL', '--retry', '2', '--max-time', '120', source.url, '-o', input]);
+      await run('curl', ['-fsSL', '--connect-timeout', '10', '--retry', '1', '--max-time', '45', source.url, '-o', input]);
       const bytes = await readFile(input);
       if (bytes.length !== source.size || createHash('md5').update(bytes).digest('hex') !== source.md5) {
         throw new Error('Poly Haven source checksum mismatch: ' + name);
@@ -28,6 +28,8 @@ await Promise.all(Array.from({ length: 6 }, async () => {
       const dataMap = /_(nor_gl|arm)_/.test(name);
       await run('convert', [input, '-strip', '-quality', dataMap ? '86' : '80', temporary]);
       await rename(temporary, target);
+    } catch (err) {
+      console.warn(`[textures:strike] Skipping ${name}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       await rm(input, { force: true });
       await rm(temporary, { force: true });

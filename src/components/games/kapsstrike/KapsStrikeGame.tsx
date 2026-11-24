@@ -72,8 +72,17 @@ export default function KapsStrikeGame({
   const voice = useRef<StrikeVoiceManager | null>(null);
 
   const activeRoom = useRef<string | null>(null);
-  const launch = useRef<(room: StrikeRoomState) => void>(() => {});
+  const launch = useRef<(room: StrikeRoomState, initialSnapshot?: StrikeSnapshot) => void>(() => {});
   const loadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const launchRaf = useRef<number | null>(null);
+  const launchToken = useRef(0);
+  const busyAction = useRef(false);
+  const refreshInFlight = useRef(false);
+  const rejoinInFlight = useRef(false);
+  const lastInventoryUserRef = useRef<number | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(() => !!socket?.connected);
+  const [connectionNotice, setConnectionNotice] = useState("");
   const [loadStage, setLoadStage] = useState("");
 
   // General state
@@ -260,6 +269,11 @@ export default function KapsStrikeGame({
     setSupported(!!probe);
 
     return () => {
+      launchToken.current++;
+      if (launchRaf.current !== null) {
+        cancelAnimationFrame(launchRaf.current);
+        launchRaf.current = null;
+      }
       clearTimeout(loadTimer.current);
       activeRoom.current = null;
       game.current?.dispose();
@@ -283,24 +297,151 @@ export default function KapsStrikeGame({
     };
   }, [socket, currentUserId, username]);
 
-  // Request room list (supports both strike:get_rooms and strike:list_rooms)
+  const emitWithAck = useCallback(
+    <T = any>(
+      event: string,
+      payload?: unknown,
+      timeoutMs = 8000
+    ): Promise<{ ok: true; data: T } | { ok: false; error: string }> => {
+      return new Promise((resolve) => {
+        if (!socket) {
+          resolve({ ok: false, error: "Sunucu bağlantısı hazırlanıyor…" });
+          return;
+        }
+        if (!socket.connected) {
+          resolve({ ok: false, error: "Sunucuya bağlanılıyor, lütfen birkaç saniye bekle." });
+          return;
+        }
+        const cb = (err: Error | null, res: T) => {
+          if (err) {
+            resolve({
+              ok: false,
+              error: "Sunucu zamanında yanıt vermedi. Bağlantını kontrol edip tekrar dene.",
+            });
+            return;
+          }
+          resolve({ ok: true, data: res });
+        };
+        if (payload === undefined) {
+          socket.timeout(timeoutMs).emit(event, cb);
+        } else {
+          socket.timeout(timeoutMs).emit(event, payload, cb);
+        }
+      });
+    },
+    [socket]
+  );
+
+  // Request room list (single deduplicated call with timeout)
   const refreshRooms = useCallback(() => {
-    if (!socket || !socket.connected) return;
-    socket.emit("strike:get_rooms", (res: StrikeRoomSummary[]) => {
-      if (Array.isArray(res)) setRooms(res);
-    });
-    socket.emit("strike:list_rooms", (res: StrikeRoomSummary[]) => {
-      if (Array.isArray(res)) setRooms(res);
+    if (!socket || !socket.connected || refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    socket.timeout(4000).emit("strike:get_rooms", (err: Error | null, res: StrikeRoomSummary[]) => {
+      refreshInFlight.current = false;
+      if (!err && Array.isArray(res)) setRooms(res);
     });
   }, [socket]);
 
   // Handle socket rooms and events
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      setSocketConnected(false);
+      return;
+    }
+
+    setSocketConnected(socket.connected);
+    if (!socket.connected) {
+      setConnectionNotice("Sunucuya bağlanılıyor…");
+    } else {
+      setConnectionNotice("");
+    }
+
+    const attemptRoomAttach = (roomCode: string, isSavedSession: boolean) => {
+      if (!socket.connected || !roomCode || rejoinInFlight.current) return;
+      rejoinInFlight.current = true;
+      setConnectionNotice("Odaya bağlanılıyor…");
+      socket.timeout(8000).emit(
+        "strike:join_room",
+        { roomCode, roomId: roomCode, code: roomCode },
+        (err: Error | null, res: any) => {
+          rejoinInFlight.current = false;
+          if (err) {
+            setConnectionNotice("Bağlantı zaman aşımına uğradı, tekrar deneniyor…");
+            return;
+          }
+          if (res?.success && res.room) {
+            setConnectionNotice("");
+            setError("");
+            updateCurrentRoom(res.room);
+            try {
+              sessionStorage.setItem("kapsstrike_active_room", res.room.roomCode);
+            } catch {}
+            if (res.room.status === "in_progress") {
+              launch.current(res.room, res.snapshot);
+            } else {
+              setView("lobby");
+            }
+          } else {
+            setConnectionNotice("");
+            if (isSavedSession && !targetRoomId) {
+              try {
+                sessionStorage.removeItem("kapsstrike_active_room");
+              } catch {}
+              if (currentRoomRef.current?.roomCode === roomCode) {
+                activeRoom.current = null;
+                updateCurrentRoom(null);
+                setView("menu");
+                if (res?.error) setError(res.error);
+              }
+            } else if (res?.error) {
+              setError(res.error);
+            }
+          }
+        }
+      );
+    };
+
+    const onSocketConnect = () => {
+      setSocketConnected(true);
+      if (viewRef.current === "menu") {
+        setConnectionNotice("");
+        refreshRooms();
+      }
+      // If a StrikeController is already active for a match, its own connect handler runs strike:request_sync.
+      // Otherwise, automatically restore lobby / pending room / saved session on connect or reconnect.
+      if (!game.current) {
+        const existingCode = currentRoomRef.current?.roomCode;
+        const savedRoom = (() => {
+          try {
+            return sessionStorage.getItem("kapsstrike_active_room");
+          } catch {
+            return null;
+          }
+        })();
+        const roomToJoin = existingCode || targetRoomId || savedRoom;
+        if (roomToJoin) {
+          attemptRoomAttach(roomToJoin, !targetRoomId && roomToJoin === savedRoom);
+        } else {
+          setConnectionNotice("");
+        }
+      }
+    };
+
+    const onSocketDisconnect = () => {
+      setSocketConnected(false);
+      if (!game.current) {
+        setConnectionNotice("Sunucu bağlantısı koptu, yeniden bağlanılıyor…");
+      }
+    };
+
+    const onSocketConnectError = () => {
+      setSocketConnected(false);
+      setConnectionNotice("Sunucuya bağlanılıyor…");
+    };
 
     refreshRooms();
     const interval = setInterval(() => {
-      if (viewRef.current === "menu") {
+      if (viewRef.current === "menu" && socket.connected) {
         refreshRooms();
       }
     }, 3500);
@@ -354,17 +495,23 @@ export default function KapsStrikeGame({
         if (data.roomCode) {
           updateCurrentRoom(data);
         }
-        launch.current(data);
+        launch.current(data, data.snapshot);
       }
     };
 
     const onMatchReset = (state: StrikeRoomState) => {
       setKillFeed([]);
       updateCurrentRoom(state);
+      launchToken.current++;
+      if (launchRaf.current !== null) {
+        cancelAnimationFrame(launchRaf.current);
+        launchRaf.current = null;
+      }
       activeRoom.current = null;
       clearTimeout(loadTimer.current);
       game.current?.dispose();
       game.current = null;
+      setConnectionNotice("");
       setView("lobby");
     };
 
@@ -388,8 +535,14 @@ export default function KapsStrikeGame({
 
     const onMatchEnded = (payload: any) => {
       setKillFeed([]);
+      launchToken.current++;
+      if (launchRaf.current !== null) {
+        cancelAnimationFrame(launchRaf.current);
+        launchRaf.current = null;
+      }
       activeRoom.current = null;
       clearTimeout(loadTimer.current);
+      setConnectionNotice("");
       let stats: MatchStats;
       if (payload && Array.isArray(payload.players)) {
         const roomState = payload as StrikeRoomState;
@@ -456,6 +609,9 @@ export default function KapsStrikeGame({
     const onPlayerDisconnected = (data: ConnectionNotice) => onConnectionNotice(data, false);
     const onPlayerReconnected = (data: ConnectionNotice) => onConnectionNotice(data, true);
 
+    socket.on("connect", onSocketConnect);
+    socket.on("disconnect", onSocketDisconnect);
+    socket.on("connect_error", onSocketConnectError);
     socket.on("strike:snapshot",onScores);
     socket.on("strike:rooms_list", onRoomsList);
     socket.on("strike:room_list", onRoomsList);
@@ -470,28 +626,25 @@ export default function KapsStrikeGame({
     socket.on("strike:player_reconnected", onPlayerReconnected);
     socket.on("strike:error", onError);
 
-    // Direct room join or seamless session reconnect
-    const savedRoom = sessionStorage.getItem("kapsstrike_active_room");
+    // Direct room join or seamless session reconnect (if already connected; otherwise onSocketConnect triggers it)
+    const savedRoom = (() => {
+      try {
+        return sessionStorage.getItem("kapsstrike_active_room");
+      } catch {
+        return null;
+      }
+    })();
     const roomToJoin = targetRoomId || savedRoom;
-    if (roomToJoin) {
-      socket.emit("strike:join_room", { roomCode: roomToJoin, roomId: roomToJoin, code: roomToJoin }, (res: any) => {
-        if (res?.success && res.room) {
-          updateCurrentRoom(res.room);
-          try { sessionStorage.setItem("kapsstrike_active_room", res.room.roomCode); } catch {}
-          if (res.room.status === "in_progress") {
-            startMultiplayerGame(res.room);
-          } else {
-            setView("lobby");
-          }
-        } else if (res?.error && savedRoom && !targetRoomId) {
-          sessionStorage.removeItem("kapsstrike_active_room");
-        }
-      });
+    if (roomToJoin && socket.connected) {
+      attemptRoomAttach(roomToJoin, !targetRoomId && roomToJoin === savedRoom);
     }
 
     return () => {
       clearInterval(interval);
       clearInterval(feedTimer);
+      socket.off("connect", onSocketConnect);
+      socket.off("disconnect", onSocketDisconnect);
+      socket.off("connect_error", onSocketConnectError);
       socket.off("strike:snapshot",onScores);
       socket.off("strike:rooms_list", onRoomsList);
       socket.off("strike:room_list", onRoomsList);
@@ -506,7 +659,7 @@ export default function KapsStrikeGame({
       socket.off("strike:player_reconnected", onPlayerReconnected);
       socket.off("strike:error", onError);
     };
-  }, [socket, currentUserId, targetRoomId, refreshRooms]);
+  }, [socket, currentUserId, targetRoomId, refreshRooms, updateCurrentRoom]);
 
   // Launch Local Offline Training
   const startTraining = () => {
@@ -540,23 +693,33 @@ export default function KapsStrikeGame({
   };
 
   // Launch Online Multiplayer Match
-  const startMultiplayerGame = (roomOrMap?: any) => {
+  const startMultiplayerGame = (roomOrMap?: any, initialSnapshot?: StrikeSnapshot) => {
     const code = roomOrMap?.roomCode || currentRoomRef.current?.roomCode;
     if (!code || activeRoom.current === code) return;
     activeRoom.current = code;
+    const myToken = ++launchToken.current;
+    if (launchRaf.current !== null) {
+      cancelAnimationFrame(launchRaf.current);
+      launchRaf.current = null;
+    }
+
     setView("loading");
-    setLoadStage("Harita yükleniyor…");
+    setLoadStage(
+      socket?.connected ? "Harita ve silahlar hazırlanıyor…" : "Sunucuya bağlanılıyor…"
+    );
+    setConnectionNotice("");
+    setPanel(null);
+    setError("");
     clearTimeout(loadTimer.current);
     loadTimer.current = setTimeout(() => {
-      if (activeRoom.current !== code) return;
+      if (launchToken.current !== myToken || activeRoom.current !== code) return;
       activeRoom.current = null;
       game.current?.dispose();
       game.current = null;
       setView("lobby");
-      setError("Oyun durumu 12 saniyede alınamadı. Bağlantını kontrol edip yeniden deneyebilirsin.");
-    }, 12000);
-    setPanel(null);
-    setError("");
+      setError("Maç 20 saniyede hazır hale gelmedi. Bağlantını kontrol edip yeniden bağlanabilirsin.");
+    }, 20000);
+
     try {
       localStorage.setItem("kapsstrike-settings", JSON.stringify(settings));
     } catch {}
@@ -573,56 +736,100 @@ export default function KapsStrikeGame({
         ? (roomOrMap as MapId)
         : targetRoom?.map || map || "warehouse";
 
-    const activeRoomCode = targetRoom?.roomCode;
+    const activeRoomCode = targetRoom?.roomCode || code;
     const myTeam: StrikeTeam =
       targetRoom?.players?.find((p) => p.userId === currentUserId)?.team || "none";
 
-    try {
-      game.current?.dispose();
-      game.current = new StrikeController(
-        canvas.current!,
-        gameMap,
-        settings,
-        setHUD,
-        (reason) => {
-          setView("pause");
-          if (reason) setError(reason);
-        },
-        undefined,
-        {
-          socket,
-          roomCode: activeRoomCode,
-          userId: currentUserId,
-          username,
-          team: myTeam,
-          isMultiplayer: true,
-          onLoadingStage: setLoadStage,
-          onSynchronized: () => {
-            clearTimeout(loadTimer.current);
-            setView(game.current?.isTouchDevice ? "play" : "pause");
-          },
-          onScoreboardToggle: (open) => setScoreboardOpen(open),
-          onPttChange: (active) => voice.current?.setPttActive(active),
-        }
-      );
-      setLoadStage("Oyun durumu senkronize ediliyor…");
-      game.current.start(false);
-
-      // Connect voice room with other players
-      if (voice.current && targetRoom) {
-        voice.current.joinRoomVoice(
-          targetRoom.roomCode,
-          targetRoom.players.map((p) => p.userId)
-        );
+    // Defer heavy WebGL scene construction by one animation frame so the loading UI
+    // paints immediately before main-thread shader/mesh compilation begins.
+    launchRaf.current = requestAnimationFrame(() => {
+      launchRaf.current = null;
+      if (launchToken.current !== myToken || activeRoom.current !== code) return;
+      if (!canvas.current) {
+        activeRoom.current = null;
+        clearTimeout(loadTimer.current);
+        setView("lobby");
+        setError("Oyun alanı hazırlanamadı. Lütfen tekrar dene.");
+        return;
       }
-    } catch (e) {
-      game.current?.dispose();
-      game.current = null;
-      clearTimeout(loadTimer.current);
-      activeRoom.current = null;
-      setView("lobby");
-      setError(e instanceof Error ? e.message : "Oyun başlatılamadı.");
-    }
+
+      try {
+        game.current?.dispose();
+        game.current = new StrikeController(
+          canvas.current,
+          gameMap,
+          settings,
+          setHUD,
+          (reason) => {
+            setView("pause");
+            if (reason) setError(reason);
+          },
+          undefined,
+          {
+            socket,
+            roomCode: activeRoomCode,
+            userId: currentUserId,
+            username,
+            team: myTeam,
+            isMultiplayer: true,
+            initialSnapshot,
+            onLoadingStage: setLoadStage,
+            onConnectionStateChange: (state) => {
+              setSocketConnected(state.connected);
+              setConnectionNotice(state.reconnecting ? (state.message || "Yeniden bağlanılıyor…") : "");
+            },
+            onRoomLost: (reason) => {
+              if (launchToken.current !== myToken) return;
+              clearTimeout(loadTimer.current);
+              activeRoom.current = null;
+              game.current?.dispose();
+              game.current = null;
+              setConnectionNotice("");
+              if (currentRoomRef.current && currentRoomRef.current.status === "lobby") {
+                setView("lobby");
+              } else {
+                try {
+                  sessionStorage.removeItem("kapsstrike_active_room");
+                } catch {}
+                updateCurrentRoom(null);
+                setView("menu");
+              }
+              if (reason) setError(reason);
+            },
+            onSynchronized: () => {
+              if (launchToken.current !== myToken) return;
+              clearTimeout(loadTimer.current);
+              setConnectionNotice("");
+              setError("");
+              setView(game.current?.isTouchDevice ? "play" : "pause");
+            },
+            onScoreboardToggle: (open) => setScoreboardOpen(open),
+            onPttChange: (active) => voice.current?.setPttActive(active),
+          }
+        );
+        setLoadStage(
+          initialSnapshot
+            ? "Grafikler hazırlanıyor…"
+            : "Sunucu durumu senkronize ediliyor…"
+        );
+        game.current.start(false);
+
+        // Connect voice room with other players
+        if (voice.current && targetRoom) {
+          voice.current.joinRoomVoice(
+            targetRoom.roomCode,
+            targetRoom.players.map((p) => p.userId)
+          );
+        }
+      } catch (e) {
+        game.current?.dispose();
+        game.current = null;
+        clearTimeout(loadTimer.current);
+        activeRoom.current = null;
+        setView("lobby");
+        setError(e instanceof Error ? e.message : "Oyun başlatılamadı.");
+      }
+    });
   };
 
   launch.current = startMultiplayerGame;
@@ -639,128 +846,169 @@ export default function KapsStrikeGame({
       sessionStorage.removeItem("kapsstrike_active_room");
       sessionStorage.removeItem("pending_join_strike");
     } catch {}
+    launchToken.current++;
+    if (launchRaf.current !== null) {
+      cancelAnimationFrame(launchRaf.current);
+      launchRaf.current = null;
+    }
     activeRoom.current = null;
     clearTimeout(loadTimer.current);
     game.current?.dispose();
     game.current = null;
     voice.current?.leaveVoice();
     setHUD(null);
-    if ((currentRoom || currentRoomRef.current) && socket) {
+    setConnectionNotice("");
+    if ((currentRoom || currentRoomRef.current) && socket?.connected) {
       socket.emit("strike:leave_room");
-      updateCurrentRoom(null);
     }
+    updateCurrentRoom(null);
     setView("menu");
     setPanel(null);
     refreshRooms();
   };
 
+  const runGuardedAction = async (fn: () => Promise<void>) => {
+    if (busyAction.current) return;
+    busyAction.current = true;
+    setActionBusy(true);
+    try {
+      await fn();
+    } finally {
+      busyAction.current = false;
+      setActionBusy(false);
+    }
+  };
+
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!socket || !createCategory) return;
+    if (!createCategory) return;
     setError("");
-
-    socket.emit(
-      "strike:create_room",
-      {
-        name: createName,
-        map: createCategory === 'bomb' ? createBombMap : createMap,
-        mode: createCategory === 'bomb' ? 'bomb' : createMode,
-        bombRounds: createCategory === 'bomb' ? createBombRounds : undefined,
-        maxPlayers: createMaxPlayers,
-        timeLimit: createDuration,
-        scoreLimit: createScoreLimit,
-        password: createPassword,
-      },
-      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
-        if (res.success && res.room) {
-          updateCurrentRoom(res.room);
-          setPanel(null);
-          setView("lobby");
-          refreshRooms();
-        } else {
-          setError(res.error || "Oda kurulamadı.");
+    void runGuardedAction(async () => {
+      const result = await emitWithAck<{ success: boolean; room?: StrikeRoomState; error?: string }>(
+        "strike:create_room",
+        {
+          name: createName,
+          map: createCategory === "bomb" ? createBombMap : createMap,
+          mode: createCategory === "bomb" ? "bomb" : createMode,
+          bombRounds: createCategory === "bomb" ? createBombRounds : undefined,
+          maxPlayers: createMaxPlayers,
+          timeLimit: createDuration,
+          scoreLimit: createScoreLimit,
+          password: createPassword,
         }
+      );
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
-    );
+      const res = result.data;
+      if (res?.success && res.room) {
+        updateCurrentRoom(res.room);
+        setPanel(null);
+        setView("lobby");
+        refreshRooms();
+      } else {
+        setError(res?.error || "Oda kurulamadı.");
+      }
+    });
   };
 
   const handleQuickMatch = () => {
-    if (!socket) return;
     setError("");
-    socket.emit(
-      "strike:quick_match",
-      {},
-      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
-        if (res.success && res.room) {
-          updateCurrentRoom(res.room);
-          if (res.room.status === "in_progress") {
-            startMultiplayerGame(res.room);
-          } else {
-            setView("lobby");
-          }
-        } else {
-          setError(res.error || "Hızlı maç bulunamadı.");
-        }
+    void runGuardedAction(async () => {
+      const result = await emitWithAck<{
+        success: boolean;
+        room?: StrikeRoomState;
+        snapshot?: StrikeSnapshot;
+        error?: string;
+      }>("strike:quick_match", {});
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
-    );
+      const res = result.data;
+      if (res?.success && res.room) {
+        updateCurrentRoom(res.room);
+        if (res.room.status === "in_progress") {
+          startMultiplayerGame(res.room, res.snapshot);
+        } else {
+          setView("lobby");
+        }
+      } else {
+        setError(res?.error || "Hızlı maç bulunamadı.");
+      }
+    });
   };
 
   const handleJoinRoom = (roomId: string, hasPass = false) => {
-    if (!socket) return;
     if (hasPass) {
       setPasswordModalRoomId(roomId);
       return;
     }
     setError("");
-    socket.emit(
-      "strike:join_room",
-      { roomCode: roomId, roomId, code: roomId },
-      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
-        if (res.success && res.room) {
-          updateCurrentRoom(res.room);
-          if (res.room.status === "in_progress") {
-            startMultiplayerGame(res.room);
-          } else {
-            setView("lobby");
-          }
-        } else {
-          setError(res.error || "Odaya katılınamadı.");
-        }
+    void runGuardedAction(async () => {
+      const result = await emitWithAck<{
+        success: boolean;
+        room?: StrikeRoomState;
+        snapshot?: StrikeSnapshot;
+        error?: string;
+      }>("strike:join_room", { roomCode: roomId, roomId, code: roomId });
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
-    );
+      const res = result.data;
+      if (res?.success && res.room) {
+        updateCurrentRoom(res.room);
+        if (res.room.status === "in_progress") {
+          startMultiplayerGame(res.room, res.snapshot);
+        } else {
+          setView("lobby");
+        }
+      } else {
+        setError(res?.error || "Odaya katılınamadı.");
+      }
+    });
   };
 
   const handleJoinWithPassword = () => {
-    if (!socket || !passwordModalRoomId) return;
+    if (!passwordModalRoomId) return;
     setError("");
-    socket.emit(
-      "strike:join_room",
-      {
+    void runGuardedAction(async () => {
+      const result = await emitWithAck<{
+        success: boolean;
+        room?: StrikeRoomState;
+        snapshot?: StrikeSnapshot;
+        error?: string;
+      }>("strike:join_room", {
         roomCode: passwordModalRoomId,
         roomId: passwordModalRoomId,
         code: passwordModalRoomId,
         password: passwordInput,
-      },
-      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
-        if (res.success && res.room) {
-          updateCurrentRoom(res.room);
-          setPasswordModalRoomId(null);
-          setPasswordInput("");
-          if (res.room.status === "in_progress") {
-            startMultiplayerGame(res.room);
-          } else {
-            setView("lobby");
-          }
-        } else {
-          setError(res.error || "Hatalı oda şifresi.");
-        }
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
-    );
+      const res = result.data;
+      if (res?.success && res.room) {
+        updateCurrentRoom(res.room);
+        setPasswordModalRoomId(null);
+        setPasswordInput("");
+        if (res.room.status === "in_progress") {
+          startMultiplayerGame(res.room, res.snapshot);
+        } else {
+          setView("lobby");
+        }
+      } else {
+        setError(res?.error || "Hatalı oda şifresi.");
+      }
+    });
   };
 
   const handleJoinByCode = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!socket || !joinCodeInput) return;
+    if (!joinCodeInput) return;
     const clean = joinCodeInput.trim().toUpperCase();
     setError("");
 
@@ -776,26 +1024,33 @@ export default function KapsStrikeGame({
       return;
     }
 
-    socket.emit(
-      "strike:join_room",
-      { roomCode: clean, roomId: clean, code: clean },
-      (res: { success: boolean; room?: StrikeRoomState; error?: string }) => {
-        if (res.success && res.room) {
-          updateCurrentRoom(res.room);
-          if (res.room.status === "in_progress") {
-            startMultiplayerGame(res.room);
-          } else {
-            setView("lobby");
-          }
-        } else {
-          setError(res.error || "Oda kodu bulunamadı.");
-        }
+    void runGuardedAction(async () => {
+      const result = await emitWithAck<{
+        success: boolean;
+        room?: StrikeRoomState;
+        snapshot?: StrikeSnapshot;
+        error?: string;
+      }>("strike:join_room", { roomCode: clean, roomId: clean, code: clean });
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
-    );
+      const res = result.data;
+      if (res?.success && res.room) {
+        updateCurrentRoom(res.room);
+        if (res.room.status === "in_progress") {
+          startMultiplayerGame(res.room, res.snapshot);
+        } else {
+          setView("lobby");
+        }
+      } else {
+        setError(res?.error || "Oda kodu bulunamadı.");
+      }
+    });
   };
 
   const toggleReady = () => {
-    if (!socket || !currentRoom) return;
+    if (!socket?.connected || !currentRoom) return;
     const me = currentRoom.players.find((p) => p.userId === currentUserId);
     const nextReady = !me?.ready;
     // Optimistic UI update
@@ -827,25 +1082,30 @@ export default function KapsStrikeGame({
   };
 
   const startMatchAsHost = () => {
-    if (!socket || !currentRoom || isStartingMatch) return;
+    if (!currentRoom || isStartingMatch) return;
     setError("");
     setIsStartingMatch(true);
     const needBot = currentRoom.mode === "bomb" && currentRoom.players.length < 2;
-    const cb = (res?: { success: boolean; error?: string }) => {
-      if (res && !res.success) {
+    void (async () => {
+      const result = await emitWithAck<{ success: boolean; error?: string }>(
+        "strike:start_game",
+        needBot ? { fillBot: true } : {},
+        8000
+      );
+      if (!result.ok) {
         setIsStartingMatch(false);
-        if (res.error) setError(res.error);
+        setError(result.error);
+        return;
       }
-    };
-    if (needBot) {
-      socket.emit("strike:start_game", { fillBot: true }, cb);
-    } else {
-      socket.emit("strike:start_game", cb);
-    }
+      if (result.data && !result.data.success) {
+        setIsStartingMatch(false);
+        if (result.data.error) setError(result.data.error);
+      }
+    })();
   };
 
   const returnToLobbyAsHost = () => {
-    if (!socket || !currentRoom) return;
+    if (!socket?.connected || !currentRoom) return;
     socket.emit("strike:return_to_lobby");
   };
 
@@ -874,12 +1134,30 @@ export default function KapsStrikeGame({
     setTimeout(() => setInviteCopied(false), 2500);
   };
 
-  useEffect(()=>{
-    let active=true;
-    const sync=()=>{setSettings(old=>({...old,cosmeticLoadout:{},hiddenWeapons:[]}));socket?.timeout(6000).emit('strike:inventory_get',{},(err:any,r:any)=>{if(active&&!err&&r?.success)setSettings(old=>({...old,cosmeticLoadout:r.state.equipped,hiddenWeapons:r.state.hiddenWeapons||[]}));});};
-    if(socket?.connected)sync();socket?.on('connect',sync);
-    return()=>{active=false;socket?.off('connect',sync);};
-  },[socket,currentUserId]);
+  useEffect(() => {
+    let active = true;
+    if (lastInventoryUserRef.current !== currentUserId) {
+      lastInventoryUserRef.current = currentUserId;
+      setSettings((old) => ({ ...old, cosmeticLoadout: {}, hiddenWeapons: [] }));
+    }
+    const sync = () => {
+      socket?.timeout(6000).emit("strike:inventory_get", {}, (err: any, r: any) => {
+        if (active && !err && r?.success) {
+          setSettings((old) => ({
+            ...old,
+            cosmeticLoadout: r.state.equipped,
+            hiddenWeapons: r.state.hiddenWeapons || [],
+          }));
+        }
+      });
+    };
+    if (socket?.connected) sync();
+    socket?.on("connect", sync);
+    return () => {
+      active = false;
+      socket?.off("connect", sync);
+    };
+  }, [socket, currentUserId]);
   useEffect(()=>{
     const open=(e:KeyboardEvent)=>{if(e.code!=='KeyB'||e.repeat||view!=='play'||isBombRoom||(e.target instanceof HTMLElement&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)))return;e.preventDefault();game.current?.pause();setPanel('weapons');};
     window.addEventListener('keydown',open);return()=>window.removeEventListener('keydown',open);
@@ -911,10 +1189,24 @@ export default function KapsStrikeGame({
       />
 
       {view === "loading" && (
-        <div className="ks-overlay" role="status">
-          <div className="ks-menu"><h2>Maç hazırlanıyor</h2><p>{loadStage}</p>
+        <div className="ks-overlay" role="status" aria-live="polite">
+          <div className="ks-menu">
+            <div className="ks-eyebrow">
+              {currentRoom ? `${MAPS[currentRoom.map]?.name || currentRoom.map} · ${currentRoom.roomCode}` : "KAPSSTRIKE"}
+            </div>
+            <h2>Maç hazırlanıyor</h2>
+            <p>{connectionNotice || loadStage || "Sunucu durumu senkronize ediliyor…"}</p>
             <button onClick={exit}>Lobiye / menüye dön</button>
           </div>
+        </div>
+      )}
+      {connectionNotice && view !== "loading" && (
+        <div
+          className="fixed top-3 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-amber-500/90 text-slate-950 text-xs font-bold shadow-lg border border-amber-300/60"
+          role="status"
+          aria-live="polite"
+        >
+          {connectionNotice}
         </div>
       )}
       {error && view !== "menu" && <p className="ks-network-error" role="alert">{error}</p>}
@@ -2070,12 +2362,13 @@ export default function KapsStrikeGame({
             {modeTab === "multiplayer" && !panel && (
               <>
                 <div className="ks-mp-actions">
-                  <button className="ks-btn-quick" onClick={handleQuickMatch}>
-                    ⚡ Hızlı Maç Bul
+                  <button className="ks-btn-quick" onClick={handleQuickMatch} disabled={actionBusy || !socketConnected}>
+                    {actionBusy ? "⏳ Bağlanıyor…" : "⚡ Hızlı Maç Bul"}
                   </button>
                   <button
                     onClick={() => { setCreateCategory(null); setError(""); setPanel("create_room"); }}
                     className="ks-primary"
+                    disabled={actionBusy || !socketConnected}
                   >
                     + Masa aç
                   </button>
@@ -2089,7 +2382,7 @@ export default function KapsStrikeGame({
                       className="ks-filter-input"
                       style={{ width: "120px", minWidth: "100px", textTransform: "uppercase" }}
                     />
-                    <button type="submit" disabled={joinCodeInput.trim().length < 4}>
+                    <button type="submit" disabled={actionBusy || !socketConnected || joinCodeInput.trim().length < 4}>
                       Koda Katıl
                     </button>
                   </form>
@@ -2169,7 +2462,7 @@ export default function KapsStrikeGame({
                           </span>
                           <button
                             onClick={() => handleJoinRoom(r.roomCode, r.hasPassword)}
-                            disabled={r.playerCount >= r.maxPlayers}
+                            disabled={actionBusy || !socketConnected || r.playerCount >= r.maxPlayers}
                             style={{ padding: "6px 14px", minHeight: "auto", fontSize: "12px" }}
                           >
                             {r.hasPassword ? "Şifreyle Gir" : "Katıl"}
@@ -2254,7 +2547,9 @@ export default function KapsStrikeGame({
                     </>}
                     <label>Masa şifresi <input type="password" placeholder="İsteğe bağlı" value={createPassword} onChange={e => setCreatePassword(e.target.value)} /></label>
                   </div>
-                  <button type="submit" className="ks-primary">Masayı oluştur</button>
+                  <button type="submit" className="ks-primary" disabled={actionBusy || !socketConnected}>
+                    {actionBusy ? "Masa oluşturuluyor…" : "Masayı oluştur"}
+                  </button>
                 </>}
               </form>
             )}
