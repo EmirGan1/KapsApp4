@@ -418,25 +418,42 @@ button, a, [role="button"], input, select, textarea {
 /* Mobile/tablet layout only: desktop geometry is kept intact. */
 @media (max-width: 1023px) {
   html, body, #root { touch-action: pan-x pan-y pinch-zoom; }
-  .app-shell.kapsapp-viewport { position: relative; height: var(--app-shell-height, 100dvh); }
-  .app-shell .kapsapp-bottom-nav { position: absolute; }
-  .app-content { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
-  .app-shell[data-bottom-nav-hidden="true"] .app-content,
-  html[data-keyboard-open="true"] .app-content,
-  html[data-chat-keyboard] .app-content {
-    padding-bottom: 0 !important;
+  /* The shell owns the viewport; only the active page scrolls. Keep login and
+     other pages without an app shell free to use normal document scrolling. */
+  html:has(.app-shell), body:has(.app-shell), #root:has(.app-shell) {
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
-  /* When BottomNav is visible, .app-content already reserves bottom space; prevent double padding inside scroll views and chat composers */
+  .app-shell.kapsapp-viewport {
+    position: fixed;
+    inset-inline: 0;
+    top: var(--visible-top, 0px);
+    height: var(--app-shell-height, 100vh);
+    height: var(--app-shell-height, 100dvh);
+    min-height: 0;
+    /* The header, including its safe area, owns the top inset. */
+    padding-top: 0;
+  }
+  .app-shell > header {
+    height: calc(50px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .app-shell[data-bottom-nav-hidden="true"] {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  /* A flex sibling reserves exactly the dock's real height, including one
+     bottom safe inset. No absolute dock or guessed content spacer is needed. */
+  .app-shell .kapsapp-bottom-nav { position: static; }
+  .app-content { padding-bottom: 0; }
+  .app-shell[data-bottom-nav-hidden="true"] .kapsapp-bottom-nav,
+  html[data-keyboard-open="true"] .kapsapp-bottom-nav,
+  html[data-chat-keyboard] .kapsapp-bottom-nav {
+    display: none;
+  }
+  /* The dock already consumes the bottom inset. */
   .app-shell:not([data-bottom-nav-hidden="true"]) .kaps-chat-composer {
     padding-bottom: 0 !important;
-  }
-  .app-shell:not([data-bottom-nav-hidden="true"]) .app-content > .overflow-y-auto,
-  .app-shell:not([data-bottom-nav-hidden="true"]) .app-content > div > .overflow-y-auto {
-    padding-bottom: 1.25rem !important;
-  }
-  html[data-keyboard-open="true"] nav[aria-label="Mobil alt gezinti menüsü"],
-  html[data-chat-keyboard] nav[aria-label="Mobil alt gezinti menüsü"] {
-    display: none !important;
   }
   .app-content > * { min-width: 0; }
   .mobile-window { top: var(--visible-top, 0px); bottom: auto; height: var(--visible-height, 100dvh); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }

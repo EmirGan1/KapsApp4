@@ -1409,7 +1409,7 @@ export default function App() {
       {!(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || (activeTab === "games" && isInActiveGame) || activeTab === "german") && (
         <header
           data-testid="mobile-top-app-bar"
-          className="lg:hidden flex items-center justify-between px-2.5 h-[50px] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 shrink-0 z-30 select-none transition-colors duration-200"
+          className="lg:hidden flex items-center justify-between px-2.5 h-[50px] bg-white dark:bg-slate-950 border-b border-slate-200/80 dark:border-slate-800/80 shrink-0 z-30 select-none transition-colors duration-200"
         >
           {/* Left Slot: Brand on Home OR Contextual Back + Crisp Single-Line Title on Sub-Screens */}
           <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">

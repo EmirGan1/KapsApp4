@@ -1,15 +1,12 @@
 export function resolveMobileShellHeight(input: {
   visibleHeight: number;
   innerHeight: number;
-  screenHeight: number;
   unobscuredHeight: number;
   editing: boolean;
-  iosStandalone: boolean;
 }) {
   const keyboardOpen = input.editing && input.unobscuredHeight - input.visibleHeight > 60;
-  const standaloneHeight = input.iosStandalone && input.screenHeight > input.innerHeight &&
-    input.screenHeight - input.innerHeight < 120 ? input.screenHeight : input.innerHeight;
-  return { keyboardOpen, shellHeight: keyboardOpen ? input.visibleHeight : standaloneHeight };
+  // Physical screen dimensions include OS-owned areas and are never layout bounds.
+  return { keyboardOpen, shellHeight: Math.min(input.visibleHeight, input.innerHeight) };
 }
 
 /** Use the visible viewport when a software keyboard covers the layout viewport. */
@@ -26,14 +23,9 @@ export function installMobileViewport() {
     const active = document.activeElement;
     const editing = active instanceof HTMLElement && active.matches('input, textarea, select, [contenteditable="true"]');
     if (!editing) unobscuredHeight = window.innerHeight;
-    const iosStandalone = /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
-      ((navigator as Navigator & { standalone?: boolean }).standalone === true ||
-        window.matchMedia('(display-mode: standalone)').matches);
-    // iOS standalone can reserve a strip below the CSS viewport. Fill that strip
-    // with the app shell; its bottom dock is positioned inside the shell.
     const { keyboardOpen, shellHeight } = resolveMobileShellHeight({
       visibleHeight: height, innerHeight: window.innerHeight,
-      screenHeight: screen.height, unobscuredHeight, editing, iosStandalone
+      unobscuredHeight, editing
     });
     root.style.setProperty('--app-shell-height', `${shellHeight}px`);
     root.style.setProperty('--visible-height', `${height}px`);
@@ -59,6 +51,7 @@ export function installMobileViewport() {
   viewport?.addEventListener('resize', schedule);
   viewport?.addEventListener('scroll', schedule);
   window.addEventListener('resize', schedule);
+  window.addEventListener('pageshow', schedule);
   document.addEventListener('focusin', schedule);
   document.addEventListener('focusout', schedule);
   update();
@@ -68,6 +61,7 @@ export function installMobileViewport() {
     viewport?.removeEventListener('resize', schedule);
     viewport?.removeEventListener('scroll', schedule);
     window.removeEventListener('resize', schedule);
+    window.removeEventListener('pageshow', schedule);
     document.removeEventListener('focusin', schedule);
     document.removeEventListener('focusout', schedule);
     root.style.removeProperty('--visible-height');
