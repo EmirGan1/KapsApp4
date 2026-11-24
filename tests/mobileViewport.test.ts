@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveMobileShellHeight } from '../src/utils/mobileViewport';
+import { resolveMobileShellHeight, usesIosStandaloneLayout } from '../src/utils/mobileViewport';
 
 for (const [name, visibleHeight, innerHeight] of [
   ['short browser viewport', 568, 568],
@@ -36,5 +36,17 @@ for (const editing of [false, true]) {
     assert.deepEqual(resolveMobileShellHeight({
       visibleHeight: 756, innerHeight: 800, unobscuredHeight: 800, editing
     }), { keyboardOpen: false, shellHeight: null });
+  });
+}
+
+for (const [name, input, expected] of [
+  ['iPhone PWA', { userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5, standalone: true }, true],
+  ['iPhone Safari', { userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5, standalone: false }, false],
+  ['iPad desktop UA PWA', { userAgent: 'Macintosh', platform: 'MacIntel', maxTouchPoints: 5, standalone: true }, true],
+  ['Android PWA', { userAgent: 'Android', platform: 'Linux', maxTouchPoints: 5, standalone: true }, false],
+  ['Mac desktop PWA', { userAgent: 'Macintosh', platform: 'MacIntel', maxTouchPoints: 0, standalone: true }, false],
+] as const) {
+  test(`${name} selects the appropriate viewport layout`, () => {
+    assert.equal(usesIosStandaloneLayout(input), expected);
   });
 }

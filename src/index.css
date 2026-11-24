@@ -442,6 +442,31 @@ button, a, [role="button"], input, select, textarea {
   .app-shell[data-bottom-nav-hidden="true"] {
     padding-top: env(safe-area-inset-top, 0px);
   }
+  /* iOS Home Screen apps can subtract the status bar from dvh on launch.
+     A fixed root can also be shifted/clipped by WebKit. Use the large viewport
+     in normal flow: no browser toolbar exists in this mode. Keep browser/Android
+     geometry and keyboard overrides separate. */
+  html[data-ios-standalone="true"] {
+    height: 100vh;
+    height: 100lvh;
+  }
+  html[data-ios-standalone="true"] body,
+  html[data-ios-standalone="true"] #root {
+    height: 100%;
+  }
+  html[data-ios-standalone="true"]:not([data-keyboard-open="true"]):not([data-chat-keyboard]) .app-shell.kapsapp-viewport {
+    position: relative;
+    top: auto;
+    height: 100%;
+  }
+  html[data-ios-standalone="true"]:not([data-keyboard-open="true"]):not([data-chat-keyboard]) .app-shell .mobile-window {
+    position: absolute;
+    top: 0;
+    height: 100%;
+  }
+  html[data-ios-standalone="true"]:not([data-keyboard-open="true"]):not([data-chat-keyboard]) .app-shell .mobile-window > div:last-child {
+    max-height: calc(100% - 24px);
+  }
   /* A flex sibling reserves exactly the dock's real height, including one
      bottom safe inset. No absolute dock or guessed content spacer is needed. */
   .app-shell .kapsapp-bottom-nav { position: static; }

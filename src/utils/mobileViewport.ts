@@ -1,3 +1,14 @@
+export function usesIosStandaloneLayout(input: {
+  userAgent: string;
+  platform: string;
+  maxTouchPoints: number;
+  standalone: boolean;
+}) {
+  const ios = /iPhone|iPad|iPod/i.test(input.userAgent) ||
+    (input.platform === 'MacIntel' && input.maxTouchPoints > 1);
+  return ios && input.standalone;
+}
+
 export function resolveMobileShellHeight(input: {
   visibleHeight: number;
   innerHeight: number;
@@ -6,7 +17,7 @@ export function resolveMobileShellHeight(input: {
 }) {
   const keyboardOpen = input.editing && input.unobscuredHeight - input.visibleHeight > 60;
   // iOS can retain a shorter visualViewport after the keyboard/browser UI closes.
-  // Only the keyboard may override CSS viewport sizing. Otherwise use 100dvh.
+  // Only the keyboard may override CSS sizing (lvh on iOS PWA, dvh in browsers).
   return { keyboardOpen, shellHeight: keyboardOpen ? input.visibleHeight : null };
 }
 
@@ -14,6 +25,18 @@ export function resolveMobileShellHeight(input: {
 export function installMobileViewport() {
   const viewport = window.visualViewport;
   const root = document.documentElement;
+  const standaloneQuery = window.matchMedia('(display-mode: standalone)');
+  // Install before React's first paint. Do not switch geometry after rendering.
+  const syncDisplayMode = () => {
+    root.dataset.iosStandalone = String(usesIosStandaloneLayout({
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      maxTouchPoints: navigator.maxTouchPoints,
+      standalone: (navigator as Navigator & { standalone?: boolean }).standalone === true || standaloneQuery.matches,
+    }));
+  };
+  syncDisplayMode();
+  standaloneQuery.addEventListener('change', syncDisplayMode);
   let frame = 0;
   let unobscuredHeight = window.innerHeight;
   const update = () => {
@@ -65,6 +88,7 @@ export function installMobileViewport() {
   update();
   return () => {
     cancelAnimationFrame(frame);
+    standaloneQuery.removeEventListener('change', syncDisplayMode);
     window.history.pushState = origPushState;
     viewport?.removeEventListener('resize', schedule);
     viewport?.removeEventListener('scroll', schedule);
@@ -78,5 +102,6 @@ export function installMobileViewport() {
     root.style.removeProperty('--visible-top');
     root.style.removeProperty('--app-shell-top');
     delete root.dataset.keyboardOpen;
+    delete root.dataset.iosStandalone;
   };
 }

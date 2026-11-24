@@ -10,8 +10,14 @@ let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 430, height: 932 }, { width: 844, height: 390 }]) {
-    for (const standalone of [false, true]) {
-      const context = await browser.newContext({ viewport: size, isMobile: true, hasTouch: true });
+    for (const mode of ['iphone-browser', 'iphone-pwa', 'android-pwa']) {
+      const standalone = mode.endsWith('pwa');
+      const iosStandalone = mode === 'iphone-pwa';
+      const context = await browser.newContext({ viewport: size, isMobile: true, hasTouch: true,
+        userAgent: mode.startsWith('iphone')
+          ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148'
+          : 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36',
+      });
       await context.addInitScript(({ standalone }) => {
         localStorage.setItem('lan_token', 'mock-layout');
         localStorage.setItem('lan_username', 'Layout tester');
@@ -26,6 +32,7 @@ try {
       await page.route('**/api/**', route => route.fulfill({ json: route.request().url().includes('daily-quote') ? { quote: 'Layout test', author: 'Test' } : [] }));
       await page.goto(base);
       await page.locator('.kapsapp-bottom-nav').waitFor();
+      assert.equal(await page.locator('.app-shell').evaluate(e => getComputedStyle(e).position), iosStandalone ? 'relative' : 'fixed');
       const check = async () => {
         const geometry = await page.evaluate(() => {
           const shell = document.querySelector('.app-shell')!;
@@ -47,6 +54,15 @@ try {
         assert.ok(geometry.scrollHeight <= geometry.height + 1, 'document must not have a second scrollbar');
       };
       await check();
+      if (iosStandalone) {
+        // Model WebKit shortening its dynamic viewport after the first paint.
+        // The standalone percentage/lvh chain must win over the dvh rule.
+        const shortDvh = await page.addStyleTag({ content: '.app-shell.kapsapp-viewport {height:calc(100dvh - 47px)}' });
+        await check();
+        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow')));
+        await check();
+        await shortDvh.evaluate(e => e.remove());
+      }
       // iOS may keep stale JS viewport dimensions while CSS 100dvh is full size.
       // This is a measurement simulation, not physical iOS/PWA verification.
       await page.evaluate(() => {
@@ -90,7 +106,7 @@ try {
       await page.evaluate(() => { document.documentElement.dataset.keyboardOpen = 'true'; });
       assert.equal(await page.locator('.kapsapp-bottom-nav').isVisible(), false, 'hide the entire dock including safe padding');
       assert.deepEqual(errors, []);
-      console.log(`PASS ${size.width}x${size.height} ${standalone ? 'standalone flag' : 'browser'}: bounds, dock, scroll, resize, insets, keyboard`);
+      console.log(`PASS ${size.width}x${size.height} ${mode}: launch, bounds, dock, scroll, resize, insets, keyboard`);
       await context.close();
     }
   }
