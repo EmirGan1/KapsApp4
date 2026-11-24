@@ -16,7 +16,12 @@ import crypto from "crypto";
 import { createDevicePush, validSubscription } from "./src/server/devicePush";
 import fs from "fs";
 import os from "os";
-import { createClient } from "@libsql/client";
+import {
+  createAppDatabaseClient,
+  configureSqliteRuntime,
+  closeDatabaseGracefully,
+  formatDatabaseTargetForLog,
+} from "./src/server/dbConfig";
 import dotenv from "dotenv";
 import { registerSubjectResourceRoutes } from "./src/server/subjectResourceRoutes";
 import { registerStagedUploads } from "./src/server/stagedUploads";
@@ -168,14 +173,13 @@ const deleteUploadedFile = async (filenameOrUrl: string) => {
   }
 };
 
-const client = createClient({
-  url: process.env.TURSO_DATABASE_URL || process.env.LIBSQL_URL || "file:local.db",
-  authToken: process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN,
-});
+const { client, config: dbConfig } = createAppDatabaseClient();
+console.log(`[DB] Using ${formatDatabaseTargetForLog(dbConfig)}`);
 
 const devicePush = createDevicePush(client);
 
 async function initDb() {
+  await configureSqliteRuntime(client, dbConfig);
   await client.execute(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
@@ -864,12 +868,7 @@ async function initDb() {
   try { await client.execute("ALTER TABLE users ADD COLUMN ban_reason TEXT"); } catch(e){}
   try { await client.execute("CREATE INDEX IF NOT EXISTS idx_banned_hw_fp ON banned_hardware(device_fingerprint)"); } catch(e){}
 
-  // High Performance DB PRAGMAs & Indexing for Turso/SQLite (1GB RAM Optimization)
-  try {
-    await client.execute("PRAGMA cache_size = -32000;");
-    await client.execute("PRAGMA synchronous = NORMAL;");
-    await client.execute("PRAGMA journal_mode = WAL;");
-  } catch (pragmaErr) {}
+  // High Performance DB PRAGMAs are configured in configureSqliteRuntime() at initDb() start
 
   try {
     await client.execute("ALTER TABLE messages ADD COLUMN room_id TEXT");
@@ -959,6 +958,17 @@ async function startServer() {
   try {
     await initDb();
   } catch (dbErr) {
+    const errMsg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+    if (
+      errMsg.includes("[DB INTEGRITY ERROR]") ||
+      errMsg.includes("[DB SAFETY]") ||
+      errMsg.includes("SQLITE_CORRUPT") ||
+      errMsg.includes("SQLITE_NOTADB")
+    ) {
+      console.error("Fatal database error — refusing to boot server:", dbErr);
+      await closeDatabaseGracefully(client, dbConfig);
+      process.exit(1);
+    }
     console.error("Database initialization error (proceeding with server boot):", dbErr);
   }
   
@@ -12220,6 +12230,37 @@ async function startServer() {
     console.log(`➡️  Connect via: http://${getLocalIP()}:${PORT}`);
     console.log(`=====================================\n`);
   });
+
+  let shuttingDown = false;
+  const handleShutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[Server] Received ${signal}. Closing HTTP server and database cleanly...`);
+    const forceTimer = setTimeout(() => {
+      console.error("[Server] Shutdown timed out; forcing exit.");
+      process.exit(1);
+    }, 6500);
+    forceTimer.unref();
+
+    try {
+      await new Promise<void>((resolve) => {
+        io.close(() => resolve());
+      });
+    } catch {}
+
+    try {
+      await new Promise<void>((resolve) => {
+        httpServer.close(() => resolve());
+      });
+    } catch {}
+
+    await closeDatabaseGracefully(client, dbConfig);
+    clearTimeout(forceTimer);
+    process.exit(0);
+  };
+
+  process.once("SIGINT", () => { void handleShutdown("SIGINT"); });
+  process.once("SIGTERM", () => { void handleShutdown("SIGTERM"); });
 }
 
 startServer();

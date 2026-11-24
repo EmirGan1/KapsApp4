@@ -1,8 +1,9 @@
-import { createClient } from "@libsql/client";
+import "dotenv/config";
 import { File } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createAppDatabaseClient } from "../src/server/dbConfig";
 import { readIaArchive } from "../src/utils/readIaArchive";
 import { readIaScoreName } from "../src/utils/subjectResources";
 
@@ -24,10 +25,7 @@ console.log(`${documents.length} PDFs, ${new Set(documents.map(doc => doc.folder
 if (flag !== "--apply") process.exit(0);
 
 const storage = path.resolve(process.env.SUBJECT_RESOURCES_DIR || "subject-resources-data");
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || process.env.LIBSQL_URL || "file:local.db",
-  authToken: process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN,
-});
+const { client: db } = createAppDatabaseClient();
 const staged: string[] = [];
 let committed = false;
 let commitAttempted = false;

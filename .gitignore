@@ -4,8 +4,28 @@ dist/
 coverage/
 .DS_Store
 *.log
+/logs/
 .env*
 !.env.example
+
+# SQLite runtime database, WAL, SHM, and journal files (NEVER track in Git)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*-wal
+*-shm
+*-journal
+local.db*
+kapsapp.db*
 
 /subject-resources-data/
 

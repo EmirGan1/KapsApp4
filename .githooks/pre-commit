@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+# Block committing any runtime SQLite database, WAL, SHM, or journal files.
+node scripts/check-no-tracked-db.mjs --staged

@@ -1,0 +1,20 @@
+name: SQLite Tracking Guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-no-tracked-sqlite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify no runtime SQLite files are tracked in Git
+        run: node scripts/check-no-tracked-db.mjs --strict-git
