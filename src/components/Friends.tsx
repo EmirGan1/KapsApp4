@@ -102,12 +102,12 @@ export default function Friends({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
-      <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
+      <div className="max-w-4xl mx-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
         
         {/* Top Header & Search Box */}
-        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm transition-colors duration-200 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm transition-colors duration-200 space-y-3 sm:space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
+            <div className="hidden lg:block">
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                   <Users size={20} />
@@ -122,7 +122,7 @@ export default function Friends({
             {/* Quick Stats Unboxed Meta */}
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
               <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                 <span>{onlineFriends.length} çevrimiçi</span>
               </span>
               <span>·</span>
@@ -132,10 +132,11 @@ export default function Friends({
 
           {/* Search Bar */}
           <div className="relative">
-            <Search className="absolute left-4 top-3.5 text-slate-400 dark:text-slate-500" size={18} />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
             <input
-              type="text"
-              placeholder="Kullanıcı adı yazarak yeni arkadaş ara veya filtrele..."
+              type="search"
+              enterKeyHint="search"
+              placeholder="Kullanıcı adı ile arkadaş ara..."
               value={searchQuery}
               onChange={e => {
                 setSearchQuery(e.target.value);
@@ -143,16 +144,18 @@ export default function Friends({
                   setActiveSubTab("search");
                 }
               }}
-              className="w-full pl-11 pr-10 py-3 bg-slate-50 dark:bg-slate-800/90 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-2xl border border-slate-200 dark:border-slate-700/80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-800 shadow-inner transition-colors text-sm"
+              className="w-full min-h-[44px] pl-11 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/90 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-2xl border border-slate-200 dark:border-slate-700/80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-800 shadow-inner transition-colors text-sm"
             />
             {searchQuery && (
               <button 
+                type="button"
+                aria-label="Aramayı temizle"
                 onClick={() => {
                   setSearchQuery("");
                   setSearchResults([]);
                   setActiveSubTab("all");
                 }}
-                className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -160,10 +163,11 @@ export default function Friends({
           </div>
 
           {/* Sub Navigation Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs font-bold pt-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar text-xs font-bold">
             <button
+              type="button"
               onClick={() => setActiveSubTab("all")}
-              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              className={`min-h-[38px] sm:min-h-0 px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                 activeSubTab === "all"
                   ? "bg-blue-600 text-white shadow-sm shadow-blue-500/25"
                   : "bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
@@ -174,8 +178,9 @@ export default function Friends({
             </button>
 
             <button
+              type="button"
               onClick={() => setActiveSubTab("online")}
-              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              className={`min-h-[38px] sm:min-h-0 px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                 activeSubTab === "online"
                   ? "bg-emerald-600 text-white shadow-sm shadow-emerald-500/25"
                   : "bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
@@ -186,8 +191,9 @@ export default function Friends({
             </button>
 
             <button
+              type="button"
               onClick={() => setActiveSubTab("requests")}
-              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 relative ${
+              className={`min-h-[38px] sm:min-h-0 px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 relative ${
                 activeSubTab === "requests"
                   ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/25"
                   : "bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
@@ -204,8 +210,9 @@ export default function Friends({
 
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setActiveSubTab("search")}
-                className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                className={`min-h-[38px] sm:min-h-0 px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                   activeSubTab === "search"
                     ? "bg-blue-600 text-white shadow-sm shadow-blue-500/25"
                     : "bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
@@ -476,7 +483,7 @@ export default function Friends({
                           <p className={`text-[11px] font-medium flex items-center gap-1 mt-0.5 ${
                             isOnline ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400 dark:text-slate-500'
                           }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-slate-600'}`}></span>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}></span>
                             <span>{isOnline ? "Çevrimiçi" : "Çevrimdışı"}</span>
                           </p>
 
@@ -493,45 +500,51 @@ export default function Friends({
                       <div className="flex items-center gap-1 shrink-0 ml-2">
                         {onOpenChat && (
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               onOpenChat(friend.id);
                             }}
-                            className="p-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-xl transition-all cursor-pointer active:scale-95"
+                            className="w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-xl transition-all cursor-pointer active:scale-95"
                             title="Mesaj Gönder"
+                            aria-label="Mesaj Gönder"
                           >
-                            <MessageSquare size={17} />
+                            <MessageSquare size={18} />
                           </button>
                         )}
 
                         {isOnline && (
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               startCall(friend.id);
                             }}
                             disabled={callState !== 'idle'}
-                            className={`p-2 rounded-xl transition-all cursor-pointer ${
+                            className={`w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-xl transition-all cursor-pointer ${
                               callState !== 'idle'
                                 ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
                                 : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 active:scale-95'
                             }`}
                             title="Hemen Sesli Ara"
+                            aria-label="Sesli Ara"
                           >
-                            <Phone size={17} />
+                            <Phone size={18} />
                           </button>
                         )}
 
                         {isEmirgan && (
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setUserToDelete({ id: friend.id, username: friend.username });
                             }}
-                            className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer shrink-0"
+                            className="w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer shrink-0"
                             title="Kullanıcıyı Sil / Banla (Yönetici)"
+                            aria-label="Kullanıcıyı Sil"
                           >
-                            <UserX size={17} />
+                            <UserX size={18} />
                           </button>
                         )}
                       </div>

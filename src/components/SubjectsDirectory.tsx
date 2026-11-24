@@ -187,40 +187,40 @@ export default function SubjectsDirectory({
   useEffect(()=>{let alive=true;fetch(getApiUrl("/api/kaps-german/access"),{headers:getAuthHeaders()}).then(r=>{if(alive)setGermanAccess(r.ok);}).catch(()=>{});return()=>{alive=false;};},[]);
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 transition-colors duration-200 touch-pan-y overscroll-y-contain">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-7 pb-28">
-        {germanAccess && <Link to="/dersler/kaps-german" className="mb-6 flex min-h-24 items-center justify-between gap-5 rounded-2xl border border-emerald-300/30 bg-emerald-950 px-6 py-5 text-white"><div><span className="text-xs text-emerald-200">Kişisel Almanca çalışma alanı</span><h2 className="mt-1 text-2xl font-semibold">Kaps German</h2><p className="mt-1 text-xs text-emerald-100">Kelimelerin, tekrarların ve Goethe B1 hazırlığın.</p></div><Languages size={30}/></Link>}
+      <div className="max-w-6xl mx-auto px-3.5 sm:px-6 py-3.5 sm:py-7 pb-8 sm:pb-14">
+        {germanAccess && <Link to="/dersler/kaps-german" className="mb-4 sm:mb-6 flex min-h-20 sm:min-h-24 items-center justify-between gap-4 sm:gap-5 rounded-2xl border border-emerald-300/30 bg-emerald-950 px-4 sm:px-6 py-4 sm:py-5 text-white active:scale-[0.99] transition-transform"><div><span className="text-xs text-emerald-200">Kişisel Almanca çalışma alanı</span><h2 className="mt-0.5 sm:mt-1 text-xl sm:text-2xl font-semibold">Kaps German</h2><p className="mt-0.5 sm:mt-1 text-xs text-emerald-100">Kelimelerin, tekrarların ve Goethe B1 hazırlığın.</p></div><Languages size={28} className="shrink-0"/></Link>}
         {/* ========================================================= */}
         {/* ACADEMIC STUDIO DIRECTORY HEADER                          */}
         {/* ========================================================= */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xs mb-6 relative overflow-hidden transition-colors duration-200">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/5 dark:bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-xs mb-4 sm:mb-6 relative overflow-hidden transition-colors duration-200">
+          <div className="hidden sm:block absolute top-0 right-0 w-80 h-80 bg-indigo-500/5 dark:bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
           
-          <div className="relative z-10 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-end justify-between gap-3.5 sm:gap-6">
             <div>
-              <div className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
+              <div className="inline-flex items-center flex-wrap gap-1.5 sm:gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 sm:mb-2">
                 <Layers size={14} className="text-indigo-500" />
-                <span>Akademik Ders Stüdyosu & Arşiv</span>
+                <span>Akademik Arşiv</span>
                 <span>·</span>
                 <span className="tabular-nums">{subjects.length} Branş</span>
                 {mySubjectsCount > 0 && (
                   <>
                     <span>·</span>
                     <span className="text-amber-600 dark:text-amber-400 font-bold tabular-nums">
-                      {mySubjectsCount} Kayıtlı Dersiniz
+                      {mySubjectsCount} Kayıtlı Ders
                     </span>
                   </>
                 )}
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white mb-2">
+              <h1 className="hidden sm:block text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white mb-2">
                 Ders Arşivi, Past Papers & IA/EE Havuzu
               </h1>
-              <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base max-w-2xl leading-relaxed">
+              <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-sm sm:text-base max-w-2xl leading-relaxed">
                 Her branşın kendi çalışma stüdyosuna girerek ders materyallerine, çıkmış sorulara, puanlanmış IA/EE örneklerine ve soru-cevap akışına tek merkezden ulaşın.
               </p>
             </div>
 
             {/* Quick Category Filter Segmented Control */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-2xl border border-slate-200/70 dark:border-slate-700/70 self-start lg:self-auto flex-wrap">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-2xl border border-slate-200/70 dark:border-slate-700/70 w-full sm:w-auto overflow-x-auto no-scrollbar">
               {[
                 { id: "all", label: `Tümü (${subjects.length})` },
                 ...(mySubjectsCount > 0 ? [{ id: "mine", label: `Derslerim (${mySubjectsCount})` }] : []),
@@ -231,7 +231,7 @@ export default function SubjectsDirectory({
                   key={tab.id}
                   type="button"
                   onClick={() => setCategoryFilter(tab.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer tabular-nums ${
+                  className={`min-h-[38px] sm:min-h-0 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer tabular-nums shrink-0 ${
                     categoryFilter === tab.id
                       ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
                       : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
@@ -245,19 +245,21 @@ export default function SubjectsDirectory({
         </div>
 
         {/* Search Bar */}
-        <div className="relative mb-6">
+        <div className="relative mb-4 sm:mb-6">
           <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
-            type="text"
+            type="search"
+            enterKeyHint="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Ders adı, konu, IA/EE veya anahtar kelime ara..."
-            className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 text-sm shadow-xs focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+            placeholder="Ders adı, konu veya IA/EE ara..."
+            className="w-full min-h-[44px] pl-11 pr-20 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 text-sm shadow-xs focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
           />
           {searchQuery && (
             <button
+              type="button"
               onClick={() => setSearchQuery("")}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 min-h-[32px] text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
             >
               Temizle
             </button>

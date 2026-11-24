@@ -1,33 +1,36 @@
 import UserProfileLink from "./UserProfileLink";
-import React, { useEffect } from "react";
+import Avatar from "./Avatar";
+import React, { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { 
-  Home, 
-  LayoutGrid, 
-  MessageSquare, 
-  Folder, 
-  MoreHorizontal, 
-  UserCircle2, 
-  Bell, 
-  Megaphone, 
-  CalendarDays, 
-  Globe, 
-  CloudSun, 
-  MapPin, 
-  Radio, 
-  Gamepad2, 
-  Users, 
-  GraduationCap, 
-  Crown, 
-  Sun, 
-  Moon, 
-  LogOut, 
+import {
+  Home,
+  LayoutGrid,
+  MessageSquare,
+  Folder,
+  MoreHorizontal,
+  Bell,
+  Megaphone,
+  CalendarDays,
+  Globe,
+  CloudSun,
+  MapPin,
+  Radio,
+  Gamepad2,
+  Users,
+  GraduationCap,
+  Crown,
+  Sun,
+  Moon,
+  LogOut,
   X,
   Calculator,
   Compass,
   Settings as SettingsIcon,
   Smartphone,
-  Sparkles
+  Sparkles,
+  BrainCircuit,
+  Search,
+  BellOff,
 } from "lucide-react";
 import { AppTab } from "../routes";
 
@@ -40,14 +43,20 @@ export interface BottomNavProps {
   setIsMobileMoreOpen: (open: boolean) => void;
   handleTabChange: (tab: AppTab) => void;
   username: string;
+  avatar?: string | null;
+  color?: string;
   isEmirgan: boolean;
   unreadGlobalCount: number;
   pendingApprovalsCount: number;
   darkMode: boolean;
   setDarkMode: (val: boolean) => void;
+  doNotDisturb?: boolean;
+  onToggleDnd?: () => void;
+  onOpenSearch?: () => void;
   handleLogout: () => void;
   isInVoiceRoom?: boolean;
   isChatOpen?: boolean;
+  isInActiveGame?: boolean;
   onOpenInstallGuide?: () => void;
   isStandalone?: boolean;
 }
@@ -61,150 +70,184 @@ export default function BottomNav({
   setIsMobileMoreOpen,
   handleTabChange,
   username,
+  avatar,
+  color,
   isEmirgan,
   unreadGlobalCount,
   pendingApprovalsCount,
   darkMode,
   setDarkMode,
+  doNotDisturb = false,
+  onToggleDnd,
+  onOpenSearch,
   handleLogout,
   isInVoiceRoom = false,
   isChatOpen = false,
+  isInActiveGame = false,
   onOpenInstallGuide,
   isStandalone = false,
 }: BottomNavProps) {
-  const isMoreTabActive = isMobileMoreOpen || [
-    'ib-m27',
-    'profile', 
-    'notifications', 
-    'announcements', 
-    'ayvalik-cas',
-    'ib-calculator',
-    'kapsapp-ai',
-    'ai-checker',
-    'agenda', 
-    'global', 
-    'weather', 
-    'map', 
-    'voice', 
-    'games', 
-    'friends', 
-    'admin',
-    'settings'
-  ].includes(activeTab);
+  const dragStartYRef = useRef<number | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
 
-  // Prevent background body scroll when mobile more drawer is open
+  const isMoreTabActive =
+    isMobileMoreOpen ||
+    [
+      "ib-m27",
+      "profile",
+      "notifications",
+      "announcements",
+      "ayvalik-cas",
+      "ib-calculator",
+      "kapsapp-ai",
+      "ai-checker",
+      "agenda",
+      "global",
+      "weather",
+      "map",
+      "voice",
+      "games",
+      "friends",
+      "admin",
+      "settings",
+      "travel",
+    ].includes(activeTab);
+
+  // Lock background scroll & support Escape while drawer is open
   useEffect(() => {
-    if (isMobileMoreOpen) {
-      const orig = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = orig;
-      };
-    }
-  }, [isMobileMoreOpen]);
+    if (!isMobileMoreOpen) return;
+    const orig = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setIsMobileMoreOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = orig;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isMobileMoreOpen, setIsMobileMoreOpen]);
 
-  // Automatically hide bottom navigation bar when user is inside an active voice/video room, active chat, or Kaps German
-  if (isInVoiceRoom || isChatOpen || activeTab === 'german') {
+  // Hide bottom navigation ONLY during immersive full-screen experiences
+  if (isInVoiceRoom || isChatOpen || isInActiveGame || activeTab === "german") {
     return null;
   }
 
+  const navigateFromDrawer = (tab: AppTab) => {
+    handleTabChange(tab);
+    setIsMobileMoreOpen(false);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (sheetRef.current && sheetRef.current.scrollTop > 4) return;
+    dragStartYRef.current = e.touches[0]?.clientY ?? null;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (dragStartYRef.current === null) return;
+    const endY = e.changedTouches[0]?.clientY ?? dragStartYRef.current;
+    const deltaY = endY - dragStartYRef.current;
+    dragStartYRef.current = null;
+    if (deltaY > 72 && (!sheetRef.current || sheetRef.current.scrollTop <= 4)) {
+      setIsMobileMoreOpen(false);
+    }
+  };
+
   return (
     <>
-      {/* Native Mobile Fixed Bottom Dock Bar (4 Ana Sekme + 1 'Menü' Çekmecesi) */}
-      <div className="kapsapp-bottom-nav lg:hidden fixed bottom-0 inset-x-0 border-t border-slate-200/80 dark:border-slate-800/80 bg-white/92 dark:bg-slate-950/92 backdrop-blur-xl pb-safe shrink-0 z-40 select-none shadow-[0_-8px_30px_rgba(2,6,23,0.12)]">
-        <nav 
+      {/* Native Mobile Fixed Bottom Dock Bar (56px + safe area) */}
+      <div className="kapsapp-bottom-nav lg:hidden fixed bottom-0 inset-x-0 border-t border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl pb-safe shrink-0 z-40 select-none shadow-[0_-6px_24px_rgba(2,6,23,0.08)] dark:shadow-[0_-8px_28px_rgba(2,6,23,0.35)]">
+        <nav
           aria-label="Mobil alt gezinti menüsü"
-          className="grid grid-cols-5 items-center px-1.5 h-[60px] relative"
+          className="grid grid-cols-5 items-center px-1 h-[56px] relative"
         >
-          {/* 1. Ana Sayfa */}
-          <BottomNavItem 
-            to="/" 
-            icon={<Home size={20} strokeWidth={activeTab === 'dashboard' ? 2.5 : 2} />} 
+          <BottomNavItem
+            to="/"
+            icon={<Home size={20} strokeWidth={activeTab === "dashboard" ? 2.4 : 1.9} />}
             label="Ana Sayfa"
-            active={activeTab === 'dashboard'} 
-            onClick={() => handleTabChange('dashboard')} 
+            active={activeTab === "dashboard"}
+            onClick={() => handleTabChange("dashboard")}
           />
 
-          {/* 2. Akış */}
-          <BottomNavItem 
-            to="/akis" 
-            icon={<LayoutGrid size={20} strokeWidth={activeTab === 'feed' ? 2.5 : 2} />} 
+          <BottomNavItem
+            to="/akis"
+            icon={<LayoutGrid size={20} strokeWidth={activeTab === "feed" ? 2.4 : 1.9} />}
             label="Akış"
-            active={activeTab === 'feed'} 
-            onClick={() => handleTabChange('feed')} 
+            active={activeTab === "feed"}
+            onClick={() => handleTabChange("feed")}
           />
 
-          {/* 3. Sohbetler */}
-          <BottomNavItem 
-            to="/sohbetler" 
-            icon={<MessageSquare size={20} strokeWidth={activeTab === 'chats' ? 2.5 : 2} />} 
+          <BottomNavItem
+            to="/sohbetler"
+            icon={<MessageSquare size={20} strokeWidth={activeTab === "chats" ? 2.4 : 1.9} />}
             label="Mesajlar"
-            active={activeTab === 'chats'} 
-            badge={unreadDmCount} 
-            onClick={() => handleTabChange('chats')} 
+            active={activeTab === "chats"}
+            badge={unreadDmCount}
+            onClick={() => handleTabChange("chats")}
           />
 
-          {/* 4. Dersler */}
-          <BottomNavItem 
-            to="/dersler" 
-            icon={<Folder size={20} strokeWidth={activeTab === 'folders' || activeTab === 'subject' ? 2.5 : 2} />} 
+          <BottomNavItem
+            to="/dersler"
+            icon={<Folder size={20} strokeWidth={activeTab === "folders" || activeTab === "subject" ? 2.4 : 1.9} />}
             label="Dersler"
-            active={activeTab === 'folders' || activeTab === 'subject'} 
-            onClick={() => handleTabChange('folders')} 
+            active={activeTab === "folders" || activeTab === "subject"}
+            onClick={() => handleTabChange("folders")}
           />
 
-          {/* 5. Tüm Bölümler / Daha Fazla (Çekmece Menü) */}
-          <BottomNavItem 
-            icon={<MoreHorizontal size={20} strokeWidth={isMoreTabActive ? 2.5 : 2} />} 
+          <BottomNavItem
+            icon={<MoreHorizontal size={20} strokeWidth={isMoreTabActive ? 2.4 : 1.9} />}
             label="Menü"
-            active={isMoreTabActive} 
+            active={isMoreTabActive}
             badge={unreadNotificationsCount + unreadGlobalCount}
             dotBadge={hasUnreadAnnouncement}
-            onClick={() => setIsMobileMoreOpen(true)} 
+            onClick={() => setIsMobileMoreOpen(true)}
           />
         </nav>
       </div>
 
-      {/* Native Mobile "Tüm Bölümler" Categorized Sheet / Drawer Modal */}
+      {/* Redesigned Mobile Navigation Hub Bottom Sheet */}
       {isMobileMoreOpen && (
-        <div 
-          className="mobile-window fixed inset-0 z-[9999] lg:hidden flex flex-col justify-end bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200"
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="KapsApp Menü"
+          className="mobile-window fixed inset-0 z-[9999] lg:hidden flex flex-col justify-end bg-slate-950/70 backdrop-blur-xs kaps-backdrop-enter"
           onClick={() => setIsMobileMoreOpen(false)}
         >
-          <div 
-            className="bg-white dark:bg-slate-900 border-t border-slate-200/80 dark:border-slate-800 rounded-t-[28px] max-h-[88dvh] overflow-y-auto overscroll-contain p-4 sm:p-5 pb-[calc(1.75rem+env(safe-area-inset-bottom,0px))] shadow-2xl animate-in slide-in-from-bottom duration-200 space-y-4 touch-pan-y"
-            style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+          <div
+            ref={sheetRef}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            className="kaps-sheet-enter bg-white dark:bg-slate-900 border-t border-slate-200/80 dark:border-slate-800 rounded-t-[26px] max-h-[88dvh] overflow-y-auto overscroll-contain px-4 pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl space-y-4 touch-pan-y"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Mobile Drag Handle */}
-            <div className="pt-0 pb-0.5 flex justify-center shrink-0">
-              <div className="w-11 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
+            {/* Swipe Handle */}
+            <div className="flex justify-center pb-0.5 shrink-0">
+              <div className="w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
             </div>
 
-            {/* Profile Card & Quick Account Bar */}
-            <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-800">
+            {/* Account Header Card */}
+            <div className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-800">
               <button
                 type="button"
-                onClick={() => {
-                  handleTabChange('profile');
-                  setIsMobileMoreOpen(false);
-                }}
-                className="flex items-center gap-3 min-w-0 text-left flex-1 cursor-pointer"
+                onClick={() => navigateFromDrawer("profile")}
+                className="flex items-center gap-3 min-w-0 text-left flex-1 min-h-[44px] cursor-pointer active:opacity-80"
               >
-                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black flex items-center justify-center text-base shadow-md shrink-0">
-                  {username ? username[0].toUpperCase() : "K"}
-                </div>
+                <Avatar url={avatar} name={username || "K"} color={color} size={11} className="shrink-0" />
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <h3 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                    <h3 className="font-extrabold text-[15px] text-slate-900 dark:text-white truncate">
                       <UserProfileLink username={username || "Kullanıcı"} embedded />
                     </h3>
                     {isEmirgan && (
                       <span className="text-[10px] font-mono font-bold text-amber-500">ROOT</span>
                     )}
                   </div>
-                  <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold block">
-                    Profili Görüntüle →
+                  <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold block">
+                    Profilimi Aç
                   </span>
                 </div>
               </button>
@@ -212,192 +255,206 @@ export default function BottomNav({
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
-                  onClick={() => {
-                    handleTabChange('settings');
-                    setIsMobileMoreOpen(false);
-                  }}
-                  className="min-w-[40px] min-h-[40px] rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+                  onClick={() => navigateFromDrawer("settings")}
+                  className="min-w-[44px] min-h-[44px] rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
                   aria-label="Ayarlar"
                 >
-                  <SettingsIcon size={18} />
+                  <SettingsIcon size={19} />
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsMobileMoreOpen(false)}
-                  className="min-w-[40px] min-h-[40px] rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                  className="min-w-[44px] min-h-[44px] rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer active:scale-95"
                   aria-label="Menüyü Kapat"
                 >
-                  <X size={18} />
+                  <X size={19} />
                 </button>
               </div>
             </div>
 
-            {/* Standalone PWA Install Banner (when in mobile browser) */}
+            {/* Quick Utility Strip: Search + Focus Mode */}
+            <div className="grid grid-cols-2 gap-2">
+              {onOpenSearch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMoreOpen(false);
+                    onOpenSearch();
+                  }}
+                  className="min-h-[44px] px-3.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/70 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform cursor-pointer"
+                >
+                  <Search size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span>Hızlı Ara</span>
+                </button>
+              )}
+              {onToggleDnd && (
+                <button
+                  type="button"
+                  onClick={onToggleDnd}
+                  className={`min-h-[44px] px-3.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
+                    doNotDisturb
+                      ? "bg-amber-500/15 border-amber-500/35 text-amber-600 dark:text-amber-400"
+                      : "bg-slate-100/90 dark:bg-slate-800/80 border-slate-200/70 dark:border-slate-700/70 text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <BellOff size={16} className="shrink-0" />
+                  <span>{doNotDisturb ? "Odak: Açık" : "Odak Modu"}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Standalone PWA Install Card (only in mobile browser) */}
             {!isStandalone && onOpenInstallGuide && (
               <button
                 type="button"
+                data-testid="mobile-drawer-install-btn"
                 onClick={() => {
                   setIsMobileMoreOpen(false);
                   onOpenInstallGuide();
                 }}
-                className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between gap-3 shadow-lg shadow-blue-600/20 active:scale-[0.99] transition-transform cursor-pointer text-left"
+                className="w-full min-h-[56px] px-3.5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-between gap-3 shadow-md shadow-blue-600/20 active:scale-[0.99] transition-transform cursor-pointer text-left"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-                    <Smartphone size={20} />
+                  <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                    <Smartphone size={18} />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-extrabold flex items-center gap-1.5">
-                      <span>Telefon Uygulaması Olarak Kullan</span>
-                      <Sparkles size={12} className="text-amber-300" />
-                    </div>
-                    <p className="text-[11px] text-blue-100 truncate mt-0.5">
-                      Ana ekrana ekle: tam ekran deneyim ve anlık arama ekranı
+                    <div className="text-xs font-extrabold truncate">Ana Ekrana Ekle</div>
+                    <p className="text-[11px] text-blue-100 truncate">
+                      Tam ekran uygulama ve anlık arama deneyimi
                     </p>
                   </div>
                 </div>
                 <span className="px-2.5 py-1 rounded-lg bg-white text-blue-700 font-extrabold text-[11px] shrink-0">
-                  Yükle
+                  Kur
                 </span>
               </button>
             )}
 
             {/* Category 1: Akademik & Sınavlar */}
-            <div className="space-y-2">
-              <div className="px-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Akademik & Sınavlar
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                <DrawerGridItem 
-                  icon={<GraduationCap size={21} className="text-amber-500" />} 
-                  label="IB M27" 
-                  active={activeTab === 'ib-m27'} 
-                  onClick={() => { handleTabChange('ib-m27'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<Calculator size={21} className="text-purple-500" />} 
-                  label="KapsCulator" 
-                  active={activeTab === 'ib-calculator'} 
-                  onClick={() => { handleTabChange('ib-calculator'); setIsMobileMoreOpen(false); }} 
+            <section className="space-y-2">
+              <h4 className="px-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Akademik & Araçlar
+              </h4>
+              <div className="grid grid-cols-3 gap-2">
+                <DrawerGridItem
+                  icon={<GraduationCap size={20} className="text-amber-500" />}
+                  label="IB M27"
+                  active={activeTab === "ib-m27"}
+                  onClick={() => navigateFromDrawer("ib-m27")}
                 />
                 <DrawerGridItem
-                  icon={<Sparkles size={21} className="text-indigo-500" />}
+                  icon={<CalendarDays size={20} className="text-indigo-500" />}
+                  label="Ajanda"
+                  active={activeTab === "agenda"}
+                  onClick={() => navigateFromDrawer("agenda")}
+                />
+                <DrawerGridItem
+                  icon={<Calculator size={20} className="text-purple-500" />}
+                  label="KapsCulator"
+                  active={activeTab === "ib-calculator"}
+                  onClick={() => navigateFromDrawer("ib-calculator")}
+                />
+                <DrawerGridItem
+                  icon={<Sparkles size={20} className="text-blue-500" />}
                   label="KapsAI"
-                  active={activeTab === 'kapsapp-ai'}
-                  onClick={() => { handleTabChange('kapsapp-ai'); setIsMobileMoreOpen(false); }}
+                  active={activeTab === "kapsapp-ai"}
+                  onClick={() => navigateFromDrawer("kapsapp-ai")}
                 />
                 <DrawerGridItem
-                  icon={<Sparkles size={21} className="text-indigo-500" />}
-                  label="AI Checker"
-                  active={activeTab === 'ai-checker'}
-                  onClick={() => { handleTabChange('ai-checker'); setIsMobileMoreOpen(false); }}
+                  icon={<BrainCircuit size={20} className="text-violet-500" />}
+                  label="AI Dedektör"
+                  active={activeTab === "ai-checker"}
+                  onClick={() => navigateFromDrawer("ai-checker")}
                 />
-                <DrawerGridItem 
-                  icon={<CalendarDays size={21} className="text-indigo-500" />} 
-                  label="Ajanda" 
-                  active={activeTab === 'agenda'} 
-                  onClick={() => { handleTabChange('agenda'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<Compass size={21} className="text-emerald-500" />} 
-                  label="Ayvalık CAS" 
-                  active={activeTab === 'ayvalik-cas'} 
-                  onClick={() => { handleTabChange('ayvalik-cas'); setIsMobileMoreOpen(false); }} 
+                <DrawerGridItem
+                  icon={<Compass size={20} className="text-emerald-500" />}
+                  label="Ayvalık CAS"
+                  active={activeTab === "ayvalik-cas"}
+                  onClick={() => navigateFromDrawer("ayvalik-cas")}
                 />
               </div>
-            </div>
+            </section>
 
-            {/* Category 2: İletişim & Canlı Odalar */}
-            <div className="space-y-2">
-              <div className="px-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                İletişim & Canlı Odalar
+            {/* Category 2: İletişim & Topluluk */}
+            <section className="space-y-2">
+              <h4 className="px-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                İletişim & Canlı
+              </h4>
+              <div className="grid grid-cols-3 gap-2">
+                <DrawerGridItem
+                  icon={<Radio size={20} className="text-violet-500" />}
+                  label="Sesli Oda"
+                  active={activeTab === "voice"}
+                  onClick={() => navigateFromDrawer("voice")}
+                />
+                <DrawerGridItem
+                  icon={<Globe size={20} className="text-emerald-500" />}
+                  label="Genel Sohbet"
+                  badge={unreadGlobalCount}
+                  active={activeTab === "global"}
+                  onClick={() => navigateFromDrawer("global")}
+                />
+                <DrawerGridItem
+                  icon={<Users size={20} className="text-cyan-500" />}
+                  label="Arkadaşlar"
+                  active={activeTab === "friends"}
+                  onClick={() => navigateFromDrawer("friends")}
+                />
+                <DrawerGridItem
+                  icon={<MapPin size={20} className="text-teal-500" />}
+                  label="Canlı Harita"
+                  active={activeTab === "map"}
+                  onClick={() => navigateFromDrawer("map")}
+                />
+                <DrawerGridItem
+                  icon={<Gamepad2 size={20} className="text-pink-500" />}
+                  label="Oyunlar"
+                  active={activeTab === "games"}
+                  onClick={() => navigateFromDrawer("games")}
+                />
+                <DrawerGridItem
+                  icon={<CloudSun size={20} className="text-sky-500" />}
+                  label="Hava Durumu"
+                  active={activeTab === "weather"}
+                  onClick={() => navigateFromDrawer("weather")}
+                />
               </div>
-              <div className="grid grid-cols-4 gap-2">
-                <DrawerGridItem 
-                  icon={<Radio size={21} className="text-violet-500" />} 
-                  label="Sesli Oda" 
-                  active={activeTab === 'voice'} 
-                  onClick={() => { handleTabChange('voice'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<Globe size={21} className="text-emerald-500" />} 
-                  label="Genel Sohbet" 
-                  badge={unreadGlobalCount} 
-                  active={activeTab === 'global'} 
-                  onClick={() => { handleTabChange('global'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<Users size={21} className="text-cyan-500" />} 
-                  label="Arkadaşlar" 
-                  active={activeTab === 'friends'} 
-                  onClick={() => { handleTabChange('friends'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<MapPin size={21} className="text-teal-500" />} 
-                  label="Canlı Harita" 
-                  active={activeTab === 'map'} 
-                  onClick={() => { handleTabChange('map'); setIsMobileMoreOpen(false); }} 
-                />
-              </div>
-            </div>
+            </section>
 
-            {/* Category 3: Kampüs, Bildirimler & Eğlence */}
-            <div className="space-y-2">
-              <div className="px-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Kampüs & Eğlence
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                <DrawerGridItem 
-                  icon={<Gamepad2 size={21} className="text-pink-500" />} 
-                  label="Oyunlar" 
-                  active={activeTab === 'games'} 
-                  onClick={() => { handleTabChange('games'); setIsMobileMoreOpen(false); }} 
+            {/* Category 3: Kampüs & Yönetim */}
+            <section className="space-y-2">
+              <h4 className="px-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Kampüs & Bildirim
+              </h4>
+              <div className="grid grid-cols-3 gap-2">
+                <DrawerGridItem
+                  icon={<Bell size={20} className="text-amber-500" />}
+                  label="Bildirimler"
+                  badge={unreadNotificationsCount}
+                  active={activeTab === "notifications"}
+                  onClick={() => navigateFromDrawer("notifications")}
                 />
-                <DrawerGridItem 
-                  icon={<Bell size={21} className="text-amber-500" />} 
-                  label="Bildirimler" 
-                  badge={unreadNotificationsCount} 
-                  active={activeTab === 'notifications'} 
-                  onClick={() => { handleTabChange('notifications'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<Megaphone size={21} className="text-orange-500" />} 
-                  label="Duyurular" 
-                  dotBadge={hasUnreadAnnouncement} 
-                  active={activeTab === 'announcements'} 
-                  onClick={() => { handleTabChange('announcements'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<CloudSun size={21} className="text-sky-500" />} 
-                  label="Hava Durumu" 
-                  active={activeTab === 'weather'} 
-                  onClick={() => { handleTabChange('weather'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<UserCircle2 size={21} className="text-blue-500" />} 
-                  label="Profilim" 
-                  active={activeTab === 'profile'} 
-                  onClick={() => { handleTabChange('profile'); setIsMobileMoreOpen(false); }} 
-                />
-                <DrawerGridItem 
-                  icon={<SettingsIcon size={21} className="text-slate-500" />} 
-                  label="Ayarlar" 
-                  active={activeTab === 'settings'} 
-                  onClick={() => { handleTabChange('settings'); setIsMobileMoreOpen(false); }} 
+                <DrawerGridItem
+                  icon={<Megaphone size={20} className="text-orange-500" />}
+                  label="Duyurular"
+                  dotBadge={hasUnreadAnnouncement}
+                  active={activeTab === "announcements"}
+                  onClick={() => navigateFromDrawer("announcements")}
                 />
                 {isEmirgan && (
-                  <DrawerGridItem 
-                    icon={<Crown size={21} className="text-yellow-500" />} 
-                    label="Yönetim" 
-                    badge={pendingApprovalsCount} 
-                    active={activeTab === 'admin'} 
-                    onClick={() => { handleTabChange('admin'); setIsMobileMoreOpen(false); }} 
+                  <DrawerGridItem
+                    icon={<Crown size={20} className="text-yellow-500" />}
+                    label="Yönetim"
+                    badge={pendingApprovalsCount}
+                    active={activeTab === "admin"}
+                    onClick={() => navigateFromDrawer("admin")}
                   />
                 )}
               </div>
-            </div>
+            </section>
 
-            {/* Drawer Footer Actions */}
+            {/* Footer Actions */}
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2.5">
               <button
                 type="button"
@@ -429,57 +486,55 @@ export default function BottomNav({
   );
 }
 
-function BottomNavItem({ 
-  icon, 
-  label, 
-  to, 
-  active, 
-  badge, 
-  dotBadge, 
-  onClick 
-}: { 
-  icon: React.ReactNode; 
-  label: string; 
-  to?: string; 
-  active: boolean; 
-  badge?: number; 
-  dotBadge?: boolean; 
-  onClick?: () => void; 
+function BottomNavItem({
+  icon,
+  label,
+  to,
+  active,
+  badge,
+  dotBadge,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  to?: string;
+  active: boolean;
+  badge?: number;
+  dotBadge?: boolean;
+  onClick?: () => void;
 }) {
-  const commonClass = `flex-1 min-h-[48px] h-full flex flex-col items-center justify-center py-1 px-1 rounded-2xl transition-all relative cursor-pointer no-underline select-none group active:scale-95 ${
-    active 
-      ? 'text-blue-600 dark:text-blue-400 font-extrabold' 
-      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-semibold'
+  const commonClass = `flex-1 min-h-[48px] h-full flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-colors relative cursor-pointer no-underline select-none group active:scale-95 ${
+    active
+      ? "text-blue-600 dark:text-blue-400 font-extrabold"
+      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-semibold"
   }`;
 
   const content = (
     <>
-      <div
-        className={`relative flex items-center justify-center px-3.5 py-1 rounded-2xl transition-all duration-150 ${
-          active
-            ? 'bg-blue-600/12 dark:bg-blue-400/15 text-blue-600 dark:text-blue-400'
-            : 'bg-transparent'
+      <span
+        aria-hidden="true"
+        className={`absolute top-0 left-1/2 -translate-x-1/2 h-[2.5px] rounded-full transition-all duration-150 ${
+          active ? "w-7 bg-blue-600 dark:bg-blue-400 opacity-100" : "w-0 bg-transparent opacity-0"
         }`}
-      >
-        <div className={`transition-transform duration-150 ${active ? 'scale-105' : 'group-hover:scale-105'}`}>
-          {icon}
-        </div>
+      />
+      <div className="relative flex items-center justify-center w-9 h-7">
+        {icon}
         {badge && badge > 0 ? (
-          <span 
+          <span
             aria-label={`${badge} yeni bildirim`}
-            className="absolute -top-1 -right-1 px-1 min-w-[17px] h-[17px] bg-rose-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border-2 border-white dark:border-slate-950 leading-none shadow-sm"
+            className="absolute -top-0.5 -right-1 px-1 min-w-[16px] h-[16px] bg-rose-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border-2 border-white dark:border-slate-950 leading-none"
           >
-            {badge > 99 ? '99+' : badge}
+            {badge > 99 ? "99+" : badge}
           </span>
         ) : dotBadge ? (
-          <span 
+          <span
             aria-label="Yeni bildirim var"
-            className="absolute -top-0.5 right-0.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white dark:border-slate-950 animate-pulse shadow-sm shadow-rose-500/50"
+            className="absolute top-0 right-0.5 w-2 h-2 bg-rose-500 rounded-full border border-white dark:border-slate-950"
           />
         ) : null}
       </div>
 
-      <span className="text-[10px] mt-0.5 tracking-tight truncate max-w-full leading-tight">
+      <span className="text-[10.5px] tracking-tight truncate max-w-full leading-tight">
         {label}
       </span>
     </>
@@ -505,7 +560,7 @@ function BottomNavItem({
   }
 
   return (
-    <button 
+    <button
       type="button"
       onClick={onClick}
       className={commonClass}
@@ -523,7 +578,7 @@ function DrawerGridItem({
   active,
   badge,
   dotBadge,
-  onClick
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -537,23 +592,23 @@ function DrawerGridItem({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className={`min-h-[68px] flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all text-center relative cursor-pointer active:scale-95 ${
+      className={`min-h-[68px] flex flex-col items-center justify-center gap-1.5 px-2 py-2.5 rounded-2xl border transition-all text-center relative cursor-pointer active:scale-[0.97] ${
         active
-          ? "bg-blue-50 dark:bg-blue-900/35 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-extrabold shadow-xs"
-          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          ? "bg-blue-50 dark:bg-blue-900/35 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-extrabold"
+          : "bg-slate-50 dark:bg-slate-800/65 border-slate-200/70 dark:border-slate-700/60 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
       }`}
     >
-      <div className="relative mb-1.5">
+      <div className="relative">
         {icon}
         {badge && badge > 0 ? (
-          <span className="absolute -top-1.5 -right-2.5 px-1 min-w-[16px] h-4 bg-rose-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none shadow-sm">
+          <span className="absolute -top-1.5 -right-2.5 px-1 min-w-[16px] h-4 bg-rose-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border border-white dark:border-slate-900 leading-none">
             {badge > 99 ? "99+" : badge}
           </span>
         ) : dotBadge ? (
-          <span className="absolute -top-1 -right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse shadow-sm shadow-rose-500/50"></span>
+          <span className="absolute -top-1 -right-1.5 w-2 h-2 bg-rose-500 rounded-full border border-white dark:border-slate-900" />
         ) : null}
       </div>
-      <span className="text-[10.5px] font-bold leading-tight truncate max-w-full">
+      <span className="text-[11.5px] font-bold leading-tight truncate max-w-full">
         {label}
       </span>
     </button>

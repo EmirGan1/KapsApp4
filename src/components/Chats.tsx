@@ -8,7 +8,7 @@ import { formatMessageDate } from "../utils/messageDate";
 import { useState, useEffect, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { Friend, Message, MediaModalData } from "../types";
-import { Send, Image as ImageIcon, Mic, Users, Plus, X, Reply, Smile, FileText, Download, Paperclip, Maximize2, Trash2, Loader2, Phone, PhoneCall, Check, CheckCheck, Camera } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Users, Plus, X, Reply, Smile, FileText, Download, Paperclip, Maximize2, Trash2, Loader2, Phone, PhoneCall, Check, CheckCheck, Camera, ChevronLeft, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { TRAVEL_PATH } from "../shared/travel";
 import { travelRequest } from "./travel/useTravel";
@@ -55,6 +55,8 @@ export default function Chats({
   onActiveChatChange?: (hasActive: boolean) => void,
 }) {
   const navigate = useNavigate();
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [showMobileAttach, setShowMobileAttach] = useState(false);
   const [travelPartner, setTravelPartner] = useState<number | null>(null);
   useEffect(() => {
     let disposed = false;
@@ -960,41 +962,73 @@ export default function Chats({
     return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
   };
 
-  // Dynamic sorting: conversations with newest message time always on top!
-  const sortedFriends = [...friends].sort((a, b) => {
-    const timeA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
-    const timeB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
-    return timeB - timeA;
-  });
+  // Dynamic sorting & search filtering
+  const normalizedChatSearch = chatSearchQuery.trim().toLowerCase();
+  const sortedFriends = [...friends]
+    .filter((f) => !normalizedChatSearch || (f.username || "").toLowerCase().includes(normalizedChatSearch))
+    .sort((a, b) => {
+      const timeA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
+      const timeB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
+      return timeB - timeA;
+    });
+  const filteredGroups = groups.filter(
+    (g) => !normalizedChatSearch || (g.name || "").toLowerCase().includes(normalizedChatSearch)
+  );
 
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden bg-white dark:bg-slate-950 transition-colors duration-200">
       {reactionTarget !== null && <DmEmojiPicker onClose={() => setReactionTarget(null)} onSelect={emoji => { handleReact(reactionTarget, emoji); setReactionTarget(null); }} />}
-      {/* Sidebar */}
+      {/* Sidebar / Conversation List */}
       <div className={`w-full lg:w-80 border-r border-slate-100 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900 transition-colors duration-200 ${activeChat ? 'hidden lg:flex' : 'flex'}`}>
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm z-10 flex flex-col gap-3 transition-colors duration-200">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Sohbetler</h2>
+        <div className="p-3 lg:p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs z-10 flex flex-col gap-2.5 transition-colors duration-200">
+          <h2 className="hidden lg:block text-xl font-bold text-slate-800 dark:text-slate-100">Sohbetler</h2>
           
-          <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg transition-colors">
+          <div className="flex gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl transition-colors">
             <button 
+              type="button"
               onClick={() => { setActiveTab("friends"); setActiveChat(null); }} 
-              className={`flex-1 py-1 text-sm font-medium rounded-md transition-colors ${activeTab === 'friends' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              className={`flex-1 min-h-[38px] py-1.5 text-sm font-semibold rounded-lg transition-colors cursor-pointer ${activeTab === 'friends' ? 'bg-white dark:bg-slate-700 shadow-xs text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
             >
               Kişiler
             </button>
             <button 
+              type="button"
               onClick={() => { setActiveTab("groups"); setActiveChat(null); }} 
-              className={`flex-1 py-1 text-sm font-medium rounded-md transition-colors ${activeTab === 'groups' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              className={`flex-1 min-h-[38px] py-1.5 text-sm font-semibold rounded-lg transition-colors cursor-pointer ${activeTab === 'groups' ? 'bg-white dark:bg-slate-700 shadow-xs text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
             >
               Gruplar
             </button>
+          </div>
+
+          <div className="relative flex items-center">
+            <Search size={15} className="absolute left-3 text-slate-400 pointer-events-none" />
+            <input
+              type="search"
+              value={chatSearchQuery}
+              onChange={(e) => setChatSearchQuery(e.target.value)}
+              placeholder={activeTab === "friends" ? "Kişi ara..." : "Grup ara..."}
+              aria-label="Sohbetlerde ara"
+              className="w-full min-h-[40px] pl-9 pr-8 py-1.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/90 border border-transparent focus:border-blue-500/40 focus:bg-white dark:focus:bg-slate-900 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none transition-colors"
+            />
+            {chatSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setChatSearchQuery("")}
+                aria-label="Aramayı temizle"
+                className="absolute right-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 relative transition-colors duration-200 touch-pan-y overscroll-y-contain">
           {activeTab === "friends" ? (
             sortedFriends.length === 0 ? (
-              <div className="p-6 text-center text-slate-400 dark:text-slate-500 text-sm">Arkadaş ekleyerek sohbete başlayın.</div>
+              <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-sm">
+                {normalizedChatSearch ? "Eşleşen kişi bulunamadı." : "Arkadaş ekleyerek sohbete başlayın."}
+              </div>
             ) : (
               sortedFriends.map(f => {
                 const isOnline = onlineUsers.includes(f.id);
@@ -1004,38 +1038,40 @@ export default function Chats({
                 return (
                   <button 
                     key={f.id} 
+                    type="button"
                     onClick={() => {
                       setActiveChat(f);
+                      setShowMobileAttach(false);
                       setFriends(prev => prev.map(item => item.id === f.id ? { ...item, unreadCount: 0 } : item));
                     }}
-                    className={`w-full flex items-center gap-3 p-3.5 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors ${activeChat?.id === f.id ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
+                    className={`w-full min-h-[68px] flex items-center gap-3 px-3.5 py-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 active:bg-slate-100 dark:active:bg-slate-800 transition-colors cursor-pointer ${activeChat?.id === f.id ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
                   >
                     <div className="relative flex-shrink-0">
                       <Avatar url={f.avatar} name={f.username} color={f.color} size={12} />
-                      {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-slate-900 rounded-full transition-colors"></div>}
+                      {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-900 rounded-full transition-colors"></div>}
                     </div>
                     <div className="text-left overflow-hidden flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
                         <h3 className="font-semibold text-slate-800 dark:text-slate-100 truncate text-sm"><UserProfileLink username={f.username} user={f} embedded /></h3>
                         {timeFormatted && (
-                          <span className={`text-[10px] shrink-0 font-medium ${unread > 0 ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-400 dark:text-slate-500'}`}>
+                          <span className={`text-[11px] shrink-0 font-medium ${unread > 0 ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-400 dark:text-slate-500'}`}>
                             {timeFormatted}
                           </span>
                         )}
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <p className={`text-xs truncate flex-1 ${unread > 0 ? 'text-slate-900 dark:text-slate-100 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <p className={`text-xs truncate flex-1 ${unread > 0 ? 'text-slate-900 dark:text-slate-100 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}>
                           {f.lastMessageText ? (
                             <span>
                               {f.lastMessageSender === currentUserId && <span className="text-slate-400 dark:text-slate-500 font-normal">Sen: </span>}
                               {f.lastMessageText}
                             </span>
                           ) : (
-                            <span className="italic opacity-80">{isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}</span>
+                            <span className="opacity-80">{isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}</span>
                           )}
                         </p>
                         {unread > 0 && (
-                          <span className="px-1.5 py-0.5 min-w-[18px] h-[18px] text-center bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+                          <span className="px-1.5 py-0.5 min-w-[20px] h-[20px] text-center bg-blue-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shrink-0">
                             {unread > 99 ? '99+' : unread}
                           </span>
                         )}
@@ -1047,20 +1083,26 @@ export default function Chats({
             )
           ) : (
             <>
-              {groups.length === 0 ? (
-                <div className="p-6 text-center text-slate-400 dark:text-slate-500 text-sm">Henüz hiçbir gruba katılmadınız.</div>
+              {filteredGroups.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-sm">
+                  {normalizedChatSearch ? "Eşleşen grup bulunamadı." : "Henüz hiçbir gruba katılmadınız."}
+                </div>
               ) : (
-                groups.map(g => (
+                filteredGroups.map(g => (
                   <button 
                     key={g.id} 
-                    onClick={() => setActiveChat(g)}
-                    className={`w-full flex items-center gap-3 p-4 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors ${activeChat?.id === g.id ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
+                    type="button"
+                    onClick={() => {
+                      setActiveChat(g);
+                      setShowMobileAttach(false);
+                    }}
+                    className={`w-full min-h-[68px] flex items-center gap-3 px-3.5 py-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${activeChat?.id === g.id ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
                   >
                     <div className="relative flex-shrink-0">
-                      <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-colors"><Users size={24} /></div>
+                      <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-colors"><Users size={22} /></div>
                     </div>
-                    <div className="text-left overflow-hidden flex-1">
-                      <h3 className="font-semibold text-slate-800 dark:text-slate-100 truncate">{g.name}</h3>
+                    <div className="text-left overflow-hidden flex-1 min-w-0">
+                      <h3 className="font-semibold text-slate-800 dark:text-slate-100 truncate text-sm">{g.name}</h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{g.members.length} Üye</p>
                     </div>
                   </button>
@@ -1071,8 +1113,10 @@ export default function Chats({
           
           {activeTab === "groups" && (
             <button 
+              type="button"
               onClick={() => setShowCreateGroup(true)}
-              className="absolute bottom-6 right-6 w-12 h-12 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 transition-colors"
+              aria-label="Yeni Grup Oluştur"
+              className="fixed lg:absolute bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-6 right-5 w-13 h-13 bg-blue-600 text-white rounded-2xl shadow-lg flex items-center justify-center hover:bg-blue-700 active:scale-95 transition-all cursor-pointer z-20"
             >
               <Plus size={24} />
             </button>
@@ -1092,10 +1136,12 @@ export default function Chats({
         ) : (
           <>
             {/* Chat Header */}
-            <div className="bg-white dark:bg-slate-900 px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 shadow-sm z-10 transition-colors duration-200">
+            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl px-2.5 sm:px-6 h-[56px] sm:h-auto sm:py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 sm:gap-3 shadow-2xs z-10 shrink-0 transition-colors duration-200">
               <button 
-                className="lg:hidden px-2.5 py-1.5 -ml-1 text-blue-600 dark:text-blue-400 font-bold text-xs rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 cursor-pointer shrink-0" 
+                type="button"
+                className="lg:hidden min-w-[44px] min-h-[44px] -ml-1 text-slate-700 dark:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer shrink-0 active:scale-95" 
                 onClick={() => {
+                  setShowMobileAttach(false);
                   if (pushedChatHistoryRef.current && window.history.state?.kapsChatOpen) {
                     pushedChatHistoryRef.current = false;
                     window.history.back();
@@ -1105,53 +1151,56 @@ export default function Chats({
                 }}
                 aria-label="Sohbet listesine geri dön"
               >
-                ← Sohbetler
+                <ChevronLeft size={23} />
               </button>
               
               {activeTab === "friends" ? (
-                <div className="relative">
-                  <Avatar url={(activeChat as Friend).avatar} name={(activeChat as Friend).username} color={(activeChat as Friend).color} size={10} />
-                  {onlineUsers.includes(activeChat.id) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-slate-900 rounded-full"></div>}
+                <div className="relative shrink-0">
+                  <Avatar url={(activeChat as Friend).avatar} name={(activeChat as Friend).username} color={(activeChat as Friend).color} size={9} />
+                  {onlineUsers.includes(activeChat.id) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white dark:border-slate-900 rounded-full"></div>}
                 </div>
               ) : (
-                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center"><Users size={20} /></div>
+                <div className="w-9 h-9 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center shrink-0"><Users size={18} /></div>
               )}
               
-              <div>
-                <h3 className="font-bold text-slate-800 dark:text-slate-100 leading-tight">{activeTab === "friends" ? <UserProfileLink username={(activeChat as Friend).username} userId={activeChat.id} /> : (activeChat as Group).name}</h3>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-sm sm:text-base text-slate-800 dark:text-slate-100 leading-tight truncate">{activeTab === "friends" ? <UserProfileLink username={(activeChat as Friend).username} userId={activeChat.id} /> : (activeChat as Group).name}</h3>
                 {activeTab === "friends" ? (
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{onlineUsers.includes(activeChat.id) ? 'Çevrimiçi' : 'Çevrimdışı'}</span>
+                  <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 block truncate">{onlineUsers.includes(activeChat.id) ? 'Çevrimiçi' : 'Çevrimdışı'}</span>
                 ) : (
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{(activeChat as Group).members.length} Üye</span>
+                  <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 block truncate">{(activeChat as Group).members.length} Üye</span>
                 )}
               </div>
 
               {/* Sesli Arama (1-on-1 Call) Button in DM */}
               {activeTab === "friends" && (
-                <div className="ml-auto flex items-center gap-1 sm:gap-2 flex-wrap justify-end">
+                <div className="ml-auto flex items-center gap-1.5 shrink-0">
                   {travelPartner === activeChat.id && (
-                    <button className="min-h-10 px-2 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800" onClick={() => navigate(TRAVEL_PATH)}>Gezi Planlama</button>
+                    <button type="button" className="min-h-[40px] px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800 cursor-pointer" onClick={() => navigate(TRAVEL_PATH)}>Gezi</button>
                   )}
                   {currentCall && currentCall.peer.peerId === activeChat.id ? (
                     <button
+                      type="button"
                       onClick={() => setIsMinimized(false)}
-                      className="flex items-center gap-2 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 font-bold px-4 py-2 rounded-xl border border-emerald-500/30 shadow-md shadow-emerald-500/5 animate-pulse transition-all duration-150 active:scale-95"
+                      className="min-h-[40px] flex items-center gap-1.5 bg-emerald-600/15 hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 font-bold px-3 py-2 rounded-xl border border-emerald-500/30 transition-all duration-150 active:scale-95 cursor-pointer"
                     >
-                      <PhoneCall size={18} className="animate-bounce" />
-                      <span className="font-semibold text-xs">Aramayı Aç</span>
+                      <PhoneCall size={17} />
+                      <span className="font-semibold text-xs hidden sm:inline">Aramayı Aç</span>
                     </button>
                   ) : (
                     <button
+                      type="button"
                       onClick={() => startCall(activeChat.id)}
                       disabled={callState !== 'idle'}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold shadow-md transition-all duration-150 active:scale-95 group ${
+                      aria-label="Sesli Ara"
+                      className={`min-w-[42px] min-h-[42px] sm:min-w-0 flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-xl font-bold transition-all duration-150 active:scale-95 cursor-pointer ${
                         callState !== 'idle'
-                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed shadow-none'
-                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/10'
+                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
                       }`}
                     >
-                      <Phone size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
-                      <span className="font-semibold text-xs">Ara</span>
+                      <Phone size={17} />
+                      <span className="font-semibold text-xs hidden sm:inline">Ara</span>
                     </button>
                   )}
                 </div>
@@ -1159,32 +1208,36 @@ export default function Chats({
 
               {/* Group Management Button in Group Chat */}
               {activeTab === "groups" && activeChat && (
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex items-center gap-2 shrink-0">
                   {((activeChat as Group).creator === currentUserId || currentUsername?.trim().toLowerCase() === "emirgan") ? (
                     <button
+                      type="button"
                       onClick={() => {
                         setManageGroupMembers([...((activeChat as Group).members || [])]);
                         setManageGroupSearch("");
                         setShowManageGroup(true);
                         if (socket) socket.emit("get_all_users", (allUsers: any[]) => setUsers(allUsers));
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
+                      className="min-w-[42px] min-h-[42px] sm:min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
                       title="Grup üyelerini ve yetkileri yönet"
+                      aria-label="Üyeleri Yönet"
                     >
-                      <Users size={15} />
+                      <Users size={16} />
                       <span className="hidden sm:inline">Üyeleri Yönet</span>
                     </button>
                   ) : (
                     <button
+                      type="button"
                       onClick={() => {
                         setManageGroupMembers([...((activeChat as Group).members || [])]);
                         setManageGroupSearch("");
                         setShowManageGroup(true);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs rounded-xl transition-all cursor-pointer shrink-0"
+                      className="min-w-[42px] min-h-[42px] sm:min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs rounded-xl transition-all cursor-pointer shrink-0"
                       title="Grup üyelerini görüntüle"
+                      aria-label="Grup Bilgisi"
                     >
-                      <Users size={15} />
+                      <Users size={16} />
                       <span className="hidden sm:inline">Grup Bilgisi</span>
                     </button>
                   )}
@@ -1196,7 +1249,7 @@ export default function Chats({
             <div 
               ref={chatContainerRef}
               onScroll={handleScroll}
-              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 min-w-0 overscroll-y-contain touch-pan-y"
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:p-4 space-y-3 sm:space-y-4 min-w-0 overscroll-y-contain touch-pan-y"
             >
               {isLoadingOlder && (
                 <div className="flex justify-center items-center py-2 text-slate-400 gap-2 text-xs">
@@ -1217,7 +1270,7 @@ export default function Chats({
                     onContextMenu={e => { if (activeTab === 'friends' && longPressRef.current) e.preventDefault(); }}
                     className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} mb-1 w-full min-w-0`}>
                     <div className={`flex items-center gap-1.5 sm:gap-2 ${isMine ? 'flex-row-reverse' : 'flex-row'} w-full min-w-0 relative`}>
-                      {/* Explicit Çöp Kutusu Button right beside the message bubble */}
+                      {/* Desktop side delete button (mobile uses the clean inside-bubble Sil action to maximize bubble width) */}
                       {canDelete && (
                         <button
                           type="button"
@@ -1225,14 +1278,14 @@ export default function Chats({
                             e.stopPropagation();
                             handleDeleteMessage(msg.id);
                           }}
-                          className="shrink-0 p-2 text-red-500 hover:text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-full transition-all cursor-pointer border border-red-200 dark:border-red-900/40 bg-white dark:bg-slate-900 shadow-sm self-center active:scale-95"
+                          className="hidden md:flex shrink-0 p-2 text-red-500 hover:text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-full transition-all cursor-pointer border border-red-200 dark:border-red-900/40 bg-white dark:bg-slate-900 shadow-sm self-center active:scale-95"
                           title={isEmirgan && !isMine ? "Yönetici Olarak Sil (emirgan)" : "Mesajı Sil"}
                         >
                           <Trash2 size={16} className="shrink-0" />
                         </button>
                       )}
 
-                      <div className={`max-w-[88%] sm:max-w-[80%] md:max-w-[75%] min-w-0 rounded-2xl p-2 px-3 shadow-sm relative overflow-hidden [overflow-wrap:anywhere] break-words break-all ${isMine ? 'bg-[#DCF8C6] dark:bg-[#005C4B] rounded-tr-none text-slate-900 dark:text-slate-100' : 'bg-white dark:bg-slate-800 rounded-tl-none border border-slate-100 dark:border-slate-700 text-slate-800 dark:text-slate-100'}`}>
+                      <div className={`max-w-[90%] sm:max-w-[80%] md:max-w-[75%] min-w-0 rounded-2xl p-2.5 px-3.5 shadow-xs relative overflow-hidden [overflow-wrap:anywhere] break-words ${isMine ? 'bg-[#DCF8C6] dark:bg-[#005C4B] rounded-tr-sm text-slate-900 dark:text-slate-100' : 'bg-white dark:bg-slate-800 rounded-tl-sm border border-slate-100 dark:border-slate-700 text-slate-800 dark:text-slate-100'}`}>
                         
                         {activeTab === "groups" && !isMine && (
                           <div className="flex items-center gap-2 mb-1 cursor-pointer" onClick={() => onUserClick && onUserClick(msg.sender)}>
@@ -1445,38 +1498,74 @@ export default function Chats({
 
             {/* Input */}
             <div className="bg-[#f0f2f5] dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 kaps-chat-composer relative pb-safe shrink-0 z-10">
+              {showMobileAttach && (
+                <div className="sm:hidden px-3 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-around gap-2">
+                  <label className="flex-1 min-h-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
+                    <ImageIcon size={17} className="text-blue-500" />
+                    <span>Galeri</span>
+                    <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { setShowMobileAttach(false); handleFileUpload(e); }} />
+                  </label>
+                  <label className="flex-1 min-h-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
+                    <Camera size={17} className="text-emerald-500" />
+                    <span>Kamera</span>
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { setShowMobileAttach(false); handleFileUpload(e); }} />
+                  </label>
+                  <label className="flex-1 min-h-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
+                    <Paperclip size={17} className="text-amber-500" />
+                    <span>Dosya</span>
+                    <input type="file" accept="*/*" className="hidden" onChange={(e) => { setShowMobileAttach(false); handleFileUpload(e); }} />
+                  </label>
+                </div>
+              )}
               {replyTo && (
                 <div className="absolute bottom-full left-0 w-full bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-2 px-3 sm:px-4 flex justify-between items-center text-xs sm:text-sm shadow-md">
                    <div className="truncate pr-2"><span className="font-semibold text-blue-600 dark:text-blue-400"><UserProfileLink username={replyTo.sender_name || (replyTo.sender === currentUserId ? currentUsername : activeTab === 'friends' ? (activeChat as Friend).username : 'Biri')} user={replyTo} /></span> kişisine yanıtlanıyor: <span className="text-slate-500 dark:text-slate-400 truncate max-w-[150px] sm:max-w-xs inline-block align-bottom">{replyTo.type === 'text' ? replyTo.content : replyTo.file_name || (replyTo.type === 'image' ? '📷 Fotoğraf' : replyTo.type === 'voice' ? '🎤 Ses kaydı' : '📎 Ek')}</span></div>
-                   <button type="button" aria-label="Yanıtı iptal et" onClick={() => setReplyTo(null)} className="text-slate-400 hover:text-red-500 font-bold px-2 text-base shrink-0">&times;</button>
+                   <button type="button" aria-label="Yanıtı iptal et" onClick={() => setReplyTo(null)} className="min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-red-500 font-bold text-base shrink-0 cursor-pointer">&times;</button>
                 </div>
               )}
-              <div className="p-2 sm:p-3 flex items-center gap-1 sm:gap-1.5 max-w-4xl mx-auto">
-                <label className="p-2 sm:p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Fotoğraf veya Video Gönder">
-                  <ImageIcon size={20} className="sm:w-[22px] sm:h-[22px]" />
+              <div className="p-2 sm:p-3 flex items-center gap-1.5 max-w-4xl mx-auto">
+                {/* Mobile 1-tap attachment toggle to keep text input roomy on 360px screens */}
+                <button
+                  type="button"
+                  onClick={() => setShowMobileAttach((v) => !v)}
+                  aria-label="Ek dosya menüsü"
+                  aria-expanded={showMobileAttach}
+                  className={`sm:hidden min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-95 ${
+                    showMobileAttach
+                      ? "bg-blue-600 text-white rotate-45"
+                      : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                  }`}
+                >
+                  <Plus size={20} />
+                </button>
+
+                {/* Desktop / Tablet inline attachment icons */}
+                <label className="hidden sm:flex p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Fotoğraf veya Video Gönder">
+                  <ImageIcon size={22} />
                   <input type="file" accept="image/*,video/*" className="hidden" onChange={handleFileUpload} />
                 </label>
-                <label className="p-2 sm:p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Kamera ile Çek / Gönder">
-                  <Camera size={20} className="sm:w-[22px] sm:h-[22px]" />
+                <label className="hidden sm:flex p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Kamera ile Çek / Gönder">
+                  <Camera size={22} />
                   <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileUpload} />
                 </label>
-                <label className="p-2 sm:p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Belge / Dosya Gönder">
-                  <Paperclip size={20} className="sm:w-[22px] sm:h-[22px]" />
+                <label className="hidden sm:flex p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0" title="Belge / Dosya Gönder">
+                  <Paperclip size={22} />
                   <input type="file" accept="*/*" className="hidden" onChange={handleFileUpload} />
                 </label>
+
                 <div className="flex-1 relative min-w-0">
                   {isUploading ? (
-                    <div className="w-full bg-white dark:bg-slate-800 border border-blue-400 dark:border-blue-500 py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl shadow-sm text-sm text-blue-600 dark:text-blue-400 font-medium flex items-center gap-2 animate-pulse">
-                      <Loader2 size={16} className="animate-spin" />
-                      <span>Fotoğraf sıkıştırılıyor ve yükleniyor...</span>
+                    <div className="w-full min-h-[44px] bg-white dark:bg-slate-800 border border-blue-400 dark:border-blue-500 py-2 px-3.5 rounded-2xl shadow-2xs text-sm text-blue-600 dark:text-blue-400 font-medium flex items-center gap-2">
+                      <Loader2 size={16} className="animate-spin shrink-0" />
+                      <span className="truncate">Yükleniyor...</span>
                     </div>
                   ) : (
                     <form onSubmit={handleSendText}>
                       <MentionInput kind={activeTab === "friends" ? "dm" : "group"} scope={activeTab === "friends" ? `${currentUserId}:${activeChat?.id}` : activeChat?.id}
                         ref={composerRef} type="text" data-chat-composer enterKeyHint="send"
-                        placeholder="Mesaj yazın... (maks 1000)" 
+                        placeholder="Mesaj yazın..." 
                         maxLength={1000}
-                        className="w-full bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl shadow-sm text-base sm:text-[15px]"
+                        className="w-full min-h-[44px] bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none py-2 px-3.5 rounded-2xl shadow-2xs text-base sm:text-[15px]"
                         value={text}
                         onChange={handleTyping}
                         onKeyDown={(e) => {
@@ -1493,19 +1582,21 @@ export default function Chats({
                   )}
                 </div>
                 {text.trim() ? (
-                  <button onClick={handleSendText} className="p-2.5 sm:p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-colors shadow-md shrink-0">
-                    <Send size={18} className="sm:w-5 sm:h-5" />
+                  <button type="button" onClick={handleSendText} aria-label="Gönder" className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-colors shadow-md shrink-0 cursor-pointer active:scale-95">
+                    <Send size={19} />
                   </button>
                 ) : (
                   <button 
+                    type="button"
+                    aria-label="Ses kaydı gönder"
                     onMouseDown={startRecording} 
                     onMouseUp={stopRecording}
                     onMouseLeave={stopRecording}
                     onTouchStart={startRecording}
                     onTouchEnd={stopRecording}
-                    className={`p-2.5 sm:p-3 rounded-full transition-colors shadow-md shrink-0 ${isRecording ? 'bg-red-500 text-white animate-pulse scale-110' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                    className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors shadow-md shrink-0 cursor-pointer ${isRecording ? 'bg-red-500 text-white animate-pulse scale-110' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
                   >
-                    <Mic size={18} className="sm:w-5 sm:h-5" />
+                    <Mic size={19} />
                   </button>
                 )}
               </div>

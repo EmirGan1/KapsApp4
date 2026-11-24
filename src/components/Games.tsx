@@ -39,6 +39,7 @@ interface GamesProps {
   avatar?: string | null;
   color?: string | null;
   onUserClick?: (id: number) => void;
+  onActiveGameChange?: (inGame: boolean) => void;
 }
 
 interface LeaderboardUser {
@@ -72,6 +73,11 @@ export default function Games(props: GamesProps) {
     const game = gameFromUrl(location.search);
     if (game) setSelectedGame(game);
   }, [location.key, location.pathname, location.search]);
+
+  useEffect(() => {
+    props.onActiveGameChange?.(selectedGame !== 'hub');
+  }, [selectedGame, props.onActiveGameChange]);
+
   return <>
     <GamesContent {...props} selectedGame={selectedGame} setSelectedGame={setSelectedGame} />
     {selectedGame !== 'hub' && <div className="absolute bottom-16 left-3 z-40 max-w-[calc(100%-1.5rem)] rounded-xl bg-white p-1 text-slate-900 shadow dark:bg-slate-950 dark:text-white">

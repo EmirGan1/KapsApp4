@@ -266,11 +266,11 @@ export default function Settings({
   const activeThemeMeta = THEME_OPTIONS.find((t) => t.id === activePrefs.theme) || THEME_OPTIONS[0];
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full overflow-y-auto bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-4 sm:p-6 lg:p-10 transition-colors">
-      <div className="max-w-6xl mx-auto w-full space-y-8">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full overflow-y-auto bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-3.5 sm:p-6 lg:p-10 transition-colors touch-pan-y overscroll-y-contain">
+      <div className="max-w-6xl mx-auto w-full space-y-4 sm:space-y-8">
         {/* Top Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
-          <div className="space-y-1.5">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 sm:gap-4 border-b border-slate-200 dark:border-slate-800 pb-4 sm:pb-6">
+          <div className="hidden sm:block space-y-1.5">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
               <span>KapsApp Çalışma Alanı</span>
               <span aria-hidden="true">·</span>
@@ -290,11 +290,11 @@ export default function Settings({
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 sm:gap-2.5 shrink-0">
             <button
               type="button"
               onClick={handleExportSettings}
-              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+              className="min-h-[40px] sm:min-h-0 justify-center px-3 sm:px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
             >
               <Download size={14} />
               <span>Ayarları İndir</span>
@@ -302,7 +302,7 @@ export default function Settings({
             <button
               type="button"
               onClick={handleResetAll}
-              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+              className="min-h-[40px] sm:min-h-0 justify-center px-3 sm:px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
             >
               <RotateCcw size={14} />
               <span>Varsayılana Sıfırla</span>
@@ -320,7 +320,7 @@ export default function Settings({
         <div
           role="tablist"
           aria-label="Ayarlar Kategorileri"
-          className="flex items-center gap-1.5 p-1.5 bg-slate-200/70 dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 w-full overflow-x-auto no-scrollbar"
+          className="flex items-center gap-1.5 p-1.5 bg-slate-200/70 dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 w-full overflow-x-auto no-scrollbar snap-x"
         >
           {sections.map((tab) => {
             const Icon = tab.icon;
@@ -332,7 +332,7 @@ export default function Settings({
                 aria-selected={isActive}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`snap-start flex-1 min-w-fit min-h-[42px] sm:min-h-0 flex items-center justify-center gap-2 py-2.5 px-3.5 sm:px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   isActive
                     ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"

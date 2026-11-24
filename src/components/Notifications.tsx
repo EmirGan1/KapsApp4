@@ -36,7 +36,10 @@ export default function Notifications({
   const [loading, setLoading] = useState(true);
 
   const fetchNotifications = () => {
-    if (!socket) return;
+    if (!socket) {
+      setLoading(false);
+      return;
+    }
     socket.emit("get_notifications", (data: AppNotification[]) => {
       // Filter out any legacy approval notifications so they never pollute the general notifications UI
       const regularNotifs = (data || []).filter(n => n.type !== 'user_approval_request');
@@ -46,9 +49,13 @@ export default function Notifications({
   };
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      setLoading(false);
+      return;
+    }
 
     fetchNotifications();
+    const safetyTimer = window.setTimeout(() => setLoading(false), 3500);
 
     const onNewNotification = (notif: AppNotification) => {
       if (notif.type === 'user_approval_request') return; // Ignore in general notifications
@@ -63,6 +70,7 @@ export default function Notifications({
     socket.on("notifications_updated", onNotificationsUpdated);
 
     return () => {
+      window.clearTimeout(safetyTimer);
       socket.off("new_notification", onNewNotification);
       socket.off("notifications_updated", onNotificationsUpdated);
     };
@@ -249,9 +257,10 @@ export default function Notifications({
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full bg-slate-50 dark:bg-slate-950 transition-colors duration-200">
       {/* Header */}
-      <div className="p-4 sm:p-5 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs z-10 shrink-0">
+      <div className="px-3.5 py-2.5 lg:p-5 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs z-10 shrink-0">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
+          {/* Desktop full title */}
+          <div className="hidden lg:flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
               <Bell size={19} />
             </div>
@@ -270,10 +279,16 @@ export default function Notifications({
             </div>
           </div>
 
+          {/* Mobile compact status line */}
+          <span className="lg:hidden text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+            {unreadCount > 0 ? `${unreadCount} okunmamış bildirim` : "Tüm bildirimler okundu"}
+          </span>
+
           {unreadCount > 0 && (
             <button
+              type="button"
               onClick={handleMarkAllRead}
-              className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 px-3 py-1.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors cursor-pointer shrink-0"
+              className="min-h-[38px] sm:min-h-0 flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 px-3 py-1.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors cursor-pointer shrink-0"
             >
               <CheckCheck size={15} />
               <span>Tümünü Okundu Say</span>
@@ -282,7 +297,7 @@ export default function Notifications({
         </div>
 
         {/* Filter Sub-Tabs */}
-        <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 mt-2.5 lg:mt-3 pt-2.5 lg:pt-3 border-t border-slate-100 dark:border-slate-800/80 overflow-x-auto no-scrollbar">
           {[
             { id: "all", label: "Tümü" },
             { id: "messages", label: "Mesajlar" },
@@ -291,8 +306,9 @@ export default function Notifications({
           ].map((tab) => (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setCategoryFilter(tab.id as any)}
-              className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+              className={`min-h-[36px] sm:min-h-0 px-3.5 py-1.5 sm:py-1 rounded-xl sm:rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
                 categoryFilter === tab.id
                   ? "bg-blue-600 text-white shadow-xs"
                   : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"

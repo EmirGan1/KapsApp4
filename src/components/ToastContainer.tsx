@@ -99,7 +99,7 @@ export default function ToastContainer({
   return (
     <div
       id="toast-notification-container"
-      className="fixed top-4 right-3 left-3 sm:left-auto sm:right-4 sm:w-[380px] z-50 flex flex-col gap-2.5 pointer-events-none"
+      className="fixed top-[calc(env(safe-area-inset-top,0px)+58px)] lg:top-4 right-3 left-3 sm:left-auto sm:right-4 sm:w-[380px] z-50 flex flex-col gap-2.5 pointer-events-none"
     >
       {toasts.map((toast) => {
         const isDm = toast.type === "new_message" || toast.type === "dm";

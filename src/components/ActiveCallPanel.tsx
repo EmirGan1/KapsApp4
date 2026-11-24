@@ -38,11 +38,11 @@ const ActiveCallPanel: React.FC = () => {
   // --- MINIMIZED VIEW ---
   if (isMinimized) {
     return (
-      <div className="fixed bottom-20 right-4 z-[9999] animate-bounce-short">
-        <div className="bg-slate-900/95 backdrop-blur-xl border border-emerald-500/40 shadow-2xl rounded-full px-4 py-2 flex items-center gap-3 text-white">
+      <div className="fixed bottom-[calc(68px+env(safe-area-inset-bottom,0px))] lg:bottom-6 right-3 sm:right-4 z-[9999]">
+        <div className="bg-slate-900/95 backdrop-blur-xl border border-emerald-500/40 shadow-2xl rounded-full px-3.5 py-2 flex items-center gap-2.5 text-white">
           {/* Audio Speaking Avatar */}
           <div className="relative shrink-0">
-            <div className={`rounded-full transition-all duration-300 ${isSpeakingRemote ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900 animate-pulse' : 'ring-1 ring-slate-700'}`}>
+            <div className={`rounded-full transition-all duration-300 ${isSpeakingRemote ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : 'ring-1 ring-slate-700'}`}>
               <Avatar 
                 name={peer.peerUsername} 
                 url={peer.peerAvatar} 
@@ -60,7 +60,7 @@ const ActiveCallPanel: React.FC = () => {
 
           {/* Details & Controls */}
           <div className="flex flex-col">
-            <span className="text-xs font-bold truncate max-w-[80px]">{peer.peerUsername}</span>
+            <span className="text-xs font-bold truncate max-w-[88px]">{peer.peerUsername}</span>
             <span className="text-[10px] text-emerald-400 font-mono">
               {isOutgoing ? 'Aranıyor...' : isConnecting ? 'Bağlanıyor...' : formattedDuration}
             </span>
@@ -68,40 +68,44 @@ const ActiveCallPanel: React.FC = () => {
 
           {/* Mini Buttons */}
           <div className="flex items-center gap-1 border-l border-slate-700 pl-2">
-            {/* Toggle Mic */}
             <button
+              type="button"
               onClick={toggleMute}
-              className={`p-1.5 rounded-full hover:bg-slate-800 transition-colors ${isMuted ? 'text-rose-500 bg-rose-500/10' : 'text-slate-300'}`}
+              className={`min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full hover:bg-slate-800 transition-colors cursor-pointer ${isMuted ? 'text-rose-500 bg-rose-500/10' : 'text-slate-300'}`}
               title={isMuted ? 'Mikrofonu Aç' : 'Sesi Sessize Al'}
+              aria-label={isMuted ? 'Mikrofonu Aç' : 'Sesi Sessize Al'}
             >
-              {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+              {isMuted ? <MicOff size={15} /> : <Mic size={15} />}
             </button>
 
-            {/* Toggle Deafen */}
             <button
+              type="button"
               onClick={toggleDeafen}
-              className={`p-1.5 rounded-full hover:bg-slate-800 transition-colors ${isDeafened ? 'text-rose-500 bg-rose-500/10' : 'text-slate-300'}`}
+              className={`min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full hover:bg-slate-800 transition-colors cursor-pointer ${isDeafened ? 'text-rose-500 bg-rose-500/10' : 'text-slate-300'}`}
               title={isDeafened ? 'Hoparlörü Aç' : 'Sesi Kapat'}
+              aria-label={isDeafened ? 'Hoparlörü Aç' : 'Sesi Kapat'}
             >
-              {isDeafened ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              {isDeafened ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
 
-            {/* Expand Call */}
             <button
+              type="button"
               onClick={() => setIsMinimized(false)}
-              className="p-1.5 rounded-full text-slate-300 hover:bg-slate-800 transition-colors"
+              className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full text-slate-300 hover:bg-slate-800 transition-colors cursor-pointer"
               title="Ekranı Büyüt"
+              aria-label="Ekranı Büyüt"
             >
-              <Maximize2 size={14} />
+              <Maximize2 size={15} />
             </button>
 
-            {/* End Call */}
             <button
+              type="button"
               onClick={endCall}
-              className="p-1.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white transition-colors"
+              className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full bg-rose-600 hover:bg-rose-500 text-white transition-colors cursor-pointer"
               title="Aramayı Kapat"
+              aria-label="Aramayı Kapat"
             >
-              <PhoneOff size={14} />
+              <PhoneOff size={15} />
             </button>
           </div>
         </div>

@@ -43,6 +43,15 @@ export const MobileInstallSheet: React.FC<MobileInstallSheetProps> = ({ isOpen, 
     return () => window.removeEventListener('kaps:pwa_prompt_ready', syncPrompt);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const isIOS =
@@ -75,7 +84,7 @@ export const MobileInstallSheet: React.FC<MobileInstallSheetProps> = ({ isOpen, 
 
   return (
     <div
-      className="mobile-window fixed inset-0 z-[100000] flex flex-col justify-end sm:items-center sm:justify-center bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200"
+      className="mobile-window fixed inset-0 z-[100000] flex flex-col justify-end sm:items-center sm:justify-center bg-slate-950/75 backdrop-blur-xs kaps-backdrop-enter"
       onClick={onClose}
     >
       <div
@@ -83,12 +92,12 @@ export const MobileInstallSheet: React.FC<MobileInstallSheetProps> = ({ isOpen, 
         aria-modal="true"
         aria-label="KapsApp Mobil Uygulama Kurulumu"
         data-testid="mobile-install-sheet"
-        className="w-full max-w-md bg-white dark:bg-slate-900 border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-[28px] sm:rounded-3xl p-5 sm:p-6 pb-[max(1.75rem,calc(env(safe-area-inset-bottom)+1rem))] shadow-2xl space-y-4 text-slate-900 dark:text-slate-100"
+        className="kaps-sheet-enter w-full max-w-md bg-white dark:bg-slate-900 border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-[26px] sm:rounded-3xl p-5 sm:p-6 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+1rem))] shadow-2xl space-y-4 text-slate-900 dark:text-slate-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drag Handle */}
         <div className="flex justify-center sm:hidden -mt-1 pb-1">
-          <div className="w-11 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
+          <div className="w-10 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
         </div>
 
         {/* Header */}
@@ -97,7 +106,7 @@ export const MobileInstallSheet: React.FC<MobileInstallSheetProps> = ({ isOpen, 
             <img
               src="/brand/kapsapp-mark.png"
               alt="KapsApp"
-              className="w-13 h-13 rounded-2xl shadow-lg border border-slate-200/60 dark:border-slate-700 shrink-0"
+              className="w-12 h-12 rounded-2xl shadow-md border border-slate-200/60 dark:border-slate-700 shrink-0"
             />
             <div>
               <div className="inline-flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">
@@ -115,7 +124,7 @@ export const MobileInstallSheet: React.FC<MobileInstallSheetProps> = ({ isOpen, 
           <button
             type="button"
             onClick={onClose}
-            className="min-w-[40px] min-h-[40px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+            className="min-w-[44px] min-h-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
             aria-label="Kapat"
           >
             <X size={18} />

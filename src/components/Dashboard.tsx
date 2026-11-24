@@ -259,65 +259,49 @@ export default function Dashboard({
   const focusPercent = Math.min(100, Math.round((todayScreenSeconds / focusTargetSeconds) * 100));
 
   return (
-    <div className="flex-1 overflow-y-auto px-3.5 py-4 md:p-8 space-y-4 md:space-y-7 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 touch-pan-y overscroll-y-contain">
+    <div className="flex-1 overflow-y-auto px-3.5 py-3.5 md:p-8 space-y-4 md:space-y-7 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 touch-pan-y overscroll-y-contain">
       {/* ========================================================================= */}
-      {/* MOBİL ÖZEL HIZLI UYGULAMA GEÇİŞ ŞERİDİ (Phone Native Super-App Dock)      */}
+      {/* MOBİL HIZLI ERİŞİM IZGARASI (Temiz, dengeli 4'lü dokunmatik başlatıcı)    */}
       {/* ========================================================================= */}
-      <div className="lg:hidden -mx-3.5 px-3.5 overflow-x-auto no-scrollbar flex items-center gap-2 pb-0.5">
+      <div className="lg:hidden grid grid-cols-4 gap-2">
         <button
           type="button"
           onClick={() => onNavigate("ib-m27")}
-          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-amber-500/12 dark:bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
+          className="min-h-[62px] px-1.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-100 font-bold text-[11px] flex flex-col items-center justify-center gap-1.5 shadow-2xs active:scale-[0.97] transition-transform cursor-pointer"
         >
-          <GraduationCap size={16} className="text-amber-500 shrink-0" />
-          <span>IB M27 Sınavları</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("voice")}
-          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-violet-500/12 dark:bg-violet-500/15 border border-violet-500/30 text-violet-700 dark:text-violet-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
-        >
-          <Radio size={16} className="text-violet-500 shrink-0" />
-          <span>Sesli & Görüntülü</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("games")}
-          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-pink-500/12 dark:bg-pink-500/15 border border-pink-500/30 text-pink-700 dark:text-pink-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
-        >
-          <Gamepad2 size={16} className="text-pink-500 shrink-0" />
-          <span>Oyunlar</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("map")}
-          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-teal-500/12 dark:bg-teal-500/15 border border-teal-500/30 text-teal-700 dark:text-teal-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
-        >
-          <MapPin size={16} className="text-teal-500 shrink-0" />
-          <span>Canlı Harita</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("ib-calculator")}
-          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-purple-500/12 dark:bg-purple-500/15 border border-purple-500/30 text-purple-700 dark:text-purple-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
-        >
-          <Calculator size={16} className="text-purple-500 shrink-0" />
-          <span>KapsCulator</span>
+          <GraduationCap size={19} className="text-amber-500 shrink-0" />
+          <span className="truncate max-w-full">IB M27</span>
         </button>
         <button
           type="button"
           onClick={() => onNavigate("agenda")}
-          className="min-h-[42px] px-3.5 py-2 rounded-2xl bg-sky-500/12 dark:bg-sky-500/15 border border-sky-500/30 text-sky-700 dark:text-sky-300 font-extrabold text-xs flex items-center gap-2 shrink-0 active:scale-95 transition-transform cursor-pointer"
+          className="min-h-[62px] px-1.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-100 font-bold text-[11px] flex flex-col items-center justify-center gap-1.5 shadow-2xs active:scale-[0.97] transition-transform cursor-pointer"
         >
-          <CalendarDays size={16} className="text-sky-500 shrink-0" />
-          <span>Ajanda</span>
+          <CalendarDays size={19} className="text-sky-500 shrink-0" />
+          <span className="truncate max-w-full">Ajanda</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("voice")}
+          className="min-h-[62px] px-1.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-100 font-bold text-[11px] flex flex-col items-center justify-center gap-1.5 shadow-2xs active:scale-[0.97] transition-transform cursor-pointer"
+        >
+          <Radio size={19} className="text-violet-500 shrink-0" />
+          <span className="truncate max-w-full">Sesli Oda</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("games")}
+          className="min-h-[62px] px-1.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-100 font-bold text-[11px] flex flex-col items-center justify-center gap-1.5 shadow-2xs active:scale-[0.97] transition-transform cursor-pointer"
+        >
+          <Gamepad2 size={19} className="text-pink-500 shrink-0" />
+          <span className="truncate max-w-full">Oyunlar</span>
         </button>
       </div>
 
       {/* ========================================================================= */}
       {/* 1. ÜST KARŞILAMA PANELİ: AKADEMİK ÇALIŞMA ALANI & HAVA DURUMU             */}
       {/* ========================================================================= */}
-      <section className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-4 sm:p-8 shadow-xs">
+      <section className="rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-4 sm:p-8 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6">
           {/* Sol: Avatar, Karşılama & Günün Sözü */}
           <div className="flex items-start sm:items-center gap-3.5 sm:gap-5">

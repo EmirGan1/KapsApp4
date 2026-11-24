@@ -191,8 +191,12 @@ export default function VoiceChat({
 
   // Load Rooms list on mount
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      setIsLoading(false);
+      return;
+    }
 
+    const safetyTimer = window.setTimeout(() => setIsLoading(false), 3500);
     socket.emit('get_voice_rooms', (roomList: VoiceRoom[]) => {
       setRooms(roomList || []);
       setIsLoading(false);
@@ -322,6 +326,7 @@ export default function VoiceChat({
     socket.on('voice_user_status_changed', handleUserStatusChanged);
 
     return () => {
+      window.clearTimeout(safetyTimer);
       socket.off('voice_rooms_list', handleRoomsList);
       socket.off('voice_room_updated', handleRoomUpdated);
       socket.off('voice_user_joined', handleUserJoined);
@@ -520,15 +525,15 @@ export default function VoiceChat({
         <div className="flex-1 flex flex-col h-full w-full overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
           
           {/* Lobby Header */}
-          <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
-            <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
+          <div className="p-3.5 sm:p-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
+            <div className="max-w-6xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+              <div className="hidden lg:block">
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
                     Sesli & Görüntülü Sohbet Odaları
                   </h1>
-                  <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs font-bold">
-                    WebRTC P2P Kamera & Ses
+                  <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                    · WebRTC P2P
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -536,22 +541,36 @@ export default function VoiceChat({
                 </p>
               </div>
 
-              {/* Create Room Button */}
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="min-h-[44px] px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-sm shadow-blue-500/20 active:scale-95 transition-all self-stretch sm:self-auto"
-              >
-                <Plus size={18} />
-                <span>Oda Kur</span>
-              </button>
+              {/* Mobile inline search + Create Room row; desktop button */}
+              <div className="flex items-center gap-2 w-full lg:w-auto">
+                <div className="relative flex-1 lg:hidden">
+                  <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    enterKeyHint="search"
+                    placeholder="Oda veya kurucu ara..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full min-h-[44px] pl-10 pr-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(true)}
+                  className="min-h-[44px] px-4 sm:px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm shadow-blue-500/20 active:scale-95 transition-all shrink-0 cursor-pointer"
+                >
+                  <Plus size={18} />
+                  <span>Oda Kur</span>
+                </button>
+              </div>
             </div>
 
-            {/* Search Bar */}
-            <div className="max-w-6xl mx-auto mt-4">
+            {/* Desktop Search Bar */}
+            <div className="hidden lg:block max-w-6xl mx-auto mt-4">
               <div className="relative">
                 <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
-                  type="text"
+                  type="search"
                   placeholder="Oda adı veya kurucu adına göre ara..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -606,20 +625,31 @@ export default function VoiceChat({
 
       {/* Create Room Modal with 20-Person Capacity Option */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-150 text-slate-900 dark:text-slate-100">
+        <div
+          className="mobile-window fixed inset-0 bg-slate-900/65 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 kaps-backdrop-enter"
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 sm:p-6 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] sm:pb-6 shadow-2xl border-t sm:border border-slate-200 dark:border-slate-800 kaps-sheet-enter text-slate-900 dark:text-slate-100 max-h-[90%] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sm:hidden flex justify-center pb-3">
+              <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+            </div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                   <Video size={20} />
                 </div>
-                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">
+                <h3 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100">
                   Yeni Sesli & Görüntülü Oda Kur
                 </h3>
               </div>
               <button
+                type="button"
+                aria-label="Kapat"
                 onClick={() => setShowCreateModal(false)}
-                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                className="w-11 h-11 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>

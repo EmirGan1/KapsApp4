@@ -3,7 +3,7 @@ import {createServer} from 'vite';
 import {chromium} from 'playwright';
 import {writeFile,mkdir} from 'node:fs/promises';
 const server=await createServer({logLevel:'error',server:{host:'127.0.0.1',port:4184,strictPort:true}});await server.listen();
-const browser=await chromium.launch({headless:true});const results:any[]=[];
+const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});const results:any[]=[];
 const routes=['/ajanda'];
 await mkdir('/tmp/mobile-modal',{recursive:true});
 try{for(const [width,height]of [[360,740],[390,844],[844,390],[768,1024],[820,1180],[1024,768],[1440,900]]){
@@ -14,7 +14,7 @@ try{for(const [width,height]of [[360,740],[390,844],[844,390],[768,1024],[820,11
  for(const route of routes){try{errors.length=0;await page.goto('http://127.0.0.1:4184'+route);await page.locator('.app-content').waitFor();await page.waitForTimeout(100);assert.deepEqual(errors,[]);
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Horizontal overflow');
  const nav=page.getByRole('navigation',{name:'Mobil alt gezinti menüsü'});assert.equal(await nav.isVisible(),width<1024);
- if(width<1024){assert.equal(await page.locator('.app-content').evaluate(e=>getComputedStyle(e).paddingBottom),'56px');await page.getByRole('button',{name:'Daha Fazla',exact:true}).click();await page.getByRole('button',{name:'Menüyü Kapat'}).click()}
+ if(width<1024){assert.equal(await page.locator('.app-content').evaluate(e=>getComputedStyle(e).paddingBottom),'56px');await page.getByRole('button',{name:'Menü',exact:true}).click();await page.getByRole('button',{name:'Menüyü Kapat'}).click()}
  if(width<1024){
  await page.getByRole('button',{name:/Günlük Ders Programım/}).click();
  const panel=page.locator('.mobile-window').filter({hasText:'12 G IB Ders Programı'}).last();

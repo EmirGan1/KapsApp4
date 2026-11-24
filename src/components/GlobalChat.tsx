@@ -505,33 +505,34 @@ export default function GlobalChat({
     <div className="flex-1 flex min-h-0 overflow-hidden w-full max-w-full bg-slate-50 dark:bg-slate-950 relative transition-colors duration-200">
       {/* Messages Feed */}
       <div {...imageTransfer} className="flex-1 flex flex-col min-h-0 h-full w-full min-w-0 max-w-full bg-white dark:bg-slate-950 shadow-sm border-r border-slate-200 dark:border-slate-800 transition-colors duration-200 overflow-hidden">
-        <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between shadow-sm z-10 shrink-0 transition-colors duration-200">
-          <div className="min-w-0 pr-2">
-            <h1 className="font-bold text-slate-800 dark:text-slate-100 text-base sm:text-lg truncate">Genel Sohbet</h1>
-            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
+        <div className="px-3 py-2 lg:p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between shadow-2xs z-10 shrink-0 transition-colors duration-200">
+          <div className="hidden lg:block min-w-0 pr-2">
+            <h1 className="font-bold text-slate-800 dark:text-slate-100 text-lg truncate">Genel Sohbet</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
               Herkesle anlık iletişim kur, medya ve dosya paylaş
             </p>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center justify-between lg:justify-end w-full lg:w-auto gap-2 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full shrink-0"></span>
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                {onlineUsers.length} Çevrimiçi
+              </span>
+            </div>
             {currentUsername?.trim().toLowerCase() === 'emirgan' && (
               <button
+                type="button"
                 onClick={() => {
                   if (window.confirm("Genel sohbeti sıfırlamak istediğinize emin misiniz? Tüm mesajlar silinecektir.")) {
                     socket?.emit("clear_global_chat");
                   }
                 }}
-                className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 px-2 py-1 rounded-lg border border-red-200 dark:border-red-900/50 transition-colors font-medium whitespace-nowrap cursor-pointer"
+                className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 px-2.5 py-1 rounded-lg border border-red-200 dark:border-red-900/50 transition-colors font-medium whitespace-nowrap cursor-pointer"
                 title="Genel Sohbeti Temizle (Yönetici)"
               >
                 Sıfırla
               </button>
             )}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0"></span>
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                {onlineUsers.length} <span className="hidden sm:inline">Çevrimiçi</span>
-              </span>
-            </div>
           </div>
         </div>
 
@@ -572,7 +573,7 @@ export default function GlobalChat({
                     isMine ? "flex-row-reverse" : "flex-row"
                   }`}
                 >
-                  {/* Dedicated Delete (Çöp Kutusu) Button right beside message bubble */}
+                  {/* Desktop side delete button (mobile uses inside-bubble Sil action for spacious bubbles) */}
                   {canDelete && (
                     <button
                       type="button"
@@ -580,7 +581,7 @@ export default function GlobalChat({
                         e.stopPropagation();
                         handleDeleteMessage(msg.id);
                       }}
-                      className="shrink-0 p-2 text-red-500 hover:text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-full transition-all cursor-pointer border border-red-200 dark:border-red-900/40 bg-white dark:bg-slate-900 shadow-sm self-center active:scale-95"
+                      className="hidden md:flex shrink-0 p-2 text-red-500 hover:text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-full transition-all cursor-pointer border border-red-200 dark:border-red-900/40 bg-white dark:bg-slate-900 shadow-sm self-center active:scale-95"
                       title={isEmirgan && !isMine ? "Yönetici Olarak Sil (emirgan)" : "Mesajı Sil"}
                     >
                       <Trash2 size={16} className="shrink-0" />
@@ -888,7 +889,7 @@ export default function GlobalChat({
           <div className="p-2 sm:p-3 flex items-center gap-1.5 sm:gap-2 max-w-4xl mx-auto">
             {/* Media Upload */}
             <label
-              className="p-2 sm:p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0"
+              className="min-w-[40px] min-h-[40px] sm:p-2.5 flex items-center justify-center text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0"
               title="Fotoğraf veya Video Gönder"
             >
               <input
@@ -902,7 +903,7 @@ export default function GlobalChat({
 
             {/* Document / File Upload */}
             <label
-              className="p-2 sm:p-2.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0"
+              className="min-w-[40px] min-h-[40px] sm:p-2.5 flex items-center justify-center text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors shrink-0"
               title="Belge veya Dosya Gönder"
             >
               <input
@@ -914,16 +915,16 @@ export default function GlobalChat({
               <Paperclip size={20} className="sm:w-[22px] sm:h-[22px]" />
             </label>
 
-            <div className="flex-1 flex items-center bg-slate-100 dark:bg-slate-800 rounded-full px-3 sm:px-4 py-1 sm:py-1.5 focus-within:ring-2 focus-within:ring-blue-500 min-w-0">
+            <div className="flex-1 flex items-center bg-slate-100 dark:bg-slate-800 rounded-full px-3.5 sm:px-4 min-h-[44px] focus-within:ring-2 focus-within:ring-blue-500 min-w-0">
               {isUploading ? (
-                <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 py-1 font-medium animate-pulse">
-                  <Loader2 size={16} className="animate-spin" />
-                  <span>Fotoğraf sıkıştırılıyor ve yükleniyor...</span>
+                <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 py-1 font-medium">
+                  <Loader2 size={16} className="animate-spin shrink-0" />
+                  <span className="truncate">Yükleniyor...</span>
                 </div>
               ) : (
                 <MentionInput kind="global"
                   type="text" data-chat-composer enterKeyHint="send"
-                  placeholder="Mesaj yaz... (maks 1000)"
+                  placeholder="Mesaj yaz..."
                   value={newMessage}
                   maxLength={1000}
                   onChange={handleTyping}
@@ -949,25 +950,29 @@ export default function GlobalChat({
 
             {newMessage.trim() ? (
               <button
+                type="button"
+                aria-label="Gönder"
                 onClick={handleSend}
-                className="p-2.5 sm:p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-md cursor-pointer shrink-0"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-md cursor-pointer shrink-0 active:scale-95"
               >
-                <Send size={18} className="sm:w-5 sm:h-5" />
+                <Send size={19} />
               </button>
             ) : (
               <button
+                type="button"
+                aria-label="Ses kaydı gönder"
                 onMouseDown={startRecording}
                 onMouseUp={stopRecording}
                 onMouseLeave={stopRecording}
                 onTouchStart={startRecording}
                 onTouchEnd={stopRecording}
-                className={`p-2.5 sm:p-3 rounded-full transition-all shadow-md cursor-pointer shrink-0 ${
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-all shadow-md cursor-pointer shrink-0 ${
                   isRecording
                     ? "bg-red-500 text-white scale-110 animate-pulse"
                     : "bg-blue-600 text-white hover:bg-blue-700"
                 }`}
               >
-                <Mic size={18} className="sm:w-5 sm:h-5" />
+                <Mic size={19} />
               </button>
             )}
           </div>

@@ -167,21 +167,26 @@ html.theme-pink .app-shell {
   background: #14060f !important;
 }
 html.theme-pink .dark\:bg-slate-900,
+html.theme-pink .dark\:bg-slate-900\/95,
 html.theme-pink .bg-white.dark\:bg-slate-900 {
   background-color: #210b19 !important;
   border-color: #421732 !important;
 }
 html.theme-pink .dark\:bg-slate-950,
+html.theme-pink .dark\:bg-slate-950\/95,
+html.theme-pink .dark\:bg-slate-950\/92,
 html.theme-pink .md\:dark\:bg-slate-950 {
   background-color: #14060f !important;
 }
 html.theme-pink .dark\:bg-slate-800,
 html.theme-pink .dark\:bg-slate-800\/40,
 html.theme-pink .dark\:bg-slate-800\/50,
-html.theme-pink .dark\:bg-slate-800\/60 {
+html.theme-pink .dark\:bg-slate-800\/60,
+html.theme-pink .dark\:bg-slate-800\/70 {
   background-color: #2d1023 !important;
 }
 html.theme-pink .dark\:border-slate-800,
+html.theme-pink .dark\:border-slate-800\/80,
 html.theme-pink .dark\:border-slate-700 {
   border-color: #451834 !important;
 }
@@ -200,21 +205,26 @@ html.theme-navy .app-shell {
   background: #020817 !important;
 }
 html.theme-navy .dark\:bg-slate-900,
+html.theme-navy .dark\:bg-slate-900\/95,
 html.theme-navy .bg-white.dark\:bg-slate-900 {
   background-color: #091530 !important;
   border-color: #172b57 !important;
 }
 html.theme-navy .dark\:bg-slate-950,
+html.theme-navy .dark\:bg-slate-950\/95,
+html.theme-navy .dark\:bg-slate-950\/92,
 html.theme-navy .md\:dark\:bg-slate-950 {
   background-color: #020817 !important;
 }
 html.theme-navy .dark\:bg-slate-800,
 html.theme-navy .dark\:bg-slate-800\/40,
 html.theme-navy .dark\:bg-slate-800\/50,
-html.theme-navy .dark\:bg-slate-800\/60 {
+html.theme-navy .dark\:bg-slate-800\/60,
+html.theme-navy .dark\:bg-slate-800\/70 {
   background-color: #0f2147 !important;
 }
 html.theme-navy .dark\:border-slate-800,
+html.theme-navy .dark\:border-slate-800\/80,
 html.theme-navy .dark\:border-slate-700 {
   border-color: #193161 !important;
 }
@@ -233,21 +243,26 @@ html.theme-emerald .app-shell {
   background: #03120d !important;
 }
 html.theme-emerald .dark\:bg-slate-900,
+html.theme-emerald .dark\:bg-slate-900\/95,
 html.theme-emerald .bg-white.dark\:bg-slate-900 {
   background-color: #062118 !important;
   border-color: #0f3d2d !important;
 }
 html.theme-emerald .dark\:bg-slate-950,
+html.theme-emerald .dark\:bg-slate-950\/95,
+html.theme-emerald .dark\:bg-slate-950\/92,
 html.theme-emerald .md\:dark\:bg-slate-950 {
   background-color: #03120d !important;
 }
 html.theme-emerald .dark\:bg-slate-800,
 html.theme-emerald .dark\:bg-slate-800\/40,
 html.theme-emerald .dark\:bg-slate-800\/50,
-html.theme-emerald .dark\:bg-slate-800\/60 {
+html.theme-emerald .dark\:bg-slate-800\/60,
+html.theme-emerald .dark\:bg-slate-800\/70 {
   background-color: #0b2e22 !important;
 }
 html.theme-emerald .dark\:border-slate-800,
+html.theme-emerald .dark\:border-slate-800\/80,
 html.theme-emerald .dark\:border-slate-700 {
   border-color: #124231 !important;
 }
@@ -266,21 +281,26 @@ html.theme-amethyst .app-shell {
   background: #0c061a !important;
 }
 html.theme-amethyst .dark\:bg-slate-900,
+html.theme-amethyst .dark\:bg-slate-900\/95,
 html.theme-amethyst .bg-white.dark\:bg-slate-900 {
   background-color: #160c2e !important;
   border-color: #2e1b59 !important;
 }
 html.theme-amethyst .dark\:bg-slate-950,
+html.theme-amethyst .dark\:bg-slate-950\/95,
+html.theme-amethyst .dark\:bg-slate-950\/92,
 html.theme-amethyst .md\:dark\:bg-slate-950 {
   background-color: #0c061a !important;
 }
 html.theme-amethyst .dark\:bg-slate-800,
 html.theme-amethyst .dark\:bg-slate-800\/40,
 html.theme-amethyst .dark\:bg-slate-800\/50,
-html.theme-amethyst .dark\:bg-slate-800\/60 {
+html.theme-amethyst .dark\:bg-slate-800\/60,
+html.theme-amethyst .dark\:bg-slate-800\/70 {
   background-color: #211242 !important;
 }
 html.theme-amethyst .dark\:border-slate-800,
+html.theme-amethyst .dark\:border-slate-800\/80,
 html.theme-amethyst .dark\:border-slate-700 {
   border-color: #331e63 !important;
 }
@@ -308,6 +328,46 @@ html, body, #root {
   touch-action: pan-x pan-y;
 }
 
+button, a, [role="button"], input, select, textarea {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes kaps-sheet-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes kaps-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.kaps-sheet-enter {
+  animation: kaps-sheet-up 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.kaps-backdrop-enter {
+  animation: kaps-backdrop-in 160ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kaps-sheet-enter,
+  .kaps-backdrop-enter {
+    animation: none !important;
+  }
+}
+
 /* Ensure Leaflet Container & Tiles always have robust geometry and prevent gray tile flash */
 .leaflet-container {
   width: 100% !important;
@@ -321,9 +381,12 @@ html, body, #root {
   visibility: inherit !important;
 }
 
-/* Ensure padding-bottom safe area for modern mobile browsers */
+/* Ensure safe area helpers for modern mobile browsers & installed PWA */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* High-performance hardware accelerated touch scroll utilities */
@@ -357,7 +420,7 @@ html, body, #root {
   html, body, #root { touch-action: pan-x pan-y pinch-zoom; }
   .app-shell.kapsapp-viewport { position: relative; height: var(--app-shell-height, 100dvh); }
   .app-shell .kapsapp-bottom-nav { position: absolute; }
-  .app-content { padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+  .app-content { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
   .app-shell[data-bottom-nav-hidden="true"] .app-content,
   html[data-keyboard-open="true"] .app-content,
   html[data-chat-keyboard] .app-content {

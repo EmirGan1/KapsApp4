@@ -710,14 +710,14 @@ export default function Feed({
         {/* ACADEMIC COURSE STUDIO HEADER & QUICK COURSE SWITCHER             */}
         {/* ================================================================= */}
         {activeSubject && (
-          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs sticky top-2 z-[50] transition-colors duration-200 overflow-hidden">
+          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs lg:sticky lg:top-2 z-20 lg:z-[50] transition-colors duration-200 overflow-hidden">
             {/* Top Course Switcher Strip */}
-            <div className="px-4 py-2 bg-slate-50/80 dark:bg-slate-950/60 border-b border-slate-200/60 dark:border-slate-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+            <div className="px-3 sm:px-4 py-2 bg-slate-50/80 dark:bg-slate-950/60 border-b border-slate-200/60 dark:border-slate-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
               {onBackToFolders && (
                 <button
                   type="button"
                   onClick={onBackToFolders}
-                  className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-200 font-bold hover:border-indigo-400 transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                  className="min-h-[36px] sm:min-h-0 px-2.5 py-1.5 sm:py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-200 font-bold hover:border-indigo-400 transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
                 >
                   <ArrowLeft size={13} />
                   <span>Tüm Klasörler</span>
@@ -730,7 +730,7 @@ export default function Feed({
                   <Link
                     key={subj}
                     to={`/dersler/${encodeURIComponent(subj)}`}
-                    className={`px-2.5 py-1 rounded-lg font-semibold whitespace-nowrap transition-all shrink-0 ${
+                    className={`min-h-[36px] sm:min-h-0 flex items-center px-2.5 py-1.5 sm:py-1 rounded-lg font-semibold whitespace-nowrap transition-all shrink-0 ${
                       isCurrent
                         ? "bg-indigo-600 text-white shadow-2xs"
                         : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
@@ -788,27 +788,28 @@ export default function Feed({
 
         {/* Stories & Social Feed Toolbar - Only show on main general feed (/akis) */}
         {!activeSubject && (
-          <div className="space-y-3">
-            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 sm:rounded-3xl border-b sm:border border-slate-200/80 dark:border-slate-800 flex gap-4 overflow-x-auto shadow-2xs sticky top-0 z-[50] scrollbar-hide transition-colors duration-200">
-              <div className="flex flex-col items-center gap-1 min-w-[72px]">
-                <div className="relative w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center overflow-hidden cursor-pointer hover:border-indigo-500 transition-colors">
-                  <Plus size={24} className="text-slate-400 dark:text-slate-500" />
+          <div className="space-y-2.5 sm:space-y-3">
+            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3.5 py-3 sm:p-4 sm:rounded-3xl border-b sm:border border-slate-200/80 dark:border-slate-800 flex gap-3.5 sm:gap-4 overflow-x-auto shadow-2xs lg:sticky lg:top-0 lg:z-[50] scrollbar-hide transition-colors duration-200">
+              <div className="flex flex-col items-center gap-1 min-w-[68px] sm:min-w-[72px]">
+                <div className="relative w-15 h-15 sm:w-16 sm:h-16 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center overflow-hidden cursor-pointer hover:border-indigo-500 transition-colors">
+                  <Plus size={22} className="text-slate-400 dark:text-slate-500" />
                   <input
                     type="file"
                     accept="image/*,video/*"
+                    aria-label="Hikaye ekle"
                     className="absolute inset-0 opacity-0 cursor-pointer"
                     onChange={handleStoryUpload}
                   />
                 </div>
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Hikaye Ekle</span>
+                <span className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400">Hikaye Ekle</span>
               </div>
               {stories.map((story) => (
                 <div
                   key={story.id}
-                  className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer group"
+                  className="flex flex-col items-center gap-1 min-w-[68px] sm:min-w-[72px] cursor-pointer group"
                   onClick={() => openStoryModal(story)}
                 >
-                  <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-fuchsia-600 transition-transform group-hover:scale-105">
+                  <div className="w-15 h-15 sm:w-16 sm:h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-fuchsia-600 transition-transform group-hover:scale-105">
                     {story.image.endsWith(".mp4") || story.image.endsWith(".webm") ? (
                       <div className="w-full h-full rounded-full border-2 border-white dark:border-slate-900 bg-black flex items-center justify-center overflow-hidden">
                         <Film size={20} className="text-white" />
@@ -818,11 +819,13 @@ export default function Feed({
                         src={story.image}
                         referrerPolicy="no-referrer"
                         alt={story.username}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full rounded-full object-cover border-2 border-white dark:border-slate-900 bg-white dark:bg-slate-900"
                       />
                     )}
                   </div>
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full text-center group-hover:underline">
+                  <span className="text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full text-center group-hover:underline">
                     <UserProfileLink username={story.username} user={story} />
                   </span>
                 </div>
@@ -830,12 +833,12 @@ export default function Feed({
             </div>
 
             {/* Social Feed Filter & Search Bar */}
-            <div className="bg-white dark:bg-slate-900 px-4 py-3 sm:rounded-2xl border-y sm:border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl self-start">
+            <div className="bg-white dark:bg-slate-900 px-3.5 sm:px-4 py-2.5 sm:py-3 sm:rounded-2xl border-y sm:border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl self-stretch sm:self-start">
                 <button
                   type="button"
                   onClick={() => setFeedMediaFilter("all")}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer tabular-nums ${
+                  className={`flex-1 sm:flex-initial min-h-[36px] sm:min-h-0 px-3 py-1.5 sm:py-1 rounded-lg text-xs font-bold transition-all cursor-pointer tabular-nums ${
                     feedMediaFilter === "all"
                       ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
                       : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
@@ -846,7 +849,7 @@ export default function Feed({
                 <button
                   type="button"
                   onClick={() => setFeedMediaFilter("media")}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer tabular-nums ${
+                  className={`flex-1 sm:flex-initial min-h-[36px] sm:min-h-0 px-3 py-1.5 sm:py-1 rounded-lg text-xs font-bold transition-all cursor-pointer tabular-nums ${
                     feedMediaFilter === "media"
                       ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs"
                       : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
@@ -858,19 +861,21 @@ export default function Feed({
 
               <div className="relative flex-1 sm:max-w-xs">
                 <input
-                  type="text"
+                  type="search"
+                  enterKeyHint="search"
                   value={feedSearchQuery}
                   onChange={(e) => setFeedSearchQuery(e.target.value)}
                   placeholder="Gönderi veya @kullanıcı ara..."
-                  className="w-full px-3.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full min-h-[40px] sm:min-h-0 px-3.5 py-2 sm:py-1.5 pr-9 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-sm sm:text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 {feedSearchQuery && (
                   <button
                     type="button"
+                    aria-label="Aramayı temizle"
                     onClick={() => setFeedSearchQuery("")}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
-                    <X size={13} />
+                    <X size={14} />
                   </button>
                 )}
               </div>
@@ -1050,11 +1055,11 @@ export default function Feed({
               </div>
             )}
 
-            <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-3">
               <div className="flex items-center gap-1">
-                <label className="text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3 py-2 rounded-xl cursor-pointer transition-colors flex items-center gap-2 text-xs sm:text-sm font-bold">
+                <label className="min-h-[42px] sm:min-h-0 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3 py-2 rounded-xl cursor-pointer transition-colors flex items-center gap-2 text-xs sm:text-sm font-bold">
                   <ImagePlus size={18} />
-                  <span>Fotoğraf / Video Ekle</span>
+                  <span>Fotoğraf / Video</span>
                   <input
                     type="file"
                     multiple
@@ -1068,7 +1073,7 @@ export default function Feed({
               <button
                 type="submit"
                 disabled={(!newPostCaption.trim() && selectedMediaList.length === 0) || isSubmitting}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-2 text-xs sm:text-sm font-bold"
+                className="min-h-[42px] sm:min-h-0 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-2 text-xs sm:text-sm font-bold active:scale-[0.98]"
               >
                 {isSubmitting ? (
                   <>

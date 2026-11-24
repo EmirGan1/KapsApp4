@@ -82,6 +82,7 @@ import Agenda from "./components/Agenda";
 import AdminPanel from "./components/AdminPanel";
 import SubjectsDirectory from "./components/SubjectsDirectory";
 import BottomNav from "./components/BottomNav";
+import MobileConnectivityBanner from "./components/MobileConnectivityBanner";
 import { CallProvider } from "./context/CallContext";
 import IncomingCallNotification from "./components/IncomingCallNotification";
 import ActiveCallPanel from "./components/ActiveCallPanel";
@@ -225,6 +226,7 @@ export default function App() {
   const [unreadDmCount, setUnreadDmCount] = useState(0);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const [isInVoiceRoom, setIsInVoiceRoom] = useState(false);
+  const [isInActiveGame, setIsInActiveGame] = useState(false);
 
   // Announcements & Drop-down Modal State
   const [hasUnreadAnnouncement, setHasUnreadAnnouncement] = useState(false);
@@ -1209,6 +1211,20 @@ export default function App() {
         return;
       }
 
+      // 1b. Close open mobile overlays/sheets before navigating routes
+      if (isInstallSheetOpen) {
+        setIsInstallSheetOpen(false);
+        return;
+      }
+      if (isCommandPaletteOpen) {
+        setIsCommandPaletteOpen(false);
+        return;
+      }
+      if (isMobileMoreOpen) {
+        setIsMobileMoreOpen(false);
+        return;
+      }
+
       // 2. Check if top-level Announcement Modal is open
       if (activeAnnouncementModal) {
         localStorage.setItem("latest_read_announcement_id", String(activeAnnouncementModal.id));
@@ -1269,7 +1285,7 @@ export default function App() {
         capListener.remove();
       }
     };
-  }, [activeAnnouncementModal, activeSubject, activeTab, currentUserId, viewingUserId, isDeviceBanned, token, location.pathname, navigate]);
+  }, [activeAnnouncementModal, activeSubject, activeTab, currentUserId, viewingUserId, isDeviceBanned, token, location.pathname, navigate, isMobileMoreOpen, isCommandPaletteOpen, isInstallSheetOpen]);
 
   useEffect(() => {
     if (!socket || !token) return;
@@ -1343,7 +1359,7 @@ export default function App() {
       }}
     >
       <div
-        data-bottom-nav-hidden={(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || activeTab === "games" || activeTab === "german") ? "true" : undefined}
+        data-bottom-nav-hidden={(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || (activeTab === "games" && isInActiveGame) || activeTab === "german") ? "true" : undefined}
         className="app-shell kapsapp-viewport flex flex-col lg:flex-row w-full max-w-[100vw] bg-white dark:bg-slate-900 md:bg-slate-50 md:dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200 pt-[env(safe-area-inset-top)] lg:pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       >
       <NotificationPermissionPrompt />
@@ -1389,13 +1405,13 @@ export default function App() {
         isEmirgan={isEmirgan}
       />
 
-      {/* Native Mobile Top Navigation Bar (Automatically hidden during full-screen Chat thread, Voice Room, Game, or Kaps German) */}
-      {!(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || activeTab === "games" || activeTab === "german") && (
+      {/* Streamlined Mobile Top App Bar (50px; hidden only during active Chat thread, Voice Room, active Game, or Kaps German) */}
+      {!(isInVoiceRoom || (activeTab === "chats" && isChatOpen) || (activeTab === "games" && isInActiveGame) || activeTab === "german") && (
         <header
           data-testid="mobile-top-app-bar"
-          className="lg:hidden flex items-center justify-between px-3 h-[54px] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 shrink-0 z-30 select-none transition-colors duration-200"
+          className="lg:hidden flex items-center justify-between px-2.5 h-[50px] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 shrink-0 z-30 select-none transition-colors duration-200"
         >
-          {/* Left Slot: Brand on Dashboard OR Contextual Back + Page Title on Sub-Screens */}
+          {/* Left Slot: Brand on Home OR Contextual Back + Crisp Single-Line Title on Sub-Screens */}
           <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
             {activeTab !== "dashboard" ? (
               <button
@@ -1411,10 +1427,10 @@ export default function App() {
                     handleTabChange("dashboard");
                   }
                 }}
-                className="min-w-[38px] min-h-[38px] -ml-1 rounded-xl bg-slate-100/90 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-slate-800 flex items-center justify-center active:scale-95 transition-all cursor-pointer shrink-0"
+                className="min-w-[44px] min-h-[44px] -ml-1 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900 flex items-center justify-center active:scale-95 transition-all cursor-pointer shrink-0"
                 aria-label="Geri Dön"
               >
-                <ChevronLeft size={20} />
+                <ChevronLeft size={22} />
               </button>
             ) : (
               <img
@@ -1422,13 +1438,13 @@ export default function App() {
                 alt=""
                 width={192}
                 height={192}
-                className="w-8 h-8 rounded-xl shadow-xs shrink-0"
+                className="w-8 h-8 rounded-xl shadow-xs shrink-0 ml-0.5"
               />
             )}
 
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight truncate">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[15.5px] font-extrabold text-slate-900 dark:text-white tracking-tight truncate leading-tight">
                   {activeTab === "dashboard"
                     ? "KapsApp"
                     : activeTab === "subject" && activeSubject
@@ -1436,7 +1452,7 @@ export default function App() {
                     : (Object.values(APP_ROUTES).find(r => r.tab === activeTab)?.title || "KapsApp").split(" | ")[0]}
                 </span>
                 {activeTab === "dashboard" && isEmirgan && (
-                  <span className="text-[9px] font-mono font-extrabold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500">
+                  <span className="text-[9px] font-mono font-extrabold text-amber-500 shrink-0">
                     ROOT
                   </span>
                 )}
@@ -1446,77 +1462,58 @@ export default function App() {
                   </span>
                 )}
               </div>
-              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 leading-tight">
-                {activeTab === "dashboard" ? (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                    <span>{onlineUsers.length} çevrimiçi</span>
-                    {miniWeatherBadge && (
-                      <>
-                        <span>·</span>
-                        <span className="font-mono">{miniWeatherBadge.emoji} {miniWeatherBadge.temp}°C</span>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <span>KapsApp Mobil</span>
-                )}
-              </div>
+              {activeTab === "dashboard" && (
+                <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 leading-tight mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  <span>{onlineUsers.length} çevrimiçi</span>
+                  {miniWeatherBadge && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono">
+                        {miniWeatherBadge.emoji} {miniWeatherBadge.temp}°C
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Right Slot: Install App (if browser), Search, Notifications, and User Profile Avatar */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {!isStandalonePwa && (
-              <button
-                type="button"
-                data-testid="mobile-install-app-btn"
-                onClick={() => setIsInstallSheetOpen(true)}
-                className="min-h-[38px] px-2.5 rounded-xl bg-blue-600/12 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25 font-extrabold text-[11px] flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-                title="Uygulamayı Ana Ekrana Ekle"
-                aria-label="Uygulamayı Ana Ekrana Ekle"
-              >
-                <Smartphone size={14} />
-                <span className="hidden xs:inline">Uygulama</span>
-              </button>
-            )}
-
-            {/* Quick Search */}
+          {/* Right Slot: Clean 3-Action Touch Cluster (44px min targets) */}
+          <div className="flex items-center gap-0.5 shrink-0">
             <button
               type="button"
               onClick={() => setIsCommandPaletteOpen(true)}
-              className="min-w-[38px] min-h-[38px] rounded-xl bg-slate-100/90 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-slate-800 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+              className="min-w-[44px] min-h-[44px] rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
               title="Hızlı Arama"
               aria-label="Hızlı Arama"
             >
-              <Search size={17} />
+              <Search size={19} />
             </button>
 
-            {/* Notifications Bell with Live Badge */}
             <button
               type="button"
               onClick={() => handleTabChange("notifications")}
-              className={`relative min-w-[38px] min-h-[38px] rounded-xl border flex items-center justify-center active:scale-95 transition-all cursor-pointer ${
+              className={`relative min-w-[44px] min-h-[44px] rounded-xl flex items-center justify-center active:scale-95 transition-all cursor-pointer ${
                 activeTab === "notifications"
-                  ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800"
-                  : "bg-slate-100/90 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200/70 dark:border-slate-800"
+                  ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900"
               }`}
               title="Bildirimler"
               aria-label="Bildirimler"
             >
-              <Bell size={17} />
+              <Bell size={19} />
               {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-1 -right-1 px-1 min-w-[16px] h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-950">
+                <span className="absolute top-1.5 right-1.5 px-1 min-w-[16px] h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-950">
                   {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
                 </span>
               )}
             </button>
 
-            {/* User Profile / Settings Trigger */}
             <button
               type="button"
               onClick={() => handleTabChange(activeTab === "profile" ? "settings" : "profile")}
-              className="min-w-[38px] min-h-[38px] rounded-xl p-0.5 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+              className="min-w-[44px] min-h-[44px] rounded-xl flex items-center justify-center active:scale-95 transition-all cursor-pointer"
               title="Profilim ve Ayarlar"
               aria-label="Profilim ve Ayarlar"
             >
@@ -1525,6 +1522,7 @@ export default function App() {
           </div>
         </header>
       )}
+      <MobileConnectivityBanner socket={socket} token={token} />
 
       {/* Desktop Sidebar — Collapsible & Categorized */}
       <div
@@ -2104,11 +2102,11 @@ export default function App() {
 
         {/* Persistently mounted Games tab to preserve room and game state when navigating */}
         <div className={`flex-1 flex-col relative w-full h-full ${activeTab === 'games' ? 'flex' : 'hidden'}`}>
-          <Games socket={socket} currentUserId={currentUserId} username={username} avatar={avatar} color={color} onUserClick={handleUserClick} />
+          <Games socket={socket} currentUserId={currentUserId} username={username} avatar={avatar} color={color} onUserClick={handleUserClick} onActiveGameChange={setIsInActiveGame} />
         </div>
       </div>
 
-      {/* Mobile Bottom Nav Bar (4 Ana Sekme + 1 'Daha Fazla' Çekmecesi) */}
+      {/* Mobile Bottom Nav Bar (4 Ana Sekme + 1 'Menü' Çekmecesi) */}
       <div className="kaps-chat-bottom-nav contents">
       <BottomNav
         activeTab={activeTab}
@@ -2119,14 +2117,20 @@ export default function App() {
         setIsMobileMoreOpen={setIsMobileMoreOpen}
         handleTabChange={handleTabChange}
         username={username}
+        avatar={avatar}
+        color={color}
         isEmirgan={isEmirgan}
         unreadGlobalCount={unreadGlobalCount}
         pendingApprovalsCount={pendingApprovalsCount}
         darkMode={darkMode}
         setDarkMode={(v: boolean) => handleThemeChange(v ? 'dark' : 'light')}
+        doNotDisturb={preferences.doNotDisturb}
+        onToggleDnd={() => handleUpdatePreferences({ doNotDisturb: !preferences.doNotDisturb })}
+        onOpenSearch={() => setIsCommandPaletteOpen(true)}
         handleLogout={handleLogout}
         isInVoiceRoom={isInVoiceRoom}
         isChatOpen={activeTab === 'chats' && isChatOpen}
+        isInActiveGame={activeTab === 'games' && isInActiveGame}
         onOpenInstallGuide={() => setIsInstallSheetOpen(true)}
         isStandalone={isStandalonePwa}
       />

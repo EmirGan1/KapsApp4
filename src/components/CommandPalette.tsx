@@ -494,33 +494,34 @@ export default function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center pt-14 sm:pt-24 px-4 bg-slate-950/60 backdrop-blur-xs"
+      className="mobile-window fixed inset-0 z-[9999] flex items-end sm:items-start justify-center sm:pt-20 sm:px-4 bg-slate-950/65 backdrop-blur-xs kaps-backdrop-enter"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Hızlı Geçiş ve Komut Paleti"
     >
       <div
-        className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[75vh]"
+        className="kaps-sheet-enter w-full sm:max-w-2xl bg-white dark:bg-slate-900 border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-[24px] sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88%] sm:max-h-[75vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search Input Bar */}
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-2.5 px-3.5 sm:px-4 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <Search size={18} className="text-slate-400 shrink-0" />
           <input
             ref={inputRef}
-            type="text"
+            type="search"
+            enterKeyHint="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Sayfa, ders klasörü, tema veya ayar ara... (Örn: Pembe, Fizik, Ayvalık, Odak)"
+            placeholder="Sayfa, ders, tema veya ayar ara..."
             aria-label="Komut ve sayfa arama"
-            className="flex-1 bg-transparent text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
+            className="flex-1 min-w-0 bg-transparent text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery("")}
-              className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1.5 py-0.5 rounded cursor-pointer"
+              className="min-h-[36px] px-2 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg cursor-pointer shrink-0"
             >
               Temizle
             </button>
@@ -529,16 +530,16 @@ export default function CommandPalette({
             type="button"
             onClick={onClose}
             aria-label="Komut paletini kapat"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[34px] sm:min-h-[34px] rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
 
         {/* Results List */}
-        <div className="flex-1 overflow-y-auto p-2 divide-y divide-slate-100 dark:divide-slate-800/60">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-2 divide-y divide-slate-100 dark:divide-slate-800/60">
           {filteredItems.length === 0 ? (
-            <div className="py-12 text-center">
+            <div className="py-10 px-4 text-center">
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 "{query}" ile eşleşen sonuç bulunamadı
               </p>
@@ -556,7 +557,7 @@ export default function CommandPalette({
                 return (
                   <React.Fragment key={item.id}>
                     {showCategoryHeader && (
-                      <div className="px-3 pt-2.5 pb-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                      <div className="px-3 pt-2.5 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         {item.category}
                       </div>
                     )}
@@ -564,21 +565,21 @@ export default function CommandPalette({
                       type="button"
                       onMouseEnter={() => setSelectedIndex(idx)}
                       onClick={item.action}
-                      className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left transition-colors cursor-pointer ${
+                      className={`w-full min-h-[48px] flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left transition-colors cursor-pointer ${
                         isSelected
                           ? "bg-blue-50 dark:bg-blue-950/50 text-slate-900 dark:text-white"
                           : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
                           {item.icon}
                         </div>
                         <div className="min-w-0">
                           <div className="text-xs sm:text-sm font-semibold truncate flex items-center gap-2">
-                            <span>{item.title}</span>
+                            <span className="truncate">{item.title}</span>
                             {item.badge && (
-                              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 shrink-0">
                                 · {item.badge}
                               </span>
                             )}
@@ -589,7 +590,7 @@ export default function CommandPalette({
                         </div>
                       </div>
                       <ArrowRight
-                        size={14}
+                        size={15}
                         className={`shrink-0 transition-transform ${
                           isSelected ? "text-blue-600 dark:text-blue-400 translate-x-0.5" : "text-slate-300 dark:text-slate-600"
                         }`}
@@ -602,8 +603,8 @@ export default function CommandPalette({
           )}
         </div>
 
-        {/* Footer Keyboard Hints */}
-        <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+        {/* Footer Keyboard Hints (Desktop only) */}
+        <div className="hidden lg:flex px-4 py-2.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 shrink-0">
           <div className="flex items-center gap-3">
             <span>↑↓ Gezin</span>
             <span>·</span>

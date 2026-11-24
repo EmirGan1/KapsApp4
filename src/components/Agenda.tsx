@@ -86,6 +86,7 @@ export default function Agenda({
   const [onlyMyExams, setOnlyMyExams] = useState<boolean>(false);
   const [agendaSearchQuery, setAgendaSearchQuery] = useState<string>("");
   const [agendaViewMode, setAgendaViewMode] = useState<"calendar" | "list" | "mock_overlay">("calendar");
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   // Selected Day for Desktop Live Inspector & Mobile Bottom Drawer
@@ -608,45 +609,50 @@ export default function Agenda({
     return sortedEventDates.reduce((acc, d) => acc + (eventsByDate[d]?.length || 0), 0);
   }, [sortedEventDates, eventsByDate]);
 
+  const activeMobileFilterCount =
+    (selectedTypeFilter !== "all" ? 1 : 0) +
+    (onlyMyExams ? 1 : 0) +
+    (agendaSearchQuery.trim() ? 1 : 0);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200">
       
       {/* 1. THEME-ADAPTIVE EXAM WINDOW COMMAND BAR */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 py-2.5 shrink-0 transition-colors duration-200">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 text-xs">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
-            <span className="font-bold text-slate-900 dark:text-white">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 px-3.5 sm:px-6 py-2 sm:py-2.5 shrink-0 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs min-w-0">
+            <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+            <span className="font-bold text-slate-900 dark:text-white truncate">
               {countdown.title}
             </span>
-            <span className="text-slate-400 hidden sm:inline">·</span>
-            <span className="text-slate-500 dark:text-slate-400 truncate">
+            <span className="text-slate-400 hidden md:inline">·</span>
+            <span className="text-slate-500 dark:text-slate-400 truncate hidden md:inline">
               {countdown.subtitle}
             </span>
           </div>
 
-          <div className="flex items-center gap-3 self-start sm:self-auto">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {!countdown.isPassed ? (
-              <div className="flex items-center gap-1.5 font-mono text-xs font-bold tabular-nums text-rose-600 dark:text-rose-400">
+              <div className="flex items-center gap-1 font-mono text-[11px] sm:text-xs font-bold tabular-nums text-rose-600 dark:text-rose-400">
                 <span>{countdown.days}g</span>
                 <span>:</span>
                 <span>{String(countdown.hours).padStart(2, "0")}s</span>
-                <span>:</span>
-                <span>{String(countdown.minutes).padStart(2, "0")}d</span>
-                <span className="hidden xs:inline">:</span>
-                <span className="hidden xs:inline">{String(countdown.seconds).padStart(2, "0")}sn</span>
+                <span className="hidden sm:inline">:</span>
+                <span className="hidden sm:inline">{String(countdown.minutes).padStart(2, "0")}d</span>
               </div>
             ) : (
-              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              <span className="hidden sm:inline text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                 Sınav Dönemi Aktif · 03–13 Kasım 2026
               </span>
             )}
 
             <button
+              type="button"
               onClick={handleJumpToPreMock}
-              className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95 whitespace-nowrap"
+              className="min-h-[32px] sm:min-h-0 px-2.5 sm:px-3 py-1 rounded-lg sm:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold text-[11px] sm:text-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95 whitespace-nowrap"
             >
-              <span>Ekim 2026'ya Git</span>
+              <span className="sm:hidden">Ekim &apos;26</span>
+              <span className="hidden sm:inline">Ekim 2026&apos;ya Git</span>
               <ArrowRight size={12} />
             </button>
           </div>
@@ -654,70 +660,97 @@ export default function Agenda({
       </div>
 
       {/* 2. TOP WORKSPACE TOOLBAR: MONTH NAV, SEARCH, VIEW MODES & FILTERS */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 py-4 shadow-2xs shrink-0 z-10 transition-colors duration-200">
-        <div className="max-w-7xl mx-auto flex flex-col gap-3.5">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 px-3.5 sm:px-6 py-2.5 sm:py-4 shadow-2xs shrink-0 z-10 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto flex flex-col gap-2.5 sm:gap-3.5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
             
             {/* Title & Month Navigation */}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 flex items-center justify-center shrink-0">
-                <CalendarDays size={20} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-                    {MONTH_NAMES_TR[month]} {year}
-                  </h1>
-                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                    <button
-                      type="button"
-                      onClick={handlePrevMonth}
-                      className="p-1 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                      title="Önceki Ay"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleTodayClick}
-                      className="px-2 py-0.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-                    >
-                      Bugün
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleNextMonth}
-                      className="p-1 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                      title="Sonraki Ay"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
+            <div className="flex items-center justify-between lg:justify-start gap-2 sm:gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="hidden sm:flex w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 items-center justify-center shrink-0">
+                  <CalendarDays size={20} />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-                  Akademik Takvim, Pre-Mock Sınavları ve Yemek Menüsü · Bu ayda {totalMonthFilteredEvents} kayıt
-                </p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight truncate">
+                      {MONTH_NAMES_TR[month]} {year}
+                    </h1>
+                    <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                      <button
+                        type="button"
+                        onClick={handlePrevMonth}
+                        className="w-8 h-8 sm:w-auto sm:h-auto sm:p-1 flex items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                        title="Önceki Ay"
+                        aria-label="Önceki Ay"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleTodayClick}
+                        className="h-8 sm:h-auto px-2 sm:py-0.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Bugün
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleNextMonth}
+                        className="w-8 h-8 sm:w-auto sm:h-auto sm:p-1 flex items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                        title="Sonraki Ay"
+                        aria-label="Sonraki Ay"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="hidden sm:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+                    Akademik Takvim, Pre-Mock Sınavları ve Yemek Menüsü · Bu ayda {totalMonthFilteredEvents} kayıt
+                  </p>
+                </div>
               </div>
+
+              {/* Mobile Compact Filter Drawer Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
+                aria-expanded={isMobileFiltersOpen}
+                aria-label="Ajanda filtrelerini aç veya kapat"
+                className={`lg:hidden min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors cursor-pointer shrink-0 ${
+                  isMobileFiltersOpen || activeMobileFilterCount > 0
+                    ? "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/70"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200/80 dark:border-slate-700"
+                }`}
+              >
+                <Filter size={14} />
+                <span>Filtre</span>
+                {activeMobileFilterCount > 0 && (
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    {activeMobileFilterCount}
+                  </span>
+                )}
+              </button>
             </div>
 
             {/* Search Input + Schedule Modal + Admin Add */}
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="relative flex-1 sm:flex-initial sm:w-64">
+              <div className={`${isMobileFiltersOpen ? "block basis-full sm:basis-auto" : "hidden"} lg:block relative flex-1 sm:flex-initial sm:w-64 w-full`}>
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
-                  type="text"
+                  type="search"
+                  enterKeyHint="search"
                   value={agendaSearchQuery}
                   onChange={(e) => setAgendaSearchQuery(e.target.value)}
                   placeholder="Sınav, etüt veya menü ara..."
-                  className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                  className="w-full min-h-[40px] sm:min-h-0 pl-9 pr-8 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                 />
                 {agendaSearchQuery && (
                   <button
                     type="button"
+                    aria-label="Aramayı temizle"
                     onClick={() => setAgendaSearchQuery("")}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   >
-                    <X size={13} />
+                    <X size={14} />
                   </button>
                 )}
               </div>
@@ -725,7 +758,7 @@ export default function Agenda({
               <button
                 type="button"
                 onClick={() => setIsScheduleModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+                className="flex-1 sm:flex-initial min-h-[40px] sm:min-h-0 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
                 title="Kişiselleştirilmiş Günlük ve Haftalık Ders Programınızı Görüntüleyin"
               >
                 <CalendarDays size={15} className="shrink-0" />
@@ -736,7 +769,7 @@ export default function Agenda({
                 <button
                   type="button"
                   onClick={() => handleOpenAddForm()}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
+                  className="min-h-[40px] sm:min-h-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
                 >
                   <Plus size={15} />
                   <span>Etkinlik Ekle</span>
@@ -746,8 +779,8 @@ export default function Agenda({
           </div>
 
           {/* Filter Sub-Tabs & 3-Way View Mode Switcher */}
-          <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex-wrap">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center justify-between gap-2.5 lg:gap-3 pt-2 sm:pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+            <div className={`${isMobileFiltersOpen ? "flex" : "hidden"} lg:flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5`}>
               {[
                 { id: "all", label: "Tümü" },
                 { id: "exam", label: "Sınavlar", dot: "bg-rose-500" },
@@ -758,8 +791,9 @@ export default function Agenda({
               ].map((f) => (
                 <button
                   key={f.id}
+                  type="button"
                   onClick={() => setSelectedTypeFilter(f.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                  className={`min-h-[36px] sm:min-h-0 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                     selectedTypeFilter === f.id
                       ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
                       : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
@@ -771,50 +805,54 @@ export default function Agenda({
               ))}
             </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap">
               {/* 3-Way View Mode Switcher */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 flex-1 lg:flex-initial">
                 <button
                   type="button"
                   onClick={() => setAgendaViewMode("calendar")}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex-1 lg:flex-initial min-h-[34px] sm:min-h-0 px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                     agendaViewMode === "calendar"
                       ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
                       : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
                   }`}
                 >
-                  Ay & Gün İnceleyici
+                  <span className="sm:hidden">Takvim</span>
+                  <span className="hidden sm:inline">Ay & Gün İnceleyici</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setAgendaViewMode("list")}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  className={`flex-1 lg:flex-initial min-h-[34px] sm:min-h-0 px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap ${
                     agendaViewMode === "list"
                       ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
                       : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
                   }`}
                 >
-                  <ListFilter size={13} />
-                  <span>Zaman Çizelgesi</span>
+                  <ListFilter size={13} className="shrink-0" />
+                  <span className="sm:hidden">Liste</span>
+                  <span className="hidden sm:inline">Zaman Çizelgesi</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setAgendaViewMode("mock_overlay")}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  className={`flex-1 lg:flex-initial min-h-[34px] sm:min-h-0 px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
                     agendaViewMode === "mock_overlay"
                       ? "bg-amber-400 text-slate-950 font-black shadow-xs"
                       : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
                   }`}
                 >
-                  <span>Mock Sınav Çizelgesi</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="sm:hidden">Mock</span>
+                  <span className="hidden sm:inline">Mock Sınav Çizelgesi</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
                 </button>
               </div>
 
               {/* User's Own Enrolled Courses Toggle */}
               <button
+                type="button"
                 onClick={() => setOnlyMyExams(prev => !prev)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shrink-0 ${
+                className={`${isMobileFiltersOpen ? "flex" : "hidden"} lg:flex min-h-[36px] sm:min-h-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer items-center gap-1.5 border shrink-0 ${
                   onlyMyExams
                     ? "bg-amber-500 text-slate-950 border-amber-400 shadow-xs"
                     : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200"
@@ -830,7 +868,7 @@ export default function Agenda({
       </div>
 
       {/* 3. MAIN MASTER-DETAIL WORKSPACE */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-24 sm:p-5 sm:pb-8 touch-pan-y overscroll-y-contain pb-safe">
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-8 sm:p-5 sm:pb-8 touch-pan-y overscroll-y-contain">
         {agendaViewMode === "mock_overlay" ? (
           <div className="max-w-7xl mx-auto">
             <AgendaCalendar
